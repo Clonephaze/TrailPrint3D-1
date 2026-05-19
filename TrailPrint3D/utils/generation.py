@@ -353,6 +353,7 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     phase_start/phase_end control the overlay progress range for multi-tile callers.
     """
     from .terrain import coloring_main, createOcean, _COLORING_EMPTY, _COLORING_PAINTED, _fetch_all_kinds_parallel  # deferred to avoid circular import at load time
+    from .osm import OsmFetchSettings  # deferred to avoid circular import at load time
     from .osm import create_buildings, create_roads  # deferred to avoid circular import at load time
     from .scene import set_origin_to_3d_cursor, get_random_world_vertices  # deferred to avoid circular import at load time
     from .mesh_ops import intersectWithTile  # deferred to avoid circular import at load time
@@ -421,6 +422,21 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     ]
     _overpass_semaphore = threading.Semaphore(2)  # max 2 concurrent live Overpass requests
 
+    # Snapshot all bpy.context values needed by fetch_osm_data on the main
+    # thread NOW, before any worker threads are spawned.  Workers receive this
+    # plain namedtuple so they never touch bpy.context.
+    _fetch_settings = OsmFetchSettings(
+        disable_cache       = tp3d.disableCache,
+        api_retries         = tp3d.apiRetries,
+        mapsize             = tp3d.sMapInKm,
+        road_big            = bool(tp3d.el_sBigActive),
+        road_med            = bool(tp3d.el_sMedActive),
+        road_small          = bool(tp3d.el_sSmallActive),
+        water_ponds         = bool(tp3d.col_wPondsActive),
+        water_small_rivers  = bool(tp3d.col_wSmallRiversActive),
+        water_big_rivers    = bool(tp3d.col_wBigRiversActive),
+    )
+
     # --------------------------------------------------
     # Pre-fetch ALL active kinds × all tiles simultaneously.
     # All HTTP round-trips overlap; the semaphore caps live requests to 2 at
@@ -432,7 +448,8 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
         if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1)
         and map_km <= max_size
     ]
-    _all_prefetched = _fetch_all_kinds_parallel(_active_kind_tasks, _overpass_semaphore)
+    _all_prefetched = _fetch_all_kinds_parallel(_active_kind_tasks, _overpass_semaphore,
+                                                settings=_fetch_settings)
 
     terrain = {}
     for key, flag_attr, max_size, phase, msg in COLORING_ELEMENTS:

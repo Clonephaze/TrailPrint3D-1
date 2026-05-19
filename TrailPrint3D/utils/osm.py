@@ -7,9 +7,27 @@ import time
 import requests
 import hashlib
 from collections import deque
+from typing import NamedTuple
 from mathutils import Vector  # type: ignore
 from .. import constants as const
 from .. import progress as _progress
+
+
+class OsmFetchSettings(NamedTuple):
+    """Snapshot of all bpy.context values needed by fetch_osm_data.
+
+    Read these on the main thread before spawning worker threads so that
+    workers never touch bpy.context.
+    """
+    disable_cache: int
+    api_retries: int
+    mapsize: float
+    road_big: bool
+    road_med: bool
+    road_small: bool
+    water_ponds: bool
+    water_small_rivers: bool
+    water_big_rivers: bool
 
 
 def _overpass_request(query, overpass_url, method='POST', timeout=60, max_retries=3,
@@ -72,18 +90,39 @@ def _overpass_request(query, overpass_url, method='POST', timeout=60, max_retrie
     return None
 
 
-def fetch_osm_data(bbox, kind="WATER", max_cache_age_hours=720, return_cache_status=False):
+def fetch_osm_data(bbox, kind="WATER", max_cache_age_hours=720, return_cache_status=False,
+                   settings=None):
+    """Fetch (or return cached) OSM data for a bbox + kind.
+
+    Parameters
+    ----------
+    settings : OsmFetchSettings or None
+        When supplied (worker-thread path), all bpy.context reads are skipped
+        and the pre-read values are used instead.  Must be None only when
+        called from the main thread, where bpy.context is valid.
+    """
     #print("FETCH OSM:", kind)
 
-    disableCache = bpy.context.scene.tp3d.disableCache
-    apiRetries = bpy.context.scene.tp3d.apiRetries
-    mapsize = bpy.context.scene.tp3d.sMapInKm
-    road_big   = bool(bpy.context.scene.tp3d.el_sBigActive)
-    road_med   = bool(bpy.context.scene.tp3d.el_sMedActive)
-    road_small = bool(bpy.context.scene.tp3d.el_sSmallActive)
-    water_ponds       = bool(bpy.context.scene.tp3d.col_wPondsActive)
-    water_small_rivers = bool(bpy.context.scene.tp3d.col_wSmallRiversActive)
-    water_big_rivers  = bool(bpy.context.scene.tp3d.col_wBigRiversActive)
+    if settings is not None:
+        disableCache       = settings.disable_cache
+        apiRetries         = settings.api_retries
+        mapsize            = settings.mapsize
+        road_big           = settings.road_big
+        road_med           = settings.road_med
+        road_small         = settings.road_small
+        water_ponds        = settings.water_ponds
+        water_small_rivers = settings.water_small_rivers
+        water_big_rivers   = settings.water_big_rivers
+    else:
+        disableCache       = bpy.context.scene.tp3d.disableCache
+        apiRetries         = bpy.context.scene.tp3d.apiRetries
+        mapsize            = bpy.context.scene.tp3d.sMapInKm
+        road_big           = bool(bpy.context.scene.tp3d.el_sBigActive)
+        road_med           = bool(bpy.context.scene.tp3d.el_sMedActive)
+        road_small         = bool(bpy.context.scene.tp3d.el_sSmallActive)
+        water_ponds        = bool(bpy.context.scene.tp3d.col_wPondsActive)
+        water_small_rivers = bool(bpy.context.scene.tp3d.col_wSmallRiversActive)
+        water_big_rivers   = bool(bpy.context.scene.tp3d.col_wBigRiversActive)
 
     def get_cache_dir():
         path = const.overpass_cache_dir
@@ -260,12 +299,17 @@ def fetch_osm_data(bbox, kind="WATER", max_cache_age_hours=720, return_cache_sta
     # --------------------------------------------------
     # Request with retries
     # --------------------------------------------------
-    def _log(msg):
-        _ov = _progress.ProgressOverlay.get()
-        if _ov.active:
-            _ov.update(message=msg)
+    # Progress callback — only safe on the main thread (ProgressOverlay touches
+    # bpy.context.region).  Worker threads pass settings!=None so _log is None.
+    if settings is None:
+        def _log(msg):
+            _ov = _progress.ProgressOverlay.get()
+            if _ov.active:
+                _ov.update(message=msg)
+    else:
+        _log = None
 
-    print(query)
+    print(f"[fetch_osm_data] {kind}: {query.splitlines()[1].strip() if len(query.splitlines()) > 1 else query[:80]}")
     data = _overpass_request(
         query, overpass_url,
         method='POST', timeout=60, max_retries=apiRetries,
@@ -756,13 +800,6 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
                     # Keep same streetWidth logic as before
                     streetWidth = (width_m * 0.5) * 0.2 * scaleHor * 0.02 * streetwidthMultiplier
 
-                    print(f"Road width: {streetWidth}")
-
-                    if streetWidth <= 0.1:
-                        streetWidth *= 0.1/streetWidth
-                        any_adjusted = True
-                        print(f"Adjusted road width: {streetWidth}")
-
 
                     # Compute segment directions and per-node perpendiculars (2D perp)
                     seg_dirs = []
@@ -811,6 +848,13 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
                         group['faces'].append((a_left, b_left, b_right, a_right))
 
                 wm.progress_end()
+
+                # One-line width summary instead of per-road spam
+                width_summary = ", ".join(
+                    f"w{k}m={groups[k]['vert_count']//2}segs"
+                    for k in sorted(groups.keys())
+                )
+                print(f"Road widths: {width_summary}")
 
                 if _ov.active:
                     _ov.update(message=f"Roads: tile {_cntr}/{_maxcntr} — creating {n_roads} road mesh…")

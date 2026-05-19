@@ -41,6 +41,9 @@ terrarium_cache_dir = os.path.join(bpy.utils.user_resource('CONFIG'), "TrailPrin
 # Set up a cache for Overpass Files
 overpass_cache_dir = os.path.join(bpy.utils.user_resource('CONFIG'), "TrailPrint3D_Cache","overpass_cache")
 
+# Set up a cache for computed elevation arrays (per-map vertex elevations)
+elevation_results_dir = os.path.join(bpy.utils.user_resource('CONFIG'), "TrailPrint3D_Cache","elevation_results")
+
 #Set up a folder for Presets
 preset_dir = os.path.join(bpy.utils.user_resource('CONFIG'), "TP3D-presets")
 
@@ -50,6 +53,7 @@ def _ensure_dirs():
     os.makedirs(cache_dir, exist_ok=True)
     os.makedirs(terrarium_cache_dir, exist_ok=True)
     os.makedirs(overpass_cache_dir, exist_ok=True)
+    os.makedirs(elevation_results_dir, exist_ok=True)
     os.makedirs(preset_dir, exist_ok=True)
 
 

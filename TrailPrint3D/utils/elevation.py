@@ -618,6 +618,14 @@ def get_elevation_path_openTopoData(vertices):
     return coords
 
 
+def _elevation_results_key(minLat, maxLat, minLon, maxLon, api, num_subdivisions):
+    """Return the cache file path for a given map configuration."""
+    import hashlib
+    raw = f"{minLat:.6f},{maxLat:.6f},{minLon:.6f},{maxLon:.6f},{api},{num_subdivisions}"
+    h = hashlib.md5(raw.encode()).hexdigest()
+    return os.path.join(const.elevation_results_dir, f"{h}.elev")
+
+
 def get_tile_elevation(obj, progress_cb=None):
 
     mesh = obj.data
@@ -653,6 +661,8 @@ def get_tile_elevation(obj, progress_cb=None):
     minLon = minl[1]
     maxLon = maxl[1]
 
+    num_subdivisions = bpy.context.scene.tp3d.num_subdivisions
+    disable_cache = bpy.context.scene.tp3d.disableCache
 
     realdist1 = haversine(minLat,minLon,maxLat,maxLon)*1
     realdist2 = haversine(minLat,minLon,maxLat,maxLon)*1
@@ -663,6 +673,32 @@ def get_tile_elevation(obj, progress_cb=None):
     bpy.context.scene.tp3d.minLon = minLon
     bpy.context.scene.tp3d.maxLon = maxLon
 
+    # ── Elevation results cache ───────────────────────────────────────────────
+    # Key on geographic bounds + API + subdivision count so the same map on
+    # re-generation skips all tile fetching / PNG parsing.
+    _cache_path = _elevation_results_key(minLat, maxLat, minLon, maxLon, api, num_subdivisions)
+    if not disable_cache and os.path.exists(_cache_path):
+        try:
+            with open(_cache_path, "rb") as _f:
+                _raw = zlib.decompress(_f.read())
+            _n = struct.unpack_from("<I", _raw, 0)[0]
+            elevations = list(struct.unpack_from(f"<{_n}f", _raw, 4))
+            if len(elevations) == len(world_verts):
+                print(f"Elevation cache hit ({_n} verts) — skipping API fetch")
+                lowestElevation = min(elevations)
+                highestElevation = max(elevations)
+                additionalExtrusion = lowestElevation
+                diff = highestElevation - lowestElevation
+                bpy.context.scene.tp3d["o_verticesMap"] = str(len(mesh.vertices))
+                bpy.context.scene.tp3d.lowestElevation = lowestElevation
+                bpy.context.scene.tp3d.highestElevation = highestElevation
+                bpy.context.scene.tp3d.sAdditionalExtrusion = additionalExtrusion
+                return elevations, diff
+            else:
+                print(f"Elevation cache vertex count mismatch ({len(elevations)} vs {len(world_verts)}) — refetching")
+        except Exception as _e:
+            print(f"Elevation cache read error: {_e} — refetching")
+    # ─────────────────────────────────────────────────────────────────────────
 
     elevations = []
     for i in range(0, len(world_verts), chunk_size):
@@ -686,6 +722,16 @@ def get_tile_elevation(obj, progress_cb=None):
         del chunk_elevations
 
     save_elevation_cache()
+
+    # Save results cache for future re-generations of the same map.
+    try:
+        os.makedirs(const.elevation_results_dir, exist_ok=True)
+        _n = len(elevations)
+        _packed = struct.pack("<I", _n) + struct.pack(f"<{_n}f", *elevations)
+        with open(_cache_path, "wb") as _f:
+            _f.write(zlib.compress(_packed, level=1))
+    except Exception as _e:
+        print(f"Elevation cache write error: {_e}")
 
     lowestElevation = min(elevations)
     highestElevation = max(elevations)
