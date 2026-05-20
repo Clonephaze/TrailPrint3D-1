@@ -1334,6 +1334,10 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     remesh.use_smooth_shade = True
     applyModifier(original, remesh)
 
+    if "type" in original and original["type"] == "OTHER":
+        print("Setting ExportGroup to 0 for OTHER type")
+        original["ExportGroup"] = 0
+
 
     return obj
 
@@ -1503,6 +1507,8 @@ def projection(operation, Mapobject, obj):
         obj.data.materials.clear()
 
         obj.location.z += 0.2
+        if "TYPE" in obj and obj["TYPE"] == "OTHER":
+                obj["ExportGroup"] = 1
 
     if operation == "singleColorMode":
 

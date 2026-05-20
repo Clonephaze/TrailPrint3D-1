@@ -994,7 +994,11 @@ class TP3D_OT_popup_merge(bpy.types.Operator):
         # Create the object
 
         obj = bpy.context.view_layer.objects.active
+
+        if "type" not in obj:
+            obj["type"] = "OTHER"
         #context.scene.cursor.location = obj.location.copy()
+
 
 
 
@@ -1234,6 +1238,9 @@ class TP3D_OT_popup_text(bpy.types.Operator):
         bpy.ops.object.text_add(location=context.scene.cursor.location)
         obj = context.active_object
 
+        if "type" not in obj:
+            obj["type"] = "OTHER"
+
 
         bot, top = utils.getHighestLowest(map)
         print(f"Highest point: {top}")
@@ -1386,6 +1393,9 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
 
         Mapobject = context.scene.tp3d.currentMap
         obj = bpy.context.view_layer.objects.active
+
+        if "type" not in obj:
+            obj["type"] = "OTHER"
 
         obj.scale.z = 200
 
