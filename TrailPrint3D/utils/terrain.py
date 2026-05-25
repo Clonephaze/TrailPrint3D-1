@@ -271,6 +271,8 @@ def coloring_main(map, kind = "WATER"):
         tobj.location.z -= 1
         recalculateNormals(tobj)
 
+    
+
         # Boolean intersect with map
         bool_mod = tobj.modifiers.new(name="Boolean", type='BOOLEAN')
         bool_mod.object = map_obj
@@ -375,6 +377,7 @@ def coloring_main(map, kind = "WATER"):
                 print("Skipping ClosedObject")
                 bpy.data.objects.remove(tobj, do_unlink=True)
                 continue
+            
 
             area, new_objs = _process_coloring_object(tobj, map, tol, extrudeVal= 150)
             biggestArea = max(biggestArea, area)

@@ -12,7 +12,6 @@ def writeMetadata(obj, type = "MAP"):
         obj["Addon"] = const.ADDON_NAME
         obj["Version"] = const.ADDON_VERSION
 
-        obj["Generation Duration"] = str( bpy.context.scene.tp3d.sRunDuration) + " seconds"
         obj["Shape"] = bpy.context.scene.tp3d.shape
         obj["Resolution"] = bpy.context.scene.tp3d.num_subdivisions
         obj["Elevation Scale"] = bpy.context.scene.tp3d.scaleElevation

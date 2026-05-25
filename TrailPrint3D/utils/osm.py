@@ -981,7 +981,7 @@ def create_element(bbox, elementHeight=1.0, scaleHor=1.0, kind = "WATER", baseHe
     wm.progress_begin(0, 100)
 
     for i, element in enumerate(data['elements']):
-        wm.progress_update(i*100/len(nodes))
+        wm.progress_update(i*100/len(nodes) if nodes else 0)
 
         coords = []
         for node_id in element.get('nodes', []):

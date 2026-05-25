@@ -543,7 +543,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     # Priority order: index 0 = highest priority (subtracted from everything below it).
     # Add new terrain keys here to include them automatically.
     TERRAIN_PRIORITY_ORDER = ['water', 'forest', 'scree', 'city', 'greenspace', 'farmland', 'glacier', 'ocean']
-
+ 
 
     thickerCurves = []
     if props['singleColorMode']:
