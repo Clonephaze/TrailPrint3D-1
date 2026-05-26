@@ -1,17 +1,20 @@
-"""Tests for PR: osm-threading-pr
+"""Unit and integration tests for the TrailPrint3D OSM data pipeline.
 
-Validates:
-  A3 — _overpass_request centralised retry logic (osm.py)
-  A1 — bmesh flood-fill loose-part splitting (terrain.py)
-  A2 — bmesh ribbon merge (terrain.py)
-  B1 — coloring_main prefetched_tiles parameter (terrain.py)
-  B2 — _fetch_tiles_parallel concurrent fetcher (terrain.py)
+Covers:
+  - Overpass HTTP request logic (retry, error handling, GET vs POST)
+  - Per-tile parallel fetcher (_fetch_tiles_parallel)
+  - Multi-kind parallel fetcher (_fetch_all_kinds_parallel)
+  - Union query and element classifier (fetch_osm_combined)
+  - coloring_main API surface
+  - bmesh flood-fill loose-part splitting
+  - bmesh ribbon merge
+  - Live Overpass API integration (requires network, ~5-20 s each)
 
 Run with:
-  blender --background --factory-startup --python-exit-code 1 -P tests/test_pr_osm_threading.py
+  blender --background --factory-startup --python-exit-code 1 -P tests/test_osm_pipeline.py
 
---python-exit-code 1 means any unhandled exception (including AssertionError)
-causes Blender to exit with code 1, making failures visible to CI / PowerShell.
+--python-exit-code 1 exits Blender with code 1 on any unhandled exception
+(including AssertionError), making failures visible to CI.
 """
 
 import sys
@@ -69,7 +72,7 @@ def _make_response(status_code, body=None):
 
 
 # ---------------------------------------------------------------------------
-# A3 — _overpass_request
+# Overpass HTTP request — retry and error handling
 # ---------------------------------------------------------------------------
 
 def test_overpass_request_success_first_try():
@@ -160,7 +163,7 @@ def test_overpass_request_get_method():
 
 
 # ---------------------------------------------------------------------------
-# B2 — _fetch_tiles_parallel
+# Per-tile parallel fetcher — _fetch_tiles_parallel
 # ---------------------------------------------------------------------------
 
 def test_fetch_tiles_parallel_all_tiles_fetched():
@@ -310,7 +313,7 @@ def test_fetch_tiles_parallel_semaphore_caps_concurrency():
 
 
 # ---------------------------------------------------------------------------
-# B1 — coloring_main signature
+# coloring_main API surface
 # ---------------------------------------------------------------------------
 
 def test_coloring_main_has_prefetched_tiles_param():
@@ -325,8 +328,8 @@ def test_coloring_main_has_prefetched_tiles_param():
 
 
 # ---------------------------------------------------------------------------
-# A1 — bmesh flood-fill loose-part splitting algorithm
-# (The same algorithm used in _split_loose inside _process_coloring_object)
+# bmesh flood-fill — loose-part splitting
+# (mirrors the _split_loose algorithm used in _process_coloring_object)
 # ---------------------------------------------------------------------------
 
 def _flood_fill_components(bm_src):
@@ -461,7 +464,7 @@ def test_split_loose_produces_correct_objects_in_scene():
 
 
 # ---------------------------------------------------------------------------
-# A2 — bmesh ribbon merge
+# bmesh ribbon merge
 # ---------------------------------------------------------------------------
 
 def _make_quad_object(name, x_offset):
@@ -531,9 +534,103 @@ def test_ribbon_merge_single_ribbon_is_unchanged():
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Live Overpass API integration — real network, no mocks
 # ---------------------------------------------------------------------------
-# B3 — _fetch_all_kinds_parallel  (cross-kind parallel fetch)
+# Hits overpass-api.de directly using a small bbox from the München Marathon
+# GPX route (English Garden area, ~2×2 km).  Requires internet access.
+# Expected duration: 5–20 s each.
+#
+# Bbox: 48.140–48.160 N, 11.550–11.580 E
+# ---------------------------------------------------------------------------
+
+_MUNICH_BBOX = (48.140, 11.550, 48.160, 11.580)  # (south, west, north, east)
+
+
+def _munich_settings(**overrides):
+    """Return an OsmFetchSettings for the Munich integration bbox."""
+    from TrailPrint3D.utils.osm import OsmFetchSettings
+    defaults = dict(
+        disable_cache=True,  # always go to the network; no stale results
+        api_retries=2,
+        mapsize=5.0,
+        road_big=True,
+        road_med=True,
+        road_small=False,
+        water_ponds=True,
+        water_small_rivers=True,
+        water_big_rivers=True,
+    )
+    defaults.update(overrides)
+    return OsmFetchSettings(**defaults)
+
+
+def test_real_overpass_union_query():
+    """The union QL query must be accepted by the Overpass server and return
+    a non-empty elements list for a well-populated urban area (Munich)."""
+    import threading
+    from TrailPrint3D.utils.osm import fetch_osm_combined
+
+    result = fetch_osm_combined(
+        _MUNICH_BBOX,
+        ["STREETS", "WATER", "FOREST"],
+        settings=_munich_settings(),
+        semaphore=threading.Semaphore(1),
+    )
+
+    assert result, "Overpass returned no data at all — check network/query syntax"
+    print()
+    total_elements = 0
+    for kind, (data, from_cache) in result.items():
+        elems = data.get("elements", [])
+        ways = [e for e in elems if e.get("type") != "node"]
+        print(f"    {kind:12s}: {len(elems):4d} elements  ({len(ways)} ways/relations)")
+        total_elements += len(elems)
+    assert total_elements > 0, "All kinds returned empty element lists"
+
+
+def test_real_overpass_classifier():
+    """Every returned way/relation must be binned into the correct kind.
+    Central Munich must yield at least one element in each of the three
+    requested kinds — STREETS, WATER, and FOREST."""
+    import threading
+    from TrailPrint3D.utils.osm import fetch_osm_combined, _classify_element
+
+    settings = _munich_settings()
+    result = fetch_osm_combined(
+        _MUNICH_BBOX,
+        ["STREETS", "WATER", "FOREST"],
+        settings=settings,
+        semaphore=threading.Semaphore(1),
+    )
+
+    print()
+    for kind in ["STREETS", "WATER", "FOREST"]:
+        assert kind in result, (
+            f"Kind {kind!r} missing from result — "
+            f"got: {list(result.keys())}"
+        )
+        data, _ = result[kind]
+        ways = [e for e in data.get("elements", []) if e.get("type") != "node"]
+        assert ways, (
+            f"Kind {kind!r} has no ways or relations — classifier may have "
+            f"dropped everything.  Check tag filters in _classify_element."
+        )
+        # Spot-check: every classified way should round-trip through the
+        # classifier back to the same kind (no misclassification)
+        wrong = [
+            e for e in ways
+            if _classify_element(e, [kind], settings) != kind
+        ]
+        assert not wrong, (
+            f"{len(wrong)} element(s) in the {kind!r} bucket failed "
+            f"round-trip classification.  First offender tags: "
+            f"{wrong[0].get('tags', {})}"
+        )
+        print(f"    {kind:12s}: {len(ways)} ways/relations — all correctly classified")
+
+
+# ---------------------------------------------------------------------------
+# Multi-kind parallel fetcher — _fetch_all_kinds_parallel
 # ---------------------------------------------------------------------------
 
 def test_fetch_all_kinds_fetches_every_kind():
@@ -542,71 +639,72 @@ def test_fetch_all_kinds_fetches_every_kind():
     from unittest.mock import patch
     from TrailPrint3D.utils.terrain import _fetch_all_kinds_parallel
 
-    tasks = [(0.0, 0.0, 2.0, 2.0)]
+    bbox = (0.0, 0.0, 2.0, 2.0)
     kinds = ["WATER", "FOREST", "SCREE"]
-    kind_task_pairs = [(k, tasks) for k in kinds]
+    kind_task_pairs = [(k, [bbox]) for k in kinds]
 
-    def _mock(bbox, kind, return_cache_status=False, settings=None):
-        return ({"elements": []}, True)
+    def _mock(b, ks, settings=None, semaphore=None):
+        return {k: ({"elements": []}, True) for k in ks}
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_data", _mock):
+    with patch("TrailPrint3D.utils.osm.fetch_osm_combined", _mock):
         result = _fetch_all_kinds_parallel(kind_task_pairs, threading.Semaphore(4))
 
     for k in kinds:
         assert k in result, f"Kind {k} missing from result"
-        assert tasks[0] in result[k], f"Tile missing for kind {k}"
+        assert bbox in result[k], f"Tile missing for kind {k}"
 
 
 def test_fetch_all_kinds_failed_kind_excluded():
-    """A kind whose fetch returns None must have an empty dict in the result."""
+    """A kind whose fetch returns nothing must have an empty dict in the result."""
     import threading
     from unittest.mock import patch
     from TrailPrint3D.utils.terrain import _fetch_all_kinds_parallel
 
-    tasks = [(0.0, 0.0, 2.0, 2.0)]
+    bbox = (0.0, 0.0, 2.0, 2.0)
 
-    def _mock(bbox, kind, return_cache_status=False, settings=None):
-        if kind == "WATER":
-            return ({"elements": []}, False)
-        return None  # FOREST fails
+    def _mock(b, ks, settings=None, semaphore=None):
+        # Return WATER but silently drop FOREST (simulate no matching elements)
+        return {k: ({"elements": []}, False) for k in ks if k == "WATER"}
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_data", _mock):
+    with patch("TrailPrint3D.utils.osm.fetch_osm_combined", _mock):
         result = _fetch_all_kinds_parallel(
-            [("WATER", tasks), ("FOREST", tasks)],
+            [("WATER", [bbox]), ("FOREST", [bbox])],
             threading.Semaphore(4),
         )
 
-    assert tasks[0] in result["WATER"], "Successful kind should have its tile"
+    assert bbox in result["WATER"], "Successful kind should have its tile"
     assert result["FOREST"] == {}, "Failed kind should be an empty dict"
 
 
 def test_fetch_all_kinds_actually_concurrent():
-    """All kinds must be in-flight simultaneously (barrier proof)."""
+    """All tile tasks must be in-flight simultaneously (barrier proof)."""
     import threading
     from unittest.mock import patch
     from TrailPrint3D.utils.terrain import _fetch_all_kinds_parallel
 
-    N_KINDS = 4
-    barrier = threading.Barrier(N_KINDS, timeout=5)
-    tasks   = [(0.0, 0.0, 2.0, 2.0)]
-    kind_task_pairs = [(f"KIND{i}", tasks) for i in range(N_KINDS)]
+    N_TILES = 4
+    barrier = threading.Barrier(N_TILES, timeout=5)
+    # Use distinct bboxes so each becomes a separate worker task
+    tiles = [(float(i), float(i), float(i) + 1.0, float(i) + 1.0) for i in range(N_TILES)]
+    kind_task_pairs = [("FOREST", tiles)]
 
-    def _mock(bbox, kind, return_cache_status=False, settings=None):
-        barrier.wait()   # all N_KINDS threads must be here simultaneously
-        return ({"elements": []}, False)
+    def _mock(bbox, kinds, settings=None, semaphore=None):
+        barrier.wait()   # all N_TILES threads must arrive here simultaneously
+        return {k: ({"elements": []}, False) for k in kinds}
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_data", _mock):
+    with patch("TrailPrint3D.utils.osm.fetch_osm_combined", _mock):
         result = _fetch_all_kinds_parallel(
             kind_task_pairs,
-            threading.Semaphore(N_KINDS),   # semaphore not the bottleneck
-            max_workers=N_KINDS,
+            threading.Semaphore(N_TILES),   # semaphore not the bottleneck
+            max_workers=N_TILES,
         )
 
-    assert len(result) == N_KINDS
+    assert "FOREST" in result
+    assert len(result["FOREST"]) == N_TILES
 
 
 def test_fetch_all_kinds_semaphore_caps_concurrency():
-    """Shared semaphore must limit peak across ALL kinds combined."""
+    """Shared semaphore must limit peak concurrent Overpass requests."""
     import threading
     from unittest.mock import patch
     from TrailPrint3D.utils.terrain import _fetch_all_kinds_parallel
@@ -617,20 +715,22 @@ def test_fetch_all_kinds_semaphore_caps_concurrency():
     lock   = threading.Lock()
     gate   = threading.Barrier(SEM_LIMIT, timeout=5)
 
-    tasks = [(0.0, 0.0, 2.0, 2.0)]
-    # 6 kinds × 1 tile = 6 total tasks, semaphore(2) should cap to ≤ 2
-    kind_task_pairs = [(f"KIND{i}", tasks) for i in range(6)]
+    # 6 distinct tiles × 1 kind = 6 tile tasks; semaphore(2) caps to ≤ 2 concurrent
+    tiles = [(float(i), float(i), float(i) + 1.0, float(i) + 1.0) for i in range(6)]
+    kind_task_pairs = [("FOREST", tiles)]
 
-    def _mock(bbox, kind, return_cache_status=False, settings=None):
+    def _mock(bbox, kinds, settings=None, semaphore=None):
+        # _fetch_tile holds the semaphore while calling us, so active count
+        # directly reflects semaphore occupancy.
         with lock:
             active[0] += 1
             peak[0] = max(peak[0], active[0])
         gate.wait()
         with lock:
             active[0] -= 1
-        return ({"elements": []}, False)
+        return {k: ({"elements": []}, False) for k in kinds}
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_data", _mock):
+    with patch("TrailPrint3D.utils.osm.fetch_osm_combined", _mock):
         result = _fetch_all_kinds_parallel(
             kind_task_pairs,
             threading.Semaphore(SEM_LIMIT),
@@ -639,48 +739,52 @@ def test_fetch_all_kinds_semaphore_caps_concurrency():
 
     assert peak[0] <= SEM_LIMIT, \
         f"Semaphore({SEM_LIMIT}) exceeded: peak was {peak[0]}"
-    assert len(result) == 6
+    assert len(result["FOREST"]) == 6
 
 
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     print("\n" + "=" * 60)
-    print("  TrailPrint3D — osm-threading-pr test suite")
+    print("  TrailPrint3D OSM pipeline tests")
     print("=" * 60 + "\n")
 
-    # A3 — _overpass_request
-    _run("A3  success on first try",            test_overpass_request_success_first_try)
-    _run("A3  retry on 4xx then succeed",        test_overpass_request_retries_then_succeeds)
-    _run("A3  exhausted retries → None",         test_overpass_request_exhausted_returns_none)
-    _run("A3  Timeout triggers retry",           test_overpass_request_timeout_triggers_retry)
-    _run("A3  log_callback fired on error",      test_overpass_request_log_callback_called_on_error)
-    _run("A3  GET method uses requests.get",     test_overpass_request_get_method)
+    # Overpass HTTP request
+    _run("overpass request: success on first try",        test_overpass_request_success_first_try)
+    _run("overpass request: retry on 4xx then succeed",   test_overpass_request_retries_then_succeeds)
+    _run("overpass request: exhausted retries → None",    test_overpass_request_exhausted_returns_none)
+    _run("overpass request: Timeout triggers retry",      test_overpass_request_timeout_triggers_retry)
+    _run("overpass request: log_callback fired on error", test_overpass_request_log_callback_called_on_error)
+    _run("overpass request: GET method uses requests.get",test_overpass_request_get_method)
 
-    # B2 — _fetch_tiles_parallel
-    _run("B2  all tiles fetched",                test_fetch_tiles_parallel_all_tiles_fetched)
-    _run("B2  failed tile excluded from result", test_fetch_tiles_parallel_failed_tile_excluded)
-    _run("B2  result carries from_cache flag",   test_fetch_tiles_parallel_result_carries_cache_flag)
-    _run("B2  Semaphore(1) no deadlock",         test_fetch_tiles_parallel_respects_semaphore)
-    _run("B2  threads genuinely concurrent",     test_fetch_tiles_parallel_actually_concurrent)
-    _run("B2  semaphore caps peak concurrency",  test_fetch_tiles_parallel_semaphore_caps_concurrency)
+    # Per-tile parallel fetcher
+    _run("tile fetcher: all tiles fetched",               test_fetch_tiles_parallel_all_tiles_fetched)
+    _run("tile fetcher: failed tile excluded from result",test_fetch_tiles_parallel_failed_tile_excluded)
+    _run("tile fetcher: result carries from_cache flag",  test_fetch_tiles_parallel_result_carries_cache_flag)
+    _run("tile fetcher: Semaphore(1) no deadlock",        test_fetch_tiles_parallel_respects_semaphore)
+    _run("tile fetcher: threads genuinely concurrent",    test_fetch_tiles_parallel_actually_concurrent)
+    _run("tile fetcher: semaphore caps peak concurrency", test_fetch_tiles_parallel_semaphore_caps_concurrency)
 
-    # B3 — _fetch_all_kinds_parallel
-    _run("B3  all kinds fetched",                test_fetch_all_kinds_fetches_every_kind)
-    _run("B3  failed kind → empty dict",         test_fetch_all_kinds_failed_kind_excluded)
-    _run("B3  kinds genuinely concurrent",       test_fetch_all_kinds_actually_concurrent)
-    _run("B3  semaphore caps cross-kind concurrency", test_fetch_all_kinds_semaphore_caps_concurrency)
+    # Multi-kind parallel fetcher
+    _run("kind fetcher: all kinds fetched",               test_fetch_all_kinds_fetches_every_kind)
+    _run("kind fetcher: failed kind → empty dict",        test_fetch_all_kinds_failed_kind_excluded)
+    _run("kind fetcher: kinds genuinely concurrent",      test_fetch_all_kinds_actually_concurrent)
+    _run("kind fetcher: semaphore caps concurrency",      test_fetch_all_kinds_semaphore_caps_concurrency)
 
-    # B1 — coloring_main signature
-    _run("B1  prefetched_tiles param exists",    test_coloring_main_has_prefetched_tiles_param)
+    # coloring_main API
+    _run("coloring_main: prefetched_tiles param exists",  test_coloring_main_has_prefetched_tiles_param)
 
-    # A1 — bmesh split_loose algorithm
-    _run("A1  two disconnected triangles → 2",   test_split_loose_two_disconnected_triangles)
-    _run("A1  single connected mesh → 1",        test_split_loose_single_connected_mesh)
-    _run("A1  three islands → 3",                test_split_loose_three_islands)
-    _run("A1  end-to-end object creation",       test_split_loose_produces_correct_objects_in_scene)
+    # bmesh flood-fill
+    _run("split loose: two disconnected triangles → 2",   test_split_loose_two_disconnected_triangles)
+    _run("split loose: single connected mesh → 1",        test_split_loose_single_connected_mesh)
+    _run("split loose: three islands → 3",                test_split_loose_three_islands)
+    _run("split loose: end-to-end object creation",       test_split_loose_produces_correct_objects_in_scene)
 
-    # A2 — bmesh ribbon merge
-    _run("A2  two ribbons merged → 8 verts",     test_ribbon_merge_vertex_count)
-    _run("A2  single ribbon fast path",          test_ribbon_merge_single_ribbon_is_unchanged)
+    # bmesh ribbon merge
+    _run("ribbon merge: two ribbons merged → 8 verts",    test_ribbon_merge_vertex_count)
+    _run("ribbon merge: single ribbon fast path",         test_ribbon_merge_single_ribbon_is_unchanged)
+
+    # Live Overpass integration (network required)
+    _run("live overpass: union query accepted by server", test_real_overpass_union_query)
+    _run("live overpass: classifier bins Munich elements",test_real_overpass_classifier)
 
     _assert_all_passed()
