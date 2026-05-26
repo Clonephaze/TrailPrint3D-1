@@ -435,7 +435,7 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     prefetched_osm: result dict from _rg_start_osm_prefetch; if provided the
     per-kind OSM fetch is skipped (data was already downloaded in the background).
     """
-    from .terrain import coloring_main, createOcean, _COLORING_EMPTY, _COLORING_PAINTED, _fetch_all_kinds_parallel  # deferred to avoid circular import at load time
+    from .terrain import coloring_main, createOcean, _COLORING_EMPTY, _COLORING_PAINTED, _COLORING_FILTERED, _fetch_all_kinds_parallel  # deferred to avoid circular import at load time
     from .osm import OsmFetchSettings  # deferred to avoid circular import at load time
     from .osm import create_buildings, create_roads  # deferred to avoid circular import at load time
     from .scene import set_origin_to_3d_cursor, get_random_world_vertices  # deferred to avoid circular import at load time
@@ -538,6 +538,9 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                 if _result is _COLORING_EMPTY:
                     terrain[key] = None
                     _ov.set_fetch_empty(key)
+                elif _result is _COLORING_FILTERED:
+                    terrain[key] = None
+                    _ov.set_fetch_filtered(key)
                 elif _result is _COLORING_PAINTED:
                     terrain[key] = None          # object was deleted after painting
                     _ov.set_fetch_done(key, success=True)
@@ -671,7 +674,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     # Priority order: index 0 = highest priority (subtracted from everything below it).
     # Add new terrain keys here to include them automatically.
     TERRAIN_PRIORITY_ORDER = ['water', 'forest', 'scree', 'city', 'greenspace', 'farmland', 'glacier', 'ocean']
-
+ 
 
     thickerCurves = []
     if props['singleColorMode']:
@@ -1384,7 +1387,12 @@ def runGeneration(type, locked_scale=None):
     # Script duration
     end_time = time.time()
     duration = end_time - start_time
+    bpy.context.scene.tp3d.sRunDuration = round(duration)
     bpy.context.scene.tp3d["o_time"] = _("Script ran for {} seconds").format(round(duration))
+
+    if obj:
+        obj["GenerationTime"] = round(duration)
+
 
     print(f"Finished. Generating Map took {duration:.0f} seconds")
     print("----------------------------------------------------------------")

@@ -382,6 +382,7 @@ def get_elevation_TerrainTiles(coords, lenv=0, pointsDone=0, zoom=10, progress_c
         tile_dict.setdefault((xtile, ytile), []).append((idx, lat, lon))
 
     total_tiles = len(tile_dict)
+    invalidElevations = 0
     progress_intervals = set(range(10,101,10))
     elevations = [0] * len(coords)
     for i, ((xtile, ytile), idx_lat_lon_list) in enumerate(tile_dict.items(), 1):
@@ -406,12 +407,15 @@ def get_elevation_TerrainTiles(coords, lenv=0, pointsDone=0, zoom=10, progress_c
             py = min(max(py, 0), 255)
             r, g, b = rgb_array[py][px]
             temp_ele = terrarium_pixel_to_elevation(r, g, b)
-            if temp_ele < -50:
-                temp_ele = -1
-                buggyDataset = 1
-                bpy.context.scene.tp3d.buggyDataset = buggyDataset
+            #if temp_ele < -50:
+            #    temp_ele = -1
+            #    buggyDataset = 1
+            #    invalidElevations += 1
+            #    bpy.context.scene.tp3d.buggyDataset = buggyDataset
             elevations[idx] = temp_ele
+    
 
+    print(f"Finished fetching elevation data. Invalid elevations: {invalidElevations} ({(invalidElevations/len(coords))*100:.2f}%)")
     return elevations
 
 
@@ -629,6 +633,61 @@ def _elevation_results_key(minLat, maxLat, minLon, maxLon, api, num_subdivisions
     return os.path.join(const.elevation_results_dir, f"{h}.elev")
 
 
+def fix_invalid_elevations(elevations):
+    """Replace invalid elevation values with the average of their nearest valid neighbors.
+
+    A value is considered invalid if it falls outside the plausible Earth range
+    (-500 m to 9000 m) or is a statistical outlier (more than 3 standard deviations
+    from the mean of all valid values).
+
+    Returns (fixed_elevations, count) where count is the number of values that were fixed.
+    """
+    debug = 0  # set to 1 to mark invalid elevations as -1000 instead of fixing them
+
+    n = len(elevations)
+    if n == 0:
+        return elevations, 0
+
+    valid = [e for e in elevations if -50 < e < 9000]
+    if not valid:
+        return elevations, 0
+
+    mean = sum(valid) / len(valid)
+    variance = sum((e - mean) ** 2 for e in valid) / len(valid)
+    std = variance ** 0.5
+
+    def is_invalid(e):
+        if e < -500 or e > 9000:
+            return True
+        if std > 0 and abs(e - mean) > 4 * std:
+            return True
+        return False
+
+    count = sum(1 for e in elevations if is_invalid(e))
+    if count == 0:
+        return elevations, 0
+
+    fixed = list(elevations)
+    for i in range(n):
+        if not is_invalid(elevations[i]):
+            continue
+        if debug:
+            fixed[i] = -1000
+            continue
+        left = next((elevations[j] for j in range(i - 1, -1, -1) if not is_invalid(elevations[j])), None)
+        right = next((elevations[j] for j in range(i + 1, n)      if not is_invalid(elevations[j])), None)
+        if left is not None and right is not None:
+            fixed[i] = (left + right) / 2
+        elif left is not None:
+            fixed[i] = left
+        elif right is not None:
+            fixed[i] = right
+        else:
+            fixed[i] = mean
+
+    return fixed, count
+
+
 def compute_and_store_tile_bounds(obj):
     """Compute geographic bounds from obj's mesh and write them to tp3d.
 
@@ -734,6 +793,11 @@ def get_tile_elevation(obj, progress_cb=None):
 
         # Free memory after processing chunk
         del chunk_elevations
+
+    elevations2, _fixed_count = fix_invalid_elevations(elevations)
+    if _fixed_count > 0:
+        print(f"Fixed {_fixed_count} invalid elevation value(s)")
+        bpy.context.scene.tp3d.buggyDataset = 1
 
     save_elevation_cache()
 

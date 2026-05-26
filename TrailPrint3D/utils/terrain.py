@@ -11,6 +11,7 @@ from .. import progress as _progress
 
 _COLORING_EMPTY = object()
 _COLORING_PAINTED = object()
+_COLORING_FILTERED = object()
 
 # Material name override for kinds whose material name differs from the kind string.
 KIND_MATERIAL_OVERRIDE = {
@@ -482,6 +483,8 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
         tobj.location.z -= 1
         recalculateNormals(tobj)
 
+    
+
         # Boolean intersect with map
         _t = time.time()
         bool_mod = tobj.modifiers.new(name="Boolean", type='BOOLEAN')
@@ -707,6 +710,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
             if not new_mesh.vertices:
                 bpy.data.objects.remove(tobj, do_unlink=True)
                 continue
+            
 
             # Split loose parts, fix normals, filter by area.
             _tc = time.time()
@@ -759,8 +763,9 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
         print(f"finished subtracting ({time.time()-_t_neg:.3f}s)")
 
         if biggestArea == 0:
-            print("No Water Found on Tile")
-            return
+            print(f"No {kind} Found on Tile")
+            _progress.WarningsOverlay.add_warning(f"All {kind.capitalize()} objects were filtered out due to their size", "warn")
+            return _COLORING_FILTERED
 
         print(f"{kind} objects to merge: {len(created_objects_booleaned)}")
         _t_merge = time.time()
