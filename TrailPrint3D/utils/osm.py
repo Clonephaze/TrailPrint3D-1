@@ -686,7 +686,16 @@ def fetch_osm_combined(bbox, kinds, settings=None, semaphore=None,
         e["id"]: e for e in elements if e.get("type") == "node"
     }
 
-    # First pass: classify all way/relation elements into per-kind buckets
+    # Index all way elements by id so relation member ways can be looked up
+    all_ways: dict = {
+        e["id"]: e for e in elements if e.get("type") == "way"
+    }
+
+    # First pass: classify all way/relation elements into per-kind buckets.
+    # When a relation is classified, also include its member ways — those
+    # boundary ways carry no feature tags of their own, so _classify_element
+    # returns None for them, but extract_multipolygon_bodies needs them to
+    # stitch the polygon rings.
     per_kind: dict = {kind: {"elements": []} for kind in missing}
     for element in elements:
         if element.get("type") == "node":
@@ -694,6 +703,14 @@ def fetch_osm_combined(bbox, kinds, settings=None, semaphore=None,
         kind = _classify_element(element, missing, settings)
         if kind is not None:
             per_kind[kind]["elements"].append(element)
+            if element.get("type") == "relation":
+                seen = {e["id"] for e in per_kind[kind]["elements"]}
+                for member in element.get("members", []):
+                    if member.get("type") == "way":
+                        way = all_ways.get(member["ref"])
+                        if way is not None and way["id"] not in seen:
+                            per_kind[kind]["elements"].append(way)
+                            seen.add(way["id"])
 
     # Second pass: add only the nodes that are actually referenced by each
     # kind's ways.  Including every node from every kind in every bucket
