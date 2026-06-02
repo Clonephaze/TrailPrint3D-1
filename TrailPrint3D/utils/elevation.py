@@ -181,7 +181,10 @@ def get_elevation_openTopoData(coords, lenv = 0, pointsDone = 0, progress_cb=Non
             elevation = result.get('elevation', None)  # Safe get, default to None if key is missing
             if elevation is None:
                 elevation = 0  # Replace None (null in JSON) with 0
-            cache_elevation(batch[o][0], batch[o][1], elevation)
+            else:
+                # Only cache real values — null responses (stored as 0) would poison the cache
+                # and cause silent all-zero terrain on subsequent runs.
+                cache_elevation(batch[o][0], batch[o][1], elevation)
             ind = coords_indices[i+o]
             elevations[ind] = elevation
 
@@ -623,6 +626,14 @@ def get_elevation_path_openTopoData(vertices):
     return coords
 
 
+def _elevation_results_key(minLat, maxLat, minLon, maxLon, api, num_subdivisions):
+    """Return the cache file path for a given map configuration."""
+    import hashlib
+    raw = f"{minLat:.6f},{maxLat:.6f},{minLon:.6f},{maxLon:.6f},{api},{num_subdivisions}"
+    h = hashlib.md5(raw.encode()).hexdigest()
+    return os.path.join(const.elevation_results_dir, f"{h}.elev")
+
+
 def fix_invalid_elevations(elevations):
     """Replace invalid elevation values with the average of their nearest valid neighbors.
 
@@ -678,28 +689,19 @@ def fix_invalid_elevations(elevations):
     return fixed, count
 
 
-def get_tile_elevation(obj, progress_cb=None):
+def compute_and_store_tile_bounds(obj):
+    """Compute geographic bounds from obj's mesh and write them to tp3d.
 
-    mesh = obj.data
-    api = bpy.context.scene.tp3d.api
-
+    Returns (world_verts, num_subdivisions, disable_cache, minLat, maxLat, minLon, maxLon).
+    """
     from .geo import convert_to_geo, haversine  # deferred to avoid circular import at load time
 
-    # Set chunk size based on API
-    if api == "OPENTOPODATA" or api == "OPEN-ELEVATION":
-        chunk_size = 100000
-    elif api == "TERRAIN-TILES" or api == "OPENTOPOGRAPHY":
-        chunk_size = 50000000   # single request for all verts
-    else:
-        chunk_size = 100000  # fallback
-
+    mesh = obj.data
     vertices = list(mesh.vertices)
     obj_matrix = obj.matrix_world
 
-    # Convert all vertex positions to world space
     world_verts = [obj_matrix @ v.co for v in vertices]
 
-    # Get min/max bounds in world space
     min_x = min(v.x for v in world_verts)
     max_x = max(v.x for v in world_verts)
     min_y = min(v.y for v in world_verts)
@@ -713,16 +715,64 @@ def get_tile_elevation(obj, progress_cb=None):
     minLon = minl[1]
     maxLon = maxl[1]
 
+    num_subdivisions = bpy.context.scene.tp3d.num_subdivisions
+    disable_cache = bpy.context.scene.tp3d.disableCache
 
-    realdist1 = haversine(minLat,minLon,maxLat,maxLon)*1
-    realdist2 = haversine(minLat,minLon,maxLat,maxLon)*1
+    realdist1 = haversine(minLat, minLon, maxLat, maxLon)
+    realdist2 = haversine(minLat, minLon, maxLat, maxLon)
 
-    bpy.context.scene.tp3d["sMapInKm"] = max(realdist1,realdist2)
-    bpy.context.scene.tp3d["minLat"] = minLat
+    bpy.context.scene.tp3d["sMapInKm"] = max(realdist1, realdist2)
+    bpy.context.scene.tp3d.minLat = minLat
     bpy.context.scene.tp3d.maxLat = maxLat
     bpy.context.scene.tp3d.minLon = minLon
     bpy.context.scene.tp3d.maxLon = maxLon
 
+    return world_verts, num_subdivisions, disable_cache, minLat, maxLat, minLon, maxLon
+
+
+def get_tile_elevation(obj, progress_cb=None):
+
+    mesh = obj.data
+    api = bpy.context.scene.tp3d.api
+
+    from .geo import convert_to_geo  # deferred to avoid circular import at load time
+
+    # Set chunk size based on API
+    if api == "OPENTOPODATA" or api == "OPEN-ELEVATION":
+        chunk_size = 100000
+    elif api == "TERRAIN-TILES" or api == "OPENTOPOGRAPHY":
+        chunk_size = 50000000   # single request for all verts
+    else:
+        chunk_size = 100000  # fallback
+
+    world_verts, num_subdivisions, disable_cache, minLat, maxLat, minLon, maxLon = compute_and_store_tile_bounds(obj)
+
+    # ── Elevation results cache ───────────────────────────────────────────────
+    # Key on geographic bounds + API + subdivision count so the same map on
+    # re-generation skips all tile fetching / PNG parsing.
+    _cache_path = _elevation_results_key(minLat, maxLat, minLon, maxLon, api, num_subdivisions)
+    if not disable_cache and os.path.exists(_cache_path):
+        try:
+            with open(_cache_path, "rb") as _f:
+                _raw = zlib.decompress(_f.read())
+            _n = struct.unpack_from("<I", _raw, 0)[0]
+            elevations = list(struct.unpack_from(f"<{_n}f", _raw, 4))
+            if len(elevations) == len(world_verts):
+                print(f"Elevation cache hit ({_n} verts) — skipping API fetch")
+                lowestElevation = min(elevations)
+                highestElevation = max(elevations)
+                additionalExtrusion = lowestElevation
+                diff = highestElevation - lowestElevation
+                bpy.context.scene.tp3d["o_verticesMap"] = str(len(mesh.vertices))
+                bpy.context.scene.tp3d.lowestElevation = lowestElevation
+                bpy.context.scene.tp3d.highestElevation = highestElevation
+                bpy.context.scene.tp3d.sAdditionalExtrusion = additionalExtrusion
+                return elevations, diff
+            else:
+                print(f"Elevation cache vertex count mismatch ({len(elevations)} vs {len(world_verts)}) — refetching")
+        except Exception as _e:
+            print(f"Elevation cache read error: {_e} — refetching")
+    # ─────────────────────────────────────────────────────────────────────────
 
     elevations = []
     for i in range(0, len(world_verts), chunk_size):
@@ -730,13 +780,13 @@ def get_tile_elevation(obj, progress_cb=None):
 
         coords = [convert_to_geo(v.x, v.y) for v in chunk]
         if api == "OPENTOPODATA":
-            chunk_elevations = get_elevation_openTopoData(coords, len(vertices), i, progress_cb=progress_cb)
+            chunk_elevations = get_elevation_openTopoData(coords, len(world_verts), i, progress_cb=progress_cb)
         elif api == "OPEN-ELEVATION":
-            chunk_elevations = get_elevation_openElevation(coords, len(vertices), i, progress_cb=progress_cb)
+            chunk_elevations = get_elevation_openElevation(coords, len(world_verts), i, progress_cb=progress_cb)
         elif api == "TERRAIN-TILES":
-            chunk_elevations = get_elevation_TerrainTiles(coords, len(vertices), i, progress_cb=progress_cb)
+            chunk_elevations = get_elevation_TerrainTiles(coords, len(world_verts), i, progress_cb=progress_cb)
         elif api == "OPENTOPOGRAPHY":
-            chunk_elevations = get_elevation_openTopography(coords, len(vertices), i, progress_cb=progress_cb)
+            chunk_elevations = get_elevation_openTopography(coords, len(world_verts), i, progress_cb=progress_cb)
         else:
             chunk_elevations = [0.0] * len(chunk)  # fallback
 
@@ -751,6 +801,16 @@ def get_tile_elevation(obj, progress_cb=None):
         bpy.context.scene.tp3d.buggyDataset = 1
 
     save_elevation_cache()
+
+    # Save results cache for future re-generations of the same map.
+    try:
+        os.makedirs(const.elevation_results_dir, exist_ok=True)
+        _n = len(elevations)
+        _packed = struct.pack("<I", _n) + struct.pack(f"<{_n}f", *elevations)
+        with open(_cache_path, "wb") as _f:
+            _f.write(zlib.compress(_packed, level=1))
+    except Exception as _e:
+        print(f"Elevation cache write error: {_e}")
 
     lowestElevation = min(elevations)
     highestElevation = max(elevations)

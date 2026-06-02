@@ -195,13 +195,16 @@ def merge_objects(objects, name="MergedObject"):
     Simple UI-style merge: select objects, make the first one active, and call join.
     This is fast but requires changing selection/context.
     """
-
-    print("This one")
     # filter only mesh objects
     #mesh_objs = [o for o in objects if o.type == 'MESH']
     mesh_objs = objects
     if not mesh_objs:
         return None
+    if len(mesh_objs) == 1:
+        bpy.ops.object.select_all(action='DESELECT')
+        mesh_objs[0].select_set(True)
+        bpy.context.view_layer.objects.active = mesh_objs[0]
+        return mesh_objs[0]
 
 
     # ensure in same collection / visible
@@ -1265,19 +1268,19 @@ def remeshClearing(obj, voxelSize2, tolerance):
     for v in bm2.verts:
         v.select = abs(v.co.z - top_z) > 0.001
     bmesh.update_edit_mesh(obj.data)
+    # Drop the stale reference BEFORE the operator modifies the mesh.
+    # Keeping bm2 alive past mesh.delete causes a dangling C pointer:
+    # on the second generation Blender reuses that freed memory and
+    # python313.dll crashes when mode_set later finalises the edit mesh.
+    del bm2
     bpy.ops.mesh.delete(type='VERT')
-    #bpy.ops.object.mode_set(mode='OBJECT')
-    #----------------
-    #bpy.ops.mesh.delete(type='VERT')
-
 
     # Flatten remaining verts to exactly z bottom_z
     bm = bmesh.from_edit_mesh(obj.data)
     for v in bm.verts:
         v.co.z = bottom_z
     bmesh.update_edit_mesh(obj.data)
-
-
+    del bm  # discard before exiting edit mode to avoid the same issue
 
     # Extrude upward by 30
     bpy.ops.mesh.select_mode(type='FACE')

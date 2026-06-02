@@ -315,8 +315,13 @@ class TP3D_OT_clear_cache(bpy.types.Operator):
         except Exception as e:
             print(f"Failed to delete cache directory: {e}")
 
+        # Clear the in-memory elevation cache so the load guard doesn't
+        # serve stale data after the files have been deleted.
+        const._elevation_cache.clear()
+
+        # Recreate the directory tree so save_elevation_cache() doesn't
+        # silently fail trying to write into a path that no longer exists.
         const._ensure_dirs()
-        const._elevation_cache = {}
 
         return {'FINISHED'}
 
@@ -974,7 +979,7 @@ class TP3D_OT_popup_merge(bpy.types.Operator):
         #bpy.ops.mesh.extrude_region_move(TRANSFORM_OT_translate={"value":(0, 0, 30)})
         #bpy.ops.object.mode_set(mode='OBJECT')
         obj.location.z = -1
-        print("YES)")
+
         # Your custom projection logic
         Mapobject = context.scene.tp3d.currentMap
         utils.projection(self.operation, Mapobject, obj)

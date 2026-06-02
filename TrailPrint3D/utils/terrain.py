@@ -4,6 +4,8 @@ import bpy  # type: ignore
 import bmesh  # type: ignore
 import math
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from mathutils import Vector, Matrix, bvhtree  # type: ignore
 from .. import progress as _progress
 
@@ -11,8 +13,133 @@ _COLORING_EMPTY = object()
 _COLORING_PAINTED = object()
 _COLORING_FILTERED = object()
 
+# Material name override for kinds whose material name differs from the kind string.
+KIND_MATERIAL_OVERRIDE = {
+    "SCREE": "MOUNTAIN",
+}
 
-def coloring_main(map, kind = "WATER"):
+
+def _fetch_tiles_parallel(tasks, kind, semaphore, settings=None, max_workers=4):
+    """Fetch a list of OSM tiles concurrently, honouring Overpass rate limits.
+
+    Parameters
+    ----------
+    tasks      : list of (south, west, north, east) bbox tuples
+    kind       : OSM feature kind string ('WATER', 'FOREST', …)
+    semaphore  : threading.Semaphore — limits concurrent live requests to the
+                 Overpass API (callers typically use Semaphore(2))
+    settings   : OsmFetchSettings snapshot read on the main thread before this
+                 function is called.  Passed through to fetch_osm_data so that
+                 worker threads never touch bpy.context.
+    max_workers: thread-pool size (default 4)
+
+    Returns
+    -------
+    dict mapping bbox tuple -> (data_dict, from_cache_bool)
+    Only tiles that fetched successfully are present in the result.
+
+    NOTE: bpy.* calls are forbidden inside this function — it runs on worker
+    threads.  All mesh-building still happens on the main thread in
+    coloring_main().
+    """
+    from .osm import fetch_osm_data  # deferred to avoid circular import
+
+    results = {}
+    lock = threading.Lock()
+
+    def _fetch_one(bbox):
+        with semaphore:
+            try:
+                result = fetch_osm_data(bbox, kind, return_cache_status=True,
+                                        settings=settings)
+            except Exception as e:
+                print(f"[_fetch_tiles_parallel] tile {bbox} failed: {e}")
+                return
+        if result:
+            resp, from_cache = result
+            if resp:
+                with lock:
+                    results[bbox] = (resp, from_cache)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_fetch_one, bbox): bbox for bbox in tasks}
+        for fut in as_completed(futures):
+            exc = fut.exception()
+            if exc:
+                print(f"[_fetch_tiles_parallel] worker exception: {exc}")
+
+    return results
+
+
+def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_workers=4):
+    """Fetch all active OSM kinds × all tiles in one parallel batch.
+
+    Each unique tile bbox is fetched with a **single** Overpass union request
+    that covers every active kind for that tile.  This replaces the previous
+    N-kinds × T-tiles individual request strategy and drastically reduces the
+    number of concurrent Overpass connections, avoiding rate-limit errors.
+
+    The shared *semaphore* still caps the number of live Overpass requests
+    (callers use Semaphore(2)); because each tile now maps to exactly one
+    request, the semaphore is acquired only during the actual network call.
+
+    Parameters
+    ----------
+    kind_task_pairs : list of (kind_str, tasks_list) — one entry per active kind
+    semaphore       : threading.Semaphore shared across all tile workers
+    settings        : OsmFetchSettings snapshot read on the main thread.  Passed
+                      through so worker threads never touch bpy.context.
+    max_workers     : thread-pool size (default 4; one request per tile now)
+
+    Returns
+    -------
+    dict[kind_str -> dict[bbox -> (data_dict, from_cache_bool)]]
+    Kinds with no successful tiles are present as empty dicts.
+    """
+    from .osm import fetch_osm_combined  # deferred to avoid circular import
+
+    # ── Regroup: (kind, [bboxes]) → {bbox: [kinds]} ──────────────────────
+    tile_kinds: dict = {}
+    for kind, bboxes in kind_task_pairs:
+        for bbox in bboxes:
+            tile_kinds.setdefault(bbox, []).append(kind)
+
+    results = {kind: {} for kind, _ in kind_task_pairs}
+    lock = threading.Lock()
+
+    def _fetch_tile(bbox, kinds):
+        # Acquire the shared semaphore before the network call (mirrors the
+        # original _fetch_one pattern so the semaphore correctly caps the
+        # number of concurrent live Overpass requests).
+        if semaphore is not None:
+            semaphore.acquire()
+        try:
+            tile_result = fetch_osm_combined(bbox, kinds, settings=settings)
+        except Exception as e:
+            print(f"[_fetch_all_kinds_parallel] tile {bbox} failed: {e}")
+            return
+        finally:
+            if semaphore is not None:
+                semaphore.release()
+        with lock:
+            for kind, (data, from_cache) in tile_result.items():
+                if data:
+                    results[kind][bbox] = (data, from_cache)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {
+            pool.submit(_fetch_tile, bbox, kinds): bbox
+            for bbox, kinds in tile_kinds.items()
+        }
+        for fut in as_completed(futures):
+            exc = fut.exception()
+            if exc:
+                print(f"[_fetch_all_kinds_parallel] worker exception: {exc}")
+
+    return results
+
+
+def coloring_main(map, kind="WATER", prefetched_tiles=None):
     from .osm import fetch_osm_data, build_osm_nodes, extract_multipolygon_bodies, calculate_polygon_area_2d, is_bbox_overlapping  # deferred to avoid circular import at load time
     from .geo import convert_to_blender_coordinates  # deferred to avoid circular import at load time
     from .primitives import col_create_face_mesh, create_ribbon_mesh, create_rectangle, create_hexagon, create_heart, create_octagon, create_circle, create_ellipse  # deferred to avoid circular import at load time
@@ -76,7 +203,7 @@ def coloring_main(map, kind = "WATER"):
 
     cntr = 0
     maxcntr = lats * lons
-    if lats * lons < 20:
+    if lats * lons < 20 or prefetched_tiles is not None:
         for k in range(lats):
             for l in range(lons):
                 cntr = (k) * lons + l + 1
@@ -92,14 +219,25 @@ def coloring_main(map, kind = "WATER"):
 
                 bbox = (south, west, north, east)
                 data = []
-                print("Fetching OSM")
                 try:
-                    result = fetch_osm_data(bbox, kind, return_cache_status=True)
-                    if not result:
-                        continue
-                    resp, from_cache = result
-                    if not resp:
-                        continue
+                    if prefetched_tiles is not None:
+                        tile_result = prefetched_tiles.get(bbox)
+                        if tile_result is None:
+                            continue
+                        resp, from_cache = tile_result
+                        if not resp:
+                            continue
+                        src = "cache" if from_cache else "Overpass"
+                        print(f"OSM tile ({kind}): loaded from {src} (prefetched)")
+                    else:
+                        result = fetch_osm_data(bbox, kind, return_cache_status=True)
+                        if not result:
+                            continue
+                        resp, from_cache = result
+                        if not resp:
+                            continue
+                        src = "cache" if from_cache else "Overpass"
+                        print(f"OSM tile ({kind}): loaded from {src} (on-demand)")
 
                 except Exception as e:
                     show_message_box(f"Something went wrong with fetching OSM data: {e}")
@@ -186,8 +324,8 @@ def coloring_main(map, kind = "WATER"):
                             ribbon_objects.append(tobj)
                             waterCreated += 1
 
-                if not from_cache:
-                    time.sleep(5)  # Pause to prevent request throttling
+                if not from_cache and prefetched_tiles is None:
+                    time.sleep(5)  # Pause to prevent request throttling (skipped when worker pre-fetched)
     else:
         print(f"Region too big. Cant Fetch All {kind} Sources")
         return None
@@ -211,14 +349,29 @@ def coloring_main(map, kind = "WATER"):
     if ribbon_objects:
         valid_ribbons = [o for o in ribbon_objects if o and o.type == 'MESH']
         if valid_ribbons:
-            bpy.ops.object.select_all(action='DESELECT')
-            for ro in valid_ribbons:
-                ro.select_set(True)
-            bpy.context.view_layer.objects.active = valid_ribbons[0]
-            bpy.ops.object.join()
-            merged_ribbons = bpy.context.view_layer.objects.active
-            merged_ribbons.name = "OpenObject_merged"
-            created_objects.append(merged_ribbons)
+            if len(valid_ribbons) == 1:
+                valid_ribbons[0].name = "OpenObject_merged"
+                created_objects.append(valid_ribbons[0])
+            else:
+                # Merge all ribbon meshes using bmesh (no bpy.ops.object.join)
+                bm_merged = bmesh.new()
+                target_world_inv = valid_ribbons[0].matrix_world.inverted()
+                bm_merged.from_mesh(valid_ribbons[0].data)
+                for ro in valid_ribbons[1:]:
+                    bm_part = bmesh.new()
+                    bm_part.from_mesh(ro.data)
+                    xform = target_world_inv @ ro.matrix_world
+                    bmesh.ops.transform(bm_part, verts=bm_part.verts[:], matrix=xform)
+                    tmp_mesh = bpy.data.meshes.new("_tp3d_merge_tmp")
+                    bm_part.to_mesh(tmp_mesh)
+                    bm_part.free()
+                    bm_merged.from_mesh(tmp_mesh)
+                    bpy.data.meshes.remove(tmp_mesh)
+                    bpy.data.objects.remove(ro, do_unlink=True)
+                bm_merged.to_mesh(valid_ribbons[0].data)
+                bm_merged.free()
+                valid_ribbons[0].name = "OpenObject_merged"
+                created_objects.append(valid_ribbons[0])
 
     #Make sure the flat faces have the correct normal orientation
     UP = Vector((0,0,1))
@@ -246,15 +399,72 @@ def coloring_main(map, kind = "WATER"):
             bm.free()
 
 
+    def _split_loose(obj):
+        """Split obj into per-connected-component objects. Removes obj and returns list."""
+        src_mesh = obj.data
+        bm_src = bmesh.new()
+        bm_src.from_mesh(src_mesh)
+        bm_src.verts.ensure_lookup_table()
+
+        visited = set()
+        components = []
+        for start in bm_src.verts:
+            if start.index in visited:
+                continue
+            comp = set()
+            stack = [start]
+            while stack:
+                v = stack.pop()
+                if v.index in visited:
+                    continue
+                visited.add(v.index)
+                comp.add(v.index)
+                for edge in v.link_edges:
+                    other = edge.other_vert(v)
+                    if other.index not in visited:
+                        stack.append(other)
+            components.append(comp)
+
+        collection = obj.users_collection[0] if obj.users_collection else bpy.context.scene.collection
+        world_matrix = obj.matrix_world.copy()
+        parts = []
+        for comp_indices in components:
+            comp_faces = [f for f in bm_src.faces
+                          if all(v.index in comp_indices for v in f.verts)]
+            bm_new = bmesh.new()
+            idx_map = {}
+            for vi in comp_indices:
+                nv = bm_new.verts.new(bm_src.verts[vi].co.copy())
+                idx_map[vi] = nv
+            bm_new.verts.ensure_lookup_table()
+            for f in comp_faces:
+                try:
+                    bm_new.faces.new([idx_map[v.index] for v in f.verts])
+                except ValueError:
+                    pass  # duplicate face edge — skip
+            new_mesh = bpy.data.meshes.new(obj.name)
+            bm_new.to_mesh(new_mesh)
+            bm_new.free()
+            part = bpy.data.objects.new(obj.name, new_mesh)
+            part.matrix_world = world_matrix
+            collection.objects.link(part)
+            parts.append(part)
+
+        bm_src.free()
+        bpy.data.objects.remove(obj, do_unlink=True)
+        return parts
+
     def _process_coloring_object(tobj, map_obj, tol=0.1, extrudeVal = 200):
         """Extrude, boolean-intersect with map, separate loose parts, fix normals.
         Returns (area, [resulting_objects]). Removes tobj if it becomes empty."""
+        _t_pco = time.time()
 
         bpy.ops.object.select_all(action='DESELECT')
 
         mesh = tobj.data
 
         # Compute area and extrude in a single bmesh pass
+        _t = time.time()
         bm = bmesh.new()
         bm.from_mesh(mesh)
         if not bm.faces:
@@ -268,6 +478,7 @@ def coloring_main(map, kind = "WATER"):
         bmesh.ops.translate(bm, verts=extruded_verts, vec=Vector((0, 0, extrudeVal)))
         bm.to_mesh(mesh)
         bm.free()
+        print(f"    [pco:{tobj.name}] extrude: {time.time()-_t:.3f}s")
 
         tobj.location.z -= 1
         recalculateNormals(tobj)
@@ -275,6 +486,7 @@ def coloring_main(map, kind = "WATER"):
     
 
         # Boolean intersect with map
+        _t = time.time()
         bool_mod = tobj.modifiers.new(name="Boolean", type='BOOLEAN')
         bool_mod.object = map_obj
         bool_mod.operation = 'INTERSECT'
@@ -287,6 +499,7 @@ def coloring_main(map, kind = "WATER"):
         old_mesh = tobj.data
         tobj.data = new_mesh
         bpy.data.meshes.remove(old_mesh)
+        print(f"    [pco:{tobj.name}] boolean intersect (MANIFOLD): {time.time()-_t:.3f}s  verts={len(new_mesh.vertices)}")
 
         # Mark lowest vertices
         bm = bmesh.new()
@@ -308,17 +521,13 @@ def coloring_main(map, kind = "WATER"):
 
         recalculateNormals(tobj)
 
-        # Separate loose parts
-        bpy.ops.object.select_all(action='DESELECT')
-        tobj.select_set(True)
-        bpy.context.view_layer.objects.active = tobj
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.separate(type='LOOSE')
-        bpy.ops.object.mode_set(mode='OBJECT')
+        # Separate loose parts — uses outer _split_loose helper
+        _t = time.time()
+        _tobj_name = tobj.name  # capture before _split_loose removes the object
 
         result_objects = []
         objects_to_remove = []
-        for zobj in bpy.context.selected_objects:
+        for zobj in _split_loose(tobj):
 
             mesh_area = getBottomFacesArea(zobj)
             if mesh_area < col_Area:
@@ -351,7 +560,8 @@ def coloring_main(map, kind = "WATER"):
 
         remove_objects(objects_to_remove)
 
-
+        print(f"    [pco:{_tobj_name}] split_loose: {time.time()-_t:.3f}s  parts={len(result_objects)}")
+        print(f"    [pco] total: {time.time()-_t_pco:.3f}s")
         return area, result_objects
 
 
@@ -368,22 +578,166 @@ def coloring_main(map, kind = "WATER"):
         biggestArea = 0
         tol = 0.1
 
-        for cntr, tobj in enumerate(list(created_objects), start=1):
+        if elementMode == "PAINT":
+            # ── PAINT-mode fast path ──────────────────────────────────────────
+            # Skip per-object MANIFOLD boolean against terrain.
+            # color_map_faces_by_terrain builds its BVH from the cutter's LOCAL
+            # mesh (world transform is not applied). OSM polygons sit at Z=0 in
+            # local space (objects are at origin, so local == world). We extrude
+            # them to (terrain_max_z + 50) so the top face is:
+            #   • above the terrain  (> terrain_max_z)
+            #   • within ray range   (ray distance=100, starts at face_z-5)
+            map_world_verts = [map.matrix_world @ Vector(v) for v in map.bound_box]
+            terrain_max_z = max(v.z for v in map_world_verts)
+            extrude_z = terrain_max_z + 50.0
+            print(f"  [PAINT fast path] terrain_max_z={terrain_max_z:.2f}  extrude_z={extrude_z:.2f}")
+
+            _t_paint_fast = time.time()
+            paint_cutters = []
+            for tobj in list(created_objects):
+                area01 = getBottomFacesArea(tobj)
+                if area01 < col_Area*3 and "OpenObject_" in tobj.name:
+                    bpy.data.objects.remove(tobj, do_unlink=True)
+                    continue
+                if area01 < col_Area and "coloredObject_" in tobj.name:
+                    bpy.data.objects.remove(tobj, do_unlink=True)
+                    continue
+                mesh = tobj.data
+                bm = bmesh.new()
+                bm.from_mesh(mesh)
+                if not bm.faces:
+                    bm.free()
+                    bpy.data.objects.remove(tobj, do_unlink=True)
+                    continue
+                biggestArea = max(biggestArea, sum(f.calc_area() for f in bm.faces))
+                geom = bm.faces[:]
+                ret = bmesh.ops.extrude_face_region(bm, geom=geom)
+                extruded_verts = [v for v in ret["geom"] if isinstance(v, bmesh.types.BMVert)]
+                # Extrude to just above terrain so top face falls within the
+                # 100-unit ray distance used by color_map_faces_by_terrain.
+                bmesh.ops.translate(bm, verts=extruded_verts, vec=Vector((0, 0, extrude_z)))
+                bm.to_mesh(mesh)
+                bm.free()
+                # Keep location at (0,0,0) — local == world, BVH matches ray space.
+                paint_cutters.append(tobj)
+            # ribbon_objects were bmesh-merged into created_objects above as
+            # "OpenObject_merged" — do NOT re-iterate here (stale refs).
+
+            print(f"  [coloring_main] PAINT extrude ({kind}, {len(paint_cutters)} objs): {time.time()-_t_paint_fast:.3f}s")
+
+            for obj in list(negative_object):
+                bpy.data.objects.remove(obj, do_unlink=True)
+            negative_object.clear()
+            ribbon_objects.clear()
+
+            if not paint_cutters:
+                if _api_empty:
+                    return _COLORING_EMPTY
+                return None
+
+            _t_merge = time.time()
+            cutter = merge_objects(paint_cutters, name=f"{name}_{kind}")
+            print(f"  [coloring_main] PAINT merge ({kind}): {time.time()-_t_merge:.3f}s")
+
+            if cutter is None:
+                return None
+
+            writeMetadata(cutter, kind)
+            mat = bpy.data.materials.get(KIND_MATERIAL_OVERRIDE.get(kind, kind))
+            cutter.data.materials.clear()
+            cutter.data.materials.append(mat)
+
+            if _ov.active:
+                _ov.update(message=f"{kind.capitalize()}: painting terrain faces")
+
+            print(f"PAINTING ({kind})")
+            _t_paint = time.time()
+            color_map_faces_by_terrain(map, cutter)
+            mesh_data = cutter.data
+            bpy.data.objects.remove(cutter, do_unlink=True)
+            bpy.data.meshes.remove(mesh_data)
+            print(f"  [coloring_main] PAINT total ({kind}): {time.time()-_t_paint:.3f}s")
+            return _COLORING_PAINTED
+            # ── end PAINT-mode fast path ──────────────────────────────────────
+
+        # Per-object extrude + MANIFOLD boolean — no recalculateNormals (avoids mode-switch cost).
+        _t_proc_loop = time.time()
+        DOWN = Vector((0, 0, -1))
+        _t_extrude_total = _t_bool_total = _t_split_total = 0.0
+        for tobj in list(created_objects):
             area01 = getBottomFacesArea(tobj)
             if area01 < col_Area*3 and "OpenObject_" in tobj.name:
-                print("Skipping OpenObject")
                 bpy.data.objects.remove(tobj, do_unlink=True)
                 continue
             if area01 < col_Area and "coloredObject_" in tobj.name:
-                print("Skipping ClosedObject")
+                bpy.data.objects.remove(tobj, do_unlink=True)
+                continue
+            mesh = tobj.data
+            _ta = time.time()
+            bm = bmesh.new()
+            bm.from_mesh(mesh)
+            if not bm.faces:
+                bm.free()
+                bpy.data.objects.remove(tobj, do_unlink=True)
+                continue
+            biggestArea = max(biggestArea, sum(f.calc_area() for f in bm.faces))
+            geom = bm.faces[:]
+            ret = bmesh.ops.extrude_face_region(bm, geom=geom)
+            extruded_verts = [v for v in ret["geom"] if isinstance(v, bmesh.types.BMVert)]
+            bmesh.ops.translate(bm, verts=extruded_verts, vec=Vector((0, 0, 200)))
+            # Recalc normals via bmesh (no mode-switch overhead).
+            bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+            bm.to_mesh(mesh)
+            bm.free()
+            tobj.location.z -= 1
+            _t_extrude_total += time.time() - _ta
+
+            # Per-object MANIFOLD boolean intersect with the map.
+            _tb = time.time()
+            bool_mod = tobj.modifiers.new(name="Boolean", type='BOOLEAN')
+            bool_mod.object = map
+            bool_mod.operation = 'INTERSECT'
+            bool_mod.solver = 'MANIFOLD'
+            depsgraph = bpy.context.evaluated_depsgraph_get()
+            eval_obj = tobj.evaluated_get(depsgraph)
+            new_mesh = bpy.data.meshes.new_from_object(eval_obj)
+            tobj.modifiers.clear()
+            old_mesh = tobj.data
+            tobj.data = new_mesh
+            bpy.data.meshes.remove(old_mesh)
+            _t_bool_total += time.time() - _tb
+
+            if not new_mesh.vertices:
                 bpy.data.objects.remove(tobj, do_unlink=True)
                 continue
             
 
-            area, new_objs = _process_coloring_object(tobj, map, tol, extrudeVal= 150)
-            biggestArea = max(biggestArea, area)
-            created_objects_booleaned.extend(new_objs)
-
+            # Split loose parts, fix normals, filter by area.
+            _tc = time.time()
+            for zobj in _split_loose(tobj):
+                mesh_area = getBottomFacesArea(zobj)
+                if mesh_area < col_Area:
+                    bpy.data.objects.remove(zobj, do_unlink=True)
+                    continue
+                zmesh = zobj.data
+                bm = bmesh.new()
+                bm.from_mesh(zmesh)
+                bm.normal_update()
+                lowest_face = None
+                lowest_z = float('inf')
+                for face in bm.faces:
+                    z = face.calc_center_median().z
+                    if z < lowest_z and face.calc_area() > 0:
+                        lowest_z = z
+                        lowest_face = face
+                if lowest_face and lowest_face.normal.dot(DOWN) <= 0:
+                    bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
+                bm.to_mesh(zmesh)
+                bm.free()
+                created_objects_booleaned.append(zobj)
+            _t_split_total += time.time() - _tc
+        print(f"  [coloring_main] process objects ({kind}, {len(created_objects)} objs): {time.time()-_t_proc_loop:.3f}s  {len(created_objects_booleaned)} results")
+        print(f"    extrude={_t_extrude_total:.3f}s  boolean={_t_bool_total:.3f}s  split={_t_split_total:.3f}s  other={time.time()-_t_proc_loop-_t_extrude_total-_t_bool_total-_t_split_total:.3f}s")
 
         for cntr, tobj in enumerate(list(negative_object), start = 1):
             area, new_objs = _process_coloring_object(tobj,map,tol, extrudeVal = 200)
@@ -393,7 +747,8 @@ def coloring_main(map, kind = "WATER"):
                 to.scale.z *= 2
 
             created_negatives_booleaned.extend(new_objs)
-        print("subtracting negatives from element")
+        print(f"subtracting negatives from element ({len(negative_object)} objs)")
+        _t_neg = time.time()
         if created_negatives_booleaned:
             # Union all negatives into one cutter so each positive needs only one boolean op
             if len(created_negatives_booleaned) > 1:
@@ -405,7 +760,7 @@ def coloring_main(map, kind = "WATER"):
                     boolean_operation(o1, merged_negative)
                     recalculateNormals(o1)
             bpy.data.objects.remove(merged_negative, do_unlink=True)
-        print("finished subtracting")
+        print(f"finished subtracting ({time.time()-_t_neg:.3f}s)")
 
         if biggestArea == 0:
             print(f"No {kind} Found on Tile")
@@ -413,7 +768,9 @@ def coloring_main(map, kind = "WATER"):
             return _COLORING_FILTERED
 
         print(f"{kind} objects to merge: {len(created_objects_booleaned)}")
+        _t_merge = time.time()
         merged_object = merge_objects(created_objects_booleaned)
+        print(f"  [coloring_main] merge_objects ({kind}): {time.time()-_t_merge:.3f}s")
 
         bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
 
@@ -451,9 +808,6 @@ def coloring_main(map, kind = "WATER"):
 
         if merged_object:
             writeMetadata(merged_object, kind)
-            KIND_MATERIAL_OVERRIDE = {
-                "SCREE": "MOUNTAIN",
-            }
             mat = bpy.data.materials.get(KIND_MATERIAL_OVERRIDE.get(kind, kind))
             merged_object.data.materials.clear()
             merged_object.data.materials.append(mat)
@@ -462,7 +816,8 @@ def coloring_main(map, kind = "WATER"):
             _ov.update(message=f"{kind.capitalize()}: applying Element handling option ({elementMode})")
 
         if elementMode == "PAINT":
-            print("PAINTING")
+            print(f"PAINTING ({kind})")
+            _t_paint = time.time()
             recalculateNormals(map)
             merged_object.location.z += 1
             color_map_faces_by_terrain(map, merged_object)
@@ -471,6 +826,7 @@ def coloring_main(map, kind = "WATER"):
             #Delete the elements afterwards
             bpy.data.objects.remove(merged_object, do_unlink=True)
             bpy.data.meshes.remove(mesh_data)
+            print(f"  [coloring_main] PAINT total ({kind}): {time.time()-_t_paint:.3f}s")
 
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':  # make sure it's a 3D Viewport
@@ -513,20 +869,27 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
     terrain_mesh = terrain_obj.data
  
 
-    # Build bmesh for Map
+    # Build bmesh for Map — read LOCAL mesh, transform centers to WORLD space via matrix_world
     bm = bmesh.new()
     bm.from_mesh(map_mesh)
     bm.faces.ensure_lookup_table()
+    mw_map = map_obj.matrix_world
 
     depsgraph = bpy.context.evaluated_depsgraph_get()
     eval_obj = terrain_obj.evaluated_get(depsgraph)
 
     eval_mesh = eval_obj.to_mesh()
 
+    # Build BVH in WORLD space by applying the cutter's matrix_world to each vertex
     bm2 = bmesh.new()
     bm2.from_mesh(eval_mesh)
+    mw_terrain = terrain_obj.matrix_world
+    for v in bm2.verts:
+        v.co = mw_terrain @ v.co
 
+    _t_bvh = time.time()
     bvh = bvhtree.BVHTree.FromBMesh(bm2)
+    print(f"  [color_faces] BVH build: {time.time()-_t_bvh:.3f}s  ({len(bm2.faces)} terrain faces)")
 
     # Get or create a material for terrain color
     if terrain_obj.active_material:
@@ -542,15 +905,15 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
 
     up = Vector((0, 0, 1))
     colored_count = 0
-    notColored_count = 0
 
+    _t_raycast = time.time()
     i = 0
     for i, f in enumerate(bm.faces):
         normal = f.normal.normalized()
         dot = normal.dot(up)
         # Only consider faces facing upward
         if dot > up_threshold:
-            center = f.calc_center_median()
+            center = mw_map @ f.calc_center_median()  # world space
             center.z -= 5
             loc, norm, idx, dist = bvh.ray_cast(center, up,200)
 
@@ -558,15 +921,15 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
                 # Assign terrain material to this face
                 f.material_index = mat_index
                 colored_count += 1
-            else:
-                notColored_count += 1
+    print(f"  [color_faces] ray-cast loop: {time.time()-_t_raycast:.3f}s  ({i+1} faces checked, {colored_count} colored)")
 
+    _t_sync = time.time()
     bm.to_mesh(map_mesh)
     bm.free()
     bm2.free()
     eval_obj.to_mesh_clear()
+    print(f"  [color_faces] bm.to_mesh sync: {time.time()-_t_sync:.3f}s")
     print(f"Colored {colored_count} faces on {map_obj.name} based on {terrain_obj.name}")
-    print(f"Not colored {notColored_count} faces on {map_obj.name} based on {terrain_obj.name}")
 
 
 def plateInsert(plate, map):
@@ -620,10 +983,11 @@ def createOcean(bboxBigger, waterHeight, scaleHor, landpoints, baseplate, tile, 
     from .mesh_ops import projection  # deferred to avoid circular import at load time
     from .primitives import create_rectangle  # deferred to avoid circular import at load time
 
+    _t_ocean = time.time()
     coastcurve = create_element(bboxBigger, waterHeight, scaleHor, "COASTLINE", baseHeight * 3)
-    set_origin_to_3d_cursor(coastcurve)
-    print("coastcurve created")
-    if coastcurve != None:
+    print(f"  [ocean] create_element (coastline fetch): {time.time()-_t_ocean:.3f}s")
+    if coastcurve is not None:
+        set_origin_to_3d_cursor(coastcurve)
 
         shape = bpy.context.scene.tp3d.shape
         objSize = bpy.context.scene.tp3d.objSize
@@ -639,13 +1003,12 @@ def createOcean(bboxBigger, waterHeight, scaleHor, landpoints, baseplate, tile, 
         coastobj.location.z = 0
 
         flip_override = bpy.context.scene.tp3d.el_oFlip
+        _t_cut = time.time()
         merged_object = cut_coastline(coastcurve, coastobj, land_hints=landpoints, flip_override=flip_override)
+        print(f"  [ocean] cut_coastline: {time.time()-_t_cut:.3f}s  ({len(merged_object.data.polygons) if merged_object else 0} faces)")
 
         #REMOVE THE CUTTER OBJECT
         remove_objects(coastcurve)
-
-
-        
 
         mat = bpy.data.materials.get("WATER")
         merged_object.data.materials.clear()
@@ -668,13 +1031,17 @@ def createOcean(bboxBigger, waterHeight, scaleHor, landpoints, baseplate, tile, 
             return merged_object
         if elementMode == "SEPARATE":
             projection("separate", tile, merged_object)
+            print(f"  [ocean] projection (separate): {time.time()-_t_proj:.3f}s")
             mat = bpy.data.materials.get("WATER")
             merged_object.data.materials.clear()
-            merged_object.data.materials.append(mat) 
+            merged_object.data.materials.append(mat)
+            print(f"  [ocean] total: {time.time()-_t_ocean:.3f}s")
             return merged_object
 
     else:
-        print("NO COASTCURVE FOR SOME REASON")
+        from .. import progress as _progress  # deferred to avoid circular import at load time
+        _progress.WarningsOverlay.add_warning("No coastline data found for this area — ocean layer skipped.", "warn")
+        return None
 
 
 def cut_coastline(curve_obj, target_obj, land_hints=None, flip_override=False):
@@ -835,7 +1202,9 @@ def cut_coastline(curve_obj, target_obj, land_hints=None, flip_override=False):
         # try applying modifier
         try:
             print("APPLYING MODIFIER")
+            _t_bool = time.time()
             bpy.ops.object.modifier_apply(modifier=bool_mod.name)
+            print(f"  [cut_coastline] boolean apply: {time.time()-_t_bool:.3f}s")
         except Exception as e:
             print("Warning: boolean modifier apply failed:", e)
             raise RuntimeError("Boolean operation failed: " + str(e))
