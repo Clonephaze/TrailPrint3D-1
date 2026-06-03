@@ -865,6 +865,19 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
             def cut_mesh_at_height(obj, z_height):
                 bpy.context.view_layer.objects.active = obj
                 bpy.ops.object.mode_set(mode='EDIT')
+                bm = bmesh.from_edit_mesh(obj.data)
+
+                plane_co = Vector((0, 0, z_height))
+                plane_no = Vector((0, 0, 1))
+
+                result = bmesh.ops.bisect_plane(
+                    bm,
+                    geom=bm.verts[:] + bm.edges[:] + bm.faces[:],
+                    plane_co=plane_co,
+                    plane_no=plane_no,
+                    clear_outer=False,
+                    clear_inner=False
+                )
 
                 bmesh.update_edit_mesh(obj.data)
                 bpy.ops.object.mode_set(mode='OBJECT')
