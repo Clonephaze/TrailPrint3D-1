@@ -110,8 +110,8 @@ class TP3D_PT_generate(bpy.types.Panel):
                     col.operator("tp3d.terrain_dummy", text=_("Create Blank"), icon="LOCKED")
                 col.separator(factor=1.0)
                 if temp.PREMIUMVERSION:
-                    pass
-                    #col.operator("tp3d.map_picker", text=_("Pick Area on Map"), icon='WORLD')
+                    #pass
+                    col.operator("tp3d.map_picker", text=_("Pick Area on Map"), icon='WORLD')
                 else:
                     col.operator("tp3d.terrain_dummy", text=_("Pick Area on Map"), icon='WORLD')
             else:
@@ -282,8 +282,6 @@ class TP3D_PT_advanced(bpy.types.Panel):
             row = sub.row(align=True)
             row.prop(props, "col_glActive")
             row.prop(props, "col_glArea")
-
-            #layout.prop(props, "col_KeepManifold")
 
             box = layout.box()
             box.label(text=_("3D Elements (Experimental)"), icon='MESH_CUBE')

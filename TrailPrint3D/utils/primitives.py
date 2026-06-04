@@ -77,6 +77,7 @@ def create_curve_from_coordinates(coordinates):
     mod.adaptivity = 0.0
     curve_object.data.use_fill_caps = True
 
+    print("CREATED CURVES")
     curve_object.data.name = name + "_Trail"
     curve_object.name = name + "_Trail"
 
@@ -137,14 +138,11 @@ def create_hexagon(size, num_subdivisions = 1, name = "Hexagon"):
     _t = time.time()
     mesh.from_pydata(verts, [], faces)
     mesh.update()
-    print(f"  [hexagon] from_pydata+update: {time.time()-_t:.3f}s")
     bpy.context.view_layer.objects.active = obj
     _t = time.time()
     bpy.ops.object.mode_set(mode='EDIT')
-    print(f"  [hexagon] mode_set EDIT: {time.time()-_t:.3f}s")
     if num_subdivisions > 0:
         cuts = 2 ** num_subdivisions - 1
-        print(f"  [hexagon] subdivide_edges cuts={cuts} (N={num_subdivisions})…")
         _t = time.time()
         bm = bmesh.from_edit_mesh(mesh)
         bmesh.ops.subdivide_edges(
@@ -153,10 +151,8 @@ def create_hexagon(size, num_subdivisions = 1, name = "Hexagon"):
             use_grid_fill=True,
         )
         bmesh.update_edit_mesh(mesh)
-        print(f"  [hexagon] subdivide_edges: {time.time()-_t:.3f}s  verts={len(bm.verts)}")
     _t = time.time()
     bpy.ops.object.mode_set(mode='OBJECT')
-    print(f"  [hexagon] mode_set OBJECT: {time.time()-_t:.3f}s")
     obj.name = name
     obj.data.name = name
     print(f"  [hexagon] total: {time.time()-_t_start:.3f}s")
@@ -183,7 +179,6 @@ def create_rectangle(width, height, num_subdivisions = 1, name="Rectangle"):
     _t = time.time()
     mesh.from_pydata(verts, [], faces)
     mesh.update()
-    print(f"  [rectangle] from_pydata+update: {time.time()-_t:.3f}s")
 
     # 2. Calculate cuts needed to keep cells square
     target_cell_size = width/cuts
@@ -193,17 +188,14 @@ def create_rectangle(width, height, num_subdivisions = 1, name="Rectangle"):
     bpy.context.view_layer.objects.active = obj
     _t = time.time()
     bpy.ops.object.mode_set(mode='EDIT')
-    print(f"  [rectangle] mode_set EDIT: {time.time()-_t:.3f}s")
 
     bm = bmesh.from_edit_mesh(mesh)
 
     # Subdivide horizontal edges (cuts along Width)
     horizontal_edges = [e for e in bm.edges if e.verts[0].co.y == e.verts[1].co.y]
     if num_subdivisions > 0:
-        print(f"  [rectangle] subdivide horizontal cuts={cuts} (N={num_subdivisions})…")
         _t = time.time()
         bmesh.ops.subdivide_edges(bm, edges=horizontal_edges, cuts=cuts, use_grid_fill=True)
-        print(f"  [rectangle] subdivide horizontal: {time.time()-_t:.3f}s")
 
     bm.verts.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
@@ -211,15 +203,12 @@ def create_rectangle(width, height, num_subdivisions = 1, name="Rectangle"):
 
     vertical_edges = [e for e in bm.edges if abs(e.verts[0].co.x - e.verts[1].co.x) < 0.001]
     if cuts_y > 0:
-        print(f"  [rectangle] subdivide vertical cuts={cuts_y}…")
         _t = time.time()
         bmesh.ops.subdivide_edges(bm, edges=vertical_edges, cuts=cuts_y, use_grid_fill=True)
-        print(f"  [rectangle] subdivide vertical: {time.time()-_t:.3f}s  verts={len(bm.verts)}")
 
     bmesh.update_edit_mesh(mesh)
     _t = time.time()
     bpy.ops.object.mode_set(mode='OBJECT')
-    print(f"  [rectangle] mode_set OBJECT: {time.time()-_t:.3f}s")
     print(f"  [rectangle] total: {time.time()-_t_start:.3f}s")
 
     return obj
@@ -347,24 +336,20 @@ def create_circle(radius, num_subdivisions = 1, name = "Circle", num_segments=64
     _t = time.time()
     mesh.from_pydata(verts, edges, [])  # No center vertex, no faces yet
     mesh.update()
-    print(f"  [circle] from_pydata+update: {time.time()-_t:.3f}s")
 
     # Make the object active and switch to Edit Mode
     bpy.context.view_layer.objects.active = obj
     _t = time.time()
     bpy.ops.object.mode_set(mode='EDIT')
-    print(f"  [circle] mode_set EDIT: {time.time()-_t:.3f}s")
 
     # Select all vertices and fill the circle
     bpy.ops.mesh.select_all(action='SELECT')
     _t = time.time()
     bpy.ops.mesh.fill_grid()
-    print(f"  [circle] fill_grid: {time.time()-_t:.3f}s")
 
     _sub_iters = num_subdivisions - 3
     if _sub_iters > 0:
         cuts = 2 ** _sub_iters - 1
-        print(f"  [circle] subdivide_edges cuts={cuts} (N={num_subdivisions}, sub_iters={_sub_iters})…")
         _t = time.time()
         bm = bmesh.from_edit_mesh(mesh)
         bmesh.ops.subdivide_edges(
@@ -378,7 +363,6 @@ def create_circle(radius, num_subdivisions = 1, name = "Circle", num_segments=64
     # Switch back to Object Mode
     _t = time.time()
     bpy.ops.object.mode_set(mode='OBJECT')
-    print(f"  [circle] mode_set OBJECT: {time.time()-_t:.3f}s")
     print(f"  [circle] total: {time.time()-_t_start:.3f}s")
 
     return obj
@@ -416,24 +400,20 @@ def create_ellipse(radius, num_subdivisions = 1, name = "Ellipse", aspect_ratio 
     _t = time.time()
     mesh.from_pydata(verts, edges, [])  # No center vertex, no faces yet
     mesh.update()
-    print(f"  [ellipse] from_pydata+update: {time.time()-_t:.3f}s")
 
     # Make the object active and switch to Edit Mode
     bpy.context.view_layer.objects.active = obj
     _t = time.time()
     bpy.ops.object.mode_set(mode='EDIT')
-    print(f"  [ellipse] mode_set EDIT: {time.time()-_t:.3f}s")
 
     # Select all vertices and fill the circle
     bpy.ops.mesh.select_all(action='SELECT')
     _t = time.time()
     bpy.ops.mesh.fill_grid()
-    print(f"  [ellipse] fill_grid: {time.time()-_t:.3f}s")
 
     _sub_iters = num_subdivisions - 3
     if _sub_iters > 0:
         cuts = 2 ** _sub_iters - 1
-        print(f"  [ellipse] subdivide_edges cuts={cuts} (N={num_subdivisions}, sub_iters={_sub_iters})…")
         _t = time.time()
         bm = bmesh.from_edit_mesh(mesh)
         bmesh.ops.subdivide_edges(
@@ -442,18 +422,15 @@ def create_ellipse(radius, num_subdivisions = 1, name = "Ellipse", aspect_ratio 
             use_grid_fill=True,
         )
         bmesh.update_edit_mesh(mesh)
-        print(f"  [ellipse] subdivide_edges: {time.time()-_t:.3f}s  verts={len(bm.verts)}")
 
     # Switch back to Object Mode
     _t = time.time()
     bpy.ops.object.mode_set(mode='OBJECT')
-    print(f"  [ellipse] mode_set OBJECT: {time.time()-_t:.3f}s")
 
     obj.scale.y *= aspect_ratio
 
     _t = time.time()
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-    print(f"  [ellipse] transform_apply: {time.time()-_t:.3f}s")
     print(f"  [ellipse] total: {time.time()-_t_start:.3f}s")
 
 
@@ -478,14 +455,11 @@ def create_octagon(size, num_subdivisions = 1, name = "Octagon"):
     _t = time.time()
     mesh.from_pydata(verts, [], faces)
     mesh.update()
-    print(f"  [octagon] from_pydata+update: {time.time()-_t:.3f}s")
     bpy.context.view_layer.objects.active = obj
     _t = time.time()
     bpy.ops.object.mode_set(mode='EDIT')
-    print(f"  [octagon] mode_set EDIT: {time.time()-_t:.3f}s")
     if num_subdivisions > 0:
         cuts = 2 ** num_subdivisions - 1
-        print(f"  [octagon] subdivide_edges cuts={cuts} (N={num_subdivisions})…")
         _t = time.time()
         bm = bmesh.from_edit_mesh(mesh)
         bmesh.ops.subdivide_edges(
@@ -494,10 +468,8 @@ def create_octagon(size, num_subdivisions = 1, name = "Octagon"):
             use_grid_fill=True,
         )
         bmesh.update_edit_mesh(mesh)
-        print(f"  [octagon] subdivide_edges: {time.time()-_t:.3f}s  verts={len(bm.verts)}")
     _t = time.time()
     bpy.ops.object.mode_set(mode='OBJECT')
-    print(f"  [octagon] mode_set OBJECT: {time.time()-_t:.3f}s")
     obj.name = name
     obj.data.name = name
     print(f"  [octagon] total: {time.time()-_t_start:.3f}s")

@@ -967,6 +967,9 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         depsgraph = bpy.context.evaluated_depsgraph_get()
         eval_obj = crv.evaluated_get(depsgraph)
         mesh = eval_obj.to_mesh()
+        if not mesh.vertices:
+            eval_obj.to_mesh_clear()
+            return
         lowestZonCurve = min((crv.matrix_world @ v.co).z for v in mesh.vertices)
 
         #crv.scale.z = 100
@@ -989,6 +992,10 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
 
     bpy.ops.object.modifier_apply(modifier=bool_mod.name)
 
+    if len(crv.data.vertices) == 0:
+        bpy.data.objects.remove(crv_thick, do_unlink=True)
+        bpy.data.objects.remove(crv, do_unlink=True)
+        return None
 
     recalculateNormals(crv)
 
@@ -1068,10 +1075,10 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
 
 
 
-    if keepTolTrail == False:
-        bpy.data.objects.remove(crv_thick, do_unlink = True)
-    else:
-        return(crv_thick)
+    if not keepTolTrail:
+        bpy.data.objects.remove(crv_thick, do_unlink=True)
+        return (crv, None)
+    return (crv, crv_thick)
 
 
 def single_color_mode_mesh_wireframe(original, map, tolerance = None):

@@ -711,14 +711,18 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             if obj.users_collection:
                 for coll in obj.users_collection:
                     coll.objects.link(dup)
+            survivingCurveObjs = []
             for tcrv in curveObjs:
-                thickerCurves.append(single_color_mode_curve(tcrv, obj, True, dpt, dup))
+                result = single_color_mode_curve(tcrv, obj, True, dpt, dup)
+                if result is not None and result[1] is not None:
+                    survivingCurveObjs.append(result[0])
+                    thickerCurves.append(result[1])
             remove_objects(dup)
-            for i in range(len(curveObjs) - 1):
-                recalculateNormals(curveObjs[i + 1])
+            for i in range(len(survivingCurveObjs) - 1):
+                recalculateNormals(survivingCurveObjs[i + 1])
                 recalculateNormals(thickerCurves[i])
                 thickerCurves[i].scale = (1.01, 1.01, 1.01)
-                boolean_operation(curveObjs[i + 1], thickerCurves[i])
+                boolean_operation(survivingCurveObjs[i + 1], thickerCurves[i])
 
     if props['elementMode'] == "SEPARATE":
         for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
@@ -804,18 +808,24 @@ def _rg_assign_materials_and_export(obj, curveObjs, textobj, plateobj, props, bu
     writeMetadata(obj, "MAP")
     if curveObjs:
         for tcrv in curveObjs:
-            if tcrv and tcrv.name in bpy.data.objects:
-                writeMetadata(tcrv, "TRAIL")
+            try:
+                if tcrv and tcrv.name in bpy.data.objects:
+                    writeMetadata(tcrv, "TRAIL")
+            except ReferenceError:
+                pass
 
     # Assign alternating TRAIL/YELLOW materials to trail curve segments
     if curveObjs:
         mats = "TRAIL"
         for tcrv in curveObjs:
-            if tcrv and tcrv.name in bpy.data.objects:
-                mat = bpy.data.materials.get(mats)
-                tcrv.data.materials.clear()
-                tcrv.data.materials.append(mat)
-                mats = "YELLOW" if mats == "TRAIL" else "TRAIL"
+            try:
+                if tcrv and tcrv.name in bpy.data.objects:
+                    mat = bpy.data.materials.get(mats)
+                    tcrv.data.materials.clear()
+                    tcrv.data.materials.append(mat)
+                    mats = "YELLOW" if mats == "TRAIL" else "TRAIL"
+            except ReferenceError:
+                pass
 
     # Assign materials to text/plate objects (always, regardless of export settings)
     if shape in {"HEXAGON INNER TEXT", "HEXAGON OUTER TEXT", "OCTAGON OUTER TEXT", "HEXAGON FRONT TEXT", "MEDAL"} and textobj:
@@ -842,8 +852,11 @@ def _rg_assign_materials_and_export(obj, curveObjs, textobj, plateobj, props, bu
         # Select all objects to export, then use the 3MF exporter
         if curveObjs:
             for tcrv in curveObjs:
-                if tcrv and tcrv.name in bpy.data.objects:
-                    tcrv.select_set(True)
+                try:
+                    if tcrv and tcrv.name in bpy.data.objects:
+                        tcrv.select_set(True)
+                except ReferenceError:
+                    pass
         obj.select_set(True)
 
         # Terrain elements in SEPARATE mode: select for export
@@ -1181,6 +1194,7 @@ def runGeneration(type, locked_scale=None):
     overlay.update(0.70, "Building Trail", "Creating curve objects…")
     curveObj  = None
     curveObjs = None
+    print("Building trail curve(s)")
     try:
         if ("gpx_file" in flags and "trail_map" not in flags and len(blender_coords_separate) <= 1) or "trail_map" in flags:
             # Single segment or trail_map: one curve directly
@@ -1207,6 +1221,8 @@ def runGeneration(type, locked_scale=None):
         show_message_box("Bad Response from API while creating the curve. If this happens everytime contact dev")
         overlay.finish()
         return
+    
+    print(f"Curve objects created: {len(curveObjs) if curveObjs else 0}")
 
     if curveObjs is None:
         curveObjs = splitCurves(curveObj)
@@ -1391,7 +1407,9 @@ def runGeneration(type, locked_scale=None):
 
     # --- Phase 15: Single color mode processing ---
     overlay.update(0.95, "Coloring", "Applying single-color mode…")
-    _rg_apply_single_color_mode(obj, curveObjs, elements, props)
+    if curveObjs:
+        print("Applying single-color mode to curve objects")    
+        _rg_apply_single_color_mode(obj, curveObjs, elements, props)
 
     _lo = bpy.context.scene.tp3d.lowestZ
     _hi = bpy.context.scene.tp3d.highestZ

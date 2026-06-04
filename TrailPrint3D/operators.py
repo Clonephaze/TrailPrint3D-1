@@ -986,11 +986,6 @@ class TP3D_OT_popup_merge(bpy.types.Operator):
         bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
         bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
         
-        #bpy.ops.object.mode_set(mode='EDIT')
-        #bpy.ops.mesh.select_all(action='SELECT')
-        # Simplified Extrude
-        #bpy.ops.mesh.extrude_region_move(TRANSFORM_OT_translate={"value":(0, 0, 30)})
-        #bpy.ops.object.mode_set(mode='OBJECT')
         obj.location.z = -1
 
         # Your custom projection logic
@@ -1435,7 +1430,6 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
             bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
             bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
             obj.location.z = -1
-            #raise Exception("Stop")
             utils.projection(self.operation, Mapobject, obj)
         else:
 
