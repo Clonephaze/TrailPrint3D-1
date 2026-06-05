@@ -1,4 +1,4 @@
-from .scene import remove_objects
+﻿from .scene import remove_objects
 from .mesh_ops import extrude_plane, recalculateNormals
 import bpy  # type: ignore
 import bmesh  # type: ignore
@@ -25,8 +25,8 @@ def _fetch_tiles_parallel(tasks, kind, semaphore, settings=None, max_workers=4):
     Parameters
     ----------
     tasks      : list of (south, west, north, east) bbox tuples
-    kind       : OSM feature kind string ('WATER', 'FOREST', …)
-    semaphore  : threading.Semaphore — limits concurrent live requests to the
+    kind       : OSM feature kind string ('WATER', 'FOREST', â€¦)
+    semaphore  : threading.Semaphore â€” limits concurrent live requests to the
                  Overpass API (callers typically use Semaphore(2))
     settings   : OsmFetchSettings snapshot read on the main thread before this
                  function is called.  Passed through to fetch_osm_data so that
@@ -38,7 +38,7 @@ def _fetch_tiles_parallel(tasks, kind, semaphore, settings=None, max_workers=4):
     dict mapping bbox tuple -> (data_dict, from_cache_bool)
     Only tiles that fetched successfully are present in the result.
 
-    NOTE: bpy.* calls are forbidden inside this function — it runs on worker
+    NOTE: bpy.* calls are forbidden inside this function â€” it runs on worker
     threads.  All mesh-building still happens on the main thread in
     coloring_main().
     """
@@ -72,11 +72,11 @@ def _fetch_tiles_parallel(tasks, kind, semaphore, settings=None, max_workers=4):
 
 
 def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_workers=4):
-    """Fetch all active OSM kinds × all tiles in one parallel batch.
+    """Fetch all active OSM kinds Ã— all tiles in one parallel batch.
 
     Each unique tile bbox is fetched with a **single** Overpass union request
     that covers every active kind for that tile.  This replaces the previous
-    N-kinds × T-tiles individual request strategy and drastically reduces the
+    N-kinds Ã— T-tiles individual request strategy and drastically reduces the
     number of concurrent Overpass connections, avoiding rate-limit errors.
 
     The shared *semaphore* still caps the number of live Overpass requests
@@ -85,7 +85,7 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
 
     Parameters
     ----------
-    kind_task_pairs : list of (kind_str, tasks_list) — one entry per active kind
+    kind_task_pairs : list of (kind_str, tasks_list) â€” one entry per active kind
     semaphore       : threading.Semaphore shared across all tile workers
     settings        : OsmFetchSettings snapshot read on the main thread.  Passed
                       through so worker threads never touch bpy.context.
@@ -98,7 +98,7 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
     """
     from .osm import fetch_osm_combined  # deferred to avoid circular import
 
-    # ── Regroup: (kind, [bboxes]) → {bbox: [kinds]} ──────────────────────
+    # â”€â”€ Regroup: (kind, [bboxes]) â†’ {bbox: [kinds]} â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     tile_kinds: dict = {}
     for kind, bboxes in kind_task_pairs:
         for bbox in bboxes:
@@ -211,9 +211,9 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                 _ov = _progress.ProgressOverlay.get()
                 if _ov.active:
                     if prefetched_tiles is not None:
-                        _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} — processing…")
+                        _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} â€” processingâ€¦")
                     else:
-                        _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} — fetching…")
+                        _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} â€” fetchingâ€¦")
                         _ov.set_fetch_progress(kind.lower(), cntr / maxcntr)
                 south = minLat + k * lat_step
                 north = south + lat_step
@@ -251,7 +251,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                 n_features = len([e for e in data['elements'] if e['type'] == 'way'])
                 if _ov.active:
                     src = "cached" if from_cache else "live"
-                    _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} — calculating mesh ({n_features} features, {src})…")
+                    _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} â€” calculating mesh ({n_features} features, {src})â€¦")
                 nodes = build_osm_nodes(data)
                 bodies, negatives = extract_multipolygon_bodies(data['elements'], nodes)
                 total_fetched += n_features + len(bodies) + len(negatives)
@@ -265,7 +265,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                                 relation_way_ids.add(member['ref'])
 
                 if _ov.active:
-                    _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} — creating bodies")
+                    _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} â€” creating bodies")
 
                 for i, coords in enumerate(bodies):
                     blender_coords = [convert_to_blender_coordinates(lat, lon, ele, 0) for lat, lon, ele in coords]
@@ -278,7 +278,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                         waterDeleted += 1
 
                 if _ov.active:
-                    _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} — creating negative bodies")
+                    _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} â€” creating negative bodies")
 
                 for i, coords in enumerate(negatives):
                     blender_coords = [convert_to_blender_coordinates(lat, lon, ele, 0) for lat, lon, ele in coords]
@@ -291,7 +291,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                         waterDeleted += 1
 
                 if _ov.active:
-                    _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} — creating ways")
+                    _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} â€” creating ways")
 
                 for i, element in enumerate(data['elements']):
                     if element['type'] != 'way':
@@ -444,7 +444,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                 try:
                     bm_new.faces.new([idx_map[v.index] for v in f.verts])
                 except ValueError:
-                    pass  # duplicate face edge — skip
+                    pass  # duplicate face edge â€” skip
             new_mesh = bpy.data.meshes.new(obj.name)
             bm_new.to_mesh(new_mesh)
             bm_new.free()
@@ -524,7 +524,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
 
         recalculateNormals(tobj)
 
-        # Separate loose parts — uses outer _split_loose helper
+        # Separate loose parts â€” uses outer _split_loose helper
         _t = time.time()
         _tobj_name = tobj.name  # capture before _split_loose removes the object
 
@@ -582,14 +582,14 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
         tol = 0.1
 
         if elementMode == "PAINT":
-            # ── PAINT-mode fast path ──────────────────────────────────────────
+            # â”€â”€ PAINT-mode fast path â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             # Skip per-object MANIFOLD boolean against terrain.
             # color_map_faces_by_terrain builds its BVH from the cutter's LOCAL
             # mesh (world transform is not applied). OSM polygons sit at Z=0 in
             # local space (objects are at origin, so local == world). We extrude
             # them to (terrain_max_z + 50) so the top face is:
-            #   • above the terrain  (> terrain_max_z)
-            #   • within ray range   (ray distance=100, starts at face_z-5)
+            #   â€¢ above the terrain  (> terrain_max_z)
+            #   â€¢ within ray range   (ray distance=100, starts at face_z-5)
             map_world_verts = [map.matrix_world @ Vector(v) for v in map.bound_box]
             terrain_max_z = max(v.z for v in map_world_verts)
             extrude_z = terrain_max_z + 50.0
@@ -621,10 +621,10 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                 bmesh.ops.translate(bm, verts=extruded_verts, vec=Vector((0, 0, extrude_z)))
                 bm.to_mesh(mesh)
                 bm.free()
-                # Keep location at (0,0,0) — local == world, BVH matches ray space.
+                # Keep location at (0,0,0) â€” local == world, BVH matches ray space.
                 paint_cutters.append(tobj)
             # ribbon_objects were bmesh-merged into created_objects above as
-            # "OpenObject_merged" — do NOT re-iterate here (stale refs).
+            # "OpenObject_merged" â€” do NOT re-iterate here (stale refs).
 
             print(f"  [coloring_main] PAINT extrude ({kind}, {len(paint_cutters)} objs): {time.time()-_t_paint_fast:.3f}s")
 
@@ -661,9 +661,9 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
             bpy.data.meshes.remove(mesh_data)
             print(f"  [coloring_main] PAINT total ({kind}): {time.time()-_t_paint:.3f}s")
             return _COLORING_PAINTED
-            # ── end PAINT-mode fast path ──────────────────────────────────────
+            # â”€â”€ end PAINT-mode fast path â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-        # Per-object extrude + MANIFOLD boolean — no recalculateNormals (avoids mode-switch cost).
+        # Per-object extrude + MANIFOLD boolean â€” no recalculateNormals (avoids mode-switch cost).
         _t_proc_loop = time.time()
         DOWN = Vector((0, 0, -1))
         _t_extrude_total = _t_bool_total = _t_split_total = 0.0
@@ -854,7 +854,7 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
     If face is facing upwards, raycasts upwards to see if terrain_obj is above.
     If yes, colors the face with terrain_obj's material.
 
-    up_threshold = dot(normal, Z) must be greater than this (0.5 ~ 60° angle limit).
+    up_threshold = dot(normal, Z) must be greater than this (0.5 ~ 60Â° angle limit).
     """
     from .mesh_ops import recalculateNormals  # deferred to avoid circular import at load time
 
@@ -872,7 +872,7 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
     terrain_mesh = terrain_obj.data
  
 
-    # Build bmesh for Map — read LOCAL mesh, transform centers to WORLD space via matrix_world
+    # Build bmesh for Map â€” read LOCAL mesh, transform centers to WORLD space via matrix_world
     bm = bmesh.new()
     bm.from_mesh(map_mesh)
     bm.faces.ensure_lookup_table()
@@ -980,261 +980,557 @@ def plateInsert(plate, map):
     bpy.data.objects.remove(map_copy, do_unlink=True)
 
 
-def createOcean(bboxBigger, waterHeight, scaleHor, landpoints, baseplate, tile, baseHeight):
-    from .osm import create_element  # deferred to avoid circular import at load time
-    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
-    from .mesh_ops import projection  # deferred to avoid circular import at load time
-    from .primitives import create_rectangle  # deferred to avoid circular import at load time
+# ---------------------------------------------------------------------------
+# Coastline polygon construction helpers
+# ---------------------------------------------------------------------------
 
-    _t_ocean = time.time()
-    coastcurve = create_element(bboxBigger, waterHeight, scaleHor, "COASTLINE", baseHeight * 3)
-    print(f"  [ocean] create_element (coastline fetch): {time.time()-_t_ocean:.3f}s")
-    if coastcurve is not None:
-        set_origin_to_3d_cursor(coastcurve)
+def _rdp_simplify(points, epsilon):
+    """Ramer-Douglas-Peucker polyline simplification.
 
-        shape = bpy.context.scene.tp3d.shape
-        objSize = bpy.context.scene.tp3d.objSize
-        rHeight = bpy.context.scene.tp3d.rectangleHeight
-        if shape == "SQUARE":
-            coastobj = create_rectangle(objSize, rHeight)
-        else:
-            coastobj = create_rectangle(objSize, objSize)
-
-        coastobj.name = "Ocean"
-        coastobj.location.x = tile.location.x
-        coastobj.location.y = tile.location.y
-        coastobj.location.z = 0
-
-        flip_override = bpy.context.scene.tp3d.el_oFlip
-        _t_cut = time.time()
-        merged_object = cut_coastline(coastcurve, coastobj, land_hints=landpoints, flip_override=flip_override)
-        print(f"  [ocean] cut_coastline: {time.time()-_t_cut:.3f}s  ({len(merged_object.data.polygons) if merged_object else 0} faces)")
-
-        #REMOVE THE CUTTER OBJECT
-        remove_objects(coastcurve)
-
-        mat = bpy.data.materials.get("WATER")
-        merged_object.data.materials.clear()
-        merged_object.data.materials.append(mat)
-
-
-        #merged_object.location.z = tile["lowestZ"] - 0.5
-        #return merged_object
-
-        elementMode = bpy.context.scene.tp3d.elementMode
-        
-        if elementMode == "PAINT":
-            projection("paint", tile, merged_object)
-            return None
-        elif elementMode == "SINGLECOLORMODE" or elementMode == "SINGLECOLORMODE_REMESH":
-            projection("singleColorMode", tile, merged_object)
-            mat = bpy.data.materials.get("WATER")
-            merged_object.data.materials.clear()
-            merged_object.data.materials.append(mat)
-            return merged_object
-        if elementMode == "SEPARATE":
-            projection("separate", tile, merged_object)
-            mat = bpy.data.materials.get("WATER")
-            merged_object.data.materials.clear()
-            merged_object.data.materials.append(mat)
-            print(f"  [ocean] total: {time.time()-_t_ocean:.3f}s")
-            return merged_object
-
+    Reduces a dense list of (x, y) points to a subset that deviates by at
+    most *epsilon* Blender units from the original path.  This is essential
+    before feeding coastline chains into the Manifold boolean solver, which
+    can crash on polygons with thousands of nearly-collinear vertices.
+    """
+    if len(points) < 3:
+        return list(points)
+    x1, y1 = points[0]
+    x2, y2 = points[-1]
+    dx, dy = x2 - x1, y2 - y1
+    length = math.sqrt(dx * dx + dy * dy)
+    if length == 0:
+        dists = [math.sqrt((px - x1) ** 2 + (py - y1) ** 2)
+                 for px, py in points[1:-1]]
     else:
-        from .. import progress as _progress  # deferred to avoid circular import at load time
-        _progress.WarningsOverlay.add_warning("No coastline data found for this area — ocean layer skipped.", "warn")
+        dists = [abs(dy * (px - x1) - dx * (py - y1)) / length
+                 for px, py in points[1:-1]]
+    idx = max(range(len(dists)), key=lambda i: dists[i])
+    if dists[idx] > epsilon:
+        left  = _rdp_simplify(points[:idx + 2], epsilon)
+        right = _rdp_simplify(points[idx + 1:], epsilon)
+        return left[:-1] + right
+    return [points[0], points[-1]]
+
+
+def _clip_chain_to_bbox(chain, bbox_bl):
+    """Clip a coastline chain to the tile bbox using Liang-Barsky per segment.
+
+    OSM way coordinates extend beyond the query tile, so raw chain endpoints
+    are often outside the bbox.  This function returns the first contiguous
+    run of the polyline that lies inside (or on the boundary of) the bbox,
+    with precise floating-point intersection points at each crossing.
+
+    Returns the clipped list of (x, y), or None if the chain never enters the
+    bbox at all.
+    """
+    min_x, min_y, max_x, max_y = bbox_bl
+
+    def _lb_clip(x1, y1, x2, y2):
+        """Liang-Barsky: (t_enter, t_exit) for the segment inside the bbox.
+        Returns None if entirely outside."""
+        dx, dy = x2 - x1, y2 - y1
+        t0, t1 = 0.0, 1.0
+        for p, q in (
+            (-dx, x1 - min_x),
+            ( dx, max_x - x1),
+            (-dy, y1 - min_y),
+            ( dy, max_y - y1),
+        ):
+            if abs(p) < 1e-12:
+                if q < 0:
+                    return None
+            elif p < 0:
+                t0 = max(t0, q / p)
+            else:
+                t1 = min(t1, q / p)
+        return (t0, t1) if t0 <= t1 else None
+
+    def _lerp(a, b, t):
+        return (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))
+
+    def _eq(a, b):
+        return abs(a[0] - b[0]) < 1e-6 and abs(a[1] - b[1]) < 1e-6
+
+    result = []
+    for i in range(len(chain) - 1):
+        p1, p2 = chain[i], chain[i + 1]
+        clip = _lb_clip(p1[0], p1[1], p2[0], p2[1])
+        if clip is None:
+            # Segment entirely outside â€” if we already have points, we're done
+            if result:
+                break
+            continue
+        t0, t1 = clip
+        enter = _lerp(p1, p2, t0) if t0 > 0 else p1
+        exit_ = _lerp(p1, p2, t1) if t1 < 1 else p2
+        if not result or not _eq(result[-1], enter):
+            if result:
+                # Discontiguous gap â€” stop at first inside run
+                break
+            result.append(enter)
+        result.append(exit_)
+
+    return result if len(result) >= 2 else None
+
+
+def _stitch_coastline_chains(raw_chains, tol=0.1):
+    """Stitch open coastline way fragments into longer chains and closed loops.
+
+    OSM delivers coastline as directed open-ended way segments whose endpoints
+    abut where ways were split for editing.  This function joins them
+    end-to-start whenever the gap is within *tol* Blender units.
+
+    Returns
+    -------
+    open_chains  : list of [(x,y), â€¦]  â€” chains that still start/end on the
+                   map-tile boundary (neither endpoint meets the other)
+    closed_loops : list of [(x,y), â€¦]  â€” chains whose first â‰ˆ last point
+                   (islands, peninsulas fully inside the tile)
+    """
+    if not raw_chains:
+        return [], []
+
+    chains = [list(c) for c in raw_chains]
+
+    # Greedy O(nÂ²) stitch: repeatedly scan for any pair where chain A's last
+    # point is within tol of chain B's first (or last) point, then merge and
+    # restart.  Coastline tiles rarely have more than ~200 chains so this is fine.
+    changed = True
+    while changed:
+        changed = False
+        i = 0
+        while i < len(chains):
+            j = 0
+            while j < len(chains):
+                if i == j:
+                    j += 1
+                    continue
+                a = chains[i]
+                b = chains[j]
+                ax, ay = a[-1]
+                bx0, by0 = b[0]
+                bxe, bye = b[-1]
+                if math.sqrt((ax - bx0) ** 2 + (ay - by0) ** 2) < tol:
+                    # A end â†’ B start: append B onto A
+                    chains[i] = a + b[1:]
+                    chains.pop(j)
+                    if j < i:
+                        i -= 1
+                    changed = True
+                    break
+                elif math.sqrt((ax - bxe) ** 2 + (ay - bye) ** 2) < tol:
+                    # A end â†’ B end: append reversed B onto A
+                    chains[i] = a + list(reversed(b[:-1]))
+                    chains.pop(j)
+                    if j < i:
+                        i -= 1
+                    changed = True
+                    break
+                j += 1
+            i += 1
+
+    closed_loops = []
+    open_chains = []
+    for c in chains:
+        if len(c) < 3:
+            continue
+        dx = c[0][0] - c[-1][0]
+        dy = c[0][1] - c[-1][1]
+        if math.sqrt(dx * dx + dy * dy) < tol:
+            closed_loops.append(c)
+        else:
+            open_chains.append(c)
+
+    return open_chains, closed_loops
+
+
+def _close_chain_with_bbox(chain, bbox_bl):
+    """Close an open coastline chain by walking the tile bbox boundary.
+
+    *chain*   : list of (x,y) in Blender space â€” land-is-left direction.
+    *bbox_bl* : (min_x, min_y, max_x, max_y) Blender-space tile rectangle.
+
+    The chain enters and exits the tile through the bbox perimeter.  We close
+    it by walking the perimeter on the **ocean side** (to the right of travel
+    direction) back from the chain's end to its start.  That ensures the
+    resulting polygon encloses ocean, not land.
+
+    Returns a list of (x,y) forming a closed polygon, or None if the chain
+    is too short to make sense.
+    """
+    if len(chain) < 2:
         return None
 
+    min_x, min_y, max_x, max_y = bbox_bl
 
-def cut_coastline(curve_obj, target_obj, land_hints=None, flip_override=False):
-    """
-    Cut the target_obj using the curve_obj so there are multiple separate objects
-    Main use case -> cut it at the coastline
-    land_hints: optional list of (x, y[, z]) points known to be on land,
-                used to ensure the boolean removes the land side.
-    flip_override: if True, inverts the auto-detected flip decision (manual correction).
-    """
-    from .primitives import curve_to_mesh_object  # deferred to avoid circular import at load time
-    from .mesh_ops import removeDoubles, extrude_plane  # deferred to avoid circular import at load time
-    from .scene import remove_objects  # deferred to avoid circular import at load time
+    # The four corners of the bbox, in CCW order (standard polygon winding)
+    corners_ccw = [
+        (min_x, min_y),
+        (max_x, min_y),
+        (max_x, max_y),
+        (min_x, max_y),
+    ]
 
-    extrude_depth = -0.5
-    solidify = False
-    solidify_thickness = 0.02
+    def _snap_to_perimeter(pt):
+        """Return which edge (0=bottom,1=right,2=top,3=left) and parameter t."""
+        x, y = pt
+        candidates = []
+        # bottom: y == min_y
+        if abs(y - min_y) < 1.0:
+            t = (x - min_x) / max(max_x - min_x, 1e-9)
+            candidates.append((abs(y - min_y), 0, t))
+        # right: x == max_x
+        if abs(x - max_x) < 1.0:
+            t = (y - min_y) / max(max_y - min_y, 1e-9)
+            candidates.append((abs(x - max_x), 1, t))
+        # top: y == max_y
+        if abs(y - max_y) < 1.0:
+            t = (max_x - x) / max(max_x - min_x, 1e-9)
+            candidates.append((abs(y - max_y), 2, t))
+        # left: x == min_x
+        if abs(x - min_x) < 1.0:
+            t = (max_y - y) / max(max_y - min_y, 1e-9)
+            candidates.append((abs(x - min_x), 3, t))
+        if not candidates:
+            # Point is not near any edge â€” clamp to nearest
+            distances = [
+                (abs(y - min_y), 0, (x - min_x) / max(max_x - min_x, 1e-9)),
+                (abs(x - max_x), 1, (y - min_y) / max(max_y - min_y, 1e-9)),
+                (abs(y - max_y), 2, (max_x - x) / max(max_x - min_x, 1e-9)),
+                (abs(x - min_x), 3, (max_y - y) / max(max_y - min_y, 1e-9)),
+            ]
+            distances.sort()
+            return distances[0][1], distances[0][2]
+        candidates.sort()
+        return candidates[0][1], candidates[0][2]
 
-    ctx = bpy.context
-    scene = ctx.scene
+    def _edge_to_point(edge, t):
+        if edge == 0:
+            return (min_x + t * (max_x - min_x), min_y)
+        elif edge == 1:
+            return (max_x, min_y + t * (max_y - min_y))
+        elif edge == 2:
+            return (max_x - t * (max_x - min_x), max_y)
+        else:
+            return (min_x, max_y - t * (max_y - min_y))
 
-    # sanity checks
-    if curve_obj is None or target_obj is None:
-        raise ValueError("curve_obj and target_obj must be provided")
-    if curve_obj.type != 'CURVE':
-        raise ValueError("curve_obj must be a Curve object")
-    if target_obj.type != 'MESH':
-        raise ValueError("target_obj must be a Mesh object")
+    start_edge, start_t = _snap_to_perimeter(chain[0])
+    end_edge, end_t = _snap_to_perimeter(chain[-1])
 
-    # remember current state to restore later
-    prev_mode = ctx.mode
-
-    created_objects = []
-    try:
-        # --- 1) get world-space points from the curve (first spline) ---
-        spline = None
-        if len(curve_obj.data.splines) == 0:
-            raise RuntimeError("Curve has no splines")
-        spline = curve_obj.data.splines[0]
-
-        cutter_obj = curve_to_mesh_object(curve_obj, "Cutter")
-
-        removeDoubles(cutter_obj)
-
-
-        bm = bmesh.new()
-        bm.from_mesh(cutter_obj.data)
-
-
-        for e in bm.edges:
-            e.select = True
-
-        #Extrude cutter
-        bmesh.ops.translate(bm, verts=bm.verts, vec=(0, 0, extrude_depth/2))
-        geom_extrude = bmesh.ops.extrude_edge_only(bm, edges=[e for e in bm.edges])
-
-        # Move new geometry
-        verts_extruded = [v for v in geom_extrude["geom"] if isinstance(v, bmesh.types.BMVert)]
-        bmesh.ops.translate(bm, verts=verts_extruded, vec=(0, 0, -extrude_depth))
-
-        # Write back to mesh
-        bm.to_mesh(cutter_obj.data)
-        bm.free()
-
-        extrude_plane(target_obj,-0.1)
-
-
-
-        # --- 2b) flip cutter normals so they point away from land (toward ocean) ---
-        if land_hints:
-            # 1) Winding: signed area of the curve polygon (shoelace)
-            spline0 = curve_obj.data.splines[0]
-            mw_curve = curve_obj.matrix_world
-            if spline0.type == 'BEZIER':
-                pts2d = [mw_curve @ bp.co for bp in spline0.bezier_points]
+    # Walk the bbox perimeter CW from end_edge/end_t back to start_edge/start_t.
+    # CW means decreasing edge index (mod 4), reversed t within each edge.
+    # This keeps ocean to the right of the chain direction.
+    perimeter_pts = []
+    edge = end_edge
+    t_cur = end_t
+    iterations = 0
+    while True:
+        iterations += 1
+        if iterations > 8:
+            break
+        if edge == start_edge:
+            # On the same edge: walk directly to start_t (CW means decreasing t)
+            if t_cur > start_t:
+                perimeter_pts.append(_edge_to_point(edge, start_t))
+            elif abs(t_cur - start_t) < 1e-6:
+                # Start and end are the same point on the bbox â€” degenerate
+                return None
             else:
-                pts2d = [mw_curve @ Vector((p.co.x, p.co.y, p.co.z)) for p in spline0.points]
-            pts2d = [Vector((v.x, v.y)) for v in pts2d]
+                # end_t < start_t on the same edge: the chain enters and exits
+                # through the same bbox edge in a way that requires a full
+                # perimeter walk.  Only do one full loop (iterations guard
+                # already limits this), add the corner and continue CW.
+                next_edge = (edge - 1) % 4
+                perimeter_pts.append(corners_ccw[edge])
+                edge = next_edge
+                t_cur = 1.0
+                continue
+            break
+        else:
+            # Walk to the beginning of this edge (t=0, which is the CCW corner)
+            perimeter_pts.append(corners_ccw[edge])
+            edge = (edge - 1) % 4
+            t_cur = 1.0
 
-            signed_area = 0.0
-            n_pts = len(pts2d)
-            for i in range(n_pts):
-                j = (i + 1) % n_pts
-                signed_area += pts2d[i].x * pts2d[j].y - pts2d[j].x * pts2d[i].y
-            is_ccw = signed_area > 0  # CCW -> normals outward; CW -> normals inward
-
-            # 2) Majority vote: are most land points inside the curve polygon?
-            # Ray-casting point-in-polygon (counts edge crossings along +X ray)
-            def point_in_poly(px, py, poly):
-                inside = False
-                j = len(poly) - 1
-                for i in range(len(poly)):
-                    xi, yi = poly[i].x, poly[i].y
-                    xj, yj = poly[j].x, poly[j].y
-                    if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi) + xi):
-                        inside = not inside
-                    j = i
-                return inside
-
-            inside_count = sum(
-                1 for p in land_hints
-                if point_in_poly(float(p[0]), float(p[1]), pts2d)
-            )
-            land_is_inside = inside_count > len(land_hints) / 2
-
-            # 3) Flip when normals point toward land; flip_override inverts the decision
-            auto_flip = (is_ccw and not land_is_inside) or (not is_ccw and land_is_inside)
-            should_flip = auto_flip != flip_override
-            print(f"cut_coastline: is_ccw={is_ccw}, land_inside={land_is_inside}, auto_flip={auto_flip}, override={flip_override}, final={should_flip}")
+    polygon = list(chain) + perimeter_pts
+    return polygon
 
 
-            if should_flip:
-                bm_flip = bmesh.new()
-                bm_flip.from_mesh(cutter_obj.data)
-                bmesh.ops.reverse_faces(bm_flip, faces=list(bm_flip.faces))
-                bm_flip.to_mesh(cutter_obj.data)
-                bm_flip.free()
-                cutter_obj.data.update()
+def _close_chains_with_bbox(chains, bbox_bl):
+    """Build a single ocean polygon from ALL clipped+simplified open chains.
+
+    Building one polygon per chain and merging causes overlap when multiple
+    chains exist â€” their individual ocean polygons union to cover the wrong
+    side.  Instead, we interleave ALL chain segments with CW bbox perimeter
+    walks to form one correct closed polygon.
+
+    Algorithm:
+    - Each chain carries land on its left (OSM convention).  The CW perimeter
+      walk between chain endpoints traces the ocean-side boundary.
+    - Starting from the chain whose END has the largest CCW perimeter param,
+      we alternate: CW perimeter arc â†’ follow chain forward â†’ CW perimeter
+      arc â†’ follow next chain forward â†’ â€¦ until all chains are consumed.
+
+    Returns a list of (x,y), or None if degenerate.
+    """
+    if not chains:
+        return None
+
+    min_x, min_y, max_x, max_y = bbox_bl
+    W = max(max_x - min_x, 1e-9)
+    H = max(max_y - min_y, 1e-9)
+
+    def _ccw(pt):
+        """CCW perimeter parameter in [0,4): 0=bottom-left, 1=bottom-right,
+        2=top-right, 3=top-left."""
+        x = max(min_x, min(max_x, pt[0]))
+        y = max(min_y, min(max_y, pt[1]))
+        ds = [abs(y - min_y), abs(x - max_x), abs(y - max_y), abs(x - min_x)]
+        e = ds.index(min(ds))
+        if e == 0: return (x - min_x) / W
+        if e == 1: return 1.0 + (y - min_y) / H
+        if e == 2: return 2.0 + (max_x - x) / W
+        return       3.0 + (max_y - y) / H
+
+    def _p2pt(p):
+        p %= 4.0
+        if p < 1: return (min_x + p * W,       min_y)
+        if p < 2: return (max_x,                min_y + (p - 1) * H)
+        if p < 3: return (max_x - (p - 2) * W, max_y)
+        return           (min_x,                max_y - (p - 3) * H)
+
+    def _cw_corners(from_p, to_p):
+        """Bbox corner points crossed while walking CW from from_p to to_p."""
+        from_p %= 4.0
+        to_p   %= 4.0
+        cw_dist = (from_p - to_p) % 4.0
+        if cw_dist < 1e-6:
+            return []
+        pts = []
+        p = from_p
+        remaining = cw_dist
+        for _ in range(4):
+            c = int(p - 1e-9) % 4          # corner index just below p (CW)
+            d = (p - c) % 4.0              # distance to that corner going CW
+            if d < 1e-9 or d >= remaining - 1e-9:
+                break
+            pts.append(_p2pt(float(c)))
+            p = float(c)
+            remaining -= d
+        return pts
+
+    # Build per-chain CCW params
+    info = []
+    for ch in chains:
+        if len(ch) >= 2:
+            info.append([_ccw(ch[0]), _ccw(ch[-1]), ch, False])
+
+    if not info:
+        return None
+
+    # Start from the chain whose END has the largest CCW param.
+    # Initialise current_end_param to that end so the first CW arc wraps
+    # correctly around to chain_0's OWN start.
+    si = max(range(len(info)), key=lambda i: info[i][1])
+    current_end = info[si][1]
+    polygon = []
+    idx = si
+
+    for _ in range(len(info)):
+        sp, ep, chain, used = info[idx]
+        if used:
+            break
+        info[idx][3] = True
+
+        # CW perimeter corners from current_end to this chain's start
+        polygon.extend(_cw_corners(current_end, sp))
+        # Follow chain forward (land on left â†’ ocean polygon traces correctly)
+        polygon.extend(chain)
+        current_end = ep
+
+        # Next chain: smallest positive CW distance from current_end to a start
+        best_i, best_d = -1, float('inf')
+        for i, (s, e, c, v) in enumerate(info):
+            if v:
+                continue
+            d = (current_end - s) % 4.0
+            if 0 < d < best_d:
+                best_d, best_i = d, i
+        if best_i < 0:
+            break
+        idx = best_i
+
+    return polygon if len(polygon) >= 3 else None
 
 
-        # ensure cutter has correct transform (we added world coords directly so keep identity)
-        cutter_obj.matrix_world = Matrix() if hasattr(bpy, 'Matrix') else cutter_obj.matrix_world  # type: ignore
+def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
+    """Build the flat ocean mesh object from stitched coastline chains.
 
-        created_objects.append(cutter_obj)
+    *open_chains*  : chains that cross the tile boundary â†’ close via bbox walk
+    *closed_loops* : island/peninsula loops entirely inside the tile (unused
+                     here â€” island subtraction on a flat 2D polygon is
+                     unreliable with boolean solvers; projection() clips to
+                     actual terrain geometry which handles it naturally)
+    *bbox_bl*      : (min_x, min_y, max_x, max_y) in Blender local space
+    *tile*         : the map mesh object (used only for location reference)
+
+    Returns a Blender mesh object or None.
+    """
+    from .primitives import col_create_face_mesh  # deferred to avoid circular import at load time
+    from .mesh_ops import merge_objects  # deferred to avoid circular import at load time
+
+    ocean_faces = []
+
+    if open_chains:
+        # Clip each chain to the bbox and simplify, then build ONE polygon from
+        # all chains combined (not one per chain â€” separate polygons overlap).
+        good_chains = []
+        for chain in open_chains:
+            clipped = _clip_chain_to_bbox(chain, bbox_bl)
+            if clipped is None or len(clipped) < 2:
+                print(f"    [ocean mesh] chain {len(chain)} pts â†’ clipped to nothing, skip")
+                continue
+            simplified = _rdp_simplify(clipped, epsilon=0.5)
+            if len(simplified) < 3:
+                print(f"    [ocean mesh] chain {len(chain)} pts â†’ clipped {len(clipped)} â†’ RDP {len(simplified)}, skip (degenerate)")
+                continue
+            print(f"    [ocean mesh] chain {len(chain)} pts â†’ clipped {len(clipped)} â†’ RDP {len(simplified)}")
+            good_chains.append(simplified)
+
+        if good_chains:
+            poly = _close_chains_with_bbox(good_chains, bbox_bl)
+            if poly and len(poly) >= 3:
+                pts3d = [(x, y, 0.0) for x, y in poly]
+                face_obj = col_create_face_mesh("_OceanFace", pts3d)
+                if face_obj and len(face_obj.data.vertices) > 0:
+                    ocean_faces.append(face_obj)
+
+    if not ocean_faces:
+        # Either no open chains (tile entirely ocean) or all chain polys were
+        # degenerate â†’ fall back to full bbox rectangle.
+        min_x, min_y, max_x, max_y = bbox_bl
+        pts3d = [
+            (min_x, min_y, 0.0),
+            (max_x, min_y, 0.0),
+            (max_x, max_y, 0.0),
+            (min_x, max_y, 0.0),
+        ]
+        face_obj = col_create_face_mesh("_OceanFace", pts3d)
+        if face_obj and len(face_obj.data.vertices) > 0:
+            ocean_faces.append(face_obj)
+
+    if not ocean_faces:
+        return None
+
+    ocean_obj = merge_objects(ocean_faces) if len(ocean_faces) > 1 else ocean_faces[0]
+
+    if not ocean_obj or len(ocean_obj.data.vertices) == 0:
+        return None
+
+    ocean_obj.name = "Ocean"
+    # Do NOT copy tile.location here.  Ocean polygon vertices are already in
+    # absolute Mercator coordinates (same world space as every other coloring
+    # element) so the object origin must stay at (0, 0, 0).  Copying
+    # tile.location would double-count the center offset and push the polygon
+    # completely out of the tile bounds, causing the INTERSECT boolean inside
+    # merge_with_map to return an empty mesh.
+    ocean_obj.location = (0.0, 0.0, 0.0)
+
+    return ocean_obj
 
 
-        # --- 3) optionally add solidify modifier (useful for thin geometry) ---
-        if solidify:
-            sm = cutter_obj.modifiers.new(name="CutterSolidify", type='SOLIDIFY')
-            sm.thickness = solidify_thickness
-            ctx.view_layer.objects.active = cutter_obj
-            cutter_obj.select_set(True)
-            try:
-                pass
-            except Exception as e:
-                print("Warning: failed to apply solidify modifier:", e)
+def createOcean(prefetched_coastline, scaleHor, tile):
+    """Build the ocean layer mesh from pre-fetched coastline data.
 
-        # --- 4) perform boolean difference: target_obj = target_obj - cutter_obj ---
-        # ensure we are in object mode
-        if ctx.mode != 'OBJECT':
-            bpy.ops.object.mode_set(mode='OBJECT')
+    Uses the land-is-left OSM convention to construct the ocean polygon
+    directly â€” no boolean cutters, no EXACT solver.
 
-        # store list of existing objects for later diff
-        before_objs = set(bpy.data.objects)
+    Parameters
+    ----------
+    prefetched_coastline : dict  {bbox -> (data, from_cache)}
+                           The COASTLINE slice of the prefetch result dict.
+                           May be empty if no coastline exists in this tile.
+    scaleHor             : float  horizontal scale factor
+    tile                 : bpy.types.Object  the map mesh (used for location)
+    """
+    from .osm import fetch_coastline_ways  # deferred to avoid circular import at load time
+    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
+    from .mesh_ops import projection  # deferred to avoid circular import at load time
+    from .. import constants as _const  # deferred to avoid circular import at load time
 
+    _t_ocean = time.time()
 
-        # add boolean modifier on target
-        ctx.view_layer.objects.active = target_obj
-        target_obj.select_set(True)
-        cutter_obj.select_set(True)
+    raw_chains = fetch_coastline_ways(prefetched_coastline, scaleHor)
+    print(f"  [ocean] fetch_coastline_ways: {len(raw_chains)} raw ways  ({time.time()-_t_ocean:.3f}s)")
 
-        bool_mod = target_obj.modifiers.new(name="AutoBooleanCut", type='BOOLEAN')
-        bool_mod.operation = 'DIFFERENCE'
-        bool_mod.object = cutter_obj
-        bool_mod.solver = 'EXACT'
+    if not raw_chains:
+        _progress.WarningsOverlay.add_warning(
+            "No coastline data found for this area â€” ocean layer skipped.", "warn"
+        )
+        return None
 
+    open_chains, closed_loops = _stitch_coastline_chains(raw_chains)
+    print(f"  [ocean] stitched: {len(open_chains)} open chains, {len(closed_loops)} closed loops")
+    for i, c in enumerate(open_chains):
+        print(f"    open[{i}]: {len(c)} pts  start={c[0]}  end={c[-1]}")
+    for i, c in enumerate(closed_loops):
+        print(f"    closed[{i}]: {len(c)} pts  start={c[0]}")
 
-        # try applying modifier
-        try:
-            print("APPLYING MODIFIER")
-            _t_bool = time.time()
-            bpy.ops.object.modifier_apply(modifier=bool_mod.name)
-            print(f"  [cut_coastline] boolean apply: {time.time()-_t_bool:.3f}s")
-        except Exception as e:
-            print("Warning: boolean modifier apply failed:", e)
-            raise RuntimeError("Boolean operation failed: " + str(e))
+    # Build bbox in the same LOCAL Blender coordinate frame used by
+    # fetch_coastline_ways (inline Mercator with the same scaleHor).
+    # We cannot use tile.bound_box in world space because the tile object may
+    # have been translated by xTerrainOffset/yTerrainOffset.
+    tp3d = bpy.context.scene.tp3d
+    def _ll_to_bl(lat, lon):
+        x = _const.R * math.radians(lon) * scaleHor
+        y = _const.R * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)) * scaleHor
+        return (x, y)
+    sw = _ll_to_bl(tp3d.minLat, tp3d.minLon)
+    ne = _ll_to_bl(tp3d.maxLat, tp3d.maxLon)
+    bbox_bl = (min(sw[0], ne[0]), min(sw[1], ne[1]), max(sw[0], ne[0]), max(sw[1], ne[1]))
+    print(f"  [ocean] bbox_bl: x=[{bbox_bl[0]:.3f}, {bbox_bl[2]:.3f}]  y=[{bbox_bl[1]:.3f}, {bbox_bl[3]:.3f}]")
 
-        #REMOVE THE CUTTER OBJECT
-        remove_objects(cutter_obj)
+    ocean_obj = _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile)
+    print(f"  [ocean] _build_ocean_mesh: {time.time()-_t_ocean:.3f}s")
+    if ocean_obj is not None:
+        print(f"  [ocean] mesh verts={len(ocean_obj.data.vertices)}  faces={len(ocean_obj.data.polygons)}")
+    else:
+        print(f"  [ocean] mesh: None")
 
+    if ocean_obj is None:
+        _progress.WarningsOverlay.add_warning(
+            "Could not build ocean polygon â€” ocean layer skipped.", "warn"
+        )
+        return None
 
-        # Remove all vertices from target_obj that are not on Z=0
-        bpy.context.view_layer.objects.active = target_obj
-        bpy.ops.object.mode_set(mode='EDIT')
-        bm = bmesh.from_edit_mesh(target_obj.data)
-        bm.verts.ensure_lookup_table()
-        verts_to_delete = [v for v in bm.verts if abs(v.co.z) > 1e-6]
-        bmesh.ops.delete(bm, geom=verts_to_delete, context='VERTS')
-        bmesh.update_edit_mesh(target_obj.data)
-        bpy.ops.object.mode_set(mode='OBJECT')
+    set_origin_to_3d_cursor(ocean_obj)
 
+    mat = bpy.data.materials.get("WATER")
+    ocean_obj.data.materials.clear()
+    ocean_obj.data.materials.append(mat)
 
-        return target_obj
+    elementMode = bpy.context.scene.tp3d.elementMode
 
-    finally:
-        # ensure we return to previous mode
-        try:
-            if prev_mode != bpy.context.mode:
-                bpy.ops.object.mode_set(mode=prev_mode)
-        except Exception:
-            pass
+    if elementMode == "PAINT":
+        projection("paint", tile, ocean_obj)
+        return None
+    elif elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
+        projection("singleColorMode", tile, ocean_obj)
+        mat = bpy.data.materials.get("WATER")
+        ocean_obj.data.materials.clear()
+        ocean_obj.data.materials.append(mat)
+        return ocean_obj
+    elif elementMode == "SEPARATE":
+        _t_proj = time.time()
+        projection("separate", tile, ocean_obj)
+        print(f"  [ocean] projection (separate): {time.time()-_t_proj:.3f}s")
+        mat = bpy.data.materials.get("WATER")
+        ocean_obj.data.materials.clear()
+        ocean_obj.data.materials.append(mat)
+        print(f"  [ocean] total: {time.time()-_t_ocean:.3f}s")
+        return ocean_obj
+
+    return ocean_obj
 
 
 def exaggeratedLayers(objs):

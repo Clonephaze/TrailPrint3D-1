@@ -1424,6 +1424,61 @@ def is_bbox_overlapping(obj1, obj2):
     return all(max1[i] >= min2[i] and max2[i] >= min1[i] for i in range(3))
 
 
+def fetch_coastline_ways(prefetched_tiles, scaleHor):
+    """Extract raw directed coastline way sequences from pre-fetched Overpass data.
+
+    Returns a list of coordinate chains: each chain is a list of (x, y) tuples
+    in Blender space, in OSM way direction (land-is-left convention).
+    Closed ways (first node == last node) are returned as closed chains.
+    No Blender objects are created.  No bpy.context reads.
+
+    Parameters
+    ----------
+    prefetched_tiles : dict  {bbox -> (data_dict, from_cache_bool)}
+                       The COASTLINE entry from the prefetch result dict.
+    scaleHor         : float  horizontal scale factor
+    """
+    import math as _math
+    from .. import constants as _const  # type: ignore
+
+    def _ll_to_bl(lat, lon):
+        """Inline Mercator → Blender XY, elevation fixed at 0."""
+        x = _const.R * _math.radians(lon) * scaleHor
+        y = _const.R * _math.log(_math.tan(_math.pi / 4 + _math.radians(lat) / 2)) * scaleHor
+        return (x, y)
+
+    chains = []
+    seen_way_ids = set()
+
+    for bbox, (data, _from_cache) in prefetched_tiles.items():
+        if not data or "elements" not in data:
+            continue
+
+        nodes = {el['id']: el for el in data['elements'] if el['type'] == 'node'}
+
+        for el in data['elements']:
+            if el['type'] != 'way':
+                continue
+            if el['id'] in seen_way_ids:
+                continue
+            if el.get('tags', {}).get('natural') != 'coastline':
+                continue
+            seen_way_ids.add(el['id'])
+
+            node_ids = el.get('nodes', [])
+            pts = []
+            for nid in node_ids:
+                if nid not in nodes:
+                    continue
+                nd = nodes[nid]
+                pts.append(_ll_to_bl(nd['lat'], nd['lon']))
+
+            if len(pts) >= 2:
+                chains.append(pts)
+
+    return chains
+
+
 def create_element(bbox, elementHeight=1.0, scaleHor=1.0, kind = "WATER", baseHeight = 1):
     from .geo import convert_to_blender_coordinates  # deferred to avoid circular import at load time
     from .primitives import col_create_face_mesh, col_create_line_curve  # deferred to avoid circular import at load time

@@ -1115,7 +1115,11 @@ def single_color_mode_mesh_wireframe(original, map, tolerance = None):
     bpy.ops.mesh.delete(type='FACE')
     bpy.ops.object.mode_set(mode='OBJECT')
 
-
+    # Guard: if the face deletion wiped all vertices (can happen when the
+    # intersection left only upward-facing faces), bail out gracefully.
+    if not obj.data.vertices:
+        bpy.data.objects.remove(obj, do_unlink=True)
+        return
 
     # Record the z level of the bottom plane before wireframe
     bottom_z = min(v.co.z for v in obj.data.vertices)

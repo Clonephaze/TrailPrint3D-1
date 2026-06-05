@@ -247,7 +247,6 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 col.prop(props, "col_wArea")
                 row = col.row(align=True)
                 row.prop(props, "el_oActive", icon='CHECKBOX_HLT' if props.el_oActive else 'CHECKBOX_DEHLT')
-                row.prop(props, "el_oFlip", icon='CHECKBOX_HLT' if props.el_oFlip else 'CHECKBOX_DEHLT')
 
             sub = box.box()
             sub.label(text=_("Forests"), icon='FORCE_WIND')

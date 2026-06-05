@@ -418,22 +418,8 @@ def _rg_start_osm_prefetch(tp3d, map_km):
         _active_kind_tasks.append(("BUILDINGS", _tile_tasks))
     if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive]) and map_km <= const.ROADS_MAXSIZE:
         _active_kind_tasks.append(("STREETS", _tile_tasks))
-    # Ocean/coastline uses a padded bbox (+10%) to ensure coastline curves extend
-    # past the map edges for correct boolean clipping.  Pre-fetch it now with that
-    # same bbox so fetch_osm_data hits the cache when createOcean runs later.
     if tp3d.el_oActive == 1:
-        _ocean_pad_lat = (tp3d.maxLat - tp3d.minLat) * 0.10
-        _ocean_lon_span = tp3d.maxLon - tp3d.minLon
-        if _ocean_lon_span < 0:
-            _ocean_lon_span += 360
-        _ocean_pad_lon = _ocean_lon_span * 0.10
-        _ocean_bbox = (
-            tp3d.minLat - _ocean_pad_lat,
-            max(-180.0, tp3d.minLon - _ocean_pad_lon),
-            tp3d.maxLat + _ocean_pad_lat,
-            min(180.0,  tp3d.maxLon + _ocean_pad_lon),
-        )
-        _active_kind_tasks.append(("COASTLINE", [_ocean_bbox]))
+        _active_kind_tasks.append(("COASTLINE", _tile_tasks))
     if not _active_kind_tasks:
         return None, {}
 
@@ -462,7 +448,7 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     from .terrain import coloring_main, createOcean, _COLORING_EMPTY, _COLORING_PAINTED, _COLORING_FILTERED, _fetch_all_kinds_parallel  # deferred to avoid circular import at load time
     from .osm import OsmFetchSettings  # deferred to avoid circular import at load time
     from .osm import create_buildings, create_roads  # deferred to avoid circular import at load time
-    from .scene import set_origin_to_3d_cursor, get_random_world_vertices  # deferred to avoid circular import at load time
+    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
     from .mesh_ops import intersectWithTile  # deferred to avoid circular import at load time
     from .metadata import writeMetadata  # deferred to avoid circular import at load time
 
@@ -598,38 +584,9 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     if tp3d.el_oActive == 1:
         _advance_elem_progress("Ocean", "Creating ocean…")
         _ov.set_fetch_progress('water', 0.5 if _water_feat_active else 0.0)
-        minLat = tp3d.minLat
-        minLon = tp3d.minLon
-        maxLat = tp3d.maxLat
-        maxLon = tp3d.maxLon
-        if curveObj is not None:
-            landpoints = get_random_world_vertices(curveObj, 200)
-        else:
-            print("No trail found, deriving land hints from terrain elevation")
-            depsgraph = bpy.context.evaluated_depsgraph_get()
-            obj_eval  = obj.evaluated_get(depsgraph)
-            world_mat = obj_eval.matrix_world
-            all_verts = [world_mat @ v.co for v in obj_eval.data.vertices]
-            if all_verts:
-                avg_z      = sum(v.z for v in all_verts) / len(all_verts)
-                high_verts = [v for v in all_verts if v.z > avg_z]
-                sample_pool = high_verts if high_verts else all_verts
-                landpoints  = random.sample(sample_pool, min(200, len(sample_pool)))
-            else:
-                landpoints = []
         print("Create Ocean")
-        ocean_pad_lat = (maxLat - minLat) * 0.10
-        # Compute real geographic longitude span, handling antimeridian crossing
-        lon_span = maxLon - minLon
-        if lon_span < 0:  # crosses the antimeridian (e.g. NZ: minLon=160, maxLon=-160)
-            lon_span += 360
-        ocean_pad_lon = lon_span * 0.10
-        bbox_west = max(-180.0, minLon - ocean_pad_lon)
-        bbox_east = min(180.0, maxLon + ocean_pad_lon)
-        terrain['ocean'] = createOcean(
-            (minLat - ocean_pad_lat, bbox_west, maxLat + ocean_pad_lat, bbox_east),
-            2, scaleHor, landpoints, obj, obj, tp3d.minThickness,
-        )
+        _coastline_tiles = _all_prefetched.get("COASTLINE", {})
+        terrain['ocean'] = createOcean(_coastline_tiles, scaleHor, obj)
         _ov.set_fetch_done('water', success=terrain['ocean'] is not None)
 
     print("Base elements Created")
