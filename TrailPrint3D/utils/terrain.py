@@ -1287,22 +1287,39 @@ def _punch_island_holes(outer_poly, island_loops, min_area=0.0):
     traced as a boundary re-entrant path.
     """
     result = list(outer_poly)
+    # Track which indices in `result` are original outer-boundary vertices.
+    # After each punch, the outer indices grow by (len(island)+1) but the
+    # original outer verts are still at the same relative positions — we
+    # must never pick a bridge-slit vertex as the anchor for the next island
+    # or the new bridge will cross the previous slit.
+    outer_indices = list(range(len(result)))
+
     for island in island_loops:
         if min_area > 0 and _polygon_area(island) < min_area:
             continue
         if len(island) < 3:
             continue
-        # Centroid of island → nearest outer point (O(N+M) approximation)
+        # Centroid of island → nearest OUTER-BOUNDARY vertex (never a bridge vertex)
         cx = sum(p[0] for p in island) / len(island)
         cy = sum(p[1] for p in island) / len(island)
-        best_oi = min(range(len(result)),
+        best_oi = min(outer_indices,
                       key=lambda i: (result[i][0] - cx) ** 2 + (result[i][1] - cy) ** 2)
         ox, oy = result[best_oi]
         best_ii = min(range(len(island)),
                       key=lambda i: (island[i][0] - ox) ** 2 + (island[i][1] - oy) ** 2)
+        # Rotate island so the closest vertex (best_ii) is at index 0,
+        # giving the shortest possible bridge edge.
         island_rot = island[best_ii:] + island[:best_ii]
         # Bridge: outer[0..best_oi] → island_rot → island_rot[0] → outer[best_oi..]
-        result = result[:best_oi + 1] + island_rot + [island_rot[0]] + result[best_oi:]
+        insert_at = result.index(result[best_oi], best_oi, best_oi + 1)
+        result = result[:insert_at + 1] + island_rot + [island_rot[0]] + result[insert_at:]
+        # The inserted block is (len(island_rot) + 1) new entries.
+        # Shift all outer_indices that came after the insertion point.
+        shift = len(island_rot) + 1
+        outer_indices = [
+            i if i <= insert_at else i + shift
+            for i in outer_indices
+        ]
     return result
 
 
@@ -1360,7 +1377,7 @@ def _close_chains_with_bbox(chains, bbox_bl):
         p = from_p
         remaining = cw_dist
         for _ in range(4):
-            c = int(p - 1e-9) % 4          # corner index just below p (CW)
+            c = math.floor(p - 1e-9) % 4  # corner index just below p (CW)
             d = (p - c) % 4.0              # distance to that corner going CW
             if d < 1e-9 or d >= remaining - 1e-9:
                 break
@@ -1413,6 +1430,27 @@ def _close_chains_with_bbox(chains, bbox_bl):
     return polygon if len(polygon) >= 3 else None
 
 
+def _debug_add_poly(name, pts2d, z=0.0, offset=(0.0, 0.0, 0.0)):
+    """Add a flat polygon to the TP3D_Debug collection (only when bpy.app.debug).
+    offset is applied as obj.location so debug objects can be spread out."""
+    if not bpy.app.debug:
+        return
+    from .primitives import col_create_face_mesh  # deferred
+    coll = bpy.data.collections.get("TP3D_Debug")
+    if coll is None:
+        coll = bpy.data.collections.new("TP3D_Debug")
+        bpy.context.scene.collection.children.link(coll)
+    pts3d = [(x, y, z) for x, y in pts2d]
+    obj = col_create_face_mesh(f"_DEBUG_{name}", pts3d)
+    if obj is None:
+        return
+    obj.location = offset
+    # Move from default collection into TP3D_Debug
+    for c in list(obj.users_collection):
+        c.objects.unlink(obj)
+    coll.objects.link(obj)
+
+
 def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
     """Build the flat ocean mesh object from stitched coastline chains.
 
@@ -1444,7 +1482,17 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
             if len(simplified) < 3:
                 print(f"    [ocean mesh] chain {len(chain)} pts â†’ clipped {len(clipped)} â†’ RDP {len(simplified)}, skip (degenerate)")
                 continue
-            print(f"    [ocean mesh] chain {len(chain)} pts â†’ clipped {len(clipped)} â†’ RDP {len(simplified)}")
+            print(f"    [ocean mesh] chain {len(chain)} pts → clipped {len(clipped)} → RDP {len(simplified)}")
+            if bpy.app.debug:
+                print(f"      raw  start={chain[0]}  end={chain[-1]}")
+                print(f"      clip start={clipped[0]}  end={clipped[-1]}")
+                print(f"      rdp  start={simplified[0]}  end={simplified[-1]}")
+                _ci = len(good_chains)
+                _dbg_x = 0.0
+                _dbg_step = 150.0
+                _debug_add_poly(f"chain_raw_{_ci}",     chain,      offset=(_dbg_x,                  -_dbg_step * (_ci + 1), 0.1))
+                _debug_add_poly(f"chain_clipped_{_ci}", clipped,    offset=(_dbg_x + _dbg_step,     -_dbg_step * (_ci + 1), 0.1))
+                _debug_add_poly(f"chain_rdp_{_ci}",     simplified, offset=(_dbg_x + _dbg_step * 2, -_dbg_step * (_ci + 1), 0.1))
             good_chains.append(simplified)
 
         if good_chains:
@@ -1472,10 +1520,14 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
                 if span < 0.05 or span > 3.95:
                     print(f"    [ocean mesh] skipping sliver chain ({len(ch)} pts, CCW span={span:.3f})")
                     continue
+                print(f"    [ocean mesh] chain {len(ch)} pts: start CCW={sp:.3f}  end CCW={ep:.3f}  span={span:.3f}")
                 filtered.append(ch)
             good_chains = filtered
             poly = _close_chains_with_bbox(good_chains, bbox_bl)
             if poly and len(poly) >= 3:
+                if bpy.app.debug:
+                    print(f"    [ocean mesh] raw closed polygon: {len(poly)} pts")
+                    _debug_add_poly("ocean_polygon_pre_islands",  poly, offset=(0.0,   -450.0, 0.1))
                 # Punch island holes directly into the polygon using bridge edges.
                 # This is done in Python geometry (no booleans) so it works on a
                 # flat non-manifold face and survives the projection pipeline intact.
@@ -1489,16 +1541,20 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
                         if len(s) >= 3
                     ]
                     if simplified_islands:
-                        # min_island_area: islands smaller than this (map units²) are
-                        # skipped. R is in km so map units are km×scaleHor; at a
-                        # 100mm map / scaleHor≈6.47, 1 unit ≈ 1mm on the print,
-                        # so default 2.0 ≈ a ~1.4×1.4mm patch.
                         tp3d_ctx = bpy.context.scene.tp3d
                         min_area = getattr(tp3d_ctx, 'el_oMinIslandArea', 4.0)
                         before = len(simplified_islands)
+                        if bpy.app.debug:
+                            for ii, isl in enumerate(simplified_islands):
+                                area = _polygon_area(isl)
+                                kept = area >= min_area
+                                print(f"      island[{ii}]: {len(isl)} pts  area={area:.3f}  {'KEEP' if kept else f'SKIP (<{min_area})'}")
+                                _debug_add_poly(f"island_{'kept' if kept else 'skipped'}_{ii}", isl, offset=(150.0 * (ii % 8), -600.0 - 150.0 * (ii // 8), 0.1))
                         poly = _punch_island_holes(poly, simplified_islands, min_area=min_area)
                         skipped = sum(1 for s in simplified_islands if _polygon_area(s) < min_area)
                         print(f"    [ocean mesh] punched {before - skipped}/{before} island holes (skipped {skipped} below {min_area} units²)")
+                        if bpy.app.debug:
+                            _debug_add_poly("ocean_polygon_post_islands", poly, offset=(150.0, -450.0, 0.1))
                 pts3d = [(x, y, 0.0) for x, y in poly]
                 face_obj = col_create_face_mesh("_OceanFace", pts3d)
                 if face_obj and len(face_obj.data.vertices) > 0:
