@@ -14,6 +14,13 @@ from . import addon_preferences
 from . import temp
 
 
+def _sanitize_filename(name):
+    invalid = r'\/:*?"<>|'
+    for ch in invalid:
+        name = name.replace(ch, "_")
+    return name
+
+
 def export_to_STL(zobj, force="STL"):
 
     exportPath = bpy.context.scene.tp3d.get('export_path', None)
@@ -24,7 +31,7 @@ def export_to_STL(zobj, force="STL"):
     bpy.context.view_layer.objects.active = zobj
 
     if zobj.material_slots and force != "STL":
-        bpy.ops.wm.obj_export(filepath=exportPath + zobj.name + ".obj",
+        bpy.ops.wm.obj_export(filepath=exportPath + _sanitize_filename(zobj.name) + ".obj",
             export_selected_objects=True,
             export_triangulated_mesh=True,
             apply_modifiers=True,
@@ -33,7 +40,7 @@ def export_to_STL(zobj, force="STL"):
             up_axis="Z",
             )
     else:
-        bpy.ops.wm.stl_export(filepath=exportPath + zobj.name + ".stl", export_selected_objects=True)
+        bpy.ops.wm.stl_export(filepath=exportPath + _sanitize_filename(zobj.name) + ".stl", export_selected_objects=True)
 
     zobj.select_set(False)  # Select the object
 
@@ -57,7 +64,7 @@ def export_selected_to_STL(force="STL"):
         bpy.context.view_layer.objects.active = zobj
 
         if (zobj.material_slots or force == "OBJ") and force != "STL":
-            bpy.ops.wm.obj_export(filepath=exportPath + zobj.name + ".obj",
+            bpy.ops.wm.obj_export(filepath=exportPath + _sanitize_filename(zobj.name) + ".obj",
                 export_selected_objects=True,
                 export_triangulated_mesh=True,
                 apply_modifiers=True,
@@ -67,7 +74,7 @@ def export_selected_to_STL(force="STL"):
                 )
             #show_message_box("File Exported as OBJ because it contains Materials","INFO","OBJ File Exported")
         else:
-            bpy.ops.wm.stl_export(filepath=exportPath + zobj.name + ".stl", export_selected_objects=True)
+            bpy.ops.wm.stl_export(filepath=exportPath + _sanitize_filename(zobj.name) + ".stl", export_selected_objects=True)
 
 
     bpy.ops.object.select_all(action='DESELECT')
@@ -194,7 +201,7 @@ def export_selected_to_3mf():
     # Call your custom thumbnail function on the centered duplicates
     customThumbnail(bpy.context.selected_objects, thumbnail_path)
 
-    full_path = exportPath + bpy.context.scene.tp3d.modelname + ".3mf"
+    full_path = exportPath + _sanitize_filename(bpy.context.scene.tp3d.modelname) + ".3mf"
 
     _3mf_api = get_threemf_api()
     if _3mf_api is None:

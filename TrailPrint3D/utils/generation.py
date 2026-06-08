@@ -126,6 +126,14 @@ def _rg_validate_inputs(flags):
     if not os.path.isdir(exportPath):
         show_message_box(f"Invalid export Directory: {exportPath}. Please select a valid Directory.")
         return None
+    try:
+        test_path = os.path.join(exportPath, ".tp3d_write_test")
+        with open(test_path, "w") as f:
+            f.write("")
+        os.remove(test_path)
+    except OSError:
+        show_message_box(f"No write permission for export folder: {exportPath}. Please select a different folder.")
+        return None
 
     # --- Default font ---
     if textFont == "":
