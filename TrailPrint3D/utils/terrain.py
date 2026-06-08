@@ -1,12 +1,10 @@
-﻿from .scene import remove_objects
-from .mesh_ops import extrude_plane, recalculateNormals
-import bpy  # type: ignore
+﻿import bpy  # type: ignore
 import bmesh  # type: ignore
 import math
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from mathutils import Vector, Matrix, bvhtree  # type: ignore
+from mathutils import Vector, bvhtree  # type: ignore
 from .. import progress as _progress
 
 _COLORING_EMPTY = object()
@@ -142,9 +140,9 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
 def coloring_main(map, kind="WATER", prefetched_tiles=None):
     from .osm import fetch_osm_data, build_osm_nodes, extract_multipolygon_bodies, calculate_polygon_area_2d, is_bbox_overlapping  # deferred to avoid circular import at load time
     from .geo import convert_to_blender_coordinates  # deferred to avoid circular import at load time
-    from .primitives import col_create_face_mesh, create_ribbon_mesh, create_rectangle, create_hexagon, create_heart, create_octagon, create_circle, create_ellipse  # deferred to avoid circular import at load time
+    from .primitives import col_create_face_mesh, create_ribbon_mesh  # deferred to avoid circular import at load time
     from .mesh_ops import recalculateNormals, boolean_operation, merge_objects, getBottomFacesArea  # deferred to avoid circular import at load time
-    from .scene import remove_objects, set_origin_to_3d_cursor, set_origin_to_geometry, show_message_box  # deferred to avoid circular import at load time
+    from .scene import remove_objects, set_origin_to_geometry, show_message_box  # deferred to avoid circular import at load time
     from .metadata import writeMetadata  # deferred to avoid circular import at load time
 
     minLat = bpy.context.scene.tp3d.minLat
@@ -152,7 +150,6 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     maxLat = bpy.context.scene.tp3d.maxLat
     maxLon = bpy.context.scene.tp3d.maxLon
 
-    col_KeepManifold = (bpy.context.scene.tp3d.col_KeepManifold)
     if kind == "WATER":
         col_Area = (bpy.context.scene.tp3d.col_wArea)
     if kind == "FOREST":
@@ -869,7 +866,6 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
 
     # Ensure both have mesh data
     map_mesh = map_obj.data
-    terrain_mesh = terrain_obj.data
  
 
     # Build bmesh for Map â€” read LOCAL mesh, transform centers to WORLD space via matrix_world
@@ -1650,7 +1646,7 @@ def createOcean(prefetched_coastline, scaleHor, tile):
     if ocean_obj is not None:
         print(f"  [ocean] mesh verts={len(ocean_obj.data.vertices)}  faces={len(ocean_obj.data.polygons)}")
     else:
-        print(f"  [ocean] mesh: None")
+        print("  [ocean] mesh: None")
 
     if ocean_obj is None:
         _progress.WarningsOverlay.add_warning(
@@ -1706,7 +1702,7 @@ def exaggeratedLayers(objs):
 
     for obj in selected_objects:
 
-        if not "Object type" in obj:
+        if "Object type" not in obj:
             continue
         if obj["Object type"] != "MAP":
             continue
@@ -1795,7 +1791,7 @@ def contourLines(objs):
 
     for obj in selected_objects:
 
-        if not "Object type" in obj:
+        if "Object type" not in obj:
             continue
         if obj["Object type"] != "MAP":
             continue
