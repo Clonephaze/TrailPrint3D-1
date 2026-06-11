@@ -509,6 +509,43 @@ def col_create_face_mesh(name, coords):
     bm.free()
     return tobj
 
+
+def col_create_face_mesh_with_holes(name, outer, holes):
+    """Create a flat face mesh with interior holes via constrained tessellation.
+
+    Unlike a single bridge-slit n-gon (which Blender fills solid unless the
+    inner loops happen to be wound the opposite way), this builds real
+    triangles that exclude every hole, regardless of loop winding.
+
+    outer -- list of (x, y, z) for the outer boundary loop
+    holes -- list of loops, each a list of (x, y, z), to cut as holes
+
+    Returns a newly linked object, or None if tessellation fails.
+    """
+    from mathutils.geometry import tessellate_polygon  # deferred
+
+    if len(outer) < 3:
+        return None
+
+    loops = [outer] + [h for h in holes if len(h) >= 3]
+    veclists = [[Vector(p) for p in loop] for loop in loops]
+
+    all_coords = []
+    for loop in loops:
+        all_coords.extend(loop)
+
+    tris = tessellate_polygon(veclists)
+    if not tris:
+        return None
+
+    mesh = bpy.data.meshes.new(name)
+    tobj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(tobj)
+    mesh.from_pydata(all_coords, [], [tuple(t) for t in tris])
+    mesh.update()
+    return tobj
+
+
 def create_ribbon_mesh(name, pts, half_width):
     """Build a flat ribbon mesh along a polyline.
 

@@ -1,5 +1,6 @@
 import bpy  # type: ignore
 import bmesh  # type: ignore
+import math
 from mathutils import Vector, bvhtree  # type: ignore
 
 
@@ -1113,6 +1114,22 @@ def single_color_mode_mesh_wireframe(original, map, tolerance = None):
         f.select = f.normal.normalized().z >= -0.95  # select non-downward faces
     bmesh.update_edit_mesh(obj.data)
     bpy.ops.mesh.delete(type='FACE')
+
+    # The flat bottom shell carries the ocean region's full triangulation
+    # (every internal diagonal plus the bridge edges that represent island
+    # holes).  The wireframe modifier below turns EVERY remaining edge into an
+    # engraved groove, so those internal diagonals would be imprinted all over
+    # the land surface.  Dissolving the coplanar bottom faces back into clean
+    # n-gons collapses all of that interior geometry, leaving only the true
+    # region boundary -- the coastline and each island outline.
+    bm = bmesh.from_edit_mesh(obj.data)
+    bmesh.ops.dissolve_limit(
+        bm,
+        angle_limit=math.radians(1.0),
+        verts=bm.verts[:],
+        edges=bm.edges[:],
+    )
+    bmesh.update_edit_mesh(obj.data)
     bpy.ops.object.mode_set(mode='OBJECT')
 
     # Guard: if the face deletion wiped all vertices (can happen when the
