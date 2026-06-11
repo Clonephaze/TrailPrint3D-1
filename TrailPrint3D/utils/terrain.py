@@ -1502,6 +1502,17 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
         return (abs(x - min_x) <= border_eps or abs(x - max_x) <= border_eps or
                 abs(y - min_y) <= border_eps or abs(y - max_y) <= border_eps)
 
+    def _edges_of(pt):
+        """Set of bbox edges a border point lies on (0=bottom,1=right,2=top,
+        3=left).  A corner point belongs to two edges."""
+        x, y = pt
+        e = set()
+        if abs(y - min_y) <= border_eps: e.add(0)
+        if abs(x - max_x) <= border_eps: e.add(1)
+        if abs(y - max_y) <= border_eps: e.add(2)
+        if abs(x - min_x) <= border_eps: e.add(3)
+        return e
+
     def _rotate_outside(loop):
         """Rotate a closed loop so it starts at a vertex outside the bbox.
         Returns (rotated_loop, crosses_border)."""
@@ -1526,6 +1537,17 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
             if len(simplified) < 2:
                 continue
             if _on_border(simplified[0]) and _on_border(simplified[-1]):
+                # A border fragment whose two endpoints sit on the SAME bbox
+                # edge runs along the tile boundary (the coastline briefly
+                # dips out and back across one edge).  It encloses negligible
+                # area but breaks the entry/exit alternation the perimeter
+                # tracer relies on -- producing a self-intersecting polygon.
+                # Drop it from the main border walk.
+                if _edges_of(simplified[0]) & _edges_of(simplified[-1]):
+                    if bpy.app.debug:
+                        print(f"      [ocean mesh] dropping same-edge border fragment "
+                              f"({len(simplified)} pts)")
+                    continue
                 border_chains.append(simplified)
             elif len(simplified) >= 3:
                 island_loops.append(simplified)
@@ -1592,7 +1614,10 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
     if border_chains:
         polys = _close_chains_with_bbox(border_chains, bbox_bl)
         for pi, poly in enumerate(polys):
-            if len(poly) < 3:
+            if len(poly) < 3 or _polygon_area(poly) < 1.0:
+                if bpy.app.debug and len(poly) >= 3:
+                    print(f"    [ocean mesh] dropping sliver polygon {pi} "
+                          f"({len(poly)} pts, area={_polygon_area(poly):.4f})")
                 continue
             if bpy.app.debug:
                 print(f"    [ocean mesh] ocean polygon {pi}: {len(poly)} pts")

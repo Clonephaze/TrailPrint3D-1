@@ -1209,6 +1209,11 @@ def single_color_mode_mesh_wireframe(original, map, tolerance = None):
 def remeshClearing(obj, voxelSize2, tolerance):
 
 
+    # Nothing valid to measure if the element is empty.
+    if not obj.data.vertices:
+        print("[remeshClearing] object has no vertices on entry -- skipping")
+        return
+
     # Record the z level of the bottom faces
     bottom_z = min(v.co.z for v in obj.data.vertices)
 
@@ -1257,6 +1262,9 @@ def remeshClearing(obj, voxelSize2, tolerance):
     mw  = obj.matrix_world
     xs  = [(mw @ v.co).x for v in obj.data.vertices]
     ys  = [(mw @ v.co).y for v in obj.data.vertices]
+    if not xs:
+        print("[remeshClearing] object has no vertices after remesh -- skipping")
+        return
     pad = 0.5
     cx  = (min(xs) + max(xs)) / 2
     cy  = (min(ys) + max(ys)) / 2
@@ -1285,6 +1293,12 @@ def remeshClearing(obj, voxelSize2, tolerance):
 
     applyModifier(obj, bool_mod)
     bpy.data.objects.remove(cube_obj, do_unlink=True)
+
+    # The cube DIFFERENCE can remove every face if the element sat entirely
+    # inside the cut volume.  Bail out before measuring an empty mesh.
+    if not obj.data.vertices:
+        print("[remeshClearing] object emptied by cube cut -- skipping")
+        return
 
     # Keep only the topmost vertices (the flat cap left by the cube's top face)
     top_z = max(v.co.z for v in obj.data.vertices)
@@ -1348,6 +1362,13 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     bpy.ops.mesh.delete(type='FACE')
 
     bpy.ops.object.mode_set(mode='OBJECT')
+
+    # If nothing survived (e.g. an element with no downward faces), skip the
+    # remesh entirely rather than crashing on an empty mesh downstream.
+    if not obj.data.vertices:
+        print("[single_color_mode_mesh_remesh] no bottom faces -- skipping element")
+        bpy.data.objects.remove(obj, do_unlink=True)
+        return None
 
     remeshClearing(obj, voxelSize2, tolerance)
 
