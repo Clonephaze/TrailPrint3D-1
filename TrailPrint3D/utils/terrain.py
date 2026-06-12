@@ -1272,6 +1272,97 @@ def _polygon_area(pts):
     return abs(s) * 0.5
 
 
+def _polygon_self_intersects(poly, max_check=3000):
+    """Return True if the closed polygon has any proper self-crossing.
+
+    The ocean boolean uses the MANIFOLD solver, which silently no-ops on a
+    geometrically self-intersecting cutter (collapsed sub-print docks/jetties,
+    stitch errors).  This is the cheap pre-check that decides whether the
+    cutter needs the voxel-remesh clean-up: a simple polygon can skip it and
+    cut directly (faster, zero detail loss).
+
+    Conservative by design: a polygon with more than *max_check* points is
+    assumed dirty (the O(n^2) verify would be slow, and big convoluted coasts
+    are exactly the ones that self-cross) so we never skip a remesh that was
+    actually needed.
+    """
+    n = len(poly)
+    if n < 4:
+        return False
+    if n > max_check:
+        return True  # too big to verify cheaply -> assume dirty, voxel-remesh
+
+    def _o(a, b, c):
+        v = (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])
+        if v > 1e-9: return 1
+        if v < -1e-9: return -1
+        return 0
+
+    for i in range(n):
+        a1, a2 = poly[i], poly[(i + 1) % n]
+        for j in range(i + 1, n):
+            if j == i or (j + 1) % n == i or (i + 1) % n == j:
+                continue
+            b1, b2 = poly[j], poly[(j + 1) % n]
+            if _o(a1, a2, b1) != _o(a1, a2, b2) and _o(b1, b2, a1) != _o(b1, b2, a2):
+                return True
+    return False
+
+
+def _diagnose_polygon(poly, label=""):
+    """DEBUG-ONLY: report whether a closed polygon is geometrically simple.
+
+    Tessellation (and every downstream boolean) silently produces garbage when
+    the outline crosses itself or doubles back.  This counts proper crossings
+    between non-adjacent edges, flags duplicate consecutive points and reports
+    the coordinate magnitude (a precision-risk indicator).  O(n^2); debug only.
+    """
+    if not bpy.app.debug:
+        return
+    n = len(poly)
+    if n < 4:
+        print(f"    [poly-diag] {label}: {n} pts (too few to self-test)")
+        return
+    if n > 4000:
+        # O(n^2) self-test would stall Blender on huge polygons (e.g. an
+        # un-simplified coastline of tens of thousands of points).
+        print(f"    [poly-diag] {label}: {n} pts (too large for O(n^2) self-test -- skipped)")
+        return
+
+    def _seg_cross(p1, p2, p3, p4):
+        def _o(a, b, c):
+            v = (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])
+            if v > 1e-9: return 1
+            if v < -1e-9: return -1
+            return 0
+        o1, o2 = _o(p1, p2, p3), _o(p1, p2, p4)
+        o3, o4 = _o(p3, p4, p1), _o(p3, p4, p2)
+        return o1 != o2 and o3 != o4   # proper crossing only
+
+    crossings = 0
+    first_hit = None
+    for i in range(n):
+        a1, a2 = poly[i], poly[(i + 1) % n]
+        for j in range(i + 1, n):
+            # skip adjacent / shared-endpoint edges
+            if j == i or (j + 1) % n == i or (i + 1) % n == j:
+                continue
+            b1, b2 = poly[j], poly[(j + 1) % n]
+            if _seg_cross(a1, a2, b1, b2):
+                crossings += 1
+                if first_hit is None:
+                    first_hit = (i, j)
+
+    dupes = sum(1 for k in range(n)
+                if abs(poly[k][0]-poly[(k+1) % n][0]) < 1e-6
+                and abs(poly[k][1]-poly[(k+1) % n][1]) < 1e-6)
+    mags = [max(abs(x), abs(y)) for x, y in poly]
+    print(f"    [poly-diag] {label}: {n} pts | self-crossings={crossings}"
+          f"{f' (first at edges {first_hit})' if first_hit else ''}"
+          f" | dup-consecutive={dupes} | coord-mag~{max(mags):.0f}"
+          f" | {'SIMPLE (ok)' if crossings == 0 else 'NON-SIMPLE (breaks tessellation)'}")
+
+
 def _punch_island_holes(outer_poly, island_loops, min_area=0.0):
     """Connect island loops into outer_poly via bridge edges (zero-width slits).
 
@@ -1491,6 +1582,7 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
     from .mesh_ops import merge_objects  # deferred to avoid circular import at load time
 
     ocean_faces = []
+    ocean_self_intersects = False  # set True if any outer polygon self-crosses
 
     min_x, min_y, max_x, max_y = bbox_bl
     W = max(max_x - min_x, 1e-9)
@@ -1531,9 +1623,13 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
     border_chains = []   # endpoints on the tile border -> bound ocean
     island_loops = []    # closed loops fully inside the tile
 
+    rdp_eps = getattr(bpy.context.scene.tp3d, 'el_oRdpEpsilon', 0.1)
+    if bpy.app.debug:
+        print(f"    [ocean mesh] coastline RDP epsilon = {rdp_eps}")
+
     def _add_clipped(chain):
         for clipped in _clip_chain_to_bbox(chain, bbox_bl):
-            simplified = _rdp_simplify(clipped, epsilon=0.1)
+            simplified = _rdp_simplify(clipped, epsilon=rdp_eps) if rdp_eps > 0 else clipped
             if len(simplified) < 2:
                 continue
             if _on_border(simplified[0]) and _on_border(simplified[-1]):
@@ -1559,7 +1655,7 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
         if crosses:
             _add_clipped(rotated)
         else:
-            simplified = _rdp_simplify(loop, epsilon=0.1)
+            simplified = _rdp_simplify(loop, epsilon=rdp_eps) if rdp_eps > 0 else loop
             if len(simplified) >= 3:
                 island_loops.append(simplified)
 
@@ -1619,8 +1715,11 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
                     print(f"    [ocean mesh] dropping sliver polygon {pi} "
                           f"({len(poly)} pts, area={_polygon_area(poly):.4f})")
                 continue
+            if _polygon_self_intersects(poly):
+                ocean_self_intersects = True
             if bpy.app.debug:
                 print(f"    [ocean mesh] ocean polygon {pi}: {len(poly)} pts")
+                _diagnose_polygon(poly, f"poly {pi} (outer, pre-islands)")
                 _debug_add_poly(f"ocean_polygon_{pi}_pre_islands", poly, offset=(150.0 * pi, -450.0, 0.1))
             face_obj = _make_ocean_face(poly, f"poly {pi}")
             if face_obj and len(face_obj.data.vertices) > 0:
@@ -1656,6 +1755,13 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
     # completely out of the tile bounds, causing the INTERSECT boolean inside
     # merge_with_map to return an empty mesh.
     ocean_obj.location = (0.0, 0.0, 0.0)
+
+    # Record whether the cutter polygon self-intersects so createOcean can
+    # decide between the fast direct boolean (simple coast) and the
+    # voxel-remesh clean-up (self-crossing coast).
+    ocean_obj["_tp3d_ocean_self_intersects"] = bool(ocean_self_intersects)
+    if bpy.app.debug:
+        print(f"  [ocean] cutter self-intersects = {bool(ocean_self_intersects)}")
 
     return ocean_obj
 
@@ -1725,6 +1831,19 @@ def createOcean(prefetched_coastline, scaleHor, tile):
         return None
 
     set_origin_to_3d_cursor(ocean_obj)
+
+    # Tag the ocean as a voxel cutter ONLY when its coastline polygon actually
+    # self-intersects.  Real coastlines never overlap, so any crossing is an
+    # artifact (collapsed sub-print docks/jetties, stitch errors) that the
+    # MANIFOLD boolean can't handle -- a voxel remesh resolves it.  A simple
+    # (non-crossing) coast skips the remesh entirely and cuts directly: faster
+    # and with zero voxel rounding of the coastline.
+    _vox = getattr(bpy.context.scene.tp3d, 'el_oVoxelSize', 0.25)
+    _dirty = ocean_obj.get("_tp3d_ocean_self_intersects", True)
+    if _vox and _vox > 0 and _dirty:
+        ocean_obj["_tp3d_voxel_cutter"] = float(_vox)
+    elif bpy.app.debug:
+        print(f"  [ocean] simple coast (or voxel disabled) -- direct boolean, no remesh")
 
     mat = bpy.data.materials.get("WATER")
     ocean_obj.data.materials.clear()

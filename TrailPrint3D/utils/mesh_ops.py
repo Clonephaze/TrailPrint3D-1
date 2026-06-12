@@ -1430,16 +1430,63 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
     bpy.context.view_layer.objects.active = mergeobject
     mergeobject.select_set(True)
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.mesh.extrude_region_move()
-    bpy.ops.transform.translate(value=(0, 0, 200))#bpy.ops.mesh.select_all(action='DESELECT')
-    bpy.ops.object.mode_set(mode='OBJECT')
-    mergeobject.location.z = -1
 
-    recalculateNormals(mergeobject)
+    voxel_size = mergeobject.get("_tp3d_voxel_cutter", 0.0)
+    # The ocean object is tagged in _build_ocean_mesh; identify it so its flat
+    # bottom can be kept flush with the terrain base (water must never dip
+    # below the print's base plane).
+    is_ocean = "_tp3d_ocean_self_intersects" in mergeobject
 
+    if voxel_size and voxel_size > 0:
+        # --- Ocean cutter path -------------------------------------------
+        # The flat coastline polygon self-intersects (sub-print marina/dock
+        # features collapse and cross at map scale; dense junctions can also
+        # mis-stitch).  A raw boolean fails ("non-manifold inputs").  Build a
+        # solid only as tall as the terrain (so the voxel grid stays small --
+        # detail comes from voxel size, not height) and voxel-remesh it into
+        # a watertight manifold, which resolves every self-intersection.
+        zs = [(mapobject.matrix_world @ Vector(c)).z for c in mapobject.bound_box]
+        z_min, z_max = min(zs), max(zs)
+        margin = max((z_max - z_min) * 0.5, 1.0) + 1.0
+        cutter_height = (z_max - z_min) + 2.0 * margin
 
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.extrude_region_move()
+        bpy.ops.transform.translate(value=(0, 0, cutter_height))
+        bpy.ops.object.mode_set(mode='OBJECT')
+        # Flat polygon sits at local z=0 (solid spans 0..cutter_height); drop
+        # the object so the solid straddles the whole terrain in world Z.
+        mergeobject.location.z = z_min - margin
+
+        # Safety: never let the voxel grid explode -- bump size up if needed.
+        dx = max(mergeobject.dimensions.x, 1e-3)
+        dy = max(mergeobject.dimensions.y, 1e-3)
+        dz = max(mergeobject.dimensions.z, 1e-3)
+        v = float(voxel_size)
+        MAX_VOX = 40_000_000
+        while (dx / v) * (dy / v) * (dz / v) > MAX_VOX and v < 100.0:
+            v *= 1.5
+        if v != voxel_size and bpy.app.debug:
+            print(f"  [ocean] voxel size bumped {voxel_size:.3f} -> {v:.3f} to cap grid")
+
+        rem = mergeobject.modifiers.new(name="OceanRemesh", type='REMESH')
+        rem.mode = 'VOXEL'
+        rem.voxel_size = v
+        bpy.ops.object.modifier_apply(modifier=rem.name)
+        recalculateNormals(mergeobject)
+        if bpy.app.debug:
+            print(f"  [ocean] cutter voxel-remeshed (v={v:.3f}, height={cutter_height:.2f}, "
+                  f"verts now {len(mergeobject.data.vertices)})")
+    else:
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.extrude_region_move()
+        bpy.ops.transform.translate(value=(0, 0, 200))#bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        mergeobject.location.z = -1
+
+        recalculateNormals(mergeobject)
 
     # Add boolean modifier
     bool_mod = mergeobject.modifiers.new(name="Boolean", type='BOOLEAN')
@@ -1509,12 +1556,16 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
 
 
 
-        bpy.ops.transform.translate(value=(0, 0, secondlowestprojection - lowestprojection - 1), orient_type='LOCAL')
+        bottom_drop = secondlowestprojection - lowestprojection - 1
+        if is_ocean:
+            # Water must never sit below the terrain base.  The selected bottom
+            # face is already flush with the map base (z = lowestprojection);
+            # clamp the skirt so it is never pushed below that plane.
+            bottom_drop = max(bottom_drop, 0.0)
+        bpy.ops.transform.translate(value=(0, 0, bottom_drop), orient_type='LOCAL')
 
         #bpy.ops.mesh.select_all(action='DESELECT')
         pass
-
-
 
 
     bmesh.update_edit_mesh(mergeobject.data)

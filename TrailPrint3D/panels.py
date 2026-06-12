@@ -249,6 +249,8 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 row.prop(props, "el_oActive", icon='CHECKBOX_HLT' if props.el_oActive else 'CHECKBOX_DEHLT')
                 if props.el_oActive:
                     col.prop(props, "el_oMinIslandArea")
+                    col.prop(props, "el_oRdpEpsilon")
+                    col.prop(props, "el_oVoxelSize")
 
             sub = box.box()
             sub.label(text=_("Forests"), icon='FORCE_WIND')
