@@ -610,11 +610,13 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
 
             buildings = create_buildings(obj, 10, scaleHor)
 
-            set_origin_to_3d_cursor(buildings)
-            intersectWithTile(obj, buildings)
-            buildings.name = obj.name + "_" + "Buildings"
-            terrain['buildings'] = buildings
-            writeMetadata(buildings, type="BUILDINGS")
+            if buildings is not None:
+                # Buildings are already clipped to the map shape in 2D inside
+                # create_buildings, so no 3D boolean clip is needed here.
+                set_origin_to_3d_cursor(buildings)
+                buildings.name = obj.name + "_" + "Buildings"
+                terrain['buildings'] = buildings
+                writeMetadata(buildings, type="BUILDINGS")
             _ov.set_fetch_done('buildings', success=buildings is not None)
         else:
             print("INFO: MAP IS TOO BIG FOR BUILDINGS (< 10Km Map size Required)")

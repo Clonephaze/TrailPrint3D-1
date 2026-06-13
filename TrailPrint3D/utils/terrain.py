@@ -138,12 +138,15 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
 
 
 def coloring_main(map, kind="WATER", prefetched_tiles=None):
-    from .osm import fetch_osm_data, build_osm_nodes, extract_multipolygon_bodies, calculate_polygon_area_2d, is_bbox_overlapping  # deferred to avoid circular import at load time
+    from .osm import fetch_osm_data, build_osm_nodes, extract_multipolygon_bodies  # deferred to avoid circular import at load time
     from .geo import convert_to_blender_coordinates  # deferred to avoid circular import at load time
-    from .primitives import col_create_face_mesh, create_ribbon_mesh  # deferred to avoid circular import at load time
-    from .mesh_ops import recalculateNormals, boolean_operation, merge_objects, getBottomFacesArea  # deferred to avoid circular import at load time
-    from .scene import remove_objects, set_origin_to_geometry, show_message_box  # deferred to avoid circular import at load time
+    from .mesh_ops import merge_objects  # deferred to avoid circular import at load time
+    from .scene import show_message_box  # deferred to avoid circular import at load time
     from .metadata import writeMetadata  # deferred to avoid circular import at load time
+    from . import geometry2d as _g2d  # Shapely-based 2D geometry helpers
+
+    _t_color = time.time()          # master timer: whole coloring_main
+    _t_tiles_total = 0.0            # accumulated OSM fetch + Shapely ring building
 
     minLat = bpy.context.scene.tp3d.minLat
     minLon = bpy.context.scene.tp3d.minLon
@@ -190,9 +193,8 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     lats = math.ceil((maxLat - minLat) / lat_step)
     lons = math.ceil((maxLon - minLon) / lon_step)
 
-    created_objects = []
-    negative_object = []
-    ribbon_objects = []
+    pos_geoms = []
+    neg_geoms = []
 
     scaleHor = bpy.context.scene.tp3d.sScaleHor
     streamWidthMultiplier = bpy.context.scene.tp3d.col_wStreamWidth
@@ -200,6 +202,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
 
     cntr = 0
     maxcntr = lats * lons
+    _t_tiles_start = time.time()
     if lats * lons < 20 or prefetched_tiles is not None:
         for k in range(lats):
             for l in range(lons):
@@ -262,67 +265,65 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                                 relation_way_ids.add(member['ref'])
 
                 if _ov.active:
-                    _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} — creating bodies")
+                    _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} — building geometry")
 
-                for i, coords in enumerate(bodies):
-                    blender_coords = [convert_to_blender_coordinates(lat, lon, ele, 0) for lat, lon, ele in coords]
-                    calcArea = calculate_polygon_area_2d(blender_coords)
-                    if calcArea > col_Area:
-                        tobj = col_create_face_mesh(f"Relation_{i}", blender_coords)
-                        created_objects.append(tobj)
+                # Build Shapely polygons from relation outer rings
+                for coords in bodies:
+                    xy = [(x, y) for x, y, _ in
+                          (convert_to_blender_coordinates(lat, lon, ele, 0) for lat, lon, ele in coords)]
+                    poly = _g2d.xy_ring_to_polygon(xy)
+                    if poly is not None and not poly.is_empty:
+                        pos_geoms.append(poly)
                         waterCreated += 1
                     else:
                         waterDeleted += 1
 
-                if _ov.active:
-                    _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} — creating negative bodies")
-
-                for i, coords in enumerate(negatives):
-                    blender_coords = [convert_to_blender_coordinates(lat, lon, ele, 0) for lat, lon, ele in coords]
-                    calcArea = calculate_polygon_area_2d(blender_coords)
-                    if calcArea > col_Area:
-                        tobj = col_create_face_mesh(f"Relation_{i}", blender_coords)
-                        negative_object.append(tobj)
+                # Build Shapely polygons from relation inner rings (negatives / holes)
+                for coords in negatives:
+                    xy = [(x, y) for x, y, _ in
+                          (convert_to_blender_coordinates(lat, lon, ele, 0) for lat, lon, ele in coords)]
+                    poly = _g2d.xy_ring_to_polygon(xy)
+                    if poly is not None and not poly.is_empty:
+                        neg_geoms.append(poly)
                         waterCreated += 1
                     else:
                         waterDeleted += 1
 
-                if _ov.active:
-                    _ov.update(message=f"{kind.capitalize()}: tile {cntr}/{maxcntr} — creating ways")
-
-                for i, element in enumerate(data['elements']):
+                # Process standalone ways: closed → polygon, open → buffered ribbon
+                for element in data['elements']:
                     if element['type'] != 'way':
                         waterDeleted += 1
                         continue
                     if element['id'] in relation_way_ids:
-                        continue  # already processed as part of a relation
+                        continue  # already consumed by a relation
 
                     coords = []
                     for node_id in element.get('nodes', []):
                         if node_id in nodes:
                             node = nodes[node_id]
-                            coord = convert_to_blender_coordinates(
-                                node['lat'], node['lon'], 0,0
-                            )
-                            coords.append(coord)
+                            coords.append(convert_to_blender_coordinates(
+                                node['lat'], node['lon'], 0, 0
+                            ))
                     if len(coords) < 2:
                         waterDeleted += 1
                         continue
 
                     if coords[0] == coords[-1]:
-                        tArea = calculate_polygon_area_2d(coords)
-                        if tArea < col_Area:
-                            waterDeleted += 1
-                            continue
-                        tobj = col_create_face_mesh(f"coloredObject_{i}", coords)
-                        created_objects.append(tobj)
-                        waterCreated += 1
-                    else:
-                        pts = [Vector(c) for c in coords]
-                        tobj = create_ribbon_mesh(f"OpenObject_{i}", pts, half_width)
-                        if tobj:
-                            ribbon_objects.append(tobj)
+                        xy = [(x, y) for x, y, _ in coords]
+                        poly = _g2d.xy_ring_to_polygon(xy)
+                        if poly is not None and not poly.is_empty:
+                            pos_geoms.append(poly)
                             waterCreated += 1
+                        else:
+                            waterDeleted += 1
+                    else:
+                        xy = [(x, y) for x, y, _ in coords]
+                        ribbon = _g2d.line_to_ribbon(xy, half_width)
+                        if ribbon is not None and not ribbon.is_empty:
+                            pos_geoms.append(ribbon)
+                            waterCreated += 1
+                        else:
+                            waterDeleted += 1
 
                 if not from_cache and prefetched_tiles is None:
                     time.sleep(5)  # Pause to prevent request throttling (skipped when worker pre-fetched)
@@ -330,10 +331,14 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
         print(f"Region too big. Cant Fetch All {kind} Sources")
         return None
 
+    _t_tiles_total = time.time() - _t_tiles_start
+    print(f"  [coloring_main] tile fetch + ring build ({kind}): {_t_tiles_total:.3f}s  "
+          f"(includes Overpass throttle sleeps)  pos={len(pos_geoms)}  neg={len(neg_geoms)}")
+
     if cntr < maxcntr:
         print("Not All data fetched")
-        remove_objects(created_objects)
-
+        pos_geoms.clear()
+        neg_geoms.clear()
         print("Timed out. Cached already Fetched Data. Try Regenerating Again")
     else:
         if total_fetched == 0:
@@ -344,506 +349,297 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
             _api_empty = True
 
 
-    # Merge all ribbon (open-way) objects into one before the boolean pass.
-    # This reduces N individual boolean operations down to a single one.
-    if ribbon_objects:
-        valid_ribbons = [o for o in ribbon_objects if o and o.type == 'MESH']
-        if valid_ribbons:
-            if len(valid_ribbons) == 1:
-                valid_ribbons[0].name = "OpenObject_merged"
-                created_objects.append(valid_ribbons[0])
-            else:
-                # Merge all ribbon meshes using bmesh (no bpy.ops.object.join)
-                bm_merged = bmesh.new()
-                target_world_inv = valid_ribbons[0].matrix_world.inverted()
-                bm_merged.from_mesh(valid_ribbons[0].data)
-                for ro in valid_ribbons[1:]:
-                    bm_part = bmesh.new()
-                    bm_part.from_mesh(ro.data)
-                    xform = target_world_inv @ ro.matrix_world
-                    bmesh.ops.transform(bm_part, verts=bm_part.verts[:], matrix=xform)
-                    tmp_mesh = bpy.data.meshes.new("_tp3d_merge_tmp")
-                    bm_part.to_mesh(tmp_mesh)
-                    bm_part.free()
-                    bm_merged.from_mesh(tmp_mesh)
-                    bpy.data.meshes.remove(tmp_mesh)
-                    bpy.data.objects.remove(ro, do_unlink=True)
-                bm_merged.to_mesh(valid_ribbons[0].data)
-                bm_merged.free()
-                valid_ribbons[0].name = "OpenObject_merged"
-                created_objects.append(valid_ribbons[0])
-
-    #Make sure the flat faces have the correct normal orientation
-    UP = Vector((0,0,1))
-
-    if created_objects:
-        for obj in created_objects:
-            mesh = obj.data
-            bm = bmesh.new()
-            bm.from_mesh(mesh)
-
-            bm.normal_update()
-
-            faces_to_flip = []
-
-            for face in bm.faces:
-                # Face normal is in object-local space
-                if face.normal.dot(UP) > 0:
-                    faces_to_flip.append(face)
-
-            if faces_to_flip:
-                bmesh.ops.reverse_faces(bm, faces=faces_to_flip)
-
-            # Write back to mesh
-            bm.to_mesh(mesh)
-            bm.free()
-
-
     def _split_loose(obj):
-        """Split obj into per-connected-component objects. Removes obj and returns list."""
-        src_mesh = obj.data
-        bm_src = bmesh.new()
-        bm_src.from_mesh(src_mesh)
-        bm_src.verts.ensure_lookup_table()
-
-        visited = set()
-        components = []
-        for start in bm_src.verts:
-            if start.index in visited:
-                continue
-            comp = set()
-            stack = [start]
-            while stack:
-                v = stack.pop()
-                if v.index in visited:
-                    continue
-                visited.add(v.index)
-                comp.add(v.index)
-                for edge in v.link_edges:
-                    other = edge.other_vert(v)
-                    if other.index not in visited:
-                        stack.append(other)
-            components.append(comp)
-
-        collection = obj.users_collection[0] if obj.users_collection else bpy.context.scene.collection
-        world_matrix = obj.matrix_world.copy()
-        parts = []
-        for comp_indices in components:
-            comp_faces = [f for f in bm_src.faces
-                          if all(v.index in comp_indices for v in f.verts)]
-            bm_new = bmesh.new()
-            idx_map = {}
-            for vi in comp_indices:
-                nv = bm_new.verts.new(bm_src.verts[vi].co.copy())
-                idx_map[vi] = nv
-            bm_new.verts.ensure_lookup_table()
-            for f in comp_faces:
-                try:
-                    bm_new.faces.new([idx_map[v.index] for v in f.verts])
-                except ValueError:
-                    pass  # duplicate face edge — skip
-            new_mesh = bpy.data.meshes.new(obj.name)
-            bm_new.to_mesh(new_mesh)
-            bm_new.free()
-            part = bpy.data.objects.new(obj.name, new_mesh)
-            part.matrix_world = world_matrix
-            collection.objects.link(part)
-            parts.append(part)
-
-        bm_src.free()
-        bpy.data.objects.remove(obj, do_unlink=True)
-        return parts
-
-    def _process_coloring_object(tobj, map_obj, tol=0.1, extrudeVal = 200):
-        """Extrude, boolean-intersect with map, separate loose parts, fix normals.
-        Returns (area, [resulting_objects]). Removes tobj if it becomes empty."""
-        _t_pco = time.time()
-
+        """Split obj into per-connected-component objects using Blender's native C
+        mesh-separate operator (orders-of-magnitude faster than a Python DFS on
+        large post-boolean meshes).  Returns a list that includes obj itself (which
+        retains one component) plus any newly created objects for additional
+        components.  Empty objects are excluded."""
+        before = set(bpy.data.objects)
         bpy.ops.object.select_all(action='DESELECT')
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.separate(type='LOOSE')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        after = set(bpy.data.objects)
+        parts = list(after - before) + [obj]
+        return [o for o in parts if o.data and len(o.data.vertices) > 0]
 
-        mesh = tobj.data
+    # ── Shapely: union all → subtract negatives → area-filter → ONE mesh ────────────
+    _t_shapely = time.time()
+    merged_pos = _g2d.union(pos_geoms)
+    merged_neg = _g2d.union(neg_geoms)
+    final_geom = _g2d.subtract(merged_pos, merged_neg)
+    print(f"  [coloring_main] Shapely union+subtract ({kind}): {time.time()-_t_shapely:.3f}s  pos={len(pos_geoms)}  neg={len(neg_geoms)}")
 
-        # Compute area and extrude in a single bmesh pass
-        _t = time.time()
+    # DEBUG: dump the exact Shapely geometry at each stage as stacked wireframes so
+    # the raw rings (incl. self-intersections / slivers) can be inspected directly.
+    if bpy.app.debug:
+        _dbg = f"TP3D_Debug_{kind}"
+        _g2d.debug_dump(f"DBG_{kind}_1_raw_pos",   pos_geoms,  _dbg, z=0.0)
+        _g2d.debug_dump(f"DBG_{kind}_2_raw_neg",   neg_geoms,  _dbg, z=20.0)
+        _g2d.debug_dump(f"DBG_{kind}_3_merged_pos", merged_pos, _dbg, z=40.0)
+        _g2d.debug_dump(f"DBG_{kind}_4_merged_neg", merged_neg, _dbg, z=60.0)
+        _g2d.debug_dump(f"DBG_{kind}_5_final",     final_geom, _dbg, z=80.0)
+        print(f"  [coloring_main] DEBUG wireframes dumped to collection '{_dbg}'")
+
+    if final_geom is None or final_geom.is_empty:
+        if _api_empty:
+            return _COLORING_EMPTY
+        _progress.WarningsOverlay.add_warning(f"All {kind.capitalize()} objects were filtered out due to their size", "warn")
+        return _COLORING_FILTERED
+
+    _t_mesh = time.time()
+    result_meshes = []
+    _dbg_kept = []   # area-filtered polygons that actually become meshes (debug)
+    for i, poly in enumerate(_g2d.iter_polygons(final_geom, min_area=col_Area)):
+        if bpy.app.debug:
+            _dbg_kept.append(poly)
+        m = _g2d.polygon_to_mesh(f"{kind}_{i}", poly)
+        if m is not None:
+            result_meshes.append(m)
+    print(f"  [coloring_main] polygon_to_mesh ({kind}, {len(result_meshes)} parts): {time.time()-_t_mesh:.3f}s")
+
+    if bpy.app.debug and _dbg_kept:
+        _g2d.debug_dump(f"DBG_{kind}_6_kept_polys", _dbg_kept, f"TP3D_Debug_{kind}", z=100.0)
+
+    if not result_meshes:
+        if _api_empty:
+            return _COLORING_EMPTY
+        return _COLORING_FILTERED
+
+    merged_object = merge_objects(result_meshes) if len(result_meshes) > 1 else result_meshes[0]
+    if merged_object is None:
+        return None
+
+    # Tessellate_polygon produces upward-facing normals (CCW Shapely exterior → Z-up).
+    # Flip them downward so the extruded prism intersects the terrain correctly.
+    # NOTE: do NOT run remove_doubles here — merging near-coincident vertices from
+    # different polygon parts creates pinch-point non-manifold verts, which is worse
+    # than leaving them as separate topological components. Each polygon mesh is
+    # already cleaned internally inside polygon_to_mesh.
+    bm = bmesh.new()
+    bm.from_mesh(merged_object.data)
+    bm.normal_update()
+    UP = Vector((0, 0, 1))
+    faces_to_flip = [f for f in bm.faces if f.normal.dot(UP) > 0]
+    if faces_to_flip:
+        bmesh.ops.reverse_faces(bm, faces=faces_to_flip)
+    bm.to_mesh(merged_object.data)
+    bm.free()
+
+    if _ov.active:
+        _ov.update(message=f"{kind.capitalize()}: extrude and boolean with map")
+
+    if elementMode == "PAINT":
+        # ── PAINT fast path ──────────────────────────────────────────────────────────
+        map_world_verts = [map.matrix_world @ Vector(v) for v in map.bound_box]
+        terrain_max_z = max(v.z for v in map_world_verts)
+        extrude_z = terrain_max_z + 50.0
+        print(f"  [PAINT fast path] terrain_max_z={terrain_max_z:.2f}  extrude_z={extrude_z:.2f}")
+
+        mesh = merged_object.data
         bm = bmesh.new()
         bm.from_mesh(mesh)
         if not bm.faces:
             bm.free()
-            bpy.data.objects.remove(tobj, do_unlink=True)
-            return 0, []
-        area = sum(f.calc_area() for f in bm.faces)
+            bpy.data.objects.remove(merged_object, do_unlink=True)
+            if _api_empty:
+                return _COLORING_EMPTY
+            return None
         geom = bm.faces[:]
         ret = bmesh.ops.extrude_face_region(bm, geom=geom)
         extruded_verts = [v for v in ret["geom"] if isinstance(v, bmesh.types.BMVert)]
-        bmesh.ops.translate(bm, verts=extruded_verts, vec=Vector((0, 0, extrudeVal)))
+        bmesh.ops.translate(bm, verts=extruded_verts, vec=Vector((0, 0, extrude_z)))
         bm.to_mesh(mesh)
         bm.free()
-        print(f"    [pco:{tobj.name}] extrude: {time.time()-_t:.3f}s")
 
-        tobj.location.z -= 1
-        recalculateNormals(tobj)
-
-    
-
-        # Boolean intersect with map
-        _t = time.time()
-        bool_mod = tobj.modifiers.new(name="Boolean", type='BOOLEAN')
-        bool_mod.object = map_obj
-        bool_mod.operation = 'INTERSECT'
-        bool_mod.solver = 'MANIFOLD'
-
-        depsgraph = bpy.context.evaluated_depsgraph_get()
-        eval_obj = tobj.evaluated_get(depsgraph)
-        new_mesh = bpy.data.meshes.new_from_object(eval_obj)
-        tobj.modifiers.clear()
-        old_mesh = tobj.data
-        tobj.data = new_mesh
-        bpy.data.meshes.remove(old_mesh)
-        print(f"    [pco:{tobj.name}] boolean intersect (MANIFOLD): {time.time()-_t:.3f}s  verts={len(new_mesh.vertices)}")
-
-        # Mark lowest vertices
-        bm = bmesh.new()
-        bm.from_mesh(tobj.data)
-        if not bm.verts:
-            bm.free()
-            bpy.data.objects.remove(tobj, do_unlink=True)
-            return 0, []
-        min_z = min(v.co.z for v in bm.verts)
-        lowestVert = float("inf")
-        for v in bm.verts:
-            if abs(v.co.z - min_z) < tol:
-                v.select = True
-            else:
-                v.select = False
-                lowestVert = min(lowestVert, v.co.z)
-        bm.to_mesh(tobj.data)
-        bm.free()
-
-        recalculateNormals(tobj)
-
-        # Separate loose parts — uses outer _split_loose helper
-        _t = time.time()
-        _tobj_name = tobj.name  # capture before _split_loose removes the object
-
-        result_objects = []
-        objects_to_remove = []
-        for zobj in _split_loose(tobj):
-
-            mesh_area = getBottomFacesArea(zobj)
-            if mesh_area < col_Area:
-                objects_to_remove.append(zobj)
-                continue
-
-
-            DOWN = Vector((0, 0, -1))
-            zmesh = zobj.data
-            bm = bmesh.new()
-            bm.from_mesh(zmesh)
-            bm.normal_update()
-
-
-            lowest_face = None
-            lowest_z = float('inf')
-            for face in bm.faces:
-                z = face.calc_center_median().z
-                if z < lowest_z and face.calc_area() > 0:
-                    lowest_z = z
-                    lowest_face = face
-
-            if lowest_face and lowest_face.normal.dot(DOWN) <= 0:
-                bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
-                print(f"Reversing obj {zobj} at z:{lowest_z}")
-
-            bm.to_mesh(zmesh)
-            bm.free()
-            result_objects.append(zobj)
-
-        remove_objects(objects_to_remove)
-
-        print(f"    [pco:{_tobj_name}] split_loose: {time.time()-_t:.3f}s  parts={len(result_objects)}")
-        print(f"    [pco] total: {time.time()-_t_pco:.3f}s")
-        return area, result_objects
-
-
-    created_objects_booleaned = []
-    created_negatives_booleaned = []
-    merged_object = None
-
-    if _ov.active:
-        _ov.update(message=f"{kind.capitalize()}: process parts, boolean with map, and merge")
-
-    if created_objects:
-        print(f"Unique objects from element:{ len(created_objects)}")
-        bpy.ops.object.select_all(action='DESELECT')
-        biggestArea = 0
-        tol = 0.1
-
-        if elementMode == "PAINT":
-            # â"€â"€ PAINT-mode fast path â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-            # Skip per-object MANIFOLD boolean against terrain.
-            # color_map_faces_by_terrain builds its BVH from the cutter's LOCAL
-            # mesh (world transform is not applied). OSM polygons sit at Z=0 in
-            # local space (objects are at origin, so local == world). We extrude
-            # them to (terrain_max_z + 50) so the top face is:
-            #   • above the terrain  (> terrain_max_z)
-            #   • within ray range   (ray distance=100, starts at face_z-5)
-            map_world_verts = [map.matrix_world @ Vector(v) for v in map.bound_box]
-            terrain_max_z = max(v.z for v in map_world_verts)
-            extrude_z = terrain_max_z + 50.0
-            print(f"  [PAINT fast path] terrain_max_z={terrain_max_z:.2f}  extrude_z={extrude_z:.2f}")
-
-            _t_paint_fast = time.time()
-            paint_cutters = []
-            for tobj in list(created_objects):
-                area01 = getBottomFacesArea(tobj)
-                if area01 < col_Area*3 and "OpenObject_" in tobj.name:
-                    bpy.data.objects.remove(tobj, do_unlink=True)
-                    continue
-                if area01 < col_Area and "coloredObject_" in tobj.name:
-                    bpy.data.objects.remove(tobj, do_unlink=True)
-                    continue
-                mesh = tobj.data
-                bm = bmesh.new()
-                bm.from_mesh(mesh)
-                if not bm.faces:
-                    bm.free()
-                    bpy.data.objects.remove(tobj, do_unlink=True)
-                    continue
-                biggestArea = max(biggestArea, sum(f.calc_area() for f in bm.faces))
-                geom = bm.faces[:]
-                ret = bmesh.ops.extrude_face_region(bm, geom=geom)
-                extruded_verts = [v for v in ret["geom"] if isinstance(v, bmesh.types.BMVert)]
-                # Extrude to just above terrain so top face falls within the
-                # 100-unit ray distance used by color_map_faces_by_terrain.
-                bmesh.ops.translate(bm, verts=extruded_verts, vec=Vector((0, 0, extrude_z)))
-                bm.to_mesh(mesh)
-                bm.free()
-                # Keep location at (0,0,0) — local == world, BVH matches ray space.
-                paint_cutters.append(tobj)
-            # ribbon_objects were bmesh-merged into created_objects above as
-            # "OpenObject_merged" — do NOT re-iterate here (stale refs).
-
-            print(f"  [coloring_main] PAINT extrude ({kind}, {len(paint_cutters)} objs): {time.time()-_t_paint_fast:.3f}s")
-
-            for obj in list(negative_object):
-                bpy.data.objects.remove(obj, do_unlink=True)
-            negative_object.clear()
-            ribbon_objects.clear()
-
-            if not paint_cutters:
-                if _api_empty:
-                    return _COLORING_EMPTY
-                return None
-
-            _t_merge = time.time()
-            cutter = merge_objects(paint_cutters, name=f"{name}_{kind}")
-            print(f"  [coloring_main] PAINT merge ({kind}): {time.time()-_t_merge:.3f}s")
-
-            if cutter is None:
-                return None
-
-            writeMetadata(cutter, kind)
-            mat = bpy.data.materials.get(KIND_MATERIAL_OVERRIDE.get(kind, kind))
-            cutter.data.materials.clear()
-            cutter.data.materials.append(mat)
-
-            if _ov.active:
-                _ov.update(message=f"{kind.capitalize()}: painting terrain faces")
-
-            print(f"PAINTING ({kind})")
-            _t_paint = time.time()
-            color_map_faces_by_terrain(map, cutter)
-            mesh_data = cutter.data
-            bpy.data.objects.remove(cutter, do_unlink=True)
-            bpy.data.meshes.remove(mesh_data)
-            print(f"  [coloring_main] PAINT total ({kind}): {time.time()-_t_paint:.3f}s")
-            return _COLORING_PAINTED
-            # â"€â"€ end PAINT-mode fast path â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-
-        # Per-object extrude + MANIFOLD boolean — no recalculateNormals (avoids mode-switch cost).
-        _t_proc_loop = time.time()
-        DOWN = Vector((0, 0, -1))
-        _t_extrude_total = _t_bool_total = _t_split_total = 0.0
-        for tobj in list(created_objects):
-            area01 = getBottomFacesArea(tobj)
-            if area01 < col_Area*3 and "OpenObject_" in tobj.name:
-                bpy.data.objects.remove(tobj, do_unlink=True)
-                continue
-            if area01 < col_Area and "coloredObject_" in tobj.name:
-                bpy.data.objects.remove(tobj, do_unlink=True)
-                continue
-            mesh = tobj.data
-            _ta = time.time()
-            bm = bmesh.new()
-            bm.from_mesh(mesh)
-            if not bm.faces:
-                bm.free()
-                bpy.data.objects.remove(tobj, do_unlink=True)
-                continue
-            biggestArea = max(biggestArea, sum(f.calc_area() for f in bm.faces))
-            geom = bm.faces[:]
-            ret = bmesh.ops.extrude_face_region(bm, geom=geom)
-            extruded_verts = [v for v in ret["geom"] if isinstance(v, bmesh.types.BMVert)]
-            bmesh.ops.translate(bm, verts=extruded_verts, vec=Vector((0, 0, 200)))
-            # Recalc normals via bmesh (no mode-switch overhead).
-            bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
-            bm.to_mesh(mesh)
-            bm.free()
-            tobj.location.z -= 1
-            _t_extrude_total += time.time() - _ta
-
-            # Per-object MANIFOLD boolean intersect with the map.
-            _tb = time.time()
-            bool_mod = tobj.modifiers.new(name="Boolean", type='BOOLEAN')
-            bool_mod.object = map
-            bool_mod.operation = 'INTERSECT'
-            bool_mod.solver = 'MANIFOLD'
-            depsgraph = bpy.context.evaluated_depsgraph_get()
-            eval_obj = tobj.evaluated_get(depsgraph)
-            new_mesh = bpy.data.meshes.new_from_object(eval_obj)
-            tobj.modifiers.clear()
-            old_mesh = tobj.data
-            tobj.data = new_mesh
-            bpy.data.meshes.remove(old_mesh)
-            _t_bool_total += time.time() - _tb
-
-            if not new_mesh.vertices:
-                bpy.data.objects.remove(tobj, do_unlink=True)
-                continue
-            
-
-            # Split loose parts, fix normals, filter by area.
-            _tc = time.time()
-            for zobj in _split_loose(tobj):
-                mesh_area = getBottomFacesArea(zobj)
-                if mesh_area < col_Area:
-                    bpy.data.objects.remove(zobj, do_unlink=True)
-                    continue
-                zmesh = zobj.data
-                bm = bmesh.new()
-                bm.from_mesh(zmesh)
-                bm.normal_update()
-                lowest_face = None
-                lowest_z = float('inf')
-                for face in bm.faces:
-                    z = face.calc_center_median().z
-                    if z < lowest_z and face.calc_area() > 0:
-                        lowest_z = z
-                        lowest_face = face
-                if lowest_face and lowest_face.normal.dot(DOWN) <= 0:
-                    bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
-                bm.to_mesh(zmesh)
-                bm.free()
-                created_objects_booleaned.append(zobj)
-            _t_split_total += time.time() - _tc
-        print(f"  [coloring_main] process objects ({kind}, {len(created_objects)} objs): {time.time()-_t_proc_loop:.3f}s  {len(created_objects_booleaned)} results")
-        print(f"    extrude={_t_extrude_total:.3f}s  boolean={_t_bool_total:.3f}s  split={_t_split_total:.3f}s  other={time.time()-_t_proc_loop-_t_extrude_total-_t_bool_total-_t_split_total:.3f}s")
-
-        for cntr, tobj in enumerate(list(negative_object), start = 1):
-            area, new_objs = _process_coloring_object(tobj,map,tol, extrudeVal = 200)
-            biggestArea = max(biggestArea, area)
-            for to in new_objs:
-                set_origin_to_geometry(to)
-                to.scale.z *= 2
-
-            created_negatives_booleaned.extend(new_objs)
-        print(f"subtracting negatives from element ({len(negative_object)} objs)")
-        _t_neg = time.time()
-        if created_negatives_booleaned:
-            # Union all negatives into one cutter so each positive needs only one boolean op
-            if len(created_negatives_booleaned) > 1:
-                merged_negative = merge_objects(created_negatives_booleaned, name="MergedNegative")
-            else:
-                merged_negative = created_negatives_booleaned[0]
-            for o1 in created_objects_booleaned:
-                if is_bbox_overlapping(o1, merged_negative):
-                    boolean_operation(o1, merged_negative)
-                    recalculateNormals(o1)
-            bpy.data.objects.remove(merged_negative, do_unlink=True)
-        print(f"finished subtracting ({time.time()-_t_neg:.3f}s)")
-
-        if biggestArea == 0:
-            print(f"No {kind} Found on Tile")
-            _progress.WarningsOverlay.add_warning(f"All {kind.capitalize()} objects were filtered out due to their size", "warn")
-            return _COLORING_FILTERED
-
-        print(f"{kind} objects to merge: {len(created_objects_booleaned)}")
-        _t_merge = time.time()
-        merged_object = merge_objects(created_objects_booleaned)
-        print(f"  [coloring_main] merge_objects ({kind}): {time.time()-_t_merge:.3f}s")
-
-        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
-
-        if merged_object is None:
-            print("No Mesh left after Merging")
-            return
-
-        bm = bmesh.new()
-        bm.from_mesh(merged_object.data)
-
-        min_z = min(v.co.z for v in bm.verts)
-        lowestVert = 100
-        for v in bm.verts:
-            if abs(v.co.z - min_z) < tol:
-                pass
-            else:
-                if v.co.z < lowestVert and v.co.z >= bpy.context.scene.tp3d.minThickness:
-                    lowestVert = v.co.z
-        for v in bm.verts:
-                if abs(v.co.z - min_z) < tol:
-                    pass
-                    v.co.z = lowestVert - 1
-
-        bm.to_mesh(merged_object.data)
-        bm.free()
-
-        bpy.ops.object.mode_set(mode="OBJECT")
-
-
-        merged_object.location.z += 0.2
         merged_object.name = name + "_" + kind
-
-        bpy.context.view_layer.objects.active = merged_object
-        merged_object.select_set(True)
-
-        if merged_object:
-            writeMetadata(merged_object, kind)
-            mat = bpy.data.materials.get(KIND_MATERIAL_OVERRIDE.get(kind, kind))
-            merged_object.data.materials.clear()
-            merged_object.data.materials.append(mat)
+        writeMetadata(merged_object, kind)
+        mat = bpy.data.materials.get(KIND_MATERIAL_OVERRIDE.get(kind, kind))
+        merged_object.data.materials.clear()
+        merged_object.data.materials.append(mat)
 
         if _ov.active:
-            _ov.update(message=f"{kind.capitalize()}: applying Element handling option ({elementMode})")
+            _ov.update(message=f"{kind.capitalize()}: painting terrain faces")
 
-        if elementMode == "PAINT":
-            print(f"PAINTING ({kind})")
-            _t_paint = time.time()
-            recalculateNormals(map)
-            merged_object.location.z += 1
-            color_map_faces_by_terrain(map, merged_object)
-            mesh_data = merged_object.data
+        print(f"PAINTING ({kind})")
+        _t_paint = time.time()
+        color_map_faces_by_terrain(map, merged_object)
+        mesh_data = merged_object.data
+        bpy.data.objects.remove(merged_object, do_unlink=True)
+        bpy.data.meshes.remove(mesh_data)
+        print(f"  [coloring_main] PAINT total ({kind}): {time.time()-_t_paint:.3f}s")
+        print(f"  [coloring_main] TOTAL ({kind}, PAINT): {time.time()-_t_color:.3f}s")
+        return _COLORING_PAINTED
+        # ── end PAINT fast path ───────────────────────────────────────────────────────
 
-            #Delete the elements afterwards
-            bpy.data.objects.remove(merged_object, do_unlink=True)
-            bpy.data.meshes.remove(mesh_data)
-            print(f"  [coloring_main] PAINT total ({kind}): {time.time()-_t_paint:.3f}s")
+    # ── SEPARATE / SINGLECOLORMODE path ──────────────────────────────────────────────
+    # Extrude the unified flat mesh, run ONE MANIFOLD boolean-intersect with terrain,
+    # then split loose parts (terrain edges can disconnect components) and re-merge.
+    tol = 0.1
+    DOWN = Vector((0, 0, -1))
+    _t_proc = time.time()
+
+    bm = bmesh.new()
+    bm.from_mesh(merged_object.data)
+    if not bm.faces:
+        bm.free()
+        bpy.data.objects.remove(merged_object, do_unlink=True)
+        return None
+    geom = bm.faces[:]
+    ret = bmesh.ops.extrude_face_region(bm, geom=geom)
+    extruded_verts = [v for v in ret["geom"] if isinstance(v, bmesh.types.BMVert)]
+    bmesh.ops.translate(bm, verts=extruded_verts, vec=Vector((0, 0, 200)))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(merged_object.data)
+    bm.free()
+    merged_object.location.z -= 1
+
+    _t_bool = time.time()
+
+    # ── Pre-boolean manifold diagnostics ────────────────────────────────────
+    def _count_non_manifold(obj):
+        bm_d = bmesh.new()
+        bm_d.from_mesh(obj.data)
+        bm_d.verts.ensure_lookup_table()
+        bm_d.edges.ensure_lookup_table()
+        nm_verts = sum(1 for v in bm_d.verts if not v.is_manifold)
+        nm_edges = sum(1 for e in bm_d.edges if not e.is_manifold)
+        bm_d.free()
+        return nm_verts, nm_edges
+
+    cutter_nm_v, cutter_nm_e = _count_non_manifold(merged_object)
+    map_nm_v, map_nm_e = _count_non_manifold(map)
+    print(f"  [manifold-check] ({kind}) cutter: {len(merged_object.data.vertices)}v "
+          f"non-manifold={cutter_nm_v}v/{cutter_nm_e}e  |  "
+          f"map: {len(map.data.vertices)}v non-manifold={map_nm_v}v/{map_nm_e}e")
+    if cutter_nm_v > 0 or cutter_nm_e > 0:
+        print(f"  [manifold-check] WARNING: cutter has non-manifold geometry — "
+              f"boolean may be a no-op or produce garbage")
+    # ────────────────────────────────────────────────────────────────────────
+
+    def _apply_boolean(obj, solver):
+        mod = obj.modifiers.new(name="Boolean", type='BOOLEAN')
+        mod.object = map
+        mod.operation = 'INTERSECT'
+        mod.solver = solver
+        dg = bpy.context.evaluated_depsgraph_get()
+        result = bpy.data.meshes.new_from_object(obj.evaluated_get(dg))
+        obj.modifiers.clear()
+        return result
+
+    new_mesh = _apply_boolean(merged_object, 'MANIFOLD')
+    solver_used = 'MANIFOLD'
+
+    if new_mesh.vertices:
+        result_zs = [v.co.z for v in new_mesh.vertices]
+        z_max = max(result_zs)
+    else:
+        z_max = 201.0  # treat empty as no-op
+
+    if z_max > 150:
+        # MANIFOLD refused / no-op'd (residual non-manifold cutter) — fall back to
+        # the EXACT solver, which tolerates non-manifold inputs. Never FLOAT: it
+        # produces self-intersecting garbage with hundreds of spurious loose parts.
+        bpy.data.meshes.remove(new_mesh)
+        new_mesh = _apply_boolean(merged_object, 'EXACT')
+        solver_used = 'EXACT (fallback)'
+        if new_mesh.vertices:
+            result_zs = [v.co.z for v in new_mesh.vertices]
+            z_max = max(result_zs)
+        else:
+            z_max = 201.0
+
+    old_mesh = merged_object.data
+    merged_object.data = new_mesh
+    bpy.data.meshes.remove(old_mesh)
+
+    if new_mesh.vertices:
+        print(f"  [coloring_main] boolean INTERSECT {solver_used} ({kind}): {time.time()-_t_bool:.3f}s"
+              f"  verts={len(new_mesh.vertices)}  z=[{min(result_zs):.2f}, {z_max:.2f}]")
+        if z_max > 150:
+            print(f"  [manifold-check] WARNING: EXACT fallback also failed — z_max={z_max:.1f}")
+    else:
+        print(f"  [coloring_main] boolean ({kind}): {time.time()-_t_bool:.3f}s  verts=0")
+
+    if not new_mesh.vertices:
+        bpy.data.objects.remove(merged_object, do_unlink=True)
+        return None
+
+    # Split loose parts and fix normals on each component.
+    _t_split = time.time()
+    surviving = []
+    for zobj in _split_loose(merged_object):
+        zmesh = zobj.data
+        bm = bmesh.new()
+        bm.from_mesh(zmesh)
+        bm.normal_update()
+        lowest_face = None
+        lowest_z = float('inf')
+        for face in bm.faces:
+            z = face.calc_center_median().z
+            if z < lowest_z and face.calc_area() > 0:
+                lowest_z = z
+                lowest_face = face
+        if lowest_face and lowest_face.normal.dot(DOWN) <= 0:
+            bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
+        bm.to_mesh(zmesh)
+        bm.free()
+        surviving.append(zobj)
+    print(f"  [coloring_main] split_loose ({kind}): {time.time()-_t_split:.3f}s  parts={len(surviving)}")
+    print(f"  [coloring_main] SEPARATE total ({kind}): {time.time()-_t_proc:.3f}s")
+
+    if not surviving:
+        return None
+
+    _t_merge = time.time()
+    merged_object = merge_objects(surviving) if len(surviving) > 1 else surviving[0]
+    print(f"  [coloring_main] merge_objects ({kind}): {time.time()-_t_merge:.3f}s")
+
+    if merged_object is None:
+        return None
+
+    bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
+
+    bm = bmesh.new()
+    bm.from_mesh(merged_object.data)
+    min_z = min(v.co.z for v in bm.verts)
+    lowestVert = 100
+    for v in bm.verts:
+        if abs(v.co.z - min_z) > tol and v.co.z >= bpy.context.scene.tp3d.minThickness:
+            if v.co.z < lowestVert:
+                lowestVert = v.co.z
+    for v in bm.verts:
+        if abs(v.co.z - min_z) < tol:
+            v.co.z = lowestVert - 1
+    bm.to_mesh(merged_object.data)
+    bm.free()
+
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    merged_object.location.z += 0.2
+    merged_object.name = name + "_" + kind
+
+    bpy.context.view_layer.objects.active = merged_object
+    merged_object.select_set(True)
+
+    writeMetadata(merged_object, kind)
+    mat = bpy.data.materials.get(KIND_MATERIAL_OVERRIDE.get(kind, kind))
+    merged_object.data.materials.clear()
+    merged_object.data.materials.append(mat)
 
     for area in bpy.context.screen.areas:
-        if area.type == 'VIEW_3D':  # make sure it's a 3D Viewport
+        if area.type == 'VIEW_3D':
             for space in area.spaces:
                 if space.type == 'VIEW_3D':
-                    space.shading.type = 'MATERIAL'  # switch shading
-
+                    space.shading.type = 'MATERIAL'
 
     bpy.context.preferences.edit.use_global_undo = True
-
-    if elementMode != "PAINT" and merged_object is not None:
-        return merged_object
-    if elementMode == "PAINT" and merged_object is not None:
-        return _COLORING_PAINTED   # objects were painted onto the map then deleted
-    if _api_empty:
-        return _COLORING_EMPTY
-    return None
+    print(f"  [coloring_main] TOTAL ({kind}, SEPARATE): {time.time()-_t_color:.3f}s")
+    return merged_object
 
 def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
     """
@@ -1272,43 +1068,6 @@ def _polygon_area(pts):
     return abs(s) * 0.5
 
 
-def _polygon_self_intersects(poly, max_check=3000):
-    """Return True if the closed polygon has any proper self-crossing.
-
-    The ocean boolean uses the MANIFOLD solver, which silently no-ops on a
-    geometrically self-intersecting cutter (collapsed sub-print docks/jetties,
-    stitch errors).  This is the cheap pre-check that decides whether the
-    cutter needs the voxel-remesh clean-up: a simple polygon can skip it and
-    cut directly (faster, zero detail loss).
-
-    Conservative by design: a polygon with more than *max_check* points is
-    assumed dirty (the O(n^2) verify would be slow, and big convoluted coasts
-    are exactly the ones that self-cross) so we never skip a remesh that was
-    actually needed.
-    """
-    n = len(poly)
-    if n < 4:
-        return False
-    if n > max_check:
-        return True  # too big to verify cheaply -> assume dirty, voxel-remesh
-
-    def _o(a, b, c):
-        v = (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])
-        if v > 1e-9: return 1
-        if v < -1e-9: return -1
-        return 0
-
-    for i in range(n):
-        a1, a2 = poly[i], poly[(i + 1) % n]
-        for j in range(i + 1, n):
-            if j == i or (j + 1) % n == i or (i + 1) % n == j:
-                continue
-            b1, b2 = poly[j], poly[(j + 1) % n]
-            if _o(a1, a2, b1) != _o(a1, a2, b2) and _o(b1, b2, a1) != _o(b1, b2, a2):
-                return True
-    return False
-
-
 def _diagnose_polygon(poly, label=""):
     """DEBUG-ONLY: report whether a closed polygon is geometrically simple.
 
@@ -1361,60 +1120,6 @@ def _diagnose_polygon(poly, label=""):
           f"{f' (first at edges {first_hit})' if first_hit else ''}"
           f" | dup-consecutive={dupes} | coord-mag~{max(mags):.0f}"
           f" | {'SIMPLE (ok)' if crossings == 0 else 'NON-SIMPLE (breaks tessellation)'}")
-
-
-def _punch_island_holes(outer_poly, island_loops, min_area=0.0):
-    """Connect island loops into outer_poly via bridge edges (zero-width slits).
-
-    Converts a polygon-with-holes into a single simply-connected polygon
-    without any boolean operations.  For each island we:
-      1. Find the outer poly vertex closest to the island centroid.
-      2. Find the island vertex closest to that outer vertex.
-      3. Insert the island loop at that connection, creating a slit that
-         goes: outer→bridge→island loop→bridge back→outer continues.
-
-    Islands whose area is below *min_area* (Blender units²) are skipped —
-    they are too small to be worth a colour change on a 3D print.
-
-    The result is a flat list of (x,y) that col_create_face_mesh can
-    create as a single face — Blender sees one face with an interior hole
-    traced as a boundary re-entrant path.
-    """
-    result = list(outer_poly)
-    # Track which indices in `result` are original outer-boundary vertices.
-    # After each punch, the outer indices grow by (len(island)+1) but the
-    # original outer verts are still at the same relative positions — we
-    # must never pick a bridge-slit vertex as the anchor for the next island
-    # or the new bridge will cross the previous slit.
-    outer_indices = list(range(len(result)))
-
-    for island in island_loops:
-        if min_area > 0 and _polygon_area(island) < min_area:
-            continue
-        if len(island) < 3:
-            continue
-        # Centroid of island → nearest OUTER-BOUNDARY vertex (never a bridge vertex)
-        cx = sum(p[0] for p in island) / len(island)
-        cy = sum(p[1] for p in island) / len(island)
-        best_oi = min(outer_indices,
-                      key=lambda i: (result[i][0] - cx) ** 2 + (result[i][1] - cy) ** 2)
-        ox, oy = result[best_oi]
-        best_ii = min(range(len(island)),
-                      key=lambda i: (island[i][0] - ox) ** 2 + (island[i][1] - oy) ** 2)
-        # Rotate island so the closest vertex (best_ii) is at index 0,
-        # giving the shortest possible bridge edge.
-        island_rot = island[best_ii:] + island[:best_ii]
-        # Bridge: outer[0..best_oi] → island_rot → island_rot[0] → outer[best_oi..]
-        insert_at = result.index(result[best_oi], best_oi, best_oi + 1)
-        result = result[:insert_at + 1] + island_rot + [island_rot[0]] + result[insert_at:]
-        # The inserted block is (len(island_rot) + 1) new entries.
-        # Shift all outer_indices that came after the insertion point.
-        shift = len(island_rot) + 1
-        outer_indices = [
-            i if i <= insert_at else i + shift
-            for i in outer_indices
-        ]
-    return result
 
 
 def _point_in_polygon(pt, poly):
@@ -1578,11 +1283,10 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
 
     Returns a Blender mesh object or None.
     """
-    from .primitives import col_create_face_mesh, col_create_face_mesh_with_holes  # deferred to avoid circular import at load time
     from .mesh_ops import merge_objects  # deferred to avoid circular import at load time
+    from . import geometry2d as _g2d    # Shapely-based 2D geometry helpers
 
     ocean_faces = []
-    ocean_self_intersects = False  # set True if any outer polygon self-crosses
 
     min_x, min_y, max_x, max_y = bbox_bl
     W = max(max_x - min_x, 1e-9)
@@ -1689,23 +1393,38 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
         return kept
 
     def _make_ocean_face(outer_poly, label):
-        """Build one ocean face for outer_poly with its contained islands cut
-        out as real holes."""
+        """Build one ocean face using Shapely to repair the polygon and subtract islands.
+
+        make_valid(method='structure') fixes any self-intersections caused by
+        stitch errors or collapsed port/dock features — no voxel remesh needed.
+        Islands are subtracted via Shapely difference, giving correct holes
+        without bridge-slit workarounds.
+        """
+        if len(outer_poly) < 3:
+            return None
+        outer_shp = _g2d.xy_ring_to_polygon(outer_poly)
+        if outer_shp is None or outer_shp.is_empty:
+            return None
         holes = _contained_islands(outer_poly, label)
-        outer3d = [(x, y, 0.0) for x, y in outer_poly]
         if holes:
-            holes3d = [[(x, y, 0.0) for x, y in h] for h in holes]
-            face_obj = col_create_face_mesh_with_holes("_OceanFace", outer3d, holes3d)
-            if face_obj is None:
-                # Tessellation failed -> fall back to a solid face (no holes).
-                face_obj = col_create_face_mesh("_OceanFace", outer3d)
-        else:
-            face_obj = col_create_face_mesh("_OceanFace", outer3d)
+            hole_polys = [_g2d.xy_ring_to_polygon(h) for h in holes if len(h) >= 3]
+            hole_polys = [h for h in hole_polys if h is not None and not h.is_empty]
+            merged_holes = _g2d.union(hole_polys)
+            if merged_holes and not merged_holes.is_empty:
+                outer_shp = _g2d.subtract(outer_shp, merged_holes)
+        outer_shp = _g2d.validate(outer_shp)
+        if outer_shp is None or outer_shp.is_empty:
+            return None
         if bpy.app.debug:
-            _debug_add_poly(f"{label}_post_punch_outer", outer_poly, offset=(0.0, -300.0, 0.1))
-            for hi, h in enumerate(holes):
-                _debug_add_poly(f"{label}_post_punch_hole_{hi}", h, offset=(0.0, -300.0, 0.15))
-        return face_obj
+            _debug_add_poly(f"{label}_shapely_outer", outer_poly, offset=(0.0, -300.0, 0.1))
+        face_meshes = []
+        for poly in _g2d.iter_polygons(outer_shp, min_area=1.0):
+            m = _g2d.polygon_to_mesh("_OceanFace", poly)
+            if m is not None:
+                face_meshes.append(m)
+        if not face_meshes:
+            return None
+        return merge_objects(face_meshes) if len(face_meshes) > 1 else face_meshes[0]
 
     if border_chains:
         polys = _close_chains_with_bbox(border_chains, bbox_bl)
@@ -1715,8 +1434,6 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
                     print(f"    [ocean mesh] dropping sliver polygon {pi} "
                           f"({len(poly)} pts, area={_polygon_area(poly):.4f})")
                 continue
-            if _polygon_self_intersects(poly):
-                ocean_self_intersects = True
             if bpy.app.debug:
                 print(f"    [ocean mesh] ocean polygon {pi}: {len(poly)} pts")
                 _diagnose_polygon(poly, f"poly {pi} (outer, pre-islands)")
@@ -1759,9 +1476,9 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
     # Record whether the cutter polygon self-intersects so createOcean can
     # decide between the fast direct boolean (simple coast) and the
     # voxel-remesh clean-up (self-crossing coast).
-    ocean_obj["_tp3d_ocean_self_intersects"] = bool(ocean_self_intersects)
-    if bpy.app.debug:
-        print(f"  [ocean] cutter self-intersects = {bool(ocean_self_intersects)}")
+    # Tag the ocean object so merge_with_map can apply the flatBottom clamping
+    # that prevents ocean from dipping below the terrain base plane.
+    ocean_obj["_tp3d_is_ocean"] = True
 
     return ocean_obj
 
@@ -1831,19 +1548,6 @@ def createOcean(prefetched_coastline, scaleHor, tile):
         return None
 
     set_origin_to_3d_cursor(ocean_obj)
-
-    # Tag the ocean as a voxel cutter ONLY when its coastline polygon actually
-    # self-intersects.  Real coastlines never overlap, so any crossing is an
-    # artifact (collapsed sub-print docks/jetties, stitch errors) that the
-    # MANIFOLD boolean can't handle -- a voxel remesh resolves it.  A simple
-    # (non-crossing) coast skips the remesh entirely and cuts directly: faster
-    # and with zero voxel rounding of the coastline.
-    _vox = getattr(bpy.context.scene.tp3d, 'el_oVoxelSize', 0.25)
-    _dirty = ocean_obj.get("_tp3d_ocean_self_intersects", True)
-    if _vox and _vox > 0 and _dirty:
-        ocean_obj["_tp3d_voxel_cutter"] = float(_vox)
-    elif bpy.app.debug:
-        print(f"  [ocean] simple coast (or voxel disabled) -- direct boolean, no remesh")
 
     mat = bpy.data.materials.get("WATER")
     ocean_obj.data.materials.clear()

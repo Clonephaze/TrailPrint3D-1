@@ -294,11 +294,13 @@ def delete_selected_verts(obj):
     bmesh.update_edit_mesh(me)
 
 
-def boolean_operation(obj_a, obj_b, operation='DIFFERENCE'):
+def boolean_operation(obj_a, obj_b, operation='DIFFERENCE', solver='MANIFOLD'):
     """
-    Performs a Boolean operation on obj_a with obj_b using the MANIFOLD solver.
+    Performs a Boolean operation on obj_a with obj_b.
 
     operation: 'UNION', 'INTERSECT', or 'DIFFERENCE'
+    solver:    'MANIFOLD' (both inputs must be watertight-manifold) or 'EXACT'
+               (tolerates non-manifold input -- use for OSM element meshes).
     """
     # Ensure both objects exist
     if obj_a is None or obj_b is None:
@@ -309,7 +311,7 @@ def boolean_operation(obj_a, obj_b, operation='DIFFERENCE'):
     mod = obj_a.modifiers.new(name="BooleanManifold", type='BOOLEAN')
     mod.object = obj_b
     mod.operation = operation
-    mod.solver = 'MANIFOLD'
+    mod.solver = solver
 
     # Apply the modifier — obj_b must be viewport-visible or Blender refuses to apply
     prev_hide = obj_b.hide_viewport
@@ -630,7 +632,11 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
         bool_mod = element.modifiers.new(name="__auto_boolean__", type='BOOLEAN')
         bool_mod.operation = 'INTERSECT'
         bool_mod.object = dup
-        bool_mod.solver = 'MANIFOLD'
+        # EXACT (not MANIFOLD): buildings/roads footprints can be non-manifold
+        # (self-touching OSM outlines). The MANIFOLD solver refuses non-manifold
+        # input and silently no-ops, which left elements spanning the whole bbox.
+        # EXACT tolerates non-manifold input so the clip to the map shape works.
+        bool_mod.solver = 'EXACT'
 
         # Apply the boolean modifier
         if bpy.context.mode != 'OBJECT':
@@ -1344,7 +1350,6 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     if tolerance == None:
         tolerance = bpy.context.scene.tp3d.toleranceElements
 
-    voxelSize = 0.1
     voxelSize2 = 0.2
 
     #recalculateNormals(original)
@@ -1381,12 +1386,12 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     boolean.solver = 'MANIFOLD'
     applyModifier(map, boolean)
 
-    # Remesh original for cleaner print geometry
-    remesh = original.modifiers.new(name="Remesh", type='REMESH')
-    remesh.mode = 'VOXEL'
-    remesh.voxel_size = voxelSize
-    remesh.use_smooth_shade = True
-    applyModifier(original, remesh)
+    # NOTE: the element (original) is intentionally NOT voxel-remeshed here.
+    # Since the OSM caps are now triangulated with earcut and intersected with
+    # the terrain via the MANIFOLD boolean, the element is already watertight
+    # and manifold. A voxel remesh (formerly voxel_size=0.1) rebuilt the whole
+    # surface on a uniform grid, exploding e.g. a city from ~85k to ~1.3M verts
+    # for no benefit. Keep the boolean output as-is.
 
     if "type" in original and original["type"] == "OTHER":
         print("Setting ExportGroup to 0 for OTHER type")
@@ -1431,62 +1436,19 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
     mergeobject.select_set(True)
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
 
-    voxel_size = mergeobject.get("_tp3d_voxel_cutter", 0.0)
     # The ocean object is tagged in _build_ocean_mesh; identify it so its flat
     # bottom can be kept flush with the terrain base (water must never dip
     # below the print's base plane).
-    is_ocean = "_tp3d_ocean_self_intersects" in mergeobject
+    is_ocean = mergeobject.get("_tp3d_is_ocean", False)
 
-    if voxel_size and voxel_size > 0:
-        # --- Ocean cutter path -------------------------------------------
-        # The flat coastline polygon self-intersects (sub-print marina/dock
-        # features collapse and cross at map scale; dense junctions can also
-        # mis-stitch).  A raw boolean fails ("non-manifold inputs").  Build a
-        # solid only as tall as the terrain (so the voxel grid stays small --
-        # detail comes from voxel size, not height) and voxel-remesh it into
-        # a watertight manifold, which resolves every self-intersection.
-        zs = [(mapobject.matrix_world @ Vector(c)).z for c in mapobject.bound_box]
-        z_min, z_max = min(zs), max(zs)
-        margin = max((z_max - z_min) * 0.5, 1.0) + 1.0
-        cutter_height = (z_max - z_min) + 2.0 * margin
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.extrude_region_move()
+    bpy.ops.transform.translate(value=(0, 0, 200))
+    bpy.ops.object.mode_set(mode='OBJECT')
+    mergeobject.location.z = -1
 
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.extrude_region_move()
-        bpy.ops.transform.translate(value=(0, 0, cutter_height))
-        bpy.ops.object.mode_set(mode='OBJECT')
-        # Flat polygon sits at local z=0 (solid spans 0..cutter_height); drop
-        # the object so the solid straddles the whole terrain in world Z.
-        mergeobject.location.z = z_min - margin
-
-        # Safety: never let the voxel grid explode -- bump size up if needed.
-        dx = max(mergeobject.dimensions.x, 1e-3)
-        dy = max(mergeobject.dimensions.y, 1e-3)
-        dz = max(mergeobject.dimensions.z, 1e-3)
-        v = float(voxel_size)
-        MAX_VOX = 40_000_000
-        while (dx / v) * (dy / v) * (dz / v) > MAX_VOX and v < 100.0:
-            v *= 1.5
-        if v != voxel_size and bpy.app.debug:
-            print(f"  [ocean] voxel size bumped {voxel_size:.3f} -> {v:.3f} to cap grid")
-
-        rem = mergeobject.modifiers.new(name="OceanRemesh", type='REMESH')
-        rem.mode = 'VOXEL'
-        rem.voxel_size = v
-        bpy.ops.object.modifier_apply(modifier=rem.name)
-        recalculateNormals(mergeobject)
-        if bpy.app.debug:
-            print(f"  [ocean] cutter voxel-remeshed (v={v:.3f}, height={cutter_height:.2f}, "
-                  f"verts now {len(mergeobject.data.vertices)})")
-    else:
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.extrude_region_move()
-        bpy.ops.transform.translate(value=(0, 0, 200))#bpy.ops.mesh.select_all(action='DESELECT')
-        bpy.ops.object.mode_set(mode='OBJECT')
-        mergeobject.location.z = -1
-
-        recalculateNormals(mergeobject)
+    recalculateNormals(mergeobject)
 
     # Add boolean modifier
     bool_mod = mergeobject.modifiers.new(name="Boolean", type='BOOLEAN')

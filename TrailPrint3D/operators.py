@@ -1782,3 +1782,87 @@ class TP3D_OT_install_update(bpy.types.Operator):
         else:
             self.report({'ERROR'}, f"Update failed: {err}")
         return {'FINISHED'}
+
+
+class TP3D_OT_remake_buildings(bpy.types.Operator):
+    bl_idname = "tp3d.remake_buildings"
+    bl_label = "Remake Buildings"
+    bl_description = "Delete existing buildings and regenerate them from the current settings"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        m = context.scene.tp3d.currentMap
+        return m is not None and m.name in bpy.data.objects
+
+    def execute(self, context):
+        from .utils.osm import create_buildings
+        from .utils.metadata import writeMetadata
+
+        tp3d = context.scene.tp3d
+        map_obj = tp3d.currentMap
+
+        # Delete any existing buildings object(s) for this map
+        for obj in list(context.scene.objects):
+            if obj.get("Object type") == "BUILDINGS":
+                bpy.data.objects.remove(obj, do_unlink=True)
+
+        scaleHor = tp3d.sScaleHor
+        buildings = create_buildings(map_obj, 10, scaleHor)
+
+        if buildings is None:
+            self.report({'WARNING'}, "No building data returned.")
+            return {'CANCELLED'}
+
+        buildings.data.materials.clear()
+        mat = bpy.data.materials.get("BUILDINGS")
+        if mat:
+            buildings.data.materials.append(mat)
+        buildings.name = map_obj.name + "_Buildings"
+        writeMetadata(buildings, type="BUILDINGS")
+
+        self.report({'INFO'}, "Buildings regenerated.")
+        return {'FINISHED'}
+
+
+class TP3D_OT_remake_roads(bpy.types.Operator):
+    bl_idname = "tp3d.remake_roads"
+    bl_label = "Remake Roads"
+    bl_description = "Delete existing roads and regenerate them from the current settings"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        m = context.scene.tp3d.currentMap
+        return m is not None and m.name in bpy.data.objects
+
+    def execute(self, context):
+        from .utils.osm import create_roads
+        from .utils.metadata import writeMetadata
+
+        tp3d = context.scene.tp3d
+        map_obj = tp3d.currentMap
+
+        # Delete any existing roads object(s) for this map
+        for obj in list(context.scene.objects):
+            if obj.get("Object type") == "ROADS":
+                bpy.data.objects.remove(obj, do_unlink=True)
+
+        scaleHor = tp3d.sScaleHor
+        map_km   = tp3d.get("sMapInKm", 1)
+        roads = create_roads(map_obj, 0.4, scaleHor, map_km)
+
+        if roads is None:
+            self.report({'WARNING'}, "No road data returned.")
+            return {'CANCELLED'}
+
+        roads = bpy.context.active_object
+        roads.data.materials.clear()
+        mat = bpy.data.materials.get("BLACK")
+        if mat:
+            roads.data.materials.append(mat)
+        roads.name = map_obj.name + "_Roads"
+        writeMetadata(roads, type="ROADS")
+
+        self.report({'INFO'}, "Roads regenerated.")
+        return {'FINISHED'}
