@@ -1787,13 +1787,14 @@ class TP3D_OT_install_update(bpy.types.Operator):
 class TP3D_OT_remake_buildings(bpy.types.Operator):
     bl_idname = "tp3d.remake_buildings"
     bl_label = "Remake Buildings"
-    bl_description = "Delete existing buildings and regenerate them from the current settings"
+    bl_description = "Delete existing buildings and regenerate them from the current settings. Requires Include Buildings to be enabled"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
-        m = context.scene.tp3d.currentMap
-        return m is not None and m.name in bpy.data.objects
+        tp3d = context.scene.tp3d
+        m = tp3d.currentMap
+        return m is not None and m.name in bpy.data.objects and tp3d.el_bActive
 
     def execute(self, context):
         from .utils.osm import create_buildings
@@ -1828,13 +1829,15 @@ class TP3D_OT_remake_buildings(bpy.types.Operator):
 class TP3D_OT_remake_roads(bpy.types.Operator):
     bl_idname = "tp3d.remake_roads"
     bl_label = "Remake Roads"
-    bl_description = "Delete existing roads and regenerate them from the current settings"
+    bl_description = "Delete existing roads and regenerate them from the current settings. Requires at least one road type to be enabled"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
-        m = context.scene.tp3d.currentMap
-        return m is not None and m.name in bpy.data.objects
+        tp3d = context.scene.tp3d
+        m = tp3d.currentMap
+        return (m is not None and m.name in bpy.data.objects
+                and any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive]))
 
     def execute(self, context):
         from .utils.osm import create_roads

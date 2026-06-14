@@ -260,6 +260,57 @@ def map_footprint_polygon(obj):
     return validate(biggest)
 
 
+def footprint_with_holes(obj, simplify_tol=None, down_only=False):
+    """Return the true 2D footprint of a mesh as a Shapely Polygon/MultiPolygon.
+
+    Projects faces to the (x, y) plane and unions them.  Because the union is
+    built from the faces that actually exist, any region the mesh does not
+    cover -- e.g. the land island inside a river loop -- remains an interior
+    ring (hole).  This is robust to bumpy / terrain-intersected bottoms where a
+    boundary-edge polygonize would miss or jaggedly break the hole rings.
+
+    down_only -- when True only downward-facing faces (normal.z < -0.3) are
+    projected.  A closed solid's bottom shell alone already describes the full
+    footprint, so this roughly halves the face count fed to the union.
+
+    Returns a validated Polygon / MultiPolygon (holes preserved), or None.
+    """
+    _require_shapely()
+    if obj is None or obj.type != 'MESH':
+        return None
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    if down_only:
+        bm.normal_update()
+    mw = obj.matrix_world
+    polys = []
+    for f in bm.faces:
+        if down_only and f.normal.z >= -0.3:
+            continue
+        ring = [(mw @ v.co) for v in f.verts]
+        ring = [(c.x, c.y) for c in ring]
+        if len(ring) < 3:
+            continue
+        try:
+            p = Polygon(ring)
+        except Exception:
+            continue
+        if not p.is_valid:
+            p = validate(p)
+        if p is not None and not p.is_empty and p.area > 0:
+            polys.append(p)
+    bm.free()
+    if not polys:
+        return None
+    merged = unary_union(polys)
+    if merged.is_empty:
+        return None
+    if simplify_tol:
+        merged = merged.simplify(simplify_tol)
+        if merged.is_empty:
+            return None
+    return validate(merged)
+
 
 def xy_ring_to_polygon(coords_xy):
     """Build a validated Shapely Polygon from a ring of (x, y) tuples.

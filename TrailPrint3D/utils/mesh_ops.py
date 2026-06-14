@@ -1350,34 +1350,73 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     if tolerance == None:
         tolerance = bpy.context.scene.tp3d.toleranceElements
 
-    voxelSize2 = 0.2
+    from . import geometry2d as _g2d  # deferred to avoid circular import at load time
 
-    #recalculateNormals(original)
-
-    obj = original.copy()
-    obj.data = obj.data.copy()
-    bpy.context.collection.objects.link(obj)
-
-    # Select bottom faces — leaves obj in Edit Mode with bottom faces selected
-    selectBottomFaces(obj)
-
-    # Invert and delete non-bottom faces, leaving only the bottom faces
-    bpy.ops.mesh.select_mode(type='FACE')
-    bpy.ops.mesh.select_all(action='INVERT')
-    bpy.ops.mesh.delete(type='FACE')
-
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    # If nothing survived (e.g. an element with no downward faces), skip the
-    # remesh entirely rather than crashing on an empty mesh downstream.
-    if not obj.data.vertices:
-        print("[single_color_mode_mesh_remesh] no bottom faces -- skipping element")
-        bpy.data.objects.remove(obj, do_unlink=True)
+    # ── Build the cutter from the element's 2D footprint (interior holes kept) ──
+    # The old path isolated the bottom cap and voxel-remeshed it into a solid.
+    # That voxel remesh filled every interior hole narrower than the voxel
+    # (river-loop islands, lake islets, courtyards), so the map DIFFERENCE
+    # carved the enclosed land into a void. Instead we union the element's
+    # downward faces into a Shapely footprint -- which preserves those holes as
+    # interior rings by construction -- dilate it by the tolerance gap, earcut
+    # it into a flat manifold cap (holes intact), and extrude that into a prism.
+    fp = _g2d.footprint_with_holes(original, down_only=True)
+    if fp is None or fp.is_empty:
+        print("[single_color_mode_mesh_remesh] empty footprint -- skipping element")
         return None
 
-    remeshClearing(obj, voxelSize2, tolerance)
+    if tolerance > 0:
+        # Dilate the footprint OUTWARD by tolerance * SCM_ELEMENT_GAP_FACTOR.
+        # This makes the recess in the terrain slightly larger than the
+        # element, leaving a clean printed gap around it. Growing (not
+        # insetting) also: thickens thin rivers so they still cut instead of
+        # collapsing; shrinks the island holes by the same amount, giving a
+        # matching gap around enclosed land; and extends the cutter past the
+        # map edge at the boundary, so the terrain side walls get cut away too.
+        from .. import constants as _const  # deferred to avoid circular import at load time
+        gap = tolerance * _const.SCM_ELEMENT_GAP_FACTOR
+        if gap > 0:
+            fp = fp.buffer(gap)
+            fp = _g2d.validate(fp)
+            if fp is None or fp.is_empty:
+                print("[single_color_mode_mesh_remesh] footprint empty after tolerance buffer -- skipping")
+                return None
 
+    # World-space bottom of the element: the prism floor (recess depth) sits here.
+    mw = original.matrix_world
+    bottom_z = min((mw @ v.co).z for v in original.data.vertices)
+    PRISM_HEIGHT = 30.0
 
+    # Earcut a flat cap (holes preserved) for every polygon part, then merge.
+    caps = []
+    for poly in _g2d.iter_polygons(fp):
+        cap = _g2d.polygon_to_mesh("_cutter_cap", poly)
+        if cap is not None:
+            caps.append(cap)
+    if not caps:
+        print("[single_color_mode_mesh_remesh] no cap geometry -- skipping")
+        return None
+    obj = caps[0] if len(caps) == 1 else merge_objects(caps)
+    if obj is None:
+        return None
+
+    # Drop the caps to the recess floor, orient them downward, and extrude up
+    # into a watertight manifold prism (holes become clean tunnels through it).
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    for v in bm.verts:
+        v.co.z = bottom_z
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    up_faces = [f for f in bm.faces if f.normal.z > 0]
+    if up_faces:
+        bmesh.ops.reverse_faces(bm, faces=up_faces)
+    ret = bmesh.ops.extrude_face_region(bm, geom=bm.faces[:])
+    ext_verts = [g for g in ret["geom"] if isinstance(g, bmesh.types.BMVert)]
+    bmesh.ops.translate(bm, verts=ext_verts, vec=Vector((0, 0, PRISM_HEIGHT)))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.name = f"{original.name}_cutter"
 
     # Boolean subtract from map
     boolean = map.modifiers.new(name="Boolean", type='BOOLEAN')
@@ -1385,13 +1424,6 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     boolean.object = obj
     boolean.solver = 'MANIFOLD'
     applyModifier(map, boolean)
-
-    # NOTE: the element (original) is intentionally NOT voxel-remeshed here.
-    # Since the OSM caps are now triangulated with earcut and intersected with
-    # the terrain via the MANIFOLD boolean, the element is already watertight
-    # and manifold. A voxel remesh (formerly voxel_size=0.1) rebuilt the whole
-    # surface on a uniform grid, exploding e.g. a city from ~85k to ~1.3M verts
-    # for no benefit. Keep the boolean output as-is.
 
     if "type" in original and original["type"] == "OTHER":
         print("Setting ExportGroup to 0 for OTHER type")
