@@ -1499,7 +1499,7 @@ def createOcean(prefetched_coastline, scaleHor, tile):
     """
     from .osm import fetch_coastline_ways  # deferred to avoid circular import at load time
     from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
-    from .mesh_ops import projection  # deferred to avoid circular import at load time
+    from .mesh_ops import projection, recalculateNormals  # deferred to avoid circular import at load time
     from .. import constants as _const  # deferred to avoid circular import at load time
 
     _t_ocean = time.time()
@@ -1547,6 +1547,7 @@ def createOcean(prefetched_coastline, scaleHor, tile):
         )
         return None
 
+
     set_origin_to_3d_cursor(ocean_obj)
 
     mat = bpy.data.materials.get("WATER")
@@ -1572,6 +1573,7 @@ def createOcean(prefetched_coastline, scaleHor, tile):
         ocean_obj.data.materials.clear()
         ocean_obj.data.materials.append(mat)
         print(f"  [ocean] total: {time.time()-_t_ocean:.3f}s")
+        recalculateNormals(ocean_obj)
         return ocean_obj
 
     return ocean_obj

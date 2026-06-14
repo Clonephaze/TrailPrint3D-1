@@ -591,6 +591,7 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
 
     print("Base elements Created")
 
+
     # --------------------------------------------------
     # Warn if buildings or roads are used together with any singleColorMode.
     # --------------------------------------------------
@@ -691,7 +692,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                 thickerCurves[i].scale = (1.01, 1.01, 1.01)
                 boolean_operation(survivingCurveObjs[i + 1], thickerCurves[i])
 
-    if props['elementMode'] == "SEPARATE":
+    if props['elementMode'] == "SEPARATE" and 1 == 0:
         for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
 
             elem_obj = terrain.get(key)
@@ -1371,6 +1372,7 @@ def runGeneration(type, locked_scale=None):
         _osm_prefetch_thread.join()
     elements = _rg_build_terrain_elements(obj, scaleHor, curveObj=curveObjs[0] if curveObjs else None,
                                           prefetched_osm=_osm_prefetched)
+    
 
     # --- Phase 15: Single color mode processing ---
     overlay.update(0.95, "Coloring", "Applying single-color mode…") 
