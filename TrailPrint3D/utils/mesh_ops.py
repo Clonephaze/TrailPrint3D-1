@@ -1617,7 +1617,6 @@ def projection(operation, Mapobject, obj):
 
         single_color_mode_mesh_wireframe(obj, Mapobject)
 
-        raise Exception("Not implemented yet: singleColorMode_remesh")
 
     if operation == "singleColorMode_remesh":
 
@@ -1628,7 +1627,7 @@ def projection(operation, Mapobject, obj):
         thicker = single_color_mode_mesh_remesh(obj, Mapobject)
 
 
-        #remove_objects(thicker)
+        remove_objects(thicker)
 
     if operation == "negative":
         merge_with_map(Mapobject, obj, True)
