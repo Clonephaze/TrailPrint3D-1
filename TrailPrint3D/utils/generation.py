@@ -93,9 +93,9 @@ def _rg_validate_inputs(flags):
         )
         return None
 
-    if singleColorMode and elementMode == "SEPARATE":
-        show_message_box("Single Color Mode and Separate Element Mode cannot be used together. either disable Single-color Mode for the trail or switch to SingleColorMode for elements.")
-        return None
+    #if singleColorMode and elementMode == "SEPARATE":
+    #    show_message_box("Single Color Mode and Separate Element Mode cannot be used together. either disable Single-color Mode for the trail or switch to SingleColorMode for elements.")
+    #    return None
 
     if "gpx_file" in flags:
         if not gpx_file_path or gpx_file_path == "":
@@ -753,6 +753,17 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         for thicker in thicker_by_key.values():
             #pass
             remove_objects(thicker)
+
+    if props['elementMode'] == "SEPARATE" and thickerCurves:
+        for key in TERRAIN_PRIORITY_ORDER:
+            elem_obj = terrain.get(key)
+            if not elem_obj:
+                continue
+            _ov = _progress.ProgressOverlay.get()
+            if _ov.active:
+                _ov.update(message=f"Cutting trail from {key.capitalize()}…")
+            for tcrv in thickerCurves:
+                boolean_operation(elem_obj, tcrv)
 
     if thickerCurves:
         remove_objects(thickerCurves)
