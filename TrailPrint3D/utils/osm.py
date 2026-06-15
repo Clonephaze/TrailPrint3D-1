@@ -1319,7 +1319,9 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
 
                     # Keep same streetWidth logic as before
                     streetWidth = (width_m * 0.5) * 0.2 * scaleHor * 0.02 * streetwidthMultiplier
-
+                    if streetWidth < 0.2:
+                        streetWidth = 0.2
+                        any_adjusted = True
 
                     # Compute segment directions and per-node perpendiculars (2D perp)
                     seg_dirs = []
