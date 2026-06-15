@@ -1247,6 +1247,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
 
                 data = []
 
+                #fetches cached data thats been downloaded by fetch_osm_combined
                 data = fetch_osm_data(bbox, "STREETS")
 
                 if not data or "elements" not in data:

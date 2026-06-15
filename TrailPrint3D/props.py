@@ -293,6 +293,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     el_bMinPrintMM: FloatProperty(name= _("Min Footprint (mm)"), default=0.15, min=0.0, soft_max=5.0, precision=2, description=_("Buildings whose printed footprint side is smaller than this (in model mm) are skipped. Scale-aware: a larger real-world building on a bigger-km map prints smaller, so this threshold naturally culls more on larger maps.")) # type: ignore
 
     el_sMultiplier: FloatProperty(name= _("Street Width Multiplier"), default = 1, description = _("To make Streets thicker or thinner")) # type: ignore
+    el_sHeight: FloatProperty(name= _("Road Height"), default = 0.4, min=0.0, description = _("Height of road geometry above terrain")) # type: ignore
 
     show_water: BoolProperty(name= _("Water & Ocean"), default=False) # type: ignore
     show_roads: BoolProperty(name= _("Roads"), default=False) # type: ignore

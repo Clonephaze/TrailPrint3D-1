@@ -309,7 +309,9 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 col.prop(props, "el_sBigActive", icon='CHECKBOX_HLT' if props.el_sBigActive else 'CHECKBOX_DEHLT')
                 col.prop(props, "el_sMedActive", icon='CHECKBOX_HLT' if props.el_sMedActive else 'CHECKBOX_DEHLT')
                 col.prop(props, "el_sSmallActive", icon='CHECKBOX_HLT' if props.el_sSmallActive else 'CHECKBOX_DEHLT')
-                sub.prop(props, "el_sMultiplier")
+                row = sub.row(align=True)
+                row.prop(props, "el_sMultiplier")
+                row.prop(props, "el_sHeight")
                 sub.operator("tp3d.remake_roads", icon='FILE_REFRESH')
 
         # --- PIN ---

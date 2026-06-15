@@ -1853,7 +1853,7 @@ class TP3D_OT_remake_roads(bpy.types.Operator):
 
         scaleHor = tp3d.sScaleHor
         map_km   = tp3d.get("sMapInKm", 1)
-        roads = create_roads(map_obj, 0.4, scaleHor, map_km)
+        roads = create_roads(map_obj, tp3d.el_sHeight, scaleHor, map_km)
 
         if roads is None:
             self.report({'WARNING'}, "No road data returned.")
