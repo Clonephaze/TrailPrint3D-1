@@ -142,6 +142,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     o_time: StringProperty(name="TimeTook",default="") # type: ignore
     o_apiCounter_OpenTopoData: StringProperty(name="apiCounter_OpenTopodata", default = "API Limit: ---/1000 daily") # type: ignore
     o_apiCounter_OpenElevation: StringProperty(name="apiCounter_OpenElevation", default = "API Limit: ---/1000 monthly") # type: ignore
+    o_mapsGenerated: StringProperty(name="MapsGenerated", default = "") # type: ignore
     o_centerx: FloatProperty(name = _("Center X"), default = 0, description = _("X Center of the Path")) # type: ignore
     o_centery: FloatProperty(name = _("Center Y"), default = 0, description = _("y Center of the Path")) # type: ignore
 

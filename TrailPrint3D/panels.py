@@ -37,8 +37,10 @@ class TP3D_PT_generate(bpy.types.Panel):
         row = layout.row(align=True)
         row.operator("tp3d.open_website", text=_("Patreon"), icon='FUND')
         row.operator("tp3d.join_discord", text=_("Discord"), icon='URL')
-        edition = "Premium" if temp.PREMIUMVERSION else "Free"
-        layout.label(text=_(f"Created by: EmGi  |  {edition} v3.08"), icon='INFO')
+        if temp.PREMIUMVERSION:
+            layout.label(text=_("Created by: EmGi  |  Premium v3.08"), icon='INFO')
+        else:
+            layout.label(text=_("Created by: EmGi  |  v3.08"), icon='INFO')
         layout.separator()
 
         # --- Generation mode toggle (3 columns) ---
@@ -297,7 +299,7 @@ class TP3D_PT_advanced(bpy.types.Panel):
             row.prop(props, "el_bActive")
             row.prop(props, "el_bHeightMultiplier")
             sub.prop(props, "el_bMinPrintMM")
-            sub.operator("tp3d.remake_buildings", icon='FILE_REFRESH')
+            #sub.operator("tp3d.remake_buildings", icon='FILE_REFRESH')
 
             sub = box.box()
             row = sub.row()
@@ -312,7 +314,7 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 row = sub.row(align=True)
                 row.prop(props, "el_sMultiplier")
                 row.prop(props, "el_sHeight")
-                sub.operator("tp3d.remake_roads", icon='FILE_REFRESH')
+                #sub.operator("tp3d.remake_roads", icon='FILE_REFRESH')
 
         # --- PIN ---
         layout.prop(props, "show_pin", icon="TRIA_DOWN" if props.show_pin else "TRIA_RIGHT", emboss=False)
@@ -477,6 +479,9 @@ class TP3D_PT_advanced(bpy.types.Panel):
             col.label(text=props.o_apiCounter_OpenTopoData)
             col.label(text="OpenElevation:")
             col.label(text=props.o_apiCounter_OpenElevation)
+            box.separator(factor=0.5)
+            col = box.column(align=True)
+            col.label(text=props.o_mapsGenerated if props.o_mapsGenerated else _("Maps Generated: ---"), icon='RENDER_RESULT')
 
         # --- ATTRIBUTION ---
         layout.prop(props, "show_attribution", icon="TRIA_DOWN" if props.show_attribution else "TRIA_RIGHT", emboss=False)

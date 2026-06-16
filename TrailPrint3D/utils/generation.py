@@ -1445,6 +1445,11 @@ def runGeneration(type, locked_scale=None):
     bpy.context.scene.tp3d.sRunDuration = round(duration)
     bpy.context.scene.tp3d["o_time"] = _("Script ran for {} seconds").format(round(duration))
 
+    from .elevation import load_generation_counter, save_generation_counter
+    _total_maps = load_generation_counter() + 1
+    save_generation_counter(_total_maps)
+    bpy.context.scene.tp3d["o_mapsGenerated"] = f"Maps Generated: {_total_maps}"
+
     if obj:
         obj["GenerationTime"] = round(duration)
 

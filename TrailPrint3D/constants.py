@@ -35,6 +35,9 @@ specialCollection = []
 # Define a path to store the counter data
 counter_file = os.path.join(bpy.utils.user_resource('CONFIG'), "api_request_counter.json")
 
+# Define a path to store the total maps generated counter
+generation_counter_file = os.path.join(bpy.utils.user_resource('CONFIG'), "generation_counter.json")
+
 #Set up a folder that holds all Cache Data
 cache_dir = os.path.join(bpy.utils.user_resource('CONFIG'), "TrailPrint3D_Cache")
 

@@ -27,6 +27,20 @@ def save_counter(count_openTopodata, date_openTopoData, count_openElevation, dat
     with open(const.counter_file, "w") as f:
         json.dump({"count_openTopodata": count_openTopodata, "date_openTopoData": date_openTopoData, "count_openElevation": count_openElevation, "date_openElevation": date_openElevation}, f)
 
+def load_generation_counter():
+    if os.path.exists(const.generation_counter_file):
+        try:
+            with open(const.generation_counter_file, "r") as f:
+                data = json.load(f)
+                return data.get("total_maps_generated", 0)
+        except:
+            return 0
+    return 0
+
+def save_generation_counter(count):
+    with open(const.generation_counter_file, "w") as f:
+        json.dump({"total_maps_generated": count}, f)
+
 def update_request_counter():
 
     api = bpy.context.scene.tp3d.api
