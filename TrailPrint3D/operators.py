@@ -1836,7 +1836,7 @@ class TP3D_OT_remake_buildings(bpy.types.Operator):
         mat = bpy.data.materials.get("BUILDINGS")
         if mat:
             buildings.data.materials.append(mat)
-        buildings.name = map_obj.name + "_Buildings"
+        buildings.name = map_obj.name + "_BUILDINGS"
         writeMetadata(buildings, type="BUILDINGS")
 
         self.report({'INFO'}, "Buildings regenerated.")
@@ -1881,7 +1881,7 @@ class TP3D_OT_remake_roads(bpy.types.Operator):
         mat = bpy.data.materials.get("BLACK")
         if mat:
             roads.data.materials.append(mat)
-        roads.name = map_obj.name + "_Roads"
+        roads.name = map_obj.name + "_ROADS"
         writeMetadata(roads, type="ROADS")
 
         self.report({'INFO'}, "Roads regenerated.")

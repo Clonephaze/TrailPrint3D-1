@@ -436,7 +436,7 @@ def _rg_start_osm_prefetch(tp3d, map_km):
 
 
 def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, phase_end=0.95,
-                               prefetched_osm=None):
+                               prefetched_osm=None, tile_label=None):
     """Create water, forest, city, glacier, building and road overlay meshes.
 
     Reads all flags directly from bpy.context.scene.tp3d.
@@ -444,6 +444,8 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     phase_start/phase_end control the overlay progress range for multi-tile callers.
     prefetched_osm: result dict from _rg_start_osm_prefetch; if provided the
     per-kind OSM fetch is skipped (data was already downloaded in the background).
+    tile_label: optional prefix for progress messages (e.g. "Tile 2/6") used by
+    multi-tile callers so element messages keep their tile context visible.
     """
     from .terrain import coloring_main, createOcean, _COLORING_EMPTY, _COLORING_PAINTED, _COLORING_FILTERED, _fetch_all_kinds_parallel  # deferred to avoid circular import at load time
     from .osm import OsmFetchSettings  # deferred to avoid circular import at load time
@@ -487,7 +489,8 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     def _advance_elem_progress(phase_label, msg):
         if _ov.active:
             pct = _ELEM_PHASE_START + _elem_idx[0] * _elem_step
-            _ov.update(percent=pct, phase=phase_label, message=msg)
+            full_msg = f"{tile_label} — {msg}" if tile_label else msg
+            _ov.update(percent=pct, phase=phase_label, message=full_msg)
         _elem_idx[0] += 1
 
     _water_feat_active = (
@@ -623,7 +626,7 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                 # Buildings are already clipped to the map shape in 2D inside
                 # create_buildings, so no 3D boolean clip is needed here.
                 set_origin_to_3d_cursor(buildings)
-                buildings.name = obj.name + "_" + "Buildings"
+                buildings.name = obj.name + "_" + "BUILDINGS"
                 terrain['buildings'] = buildings
                 writeMetadata(buildings, type="BUILDINGS")
             _ov.set_fetch_done('buildings', success=buildings is not None)
@@ -646,7 +649,7 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                 roads.data.materials.clear()
                 roads.data.materials.append(bpy.data.materials.get("BLACK"))
                 terrain['roads'] = roads
-                roads.name = obj.name + "_" + "Roads"
+                roads.name = obj.name + "_" + "ROADS"
                 writeMetadata(roads, type="ROADS")
                 _ov.set_fetch_done('roads', success=True)
             else:
