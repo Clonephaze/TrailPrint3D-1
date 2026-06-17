@@ -1,7 +1,7 @@
 import bpy  # type: ignore
 import bmesh  # type: ignore
 import math
-from mathutils import Vector, bvhtree  # type: ignore
+from mathutils import Vector, Matrix, bvhtree  # type: ignore
 
 
 def applyModifier(obj, modifier):
@@ -920,7 +920,94 @@ def intersect_trail_with_existing_box(cutobject,trail):
         writeMetadata(cube,"TRAIL")
 
 
+def _clean_solid_mesh(mesh, dist=1e-6):
+    """Weld near-duplicate verts and dissolve degenerate/zero-area geometry.
+
+    Earcut can leave a few near-coincident vertices that make a solid
+    technically non-manifold. Blender's MANIFOLD boolean solver doesn't error
+    on that, it silently no-ops (documented failure mode in
+    docs/roads-shapely-approach.md and reproduced in terrain.py's
+    manifold-check fallback), which looks like "the boolean just didn't
+    happen". This is cheap insurance against that.
+    """
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=dist)
+    bmesh.ops.dissolve_degenerate(bm, dist=dist, edges=bm.edges[:])
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+
+
+def _extrude_flat_polygon(g2d_mod, polygon, bottom_z, top_z, verts, faces):
+    """Append a flat-bottomed, flat-topped solid prism for one Shapely polygon.
+
+    Same manifold construction as buildings (`osm._append_building`): earcut
+    caps with shared, index-referenced vertices plus consistently-wound wall
+    quads, so normals come out correct with no `recalculateNormals` call.
+
+    This is a fast (pure 2D) replacement for the old curve bevel+extrude
+    tessellation -- the actual terrain-following shape is produced afterward
+    by a real 3D boolean against the map, not by this flat prism itself.
+    """
+    # The floor/roof/wall winding below assumes a CCW exterior ring and CW
+    # holes (the standard convention earcut/this function rely on). Shapely
+    # buffer()/intersection() output doesn't guarantee that orientation --
+    # if it comes back reversed, every triangle and wall quad winds backwards
+    # and every normal ends up flipped, which silently breaks the boolean
+    # against the map. Normalize it explicitly rather than assume.
+    from shapely.geometry.polygon import orient as _orient_polygon  # deferred to avoid circular import at load time
+    polygon = _orient_polygon(polygon, sign=1.0)
+
+    ext = list(polygon.exterior.coords)
+    if len(ext) > 1 and ext[0] == ext[-1]:
+        ext = ext[:-1]
+    if len(ext) < 3:
+        return
+    holes = []
+    for interior in polygon.interiors:
+        ring = list(interior.coords)
+        if len(ring) > 1 and ring[0] == ring[-1]:
+            ring = ring[:-1]
+        if len(ring) >= 3:
+            holes.append(ring)
+    ec = g2d_mod._earcut_triangulate(ext, holes)
+    if ec is None:
+        return
+    verts2d, cap_tris = ec
+    n2 = len(verts2d)
+    base = len(verts)
+    for (vx, vy) in verts2d:
+        verts.append((vx, vy, bottom_z))
+    for (vx, vy) in verts2d:
+        verts.append((vx, vy, top_z))
+    for (ia, ib, ic) in cap_tris:
+        faces.append((base + ic, base + ib, base + ia))                 # floor (down)
+        faces.append((base + n2 + ia, base + n2 + ib, base + n2 + ic))   # roof (up)
+    start = 0
+    for ring in [ext] + holes:
+        rn = len(ring)
+        for i in range(rn):
+            a = base + start + i
+            b = base + start + (i + 1) % rn
+            c = base + n2 + start + (i + 1) % rn
+            d = base + n2 + start + i
+            faces.append((a, b, c, d))
+        start += rn
+
+
 def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projectionObj = None):
+    """Build the single-color-mode trail strip + groove cutter for one curve.
+
+    Builds two flat-topped/flat-bottomed prisms from the trail's 2D footprint
+    via Shapely (fast -- no curve bevel/extrude tessellation), positioned so
+    their bottom sits `trailCutDepth` below the curve and their top is well
+    above any terrain. The exact-width prism is then INTERSECTed with the
+    real map so it conforms to the terrain surface and stops exactly at the
+    map's true edges (no height-sampling approximation, no artificial 2D-clip
+    wall); the wider prism is DIFFERENCEd from `map` directly to carve the
+    groove, for the same reason.
+    """
 
     if projectionObj == None:
         projectionObj = map
@@ -929,188 +1016,126 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     minThickness = bpy.context.scene.tp3d.minThickness
     pathThickness = bpy.context.scene.tp3d.pathThickness
 
-    lowestZonCurve = 1000
-
     trailCutDepth = min(cutDepth, minThickness/2) # How deep the trail will be placed into the map
                                             # Either 2mm or for flatter maps half of the minThickness
-    
+
+    from . import geometry2d as g2d  # deferred to avoid circular import at load time
+
+    lowest_z = None
 
     if crv.type == "CURVE":
-
-        #Getting the lowest Point of the Curve
-        curve = crv.data
-        for spline in curve.splines:
-            if hasattr(spline, "points") and len(spline.points) > 0:
-                for p in spline.points:
-                    co_local = Vector((p.co.x, p.co.y, p.co.z))
-                    co_world = crv.matrix_world @ co_local
-                    z = co_local.z
-                    if lowestZonCurve is None or z < lowestZonCurve:
-                        lowestZonCurve = z
-
-        #print(f"lowestzoncurve: {lowestZonCurve}")
-
-
-        crv_data = crv.data
-        crv_data.dimensions = "2D"
-        crv_data.dimensions = "3D"
-        crv_data.extrude = 200
-
-
-        # Ensure the text object is selected and active
+        # Ensure the curve is selected and active
         bpy.ops.object.select_all(action='DESELECT')
         crv.select_set(True)
         bpy.context.view_layer.objects.active = crv
 
         bpy.ops.object.mode_set(mode='EDIT')
-
-        # select all points if you want to smooth everything
         bpy.ops.curve.select_all(action='SELECT')
-
-        # run the smooth operator
         bpy.ops.curve.smooth()
-
-        # back to Object Mode if you like
         bpy.ops.object.mode_set(mode='OBJECT')
-        #Create a duplicate object of the curve that will be slightly thicker
-        crv_thick = crv.copy()
-        crv_thick.data = crv.data.copy()
-        crv_thick.data.bevel_depth = pathThickness/2 + tol  # Set the thickness of the curve
-        bpy.context.collection.objects.link(crv_thick)
-        
+
+        mw = crv.matrix_world
+        coords_list = []
+        for spline in crv.data.splines:
+            pts = spline.points if len(spline.points) > 0 else spline.bezier_points
+            if len(pts) < 2:
+                continue
+            line = []
+            for p in pts:
+                if lowest_z is None or p.co.z < lowest_z:
+                    lowest_z = p.co.z
+                w = mw @ Vector((p.co.x, p.co.y, p.co.z))
+                line.append((w.x, w.y))
+            coords_list.append(line)
+        if not coords_list:
+            bpy.data.objects.remove(crv, do_unlink=True)
+            return None
+
+        ribbon = g2d.polylines_to_ribbon(coords_list, pathThickness / 2, quad_segs=4)
+        thick_ribbon = g2d.polylines_to_ribbon(coords_list, pathThickness / 2 + tol, quad_segs=4)
+
     elif crv.type == "MESH":
-
-        depsgraph = bpy.context.evaluated_depsgraph_get()
-        eval_obj = crv.evaluated_get(depsgraph)
-        mesh = eval_obj.to_mesh()
-        if not mesh.vertices:
-            eval_obj.to_mesh_clear()
-            return
-        lowestZonCurve = min((crv.matrix_world @ v.co).z for v in mesh.vertices)
-
-        #crv.scale.z = 100
-
-        crv_thick = crv.copy()
-        crv_thick.data = crv.data.copy()
-        #crv_thick.data.scale = 1.02
-        bpy.context.collection.objects.link(crv_thick)
-
-    bpy.ops.object.convert(target='MESH')
-
-    recalculateNormals(crv)
-
-    # Add boolean modifier
-    bool_mod = crv.modifiers.new(name="Boolean", type='BOOLEAN')
-    bool_mod.object = projectionObj
-    bool_mod.operation = 'INTERSECT'
-    bool_mod.solver = 'MANIFOLD'
-
-
-    bpy.ops.object.modifier_apply(modifier=bool_mod.name)
-
-    if len(crv.data.vertices) == 0:
-        bpy.data.objects.remove(crv_thick, do_unlink=True)
+        ribbon = g2d.footprint_with_holes(crv)
+        # No tolerance growth here -- matches the original behaviour, which
+        # duplicated the MESH-type input verbatim for the carving tool
+        # (Mesh data has no bevel_depth to widen, unlike CURVE data).
+        thick_ribbon = ribbon
+        if crv.data.vertices:
+            lowest_z = min((crv.matrix_world @ v.co).z for v in crv.data.vertices)
+    else:
         bpy.data.objects.remove(crv, do_unlink=True)
         return None
 
-    recalculateNormals(crv)
+    if ribbon is None or ribbon.is_empty or lowest_z is None:
+        bpy.data.objects.remove(crv, do_unlink=True)
+        return None
 
-    #Adding another Intersect Modifier to make the path "Plane" with the Map
-    # Add boolean modifier
-    bool_mod = crv.modifiers.new(name="Boolean", type='BOOLEAN')
-    bool_mod.object = projectionObj
-    bool_mod.operation = 'INTERSECT'
-    bool_mod.solver = 'MANIFOLD'
+    bottom_z = lowest_z - trailCutDepth
+    top_z = bottom_z + 100.0  # tall enough to clear any terrain
 
-    recalculateNormals(crv)
+    verts, faces = [], []
+    for poly in g2d.iter_polygons(ribbon):
+        _extrude_flat_polygon(g2d, poly, bottom_z, top_z, verts, faces)
 
+    if not verts:
+        bpy.data.objects.remove(crv, do_unlink=True)
+        return None
 
-    bpy.ops.object.modifier_apply(modifier=bool_mod.name)
+    t_verts, t_faces = [], []
+    if thick_ribbon is not None and not thick_ribbon.is_empty:
+        for poly in g2d.iter_polygons(thick_ribbon):
+            _extrude_flat_polygon(g2d, poly, bottom_z, top_z, t_verts, t_faces)
 
-    #doing the same for the duplicate
-    bpy.ops.object.select_all(action='DESELECT')
-    crv_thick.select_set(True)
-    bpy.context.view_layer.objects.active = crv_thick
-    bpy.ops.object.convert(target='MESH')
-
-
-    # Boolean to Cut off the Extruded trail thats sticking out at the bottom and the top
-    bool_mod = crv_thick.modifiers.new(name="Boolean", type='BOOLEAN')
-    bool_mod.object = projectionObj
-    bool_mod.operation = 'INTERSECT'
-    bool_mod.solver = 'MANIFOLD'
-
-    bpy.ops.object.modifier_apply(modifier=bool_mod.name)
-
-    # Keep only the bottom faces of crv_thick and extrude them upward,
-    # so the trail protrudes above the map surface instead of being flush.
-    bm = bmesh.new()
-    bm.from_mesh(crv_thick.data)
-    bm.verts.ensure_lookup_table()
-    bm.faces.ensure_lookup_table()
-    min_z = min(v.co.z for v in bm.verts)
-    bottom_faces = [f for f in bm.faces if all(abs(v.co.z - min_z) < 0.01 for v in f.verts)]
-    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f not in bottom_faces], context='FACES')
-    bm.faces.ensure_lookup_table()
-    res = bmesh.ops.extrude_face_region(bm, geom=bm.faces[:])
-    new_verts = [e for e in res['geom'] if isinstance(e, bmesh.types.BMVert)]
-    bmesh.ops.translate(bm, verts=new_verts, vec=(0, 0, 20))
-    bm.to_mesh(crv_thick.data)
-    crv_thick.data.update()
-    bm.free()
-
-    bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
-    crv_thick.scale = (1.002,1.002,1)
-
-    recalculateNormals(crv_thick)
-
-    # thicker curve is currently flat with the bottom of the Map so we need to move it upwards before creating the cutout
-    # Move the thicker curve upwards
-    crv_thick.location.z += lowestZonCurve - trailCutDepth
-    #crv_thick.location.z += 1
-
-
-    bpy.ops.object.select_all(action='DESELECT')
-    map.select_set(True)
-    bpy.context.view_layer.objects.active = map
-
-    # Boolean to create the Cutout
-    bool_mod = map.modifiers.new(name="Boolean", type="BOOLEAN")
-    bool_mod.object = crv_thick
-    bool_mod.operation = "DIFFERENCE"
-    bool_mod.solver = "MANIFOLD"
-    bpy.ops.object.modifier_apply(modifier = bool_mod.name)
-
-    recalculateNormals(map)
-
+    # Convert crv to MESH in place (preserves object identity -- other code
+    # holds references to this exact object for later material/metadata
+    # assignment), then replace its data with the flat prism above.
     bpy.ops.object.select_all(action='DESELECT')
     crv.select_set(True)
     bpy.context.view_layer.objects.active = crv
+    bpy.ops.object.convert(target='MESH')
 
-    recalculateNormals(crv)
-    #crv.scale = (0.998,0.998,1)
-    crv.location.z += 0.1
-    map.scale = (1.002,1.002,1)
-    bool_mod = crv.modifiers.new(name = "Boolean", type = "BOOLEAN")
-    bool_mod.object = map
-    bool_mod.operation = "DIFFERENCE"
-    bool_mod.solver = "MANIFOLD"
-    bpy.ops.object.modifier_apply(modifier = bool_mod.name)
+    new_mesh = bpy.data.meshes.new(crv.data.name)
+    new_mesh.from_pydata(verts, [], faces)
+    new_mesh.update()
+    _clean_solid_mesh(new_mesh)
+    old_mesh = crv.data
+    crv.data = new_mesh
+    bpy.data.meshes.remove(old_mesh)
+    # verts/faces above are in WORLD space. crv may still carry a
+    # non-identity transform from before conversion, which would otherwise
+    # re-apply on top and shift the mesh.
+    crv.matrix_world = Matrix.Identity(4)
 
-    map.scale = (1.00,1.00,1)
+    # Make the visible trail strip follow the terrain: INTERSECT against the
+    # real map clips the tall prism down to (terrain top surface) above,
+    # (bottom_z, flat) below -- exact, no sampling approximation, and bounded
+    # by the map's true edges with no artificial wall.
+    boolean_operation(crv, projectionObj, 'INTERSECT')
 
-    crv_thick.location.z -= 0.1
-    #crv.location.z += lowestZonCurve - trailCutDepth
-    recalculateNormals(crv)
+    if len(crv.data.vertices) == 0:
+        bpy.data.objects.remove(crv, do_unlink=True)
+        return None
 
-    #Remove the last material from the MAP as the boolean operation adds it to the list witout using it
-    #Without removing it will color the next boolean operation in the color of the trail
-    mats = map.data.materials
-
-
+    # Build the wider carving tool and cut the groove directly into `map`
+    # with a real 3D boolean -- same reasoning, naturally bounded at the
+    # map's true edges.
+    crv_thick = None
+    if t_verts:
+        thick_mesh = bpy.data.meshes.new(f"{crv.name}_thick")
+        thick_mesh.from_pydata(t_verts, [], t_faces)
+        thick_mesh.update()
+        _clean_solid_mesh(thick_mesh)
+        crv_thick = bpy.data.objects.new(f"{crv.name}_thick", thick_mesh)
+        bpy.context.collection.objects.link(crv_thick)
+        # EXACT (not MANIFOLD): crv_thick is a freshly built earcut solid --
+        # even after cleanup it's safer not to risk MANIFOLD's silent no-op
+        # on the one boolean we directly control. It's tiny, so the slower
+        # EXACT solver costs nothing noticeable here.
+        boolean_operation(map, crv_thick, 'DIFFERENCE', solver='EXACT')
 
     if not keepTolTrail:
-        bpy.data.objects.remove(crv_thick, do_unlink=True)
+        if crv_thick is not None:
+            bpy.data.objects.remove(crv_thick, do_unlink=True)
         return (crv, None)
     return (crv, crv_thick)
 
