@@ -2103,6 +2103,27 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         _progress.WarningsOverlay.clear()
         start_time = time.time()
 
+        # The puzzle cutter only knows how to cut terrain_obj itself apart --
+        # elements not painted directly onto it ("Separate objects" /
+        # "Single-Color mode", and Buildings/Roads regardless of mode) are
+        # built as their own standalone objects and never get sliced along
+        # the jigsaw lines, leaving them spanning every piece uncut. Rather
+        # than ship that broken result, force compatible settings up front
+        # and tell the user via the warnings overlay.
+        if props.elementMode != 'PAINT':
+            props.elementMode = 'PAINT'
+            _progress.WarningsOverlay.add_warning(
+                "Puzzles only support the \"Paint on Map\" element mode — switched automatically.", "warn"
+            )
+        if props.el_bActive or props.el_sBigActive or props.el_sMedActive or props.el_sSmallActive:
+            props.el_bActive = False
+            props.el_sBigActive = False
+            props.el_sMedActive = False
+            props.el_sSmallActive = False
+            _progress.WarningsOverlay.add_warning(
+                "Buildings and Roads aren't supported in puzzles — disabled automatically.", "warn"
+            )
+
         bbox = data.get('bbox')
         pieces = data.get('pieces') or []
         gpx_paths = data.get('gpx_paths', [])
@@ -2121,6 +2142,12 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         west, east = bbox['west'], bbox['east']
 
         props.shape = 'SQUARE'
+        if data.get('resolution') is not None:
+            # Mirrors the scene's own "Resolution" sidebar property (used by
+            # create_rectangle below) so the picker's own Resolution field
+            # actually controls the generated terrain instead of silently
+            # falling back to whatever was last set in the Blender sidebar.
+            props.num_subdivisions = max(1, min(10, int(data['resolution'])))
 
         overlay.update(0.05, "Creating base tile…", "Building terrain…")
         # sScaleHor must be set BEFORE the convert_to_blender_coordinates calls
@@ -2218,30 +2245,10 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # any shortfall the recess check would catch is just float-precision
         # noise between this step's lowest_z and createTerrainFromSelected's
         # own re-derived one, not a real need to dig into the bottom.
-        #
-        # Snapshot the object set beforehand so any overlay-element objects
-        # createTerrainFromSelected creates (roads/buildings/forest/water/etc.,
-        # only built as their own SEPARATE objects -- elementMode != "PAINT" --
-        # rather than painted onto blank's own mesh) can be identified
-        # afterward and cut into the puzzle pieces below too. Without this,
-        # those elements never get cut along the jigsaw lines at all and end
-        # up as one whole overlay spanning every piece.
-        _pre_existing_objs = {o.name for o in bpy.data.objects}
         utils.createTerrainFromSelected(manage_overlay=False, skip_bottom_recess=True)
 
-        _overlay_element_types = {
-            "WATER", "FOREST", "SCREE", "CITY", "GREENSPACE", "FARMLAND",
-            "GLACIER", "BUILDINGS", "ROADS",
-        }
-        element_objs = [
-            o for o in bpy.data.objects
-            if o.name not in _pre_existing_objs
-            and o.type == 'MESH'
-            and (o.get("Object type") in _overlay_element_types or o.get("_tp3d_is_ocean"))
-        ]
-
         overlay.update(0.6, "Cutting puzzle pieces…", f"{len(pieces)} piece(s)…")
-        piece_objs = utils.cut_into_puzzle_pieces(blank, pieces, tolerance, extra_objects=element_objs)
+        piece_objs = utils.cut_into_puzzle_pieces(blank, pieces, tolerance)
 
         if gpx_paths:
             # Merge trails into the individual PIECES, not the single tile

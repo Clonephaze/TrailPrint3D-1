@@ -61,15 +61,21 @@
         #holderTextPreview { background: #2a2a2a; border: 1px solid #444; border-radius: 4px; min-height: 44px;
             display: flex; align-items: center; justify-content: center; padding: 6px; overflow: hidden;
             white-space: nowrap; text-overflow: ellipsis; }
+        .info-note { position: relative; display: flex; align-items: center; gap: 6px; font-size: 11px;
+            color: #888; cursor: default; }
+        .info-note .info-icon { width: 14px; height: 14px; border-radius: 50%; background: #333; color: #aaa;
+            border: 1px solid #555; display: flex; align-items: center; justify-content: center;
+            font-size: 10px; font-weight: bold; flex-shrink: 0; }
+        .info-note .info-tooltip { position: absolute; bottom: 100%; left: 0; margin-bottom: 8px; width: 150px;
+            background: #2a2a2a; border: 1px solid #444; border-radius: 4px; padding: 8px 10px;
+            font-size: 11px; color: #E97826; line-height: 1.4; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            opacity: 0; visibility: hidden; transition: opacity 0.15s; z-index: 1000; pointer-events: none; }
+        .info-note:hover .info-tooltip, .info-note:focus-within .info-tooltip { opacity: 1; visibility: visible; }
     </style>
 </head>
 <body>
     <div id="sidebar">
         <div style="font-weight: bold; font-size: 14px; margin-bottom: 10px;">TrailPrint3D Puzzle</div>
-        <div class="field-row">
-            <label for="puzzleNameInput">Name</label>
-            <input type="text" id="puzzleNameInput" placeholder="rows-cols_Puzzle">
-        </div>
         <hr class="sidebar-divider">
         <input type="file" id="gpxInput" accept=".gpx" multiple style="display: none;">
         <button id="importGpx" style="padding: 12px 20px; background: #2a8a2a; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Import GPX</button>
@@ -86,17 +92,21 @@
                 </div>
             </div>
         </div>
-        <hr class="sidebar-divider">
         <div style="display: flex; flex-direction: column; gap: 10px;">
             <div class="field-row">
-                <label>Grid (rows × cols)</label>
+                <label>Grid (cols × rows)</label>
                 <div style="display: flex; align-items: center; gap: 4px;">
-                    <input type="number" id="rowsInput" min="1" max="20" step="1" value="3" title="Rows" style="width: 50px;">
-                    <span style="color: #666;">×</span>
                     <input type="number" id="colsInput" min="1" max="20" step="1" value="3" title="Columns" style="width: 50px;">
+                    <span style="color: #666;">×</span>
+                    <input type="number" id="rowsInput" min="1" max="20" step="1" value="3" title="Rows" style="width: 50px;">
                 </div>
             </div>
         </div>
+        <div>
+            <div style="font-size: 12px; margin-bottom: 4px; color: #aaa;">Resolution: <span id="resolutionValue" style="color: #fff; font-weight: bold;">4</span></div>
+            <input type="range" id="resolutionSlider" min="1" max="10" step="1" value="4" title="Terrain mesh resolution" style="width: 100%; accent-color: #007bff;">
+        </div>
+        <hr class="sidebar-divider">
         <details id="advancedSection">
             <summary>Advanced</summary>
             <div class="advanced-body">
@@ -157,6 +167,11 @@
             </div>
         </div>
         <div id="status">Draw a rectangle to begin.</div>
+        <div class="info-note" tabindex="0">
+            <span class="info-icon">i</span>
+            <span>Paint-mode elements only</span>
+            <div class="info-tooltip">Puzzle pieces can only be cut correctly when Elements use "Paint on Map" mode. Buildings and Roads aren't supported. Blender switches these automatically if needed.</div>
+        </div>
         <button id="send" class="btn-send" disabled>Send to Blender</button>
     </div>
     <div id="map">
@@ -295,11 +310,11 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     lat: c.lat, lng: c.lng, zoom: map.getZoom(),
-                    name: document.getElementById('puzzleNameInput').value,
                     length: document.getElementById('lengthInput').value,
                     width: document.getElementById('widthInput').value,
                     rows: document.getElementById('rowsInput').value,
                     cols: document.getElementById('colsInput').value,
+                    resolution: document.getElementById('resolutionSlider').value,
                     tolerance: document.getElementById('toleranceInput').value,
                     tabSize: document.getElementById('tabSizeInput').value,
                     jitter: document.getElementById('jitterInput').value,
@@ -323,11 +338,14 @@
                 .then(function(s) {
                     console.log('[TP3D picker] /get_state returned:', s);
                     if (!s) return;
-                    if (s.name != null) document.getElementById('puzzleNameInput').value = s.name;
                     if (s.length != null) document.getElementById('lengthInput').value = s.length;
                     if (s.width != null) document.getElementById('widthInput').value = s.width;
                     if (s.rows) document.getElementById('rowsInput').value = s.rows;
                     if (s.cols) document.getElementById('colsInput').value = s.cols;
+                    if (s.resolution != null) {
+                        document.getElementById('resolutionSlider').value = s.resolution;
+                        document.getElementById('resolutionValue').textContent = s.resolution;
+                    }
                     if (s.tolerance != null) document.getElementById('toleranceInput').value = s.tolerance;
                     if (s.tabSize != null) document.getElementById('tabSizeInput').value = s.tabSize;
                     if (s.jitter != null) document.getElementById('jitterInput').value = s.jitter;
@@ -894,7 +912,10 @@
         document.getElementById('tabSizeInput').addEventListener('input', function() { regeneratePuzzle(); saveState(); });
         document.getElementById('jitterInput').addEventListener('input', function() { regeneratePuzzle(); saveState(); });
         document.getElementById('puzzleCornerRadiusInput').addEventListener('input', function() { regeneratePuzzle(); saveState(); });
-        document.getElementById('puzzleNameInput').addEventListener('input', saveState);
+        document.getElementById('resolutionSlider').addEventListener('input', function() {
+            document.getElementById('resolutionValue').textContent = this.value;
+            saveState();
+        });
         document.getElementById('toleranceInput').addEventListener('input', saveState);
 
         document.getElementById('holderEnabled').addEventListener('change', function() {
@@ -939,11 +960,11 @@
             // rectangle -- see the comment on isoToPuzzleSpace for why.
             var sendGeo = coords ? computePuzzleGeometry(coords) : null;
             var payload = {
-                name: document.getElementById('puzzleNameInput').value || '',
                 bbox: coords ? puzzleGeoBbox(coords, sendGeo.frac) : null,
                 pieces: pieces.map(function(p) { return { row: p.row, col: p.col, points: p.puzzlePoints }; }),
                 rows: parseInt(document.getElementById('rowsInput').value) || 1,
                 cols: parseInt(document.getElementById('colsInput').value) || 1,
+                resolution: parseInt(document.getElementById('resolutionSlider').value) || 4,
                 tolerance: parseFloat(document.getElementById('toleranceInput').value) || 0,
                 puzzleCornerRadius: parseFloat(document.getElementById('puzzleCornerRadiusInput').value) || 0,
                 gpx_paths: gpxPaths,

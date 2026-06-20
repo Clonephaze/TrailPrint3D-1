@@ -1278,6 +1278,16 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
     bevel_width = min(0.5, bpy.context.scene.tp3d.minThickness / 2)
     piece_objs = []
 
+    # DEBUG ONLY: flat (z=0) copies of each piece's actual cutter polygon
+    # (the same outline -- post tolerance-buffer -- that gets extruded into
+    # the 3D prism below), laid out in a row below the real puzzle so the
+    # 2D jigsaw shapes themselves can be inspected independently of the
+    # boolean-INTERSECT result. Shifted in -Y by the puzzle's own Y extent
+    # plus a fixed gap; X stays untouched so each cutter lines up directly
+    # under its real piece for easy comparison.
+    debug_y_offset = -(y_max - y_min) - 20.0
+    debug_coll = g2d.debug_collection("TP3D_Debug_PuzzleCutters") if bpy.app.debug else None
+
     for piece in pieces:
         world_xy = [
             (x_min + nx * (x_max - x_min), y_min + ny * (y_max - y_min))
@@ -1304,6 +1314,17 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
             continue
 
         row, col = piece.get('row', 0), piece.get('col', 0)
+
+        if debug_coll is not None:
+            for i, part in enumerate(g2d.iter_polygons(poly)):
+                dbg_obj = g2d.polygon_to_mesh(f"{terrain_obj.name}_piece_{row}_{col}_cutter_{i}", part)
+                if dbg_obj is None:
+                    continue
+                for coll in list(dbg_obj.users_collection):
+                    coll.objects.unlink(dbg_obj)
+                debug_coll.objects.link(dbg_obj)
+                dbg_obj.location.y = debug_y_offset
+
         mesh = bpy.data.meshes.new(f"{terrain_obj.name}_piece_{row}_{col}")
         mesh.from_pydata(verts, [], faces)
         mesh.update()
