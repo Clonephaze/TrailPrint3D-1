@@ -1680,6 +1680,14 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         bpy.data.objects.remove(crv, do_unlink=True)
         return None
 
+    # crv.matrix_world was reset to identity above (verts/faces are already
+    # in world space), which left its origin sitting at world (0,0,0)
+    # instead of the map it belongs to. Re-home it to the 3D cursor, which
+    # createTerrainFromSelected's per-tile loop already parks at the map's
+    # own location before trail processing runs.
+    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
+    set_origin_to_3d_cursor(crv)
+
     # Build the wider carving tool and cut the groove directly into `map`
     # with a real 3D boolean -- same reasoning, naturally bounded at the
     # map's true edges.
