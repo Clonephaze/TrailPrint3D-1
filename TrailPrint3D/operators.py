@@ -1736,7 +1736,7 @@ def _redraw_all_areas():
                 area.tag_redraw()
     except Exception:
         pass
-    return 0.5 if updater.status == "checking" else None
+    return 0.5 if updater.status == "checking" or updater.premium_status == "checking" else None
 
 
 class TP3D_OT_pick_gpx_file(bpy.types.Operator):
@@ -1776,15 +1776,38 @@ class TP3D_OT_pick_svg_file(bpy.types.Operator):
 class TP3D_OT_check_update(bpy.types.Operator):
     bl_idname = "tp3d.check_update"
     bl_label = "Check for Updates"
-    bl_description = "Check GitHub for the latest version of TrailPrint3D"
+    bl_description = "Check for the latest version of TrailPrint3D"
 
     def execute(self, context):
-        from . import temp
+        from . import temp, updater
         if temp.PREMIUMVERSION:
-            return {'CANCELLED'}
-        from . import updater
-        updater.start_check()
+            updater.start_premium_check()
+        else:
+            updater.start_check()
         bpy.app.timers.register(_redraw_all_areas, first_interval=0.5)
+        return {'FINISHED'}
+
+
+class TP3D_OT_open_premium_update(bpy.types.Operator):
+    bl_idname = "tp3d.open_premium_update"
+    bl_label = "Get Update"
+    bl_description = "Open the Patreon post (or page) for the latest TrailPrint3D Premium update"
+
+    def execute(self, context):
+        from . import updater
+        utils.open_website(self, context, updater.get_premium_update_url())
+        return {'FINISHED'}
+
+
+class TP3D_OT_dismiss_update(bpy.types.Operator):
+    bl_idname = "tp3d.dismiss_update"
+    bl_label = "Dismiss Update Notice"
+    bl_description = "Hide this update notice — it will reappear once a newer version is released"
+
+    version: StringProperty(default="")  # type: ignore
+
+    def execute(self, context):
+        addon_preferences.get_prefs().dismissed_update_version = self.version
         return {'FINISHED'}
 
 
@@ -1794,6 +1817,9 @@ class TP3D_OT_install_update(bpy.types.Operator):
     bl_description = "Download and install the latest TrailPrint3D version from GitHub. Blender must be restarted afterward"
 
     def execute(self, context):
+        from . import temp
+        if temp.PREMIUMVERSION:
+            return {'CANCELLED'}
         from . import updater
         self.report({'INFO'}, "Downloading update, please wait...")
         success, err = updater.download_and_install()

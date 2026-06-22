@@ -8,6 +8,7 @@ import bpy
 from . import temp
 from . import updater
 from . import constants as const
+from . import addon_preferences
 
 from bpy.app.translations import pgettext_iface as _ #For Translation of Text Required
 
@@ -26,13 +27,25 @@ class TP3D_PT_generate(bpy.types.Panel):
         props = context.scene.tp3d
 
         # --- Update banner ---
-        if updater.status == "update_available":
+        if temp.PREMIUMVERSION:
+            latest_version = updater.premium_latest_version
+            update_available = updater.premium_status == "update_available"
+        else:
+            latest_version = updater.latest_version
+            update_available = updater.status == "update_available"
+
+        latest_str = ".".join(str(x) for x in latest_version) if update_available else ""
+        if update_available and addon_preferences.get_prefs().dismissed_update_version != latest_str:
             box = layout.box()
+            header = box.row()
+            header.label(text=_(f"Update available: v{latest_str}"), icon='FUND')
+            header.operator("tp3d.dismiss_update", text="", icon='X', emboss=False).version = latest_str
             col = box.column(align=True)
-            latest_str = ".".join(str(x) for x in updater.latest_version)
-            col.label(text=_(f"Update available: v{latest_str}"), icon='FUND')
             col.scale_y = 1.3
-            col.operator("tp3d.install_update", text=_("Download & Install"), icon='IMPORT')
+            if temp.PREMIUMVERSION:
+                col.operator("tp3d.open_premium_update", text=_("Get Update on Patreon"), icon='URL')
+            else:
+                col.operator("tp3d.install_update", text=_("Download & Install"), icon='IMPORT')
 
         # --- Header ---
         row = layout.row(align=True)

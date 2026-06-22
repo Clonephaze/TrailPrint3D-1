@@ -25,6 +25,12 @@ class TP3D_AddonPreferences(bpy.types.AddonPreferences):
         default="",
     )  # type: ignore
 
+    dismissed_update_version: StringProperty(
+        name="Dismissed Update Version",
+        description="Latest update version the user closed the notice for — re-shown once a newer version is found",
+        default="",
+    )  # type: ignore
+
     def draw(self, context):
         from . import temp
         layout = self.layout
@@ -56,33 +62,51 @@ class TP3D_AddonPreferences(bpy.types.AddonPreferences):
         box = layout.box()
         current_str = ".".join(str(x) for x in const.ADDON_VERSION)
 
-        if updater.status == "idle":
+        if temp.PREMIUMVERSION:
+            status = updater.premium_status
+            latest_version = updater.premium_latest_version
+            error_message = updater.premium_error_message
+        else:
+            status = updater.status
+            latest_version = updater.latest_version
+            error_message = updater.error_message
+
+        if status == "idle":
             row = box.row(align=True)
             row.label(text=f"Current version: v{current_str}", icon='INFO')
             row.operator("tp3d.check_update", text="Check for Updates", icon='FILE_REFRESH')
 
-        elif updater.status == "checking":
+        elif status == "checking":
             box.label(text="Checking for updates...", icon='TIME')
 
-        elif updater.status == "up_to_date":
-            latest_str = ".".join(str(x) for x in updater.latest_version)
+        elif status == "up_to_date":
+            latest_str = ".".join(str(x) for x in latest_version)
             row = box.row(align=True)
             row.label(text=f"Up to date  (v{latest_str})", icon='CHECKMARK')
             row.operator("tp3d.check_update", text="", icon='FILE_REFRESH')
 
-        elif updater.status == "update_available":
-            latest_str = ".".join(str(x) for x in updater.latest_version)
-            row = box.row(align=True)
-            row.label(text=f"Update available: v{latest_str}  (current: v{current_str})", icon='ERROR')
-            row.operator("tp3d.check_update", text="", icon='FILE_REFRESH')
-            col = box.column()
-            col.scale_y = 1.3
-            col.operator("tp3d.install_update", text=f"Download & Install v{latest_str}", icon='IMPORT')
-            box.label(text="Blender must be restarted after installing.", icon='INFO')
+        elif status == "update_available":
+            latest_str = ".".join(str(x) for x in latest_version)
+            if self.dismissed_update_version != latest_str:
+                row = box.row(align=True)
+                row.label(text=f"Update available: v{latest_str}  (current: v{current_str})", icon='ERROR')
+                row.operator("tp3d.check_update", text="", icon='FILE_REFRESH')
+                row.operator("tp3d.dismiss_update", text="", icon='X').version = latest_str
+                col = box.column()
+                col.scale_y = 1.3
+                if temp.PREMIUMVERSION:
+                    col.operator("tp3d.open_premium_update", text=f"Get v{latest_str} on Patreon", icon='URL')
+                else:
+                    col.operator("tp3d.install_update", text=f"Download & Install v{latest_str}", icon='IMPORT')
+                    box.label(text="Blender must be restarted after installing.", icon='INFO')
+            else:
+                row = box.row(align=True)
+                row.label(text=f"Current version: v{current_str}", icon='INFO')
+                row.operator("tp3d.check_update", text="Check for Updates", icon='FILE_REFRESH')
 
-        elif updater.status == "error":
+        elif status == "error":
             row = box.row(align=True)
-            msg = updater.error_message[:60] + ("..." if len(updater.error_message) > 60 else "")
+            msg = error_message[:60] + ("..." if len(error_message) > 60 else "")
             row.label(text=f"Check failed: {msg}", icon='CANCEL')
             row.operator("tp3d.check_update", text="Retry", icon='FILE_REFRESH')
 

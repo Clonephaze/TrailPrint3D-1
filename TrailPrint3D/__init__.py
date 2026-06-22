@@ -165,6 +165,8 @@ classes = [
     operators.TP3D_OT_pick_svg_file,
     operators.TP3D_OT_check_update,
     operators.TP3D_OT_install_update,
+    operators.TP3D_OT_open_premium_update,
+    operators.TP3D_OT_dismiss_update,
     operators.TP3D_OT_remake_buildings,
     operators.TP3D_OT_remake_roads,
     operators.TP3D_OT_puzzle_configurator,
@@ -201,7 +203,10 @@ def startup_function(scene, dummy = None):
 
     export.is_3mf_extension_installed()
 
-    updater.start_check()
+    if temp.PREMIUMVERSION:
+        updater.start_premium_check()
+    else:
+        updater.start_check()
 
     #utils.load_myproperties_from_csv(bpy.context.scene.preset_list)
 
