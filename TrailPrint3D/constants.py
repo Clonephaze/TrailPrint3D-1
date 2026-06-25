@@ -8,7 +8,9 @@ import os
 
 ADDON_NAME = "TrailPrint3D"
 ADDON_VERSION = (3, 1, 0)
-required_blender_version = (4, 5, 0)
+required_blender_version = (5, 1, 0)
+
+ENABLE_UPDATE_CHECKER = True
 
 R = 6371.0  # Earth radius in kilometers
 
