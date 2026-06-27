@@ -673,7 +673,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     To add a new terrain layer, append its key to TERRAIN_PRIORITY_ORDER and make
     sure it is populated in the terrain dict passed by the caller.
     """
-    from .mesh_ops import single_color_mode_curve, single_color_mode_mesh_wireframe, single_color_mode_mesh_remesh, boolean_operation, selectBottomFaces, recalculateNormals  # deferred to avoid circular import at load time
+    from .mesh_ops import single_color_mode_curve, single_color_mode_mesh_wireframe, single_color_mode_mesh_remesh, boolean_operation, selectBottomFaces, recalculateNormals, remeshClearing  # deferred to avoid circular import at load time
     from .scene import remove_objects  # deferred to avoid circular import at load time
 
     # Priority order: index 0 = highest priority (subtracted from everything below it).
@@ -698,6 +698,10 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                     survivingCurveObjs.append(result[0])
                     thickerCurves.append(result[1])
             remove_objects(dup)
+            for tcrv in thickerCurves:
+                bpy.ops.object.select_all(action='DESELECT')
+                tcrv.select_set(True)
+                bpy.context.view_layer.objects.active = tcrv
             for i in range(len(survivingCurveObjs) - 1):
                 recalculateNormals(survivingCurveObjs[i + 1])
                 recalculateNormals(thickerCurves[i])

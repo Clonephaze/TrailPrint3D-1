@@ -1693,6 +1693,7 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     # real map clips the tall prism down to (terrain top surface) above,
     # (bottom_z, flat) below -- exact, no sampling approximation, and bounded
     # by the map's true edges with no artificial wall.
+    remeshClearing(crv, 0.2, 0)
     boolean_operation(crv, projectionObj, 'INTERSECT')
 
     if len(crv.data.vertices) == 0:
@@ -1710,6 +1711,7 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     # Build the wider carving tool and cut the groove directly into `map`
     # with a real 3D boolean -- same reasoning, naturally bounded at the
     # map's true edges.
+    set_origin_to_3d_cursor(crv)
     crv_thick = None
     if t_verts:
         thick_mesh = bpy.data.meshes.new(f"{crv.name}_thick")
@@ -1718,10 +1720,11 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         _clean_solid_mesh(thick_mesh)
         crv_thick = bpy.data.objects.new(f"{crv.name}_thick", thick_mesh)
         bpy.context.collection.objects.link(crv_thick)
-        # EXACT (not MANIFOLD): crv_thick is a freshly built earcut solid --
-        # even after cleanup it's safer not to risk MANIFOLD's silent no-op
-        # on the one boolean we directly control. It's tiny, so the slower
-        # EXACT solver costs nothing noticeable here.
+        set_origin_to_3d_cursor(crv_thick)
+        bpy.ops.object.select_all(action='DESELECT')
+        crv_thick.select_set(True)
+        bpy.context.view_layer.objects.active = crv_thick
+        remeshClearing(crv_thick, 0.2, 0)
         #boolean_operation(map, crv_thick, 'DIFFERENCE', solver='EXACT')
         boolean_operation(map, crv_thick, 'DIFFERENCE')
 
@@ -1899,7 +1902,7 @@ def remeshClearing(obj, voxelSize2, tolerance):
     remesh = obj.modifiers.new(name="Remesh", type='REMESH')
     remesh.mode = 'VOXEL'
     remesh.voxel_size = voxelSize2
-    remesh.use_smooth_shade = True
+    remesh.use_smooth_shade = False
 
 
 
@@ -1942,8 +1945,8 @@ def remeshClearing(obj, voxelSize2, tolerance):
 
     cube_obj = bpy.data.objects.new("_BoolCube", _cube_mesh)
     bpy.context.collection.objects.link(cube_obj)
-    cube_obj.scale    = (sx, sy, 50.0)
-    cube_obj.location = (cx, cy, 25.0+bottom_z)   # bottom face lands at z=0, top at z=50
+    cube_obj.scale    = (sx, sy, 150.0)
+    cube_obj.location = (cx, cy, 75.0+bottom_z)   # bottom face lands at z=0, top at z=50
 
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
@@ -1951,6 +1954,7 @@ def remeshClearing(obj, voxelSize2, tolerance):
     bool_mod.operation = 'DIFFERENCE'
     bool_mod.object    = cube_obj
     bool_mod.solver    = 'MANIFOLD'
+
 
     applyModifier(obj, bool_mod)
     bpy.data.objects.remove(cube_obj, do_unlink=True)
