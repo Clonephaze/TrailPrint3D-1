@@ -1042,6 +1042,9 @@ class TP3D_OT_popup_merge(bpy.types.Operator):
         self.orig_perspective = rv3d.view_perspective
 
         utils.zoom_camera_to_selected(context.scene.tp3d.currentMap)
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
         # Setup Camera view
         rv3d.view_rotation = Quaternion((1, 0, 0, 0))
         rv3d.view_location = obj.location.copy()
@@ -1264,6 +1267,7 @@ class TP3D_OT_popup_text(bpy.types.Operator):
         bpy.ops.object.text_add(location=context.scene.cursor.location)
         obj = context.active_object
 
+
         if "type" not in obj:
             obj["type"] = "OTHER"
 
@@ -1294,6 +1298,9 @@ class TP3D_OT_popup_text(bpy.types.Operator):
         self.orig_perspective = self.rv3d.view_perspective
 
         utils.zoom_camera_to_selected(map)
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
 
         # Setup Camera view
         self.rv3d.view_rotation = Quaternion((1, 0, 0, 0))
@@ -1529,6 +1536,9 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
         self.orig_perspective = self.rv3d.view_perspective
 
         utils.zoom_camera_to_selected(map)
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
 
         cursor_loc = bpy.context.scene.cursor.location
         self.rv3d.view_location = cursor_loc.copy()
@@ -1696,6 +1706,9 @@ class TP3D_OT_popup_pin(bpy.types.Operator):
         self.orig_perspective = self.rv3d.view_perspective
 
         utils.zoom_camera_to_selected(map)
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
         self.rv3d.view_rotation = Quaternion((1, 0, 0, 0))
         self.rv3d.view_location = obj.location.copy()
         self.rv3d.view_distance = map["objSize"] * 1.6
