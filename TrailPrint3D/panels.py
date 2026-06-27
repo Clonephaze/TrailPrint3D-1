@@ -460,7 +460,7 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 else:
                     col.label(text=_("API key set"), icon='CHECKMARK')
                 col.operator("screen.userpref_show", text=_("Open Preferences"), icon='PREFERENCES')
-            if props.api == "OPENTOPODATA" or props.api == "TERRAIN-TILES":
+            if props.api in {"OPENTOPODATA", "TERRAIN-TILES", "MAPTERHORN"}:
                 col = box.column(align=True)
                 col.prop(props, "disableCache")
                 col.prop(props, "ccacheSize")
@@ -505,6 +505,7 @@ class TP3D_PT_advanced(bpy.types.Panel):
             col.operator("wm.url_open", text=_("OpenStreetMap contributors — water, forests, city data"), icon='URL').url = "https://www.openstreetmap.org/copyright"
             col.operator("wm.url_open", text=_("Mapzen Terrain Tiles — terrain (OSM, NASA SRTM, USGS)"), icon='URL').url = "https://registry.opendata.aws/terrain-tiles/"
             col.operator("wm.url_open", text=_("OpenTopography — elevation (Global DEM)"), icon='URL').url = "https://opentopography.org/"
+            col.operator("wm.url_open", text=_("Mapterhorn — terrain tiles (open-data sources)"), icon='URL').url = "https://github.com/mapterhorn/mapterhorn"
             col.separator(factor=0.8)
             disclaimer = box.column(align=True)
             disclaimer.scale_y = 0.75

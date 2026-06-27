@@ -78,6 +78,8 @@ def send_api_request(addition = ""):
         print(f"{now.hour:02d}:{now.minute:02d} | Fetching: {addition} | API Usage: {request_count}")
     elif api == "TERRAIN-TILES":
         print(f"{now.hour:02d}:{now.minute:02d} | Fetching API")
+    elif api == "MAPTERHORN":
+        print(f"{now.hour:02d}:{now.minute:02d} | Fetching Mapterhorn")
 
 
 def load_elevation_cache():
@@ -431,6 +433,115 @@ def get_elevation_TerrainTiles(coords, lenv=0, pointsDone=0, zoom=10, progress_c
     
 
     print(f"Finished fetching elevation data. Invalid elevations: {invalidElevations} ({(invalidElevations/len(coords))*100:.2f}%)")
+    return elevations
+
+
+_MAPTERHORN_TILE_SIZE = 512
+
+
+def fetch_mapterhorn_tile_path(zoom, xtile, ytile):
+    """Download a Mapterhorn WebP tile and return its local cache path."""
+    disableCache = bpy.context.scene.tp3d.disableCache
+    tile_path = os.path.join(const.terrarium_cache_dir, f"mapterhorn_{zoom}_{xtile}_{ytile}.webp")
+    if not os.path.exists(tile_path) or disableCache:
+        url = f"https://tiles.mapterhorn.com/{zoom}/{xtile}/{ytile}.webp"
+        response = requests.get(url)
+        response.raise_for_status()
+        with open(tile_path, "wb") as f:
+            f.write(response.content)
+    return tile_path
+
+
+def parse_webp_rgb_data(webp_path):
+    """Load a WebP tile via Blender's image API and return a top-down RGB array.
+
+    Blender stores pixels bottom-up (y=0 = bottom row), so the rows are
+    reversed here to match the XYZ tile convention where y=0 is the top (north).
+    colorspace is forced to Non-Color so gamma correction doesn't corrupt the
+    raw elevation values.
+    """
+    img = bpy.data.images.load(webp_path)
+    img.colorspace_settings.name = 'Non-Color'
+    width, height = img.size
+    pixels = list(img.pixels)  # flat RGBA floats 0-1, bottom row first
+    bpy.data.images.remove(img)
+
+    rgb_array = []
+    for y in range(height - 1, -1, -1):  # flip to top-down
+        row = []
+        for x in range(width):
+            i = (y * width + x) * 4
+            r = int(round(pixels[i]     * 255))
+            g = int(round(pixels[i + 1] * 255))
+            b = int(round(pixels[i + 2] * 255))
+            row.append((r, g, b))
+        rgb_array.append(row)
+    return rgb_array
+
+
+def get_elevation_Mapterhorn(coords, lenv=0, pointsDone=0, zoom=10, progress_cb=None):
+    """Fetch elevation from Mapterhorn terrain tiles (512px WebP, Terrarium encoding)."""
+    num_subdivisions = bpy.context.scene.tp3d.num_subdivisions
+    minLat = bpy.context.scene.tp3d.minLat
+    minLon = bpy.context.scene.tp3d.minLon
+    maxLat = bpy.context.scene.tp3d.maxLat
+    maxLon = bpy.context.scene.tp3d.maxLon
+
+    from .geo import haversine
+
+    realdist1 = haversine(minLat, minLon, minLat, maxLon) * 1000
+    realdist2 = haversine(maxLat, minLon, maxLat, maxLon) * 1000
+
+    zoom = 10
+    horVerts = 1 + 2 ** (num_subdivisions + 1)
+    strt = 156543
+    cntr = 2
+    vertdist = max(realdist1, realdist2) / horVerts
+    while strt > vertdist:
+        cntr += 1
+        strt /= 2
+    zoom = min(cntr, 15)
+
+    print(f"Zoom Level for Mapterhorn: {zoom}, Start fetching Data...")
+
+    ts = _MAPTERHORN_TILE_SIZE
+    tile_dict = {}
+    for idx, (lat, lon) in enumerate(coords):
+        xtile, ytile = lonlat_to_tilexy(lon, lat, zoom)
+        tile_dict.setdefault((xtile, ytile), []).append((idx, lat, lon))
+
+    total_tiles = len(tile_dict)
+    invalidElevations = 0
+    progress_intervals = set(range(10, 101, 10))
+    elevations = [0] * len(coords)
+
+    for i, ((xtile, ytile), idx_lat_lon_list) in enumerate(tile_dict.items(), 1):
+        percent_complete = int((i / total_tiles) * 100)
+        if percent_complete in progress_intervals:
+            print(f"{datetime.now().strftime('%H:%M:%S')} - Mapterhorn elevation {percent_complete}% ({i}/{total_tiles})")
+            progress_intervals.discard(percent_complete)
+            if progress_cb:
+                progress_cb(percent_complete)
+        try:
+            tile_path = fetch_mapterhorn_tile_path(zoom, xtile, ytile)
+            rgb_array = parse_webp_rgb_data(tile_path)
+        except Exception as e:
+            print(f"Failed to fetch or parse Mapterhorn tile {zoom}/{xtile}/{ytile}: {e}")
+            for idx, _, _ in idx_lat_lon_list:
+                elevations[idx] = 0
+            continue
+
+        for idx, lat, lon in idx_lat_lon_list:
+            lat_rad = math.radians(lat)
+            n = 2.0 ** zoom
+            px = int(((lon + 180.0) / 360.0 * n * ts) % ts)
+            py = int(((1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * n * ts) % ts)
+            px = min(max(px, 0), ts - 1)
+            py = min(max(py, 0), ts - 1)
+            r, g, b = rgb_array[py][px]
+            elevations[idx] = terrarium_pixel_to_elevation(r, g, b)
+
+    print(f"Mapterhorn: finished. Invalid elevations: {invalidElevations}")
     return elevations
 
 
@@ -803,6 +914,8 @@ def get_tile_elevation(obj, progress_cb=None):
             chunk_elevations = get_elevation_openElevation(coords, len(world_verts), i, progress_cb=progress_cb)
         elif api == "TERRAIN-TILES":
             chunk_elevations = get_elevation_TerrainTiles(coords, len(world_verts), i, progress_cb=progress_cb)
+        elif api == "MAPTERHORN":
+            chunk_elevations = get_elevation_Mapterhorn(coords, len(world_verts), i, progress_cb=progress_cb)
         elif api == "OPENTOPOGRAPHY":
             chunk_elevations = get_elevation_openTopography(coords, len(world_verts), i, progress_cb=progress_cb)
         else:

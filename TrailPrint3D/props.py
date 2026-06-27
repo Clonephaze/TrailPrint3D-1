@@ -102,6 +102,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
             ("OPENTOPODATA", "Opentopodata", _("Slower but more accurate elevation")),
             ("OPEN-ELEVATION","Open-Elevation",_("Faster but some regions are low quality")),
             ("TERRAIN-TILES", "Terrain-Tiles", _("Currently Fastest available set")),
+            ("MAPTERHORN", "Mapterhorn", _("Mapterhorn terrain tiles — 512px WebP, Terrarium encoding, free & open-source")),
             ("OPENTOPOGRAPHY", "OpenTopography", _("OpenTopography Global DEM API — requires API key for most datasets"))
         ],
         default = "TERRAIN-TILES"
