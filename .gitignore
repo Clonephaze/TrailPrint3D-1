@@ -1,8 +1,5 @@
 # Premium files
-operators_pe.py
-utils_pe.py
-**/assets/puzzles.blend
-multitile_configurator.html
+**/premium/
 
 # Build/dev files
 build.py

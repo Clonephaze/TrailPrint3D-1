@@ -16,7 +16,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
-_HTML_PATH = pathlib.Path(__file__).parent / 'multitile_configurator.html'
+_HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'multitile_configurator.html'
 
 
 _PREFERRED_PORT = 27373

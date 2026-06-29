@@ -41,7 +41,9 @@ def save_myproperties_to_csv(filename):
 def appendCollection():
 
     addon_dir = os.path.dirname(os.path.dirname(__file__))
-    filepath = os.path.join(addon_dir, "assets", bpy.context.scene.tp3d.specialBlendFile)
+    _blend = bpy.context.scene.tp3d.specialBlendFile
+    _prem = os.path.join(addon_dir, "premium", "assets", _blend)
+    filepath = _prem if os.path.exists(_prem) else os.path.join(addon_dir, "assets", _blend)
     collection_name = bpy.context.scene.tp3d.specialCollectionName
 
     #If the collection already exists, delete it and its contents
@@ -109,7 +111,9 @@ def loadCollections(self, context):
 
 
     addon_dir = os.path.dirname(os.path.dirname(__file__))
-    path = os.path.join(addon_dir, "assets", bpy.context.scene.tp3d.specialBlendFile)
+    _blend = bpy.context.scene.tp3d.specialBlendFile
+    _prem = os.path.join(addon_dir, "premium", "assets", _blend)
+    path = _prem if os.path.exists(_prem) else os.path.join(addon_dir, "assets", _blend)
     names = get_external_collections(path)
 
     const.specialCollection = [(name, name, "") for name in names]

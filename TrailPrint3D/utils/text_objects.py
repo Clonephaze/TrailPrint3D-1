@@ -8,7 +8,7 @@ from mathutils import Vector  # type: ignore
 from .mesh_ops import recalculateNormals
 
 try:
-    from ..utils_pe import textIcon
+    from ..premium.utils_pe import textIcon
 except ImportError:
     def textIcon(*_):
         return None

@@ -218,14 +218,14 @@ def register():
     # Detect premium here — register() is called after Blender finishes reloading
     # all submodules, so temp.py can no longer reset PREMIUMVERSION to False after us.
     _addon_dir = os.path.dirname(__file__)
-    temp.PREMIUMVERSION = os.path.exists(os.path.join(_addon_dir, "operators_pe.py"))
+    temp.PREMIUMVERSION = os.path.exists(os.path.join(_addon_dir, "premium", "operators_pe.py"))
 
     ops_pe = None
     if temp.PREMIUMVERSION:
         try:
             import importlib
-            importlib.import_module(".utils_pe", __package__)   # loads into sys.modules
-            ops_pe = importlib.import_module(".operators_pe", __package__)
+            importlib.import_module(".premium.utils_pe", __package__)   # loads into sys.modules
+            ops_pe = importlib.import_module(".premium.operators_pe", __package__)
         except ImportError as e:
             print(f"TrailPrint3D: Error loading premium modules: {e}")
             temp.PREMIUMVERSION = False
@@ -274,7 +274,7 @@ def unregister():
 
     if temp.PREMIUMVERSION:
         import sys
-        ops_pe = sys.modules.get(f"{__package__}.operators_pe")
+        ops_pe = sys.modules.get(f"{__package__}.premium.operators_pe")
         if ops_pe:
             for name in reversed(_PREMIUM_CLASS_NAMES):
                 cls = getattr(ops_pe, name, None)
