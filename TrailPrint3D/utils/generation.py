@@ -559,12 +559,15 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
             _ov.set_fetch_ready('water')
 
     terrain = {}
+    _water_result = None  # raw coloring_main() result for 'water' -- replayed below if ocean finds nothing
     for key, flag_attr, max_size, phase, msg in COLORING_ELEMENTS:
         terrain[key] = None
         if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1):
             if map_km <= max_size:
                 _advance_elem_progress(phase, msg)
                 _result = coloring_main(obj, key.upper(), prefetched_tiles=_all_prefetched.get(key.upper(), {}))
+                if key == 'water':
+                    _water_result = _result
                 if _result is _COLORING_EMPTY:
                     terrain[key] = None
                     _ov.set_fetch_empty(key)
@@ -598,7 +601,21 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
         print("Create Ocean")
         _coastline_tiles = _all_prefetched.get("COASTLINE", {})
         terrain['ocean'] = createOcean(_coastline_tiles, scaleHor, obj)
-        _ov.set_fetch_done('water', success=terrain['ocean'] is not None)
+        if terrain['ocean'] is not None:
+            _ov.set_fetch_done('water', success=True)
+        elif _water_ocean_combined:
+            # No coastline nearby (or it failed to build) -- that's normal for
+            # an inland map, not a failure. Fall back to the water-features
+            # chip's own result instead of marking the combined chip red just
+            # because there's no ocean in this area.
+            if _water_result is _COLORING_EMPTY:
+                _ov.set_fetch_empty('water')
+            elif _water_result is _COLORING_FILTERED:
+                _ov.set_fetch_filtered('water')
+            else:
+                _ov.set_fetch_done('water', success=_water_result is not None)
+        else:
+            _ov.set_fetch_done('water', success=False)
 
     print("Base elements Created")
 
