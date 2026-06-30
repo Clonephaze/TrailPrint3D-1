@@ -1625,9 +1625,9 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
                 continue
             line = []
             for p in pts:
-                if lowest_z is None or p.co.z < lowest_z:
-                    lowest_z = p.co.z
                 w = mw @ Vector((p.co.x, p.co.y, p.co.z))
+                if lowest_z is None or w.z < lowest_z:
+                    lowest_z = w.z
                 line.append((w.x, w.y))
             coords_list.append(line)
         if not coords_list:
