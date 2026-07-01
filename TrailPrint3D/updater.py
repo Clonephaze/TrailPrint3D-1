@@ -3,7 +3,6 @@
 import re
 import threading
 import os
-import zipfile
 import tempfile
 
 import requests
@@ -12,18 +11,13 @@ from . import constants as const
 
 _GITHUB_OWNER = "EmGi96"
 _GITHUB_REPO = "TrailPrint3D"
-_GITHUB_BRANCH = "main"
 
-_RAW_INIT_URL = (
-    f"https://raw.githubusercontent.com/{_GITHUB_OWNER}/{_GITHUB_REPO}"
-    f"/{_GITHUB_BRANCH}/TrailPrint3D/__init__.py"
+_GITHUB_RELEASES_API_URL = (
+    f"https://api.github.com/repos/{_GITHUB_OWNER}/{_GITHUB_REPO}/releases/latest"
 )
-_ZIP_URL = (
-    f"https://github.com/{_GITHUB_OWNER}/{_GITHUB_REPO}"
-    f"/archive/refs/heads/{_GITHUB_BRANCH}.zip"
-)
-# Path to the addon folder inside the downloaded archive
-_ADDON_FOLDER_IN_ZIP = f"{_GITHUB_REPO}-{_GITHUB_BRANCH}/TrailPrint3D"
+
+_latest_release_zip_url = None  # populated by _check_worker from the release asset URL
+_pending_install_zip = None     # set by download_and_install; consumed by _install_timer
 
 _PREMIUM_VERSION_URL = "https://trailprint3d.com/premium_version.html"
 _PATREON_URL = "https://www.patreon.com/c/EmGi3D"
@@ -40,22 +34,31 @@ premium_post_url = None         # specific Patreon post URL announced for this u
 premium_error_message = ""
 
 
-def _parse_version(text):
-    m = re.search(r'"version"\s*:\s*\((\d+),\s*(\d+),\s*(\d+)\)', text)
-    return tuple(int(x) for x in m.groups()) if m else None
-
-
 def _check_worker():
-    global status, latest_version, error_message
+    global status, latest_version, error_message, _latest_release_zip_url
     try:
-        resp = requests.get(_RAW_INIT_URL, timeout=10)
+        resp = requests.get(
+            _GITHUB_RELEASES_API_URL,
+            timeout=10,
+            headers={"Accept": "application/vnd.github+json"},
+        )
         resp.raise_for_status()
-        ver = _parse_version(resp.text)
-        if ver is None:
+        data = resp.json()
+        tag = data.get("tag_name", "")
+        m = re.search(r'(\d+)\.(\d+)\.(\d+)', tag)
+        if not m:
             status = "error"
-            error_message = "Could not parse version from GitHub"
+            error_message = "Could not parse version from GitHub release tag"
             return
+        ver = tuple(int(x) for x in m.groups())
         latest_version = ver
+        assets = data.get("assets", [])
+        asset = next(
+            (a for a in assets
+             if "TrailPrint3D" in a.get("name", "") and a.get("name", "").endswith(".zip")),
+            None,
+        )
+        _latest_release_zip_url = asset["browser_download_url"] if asset else None
         status = "update_available" if ver > const.ADDON_VERSION else "up_to_date"
     except Exception as e:
         status = "error"
@@ -116,50 +119,67 @@ def get_premium_update_url():
     return premium_post_url or _PATREON_URL
 
 
+def _install_timer():
+    """
+    Timer callback that runs after the calling operator has fully returned,
+    so our extension's RNA types are no longer on the call stack when
+    package_install_files unregisters/re-registers us.
+    """
+    global _pending_install_zip, status, error_message
+    import bpy
+    path = _pending_install_zip
+    _pending_install_zip = None
+    if not path or not os.path.exists(path):
+        print(f"TrailPrint3D updater: no pending zip found at {path!r}")
+        return None
+    try:
+        result = bpy.ops.extensions.package_install_files(
+            filepath=path,
+            repo="user_default",
+            overwrite=True,
+        )
+        print(f"TrailPrint3D updater: package_install_files result: {result}")
+        if 'FINISHED' not in result:
+            status = "error"
+            error_message = f"Install operator returned {result}"
+    except Exception as e:
+        status = "error"
+        error_message = str(e)
+        print(f"TrailPrint3D updater: install exception: {e}")
+    finally:
+        try:
+            os.remove(path)
+        except Exception as e:
+            print(f"TrailPrint3D updater: could not remove temp zip: {e}")
+    return None  # don't repeat
+
+
 def download_and_install():
     """
-    Download the latest ZIP from GitHub, repack it so Blender's addon installer
-    expects it, and install via bpy.ops.preferences.addon_install.
+    Download the TrailPrint3D.zip asset from the latest GitHub release, then
+    schedule installation via a timer so it runs after the calling operator's
+    execute() has returned (avoids an RNA crash from self-unregistering).
 
-    Must be called from the main thread (uses bpy.ops).
     Returns (success: bool, error_msg: str | None).
     """
+    global _pending_install_zip
     import bpy
 
+    zip_url = _latest_release_zip_url
+    if not zip_url:
+        return False, "No release zip URL available — run a version check first"
+
     try:
-        resp = requests.get(_ZIP_URL, timeout=120, stream=True)
+        resp = requests.get(zip_url, timeout=120, stream=True)
         resp.raise_for_status()
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            raw_zip = os.path.join(tmpdir, "raw.zip")
-            with open(raw_zip, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=32768):
-                    f.write(chunk)
+        install_zip = os.path.join(tempfile.gettempdir(), "TrailPrint3D_update.zip")
+        with open(install_zip, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=32768):
+                f.write(chunk)
 
-            # Extract only the addon subfolder from the archive
-            extract_dir = os.path.join(tmpdir, "extracted")
-            os.makedirs(extract_dir)
-            prefix = _ADDON_FOLDER_IN_ZIP.replace("\\", "/") + "/"
-            with zipfile.ZipFile(raw_zip, "r") as zf:
-                members = [m for m in zf.namelist()
-                           if m.replace("\\", "/").startswith(prefix)]
-                zf.extractall(extract_dir, members=members)
-
-            # Locate the extracted addon directory
-            addon_src = os.path.join(extract_dir, *_ADDON_FOLDER_IN_ZIP.split("/"))
-
-            # Repack with TrailPrint3D/ at the zip root so Blender installs it correctly
-            install_zip = os.path.join(tmpdir, "TrailPrint3D.zip")
-            parent_dir = os.path.dirname(addon_src)
-            with zipfile.ZipFile(install_zip, "w", zipfile.ZIP_DEFLATED) as out:
-                for root, _, files in os.walk(addon_src):
-                    for fname in files:
-                        full = os.path.join(root, fname)
-                        arc = os.path.relpath(full, parent_dir).replace(os.sep, "/")
-                        out.write(full, arc)
-
-            bpy.ops.preferences.addon_install(filepath=install_zip, overwrite=True)
-
+        _pending_install_zip = install_zip
+        bpy.app.timers.register(_install_timer, first_interval=0.5)
         return True, None
 
     except Exception as e:

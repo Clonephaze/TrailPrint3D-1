@@ -36,11 +36,11 @@ class TP3D_AddonPreferences(bpy.types.AddonPreferences):
         layout = self.layout
 
         # Premium status
-        box = layout.box()
-        row = box.row()
-        row.label(text="Premium Version:" if temp.PREMIUMVERSION else "Free Version", icon='CHECKMARK' if temp.PREMIUMVERSION else 'X')
-
-        layout.separator()
+        if temp.PREMIUMVERSION:
+            box = layout.box()
+            row = box.row()
+            row.label(text="Premium Version", icon='CHECKMARK')
+            layout.separator()
 
         # OpenTopography API Key
         layout.label(text="OpenTopography API Key:", icon='INTERNET')
