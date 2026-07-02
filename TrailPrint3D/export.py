@@ -207,8 +207,8 @@ def export_selected_to_3mf():
             child.select_set(True)
 
     thumbnail_path = os.path.join(tempfile.gettempdir(), "tp3d_thumbnail.png")
-    # Call your custom thumbnail function on the centered duplicates
-    customThumbnail(bpy.context.selected_objects, thumbnail_path)
+    if not bpy.app.background:
+        customThumbnail(bpy.context.selected_objects, thumbnail_path)
 
     full_path = exportPath + _sanitize_filename(bpy.context.scene.tp3d.modelname) + ".3mf"
 
@@ -224,9 +224,9 @@ def export_selected_to_3mf():
             use_mesh_modifiers=True,
             global_scale=0.001,
             coordinate_precision=4,
-            thumbnail_mode="CUSTOM",
+            thumbnail_mode="NONE" if bpy.app.background else "CUSTOM",
             thumbnail_resolution=256,
-            thumbnail_image=thumbnail_path
+            thumbnail_image=thumbnail_path if not bpy.app.background else "",
         )
         print(f"Successfully exported to: {full_path}")
         _progress.WarningsOverlay.add_warning("Exported as 3mf", "ok")

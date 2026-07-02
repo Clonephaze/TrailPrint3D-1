@@ -61,6 +61,8 @@ class SubprocessProgress:
         except Exception:
             pass
         self._write({'active': True, 'percent': 0.0, 'phase': 'Starting…', 'message': ''})
+        if bpy.app.background:
+            return
         script = pathlib.Path(__file__).parent / 'progress_win.py'
         if not script.exists():
             print('TrailPrint3D: progress_win.py not found')
@@ -98,6 +100,8 @@ class SubprocessProgress:
         if map_preview:
             data['map_preview'] = map_preview
         self._write(data)
+        if bpy.app.background:
+            return
         if self._proc is not None:
             try:
                 self._proc.wait(timeout=3)
@@ -528,6 +532,10 @@ class WarningsOverlay:
         """Display the warnings panel. Does nothing if there are no warnings."""
         if not self.__class__._messages:
             return
+        if bpy.app.background:
+            for msg, icon in self.__class__._messages:
+                print(f"[{icon.upper()}] {msg}")
+            return
         self.active = True
         if self._handler is None:
             self._handler = bpy.types.SpaceView3D.draw_handler_add(
@@ -629,6 +637,8 @@ def _force_redraw():
     polls the JSON file directly, so a tag_redraw is enough (and avoids the
     noisy timing messages Blender prints for that operator).
     """
+    if bpy.app.background:
+        return
     if not ProgressOverlay._DRAW_ENABLED:
         for window in bpy.context.window_manager.windows:
             for area in window.screen.areas:

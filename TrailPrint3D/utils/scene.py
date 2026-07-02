@@ -386,7 +386,8 @@ def show_message_box(message, ic = "ERROR", ti = "ERROR"):
     def draw(self, context):
         self.layout.label(text=message)
     print(message)
-    bpy.context.window_manager.popup_menu(draw, title=ti, icon=ic)
+    if not bpy.app.background:
+        bpy.context.window_manager.popup_menu(draw, title=ti, icon=ic)
 
 
 def toggle_console():
