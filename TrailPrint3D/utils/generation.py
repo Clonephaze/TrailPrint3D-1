@@ -1015,6 +1015,42 @@ def build_fetch_items(map_km=None):
 
 
 # ---------------------------------------------------------------------------
+# Trail segment subdivision helper
+# ---------------------------------------------------------------------------
+
+def _subdivide_long_segments(coords, max_xy_dist, depsgraph=None):
+    """Split trail segments longer than max_xy_dist Blender units to prevent clipping through hills.
+
+    Inserts linearly-spaced intermediate points and raycasts downward against the
+    terrain mesh to get the correct Z for each one.  Falls back to linear Z if the
+    ray misses (e.g. point outside map bounds).
+    """
+    if len(coords) < 2:
+        return coords
+    result = [coords[0]]
+    for i in range(1, len(coords)):
+        x1, y1, z1 = result[-1]
+        x2, y2, z2 = coords[i]
+        dx, dy = x2 - x1, y2 - y1
+        dist_xy = math.sqrt(dx * dx + dy * dy)
+        if dist_xy > max_xy_dist:
+            n = int(math.ceil(dist_xy / max_xy_dist))
+            for j in range(1, n):
+                t = j / n
+                xi, yi = x1 + t * dx, y1 + t * dy
+                zi = z1 + t * (z2 - z1)
+                if depsgraph is not None:
+                    hit, loc, _, _, _, _ = bpy.context.scene.ray_cast(
+                        depsgraph, (xi, yi, zi + 500.0), (0.0, 0.0, -1.0)
+                    )
+                    if hit:
+                        zi = loc.z
+                result.append((xi, yi, zi))
+        result.append(coords[i])
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Main generation orchestrator
 # ---------------------------------------------------------------------------
 
@@ -1222,6 +1258,23 @@ def runGeneration(type, locked_scale=None):
         blender_coords_by_file = [
             [separate_duplicate_xy(simplify_curve(convert_to_blender_coordinates_batch(seg), .12), 0.05) for seg in file_segs]
             for file_segs in separate_paths_by_file
+        ]
+
+    # Subdivide segments that are too far apart to prevent the trail from
+    # clipping through hills between sparse GPX points
+    _MAX_TRAIL_SEG_BU = 0.25
+    
+    _depsgraph = bpy.context.evaluated_depsgraph_get()
+    blender_coords = _subdivide_long_segments(blender_coords, _MAX_TRAIL_SEG_BU, _depsgraph)
+    if blender_coords_separate:
+        blender_coords_separate = [
+            _subdivide_long_segments(seg, _MAX_TRAIL_SEG_BU, _depsgraph)
+            for seg in blender_coords_separate
+        ]
+    if blender_coords_by_file:
+        blender_coords_by_file = [
+            [_subdivide_long_segments(seg, _MAX_TRAIL_SEG_BU, _depsgraph) for seg in file_segs]
+            for file_segs in blender_coords_by_file
         ]
 
     # Store real-world map scale
