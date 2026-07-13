@@ -181,8 +181,8 @@ select option{background:#2e2e2e}
   <div class="field">
     <label class="lbl">Elevation API</label>
     <select id="api">
+      <option value="MAPTERHORN" selected>Mapterhorn</option>
       <option value="TERRAIN-TILES">Terrain Tiles (fastest)</option>
-      <option value="MAPTERHORN">Mapterhorn</option>
       <option value="OPENTOPODATA">OpenTopoData</option>
       <option value="OPEN-ELEVATION">Open-Elevation</option>
       <option value="OPENTOPOGRAPHY">OpenTopography (needs API key)</option>

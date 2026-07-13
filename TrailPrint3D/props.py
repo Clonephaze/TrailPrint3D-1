@@ -105,7 +105,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
             ("MAPTERHORN", "Mapterhorn", _("Mapterhorn terrain tiles — 512px WebP, Terrarium encoding, free & open-source")),
             ("OPENTOPOGRAPHY", "OpenTopography", _("OpenTopography Global DEM API — requires API key for most datasets"))
         ],
-        default = "TERRAIN-TILES"
+        default = "MAPTERHORN"
     )# type: ignore
 
     openTopographyDataset: bpy.props.EnumProperty(
