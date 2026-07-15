@@ -7,6 +7,7 @@
 
 import json
 import pathlib
+import shutil
 import socket
 import subprocess as sp
 import sys
@@ -138,9 +139,12 @@ def _find_chromium() -> str | None:
     import os
     if sys.platform == 'win32':
         candidates = [
+            os.path.expandvars(r'%PROGRAMFILES(X86)%\Microsoft\Edge\Application\msedge.exe'),
+            os.path.expandvars(r'%PROGRAMFILES%\Microsoft\Edge\Application\msedge.exe'),
             os.path.expandvars(r'%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe'),
             os.path.expandvars(r'%PROGRAMFILES%\Google\Chrome\Application\chrome.exe'),
             os.path.expandvars(r'%PROGRAMFILES(X86)%\Google\Chrome\Application\chrome.exe'),
+            os.path.expandvars(r'%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe'),
         ]
     elif sys.platform == 'darwin':
         candidates = [
@@ -334,13 +338,59 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     url = f'http://127.0.0.1:{port}/'
     browser = _find_chromium()
     if browser:
-        sp.Popen(
+        # A fresh, unique --user-data-dir forces a genuinely new browser
+        # process. Without it, if Edge/Chrome already has a process running
+        # (very common -- Edge in particular tends to stay resident), this
+        # Popen just forwards the URL to that existing process via IPC, and
+        # window-size/window-position (along with most other switches) are
+        # silently dropped since they only apply to a process's initial launch.
+        # Sweep leftover profile dirs from prior launches whose cleanup thread
+        # never got to run (e.g. Blender was closed before the browser was).
+        for stale in pathlib.Path(tempfile.gettempdir()).glob('trailprint_picker_profile_*'):
+            shutil.rmtree(stale, ignore_errors=True)
+
+        profile_dir = pathlib.Path(tempfile.gettempdir()) / f'trailprint_picker_profile_{port}'
+        # --disable-features=Translate doesn't reliably suppress Edge's own
+        # "translate this page?" prompt, so seed the fresh profile's own
+        # Preferences file: disabling the translate feature outright, and
+        # separately marking English as an accepted language so the
+        # language-mismatch heuristic that triggers the prompt never fires.
+        default_dir = profile_dir / 'Default'
+        default_dir.mkdir(parents=True, exist_ok=True)
+        (default_dir / 'Preferences').write_text(
+            json.dumps({
+                'translate': {'enabled': False},
+                'intl': {'accept_languages': 'en-US,en'},
+            }),
+            encoding='utf-8',
+        )
+        proc = sp.Popen(
             [browser, f'--app={url}',
-             '--window-size=1000,660', '--window-position=100,80',
+             f'--user-data-dir={profile_dir}',
+             '--window-size=1870,1030', '--window-position=25,5',
              '--no-first-run', '--no-default-browser-check',
-             '--disable-extensions', '--disable-background-networking'],
+             '--disable-extensions', '--disable-background-networking',
+             '--disable-features=Translate,TranslateUI'],
             stdout=sp.DEVNULL, stderr=sp.DEVNULL,
         )
+
+        def _cleanup_profile():
+            import time
+            proc.wait()
+            # The process Popen'd above is often just Chromium's launcher --
+            # it re-execs/forks the real browser process and exits almost
+            # immediately, well before the actual window (and its lock on
+            # profile_dir) is gone. Retry for a while so the directory still
+            # gets removed promptly in the common case; if the window stays
+            # open longer than that, the stale-dir sweep on the next launch
+            # will catch it instead.
+            for _ in range(30):
+                shutil.rmtree(profile_dir, ignore_errors=True)
+                if not profile_dir.exists():
+                    return
+                time.sleep(2)
+
+        threading.Thread(target=_cleanup_profile, daemon=True).start()
     else:
         if sys.platform == 'win32':
             sp.Popen(['cmd', '/c', 'start', '', url])

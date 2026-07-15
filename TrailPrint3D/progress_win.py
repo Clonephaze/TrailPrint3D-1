@@ -12,7 +12,6 @@ import pathlib
 import time
 import socket
 import threading
-import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 
@@ -613,7 +612,12 @@ def _run_browser(json_path):
             '--disable-background-networking',
         ])
     else:
-        webbrowser.open(url)
+        if sys.platform == 'win32':
+            sp.Popen(['cmd', '/c', 'start', '', url])
+        elif sys.platform == 'darwin':
+            sp.Popen(['open', url])
+        else:
+            sp.Popen(['xdg-open', url])
 
     # Wait until generation finishes
     while True:
