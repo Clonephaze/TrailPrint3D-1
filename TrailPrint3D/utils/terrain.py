@@ -159,6 +159,27 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     maxLat = bpy.context.scene.tp3d.maxLat
     maxLon = bpy.context.scene.tp3d.maxLon
 
+    # Overpass returns a relation's FULL membership once any one of its ways
+    # matches the bbox filter -- for a relation tagged along an entire river's
+    # length (a real, documented OSM convention: "tagged as one relation with
+    # no break in the middle"), that means ways tens/hundreds of km outside
+    # the requested area come back too, and extract_multipolygon_bodies has no
+    # way to know they're irrelevant. Clip every body/negative/ribbon polygon
+    # to this query bbox right after it's built, before it can pollute the
+    # union with a giant, mostly-irrelevant shape.
+    _qbx1, _qby1, _ = convert_to_blender_coordinates(minLat, minLon, 0, 0)
+    _qbx2, _qby2, _ = convert_to_blender_coordinates(maxLat, maxLon, 0, 0)
+    _query_bbox_poly = _g2d.xy_ring_to_polygon([
+        (_qbx1, _qby1), (_qbx2, _qby1), (_qbx2, _qby2), (_qbx1, _qby2),
+    ])
+
+    def _clip_to_query_bbox(poly):
+        """Intersect poly with the query bbox; returns None if fully outside."""
+        if poly is None or poly.is_empty or _query_bbox_poly is None:
+            return poly
+        clipped = poly.intersection(_query_bbox_poly)
+        return clipped if not clipped.is_empty else None
+
     if kind == "WATER":
         col_Area = (bpy.context.scene.tp3d.col_wArea)
     if kind == "FOREST":
@@ -279,6 +300,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                     xy = [(x, y) for x, y, _ in
                           (convert_to_blender_coordinates(lat, lon, ele, 0) for lat, lon, ele in coords)]
                     poly = _g2d.xy_ring_to_polygon(xy)
+                    poly = _clip_to_query_bbox(poly)
                     if poly is not None and not poly.is_empty:
                         pos_geoms.append(poly)
                         waterCreated += 1
@@ -290,6 +312,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                     xy = [(x, y) for x, y, _ in
                           (convert_to_blender_coordinates(lat, lon, ele, 0) for lat, lon, ele in coords)]
                     poly = _g2d.xy_ring_to_polygon(xy)
+                    poly = _clip_to_query_bbox(poly)
                     if poly is not None and not poly.is_empty and poly.area >= col_Area:
                         neg_geoms.append(poly)
                         waterCreated += 1
@@ -320,6 +343,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                     if coords[0] == coords[-1]:
                         xy = [(x, y) for x, y, _ in coords]
                         poly = _g2d.xy_ring_to_polygon(xy)
+                        poly = _clip_to_query_bbox(poly)
                         if poly is not None and not poly.is_empty:
                             pos_geoms.append(poly)
                             waterCreated += 1
@@ -328,6 +352,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                     else:
                         xy = [(x, y) for x, y, _ in coords]
                         ribbon = _g2d.line_to_ribbon(xy, half_width)
+                        ribbon = _clip_to_query_bbox(ribbon)
                         if ribbon is not None and not ribbon.is_empty:
                             pos_geoms.append(ribbon)
                             waterCreated += 1
