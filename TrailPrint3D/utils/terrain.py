@@ -159,6 +159,27 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     maxLat = bpy.context.scene.tp3d.maxLat
     maxLon = bpy.context.scene.tp3d.maxLon
 
+    # Overpass returns a relation's FULL membership once any one of its ways
+    # matches the bbox filter -- for a relation tagged along an entire river's
+    # length (a real, documented OSM convention: "tagged as one relation with
+    # no break in the middle"), that means ways tens/hundreds of km outside
+    # the requested area come back too, and extract_multipolygon_bodies has no
+    # way to know they're irrelevant. Clip every body/negative/ribbon polygon
+    # to this query bbox right after it's built, before it can pollute the
+    # union with a giant, mostly-irrelevant shape.
+    _qbx1, _qby1, _ = convert_to_blender_coordinates(minLat, minLon, 0, 0)
+    _qbx2, _qby2, _ = convert_to_blender_coordinates(maxLat, maxLon, 0, 0)
+    _query_bbox_poly = _g2d.xy_ring_to_polygon([
+        (_qbx1, _qby1), (_qbx2, _qby1), (_qbx2, _qby2), (_qbx1, _qby2),
+    ])
+
+    def _clip_to_query_bbox(poly):
+        """Intersect poly with the query bbox; returns None if fully outside."""
+        if poly is None or poly.is_empty or _query_bbox_poly is None:
+            return poly
+        clipped = poly.intersection(_query_bbox_poly)
+        return clipped if not clipped.is_empty else None
+
     if kind == "WATER":
         col_Area = (bpy.context.scene.tp3d.col_wArea)
     if kind == "FOREST":
@@ -279,6 +300,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                     xy = [(x, y) for x, y, _ in
                           (convert_to_blender_coordinates(lat, lon, ele, 0) for lat, lon, ele in coords)]
                     poly = _g2d.xy_ring_to_polygon(xy)
+                    poly = _clip_to_query_bbox(poly)
                     if poly is not None and not poly.is_empty:
                         pos_geoms.append(poly)
                         waterCreated += 1
@@ -290,6 +312,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                     xy = [(x, y) for x, y, _ in
                           (convert_to_blender_coordinates(lat, lon, ele, 0) for lat, lon, ele in coords)]
                     poly = _g2d.xy_ring_to_polygon(xy)
+                    poly = _clip_to_query_bbox(poly)
                     if poly is not None and not poly.is_empty and poly.area >= col_Area:
                         neg_geoms.append(poly)
                         waterCreated += 1
@@ -320,6 +343,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                     if coords[0] == coords[-1]:
                         xy = [(x, y) for x, y, _ in coords]
                         poly = _g2d.xy_ring_to_polygon(xy)
+                        poly = _clip_to_query_bbox(poly)
                         if poly is not None and not poly.is_empty:
                             pos_geoms.append(poly)
                             waterCreated += 1
@@ -328,6 +352,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                     else:
                         xy = [(x, y) for x, y, _ in coords]
                         ribbon = _g2d.line_to_ribbon(xy, half_width)
+                        ribbon = _clip_to_query_bbox(ribbon)
                         if ribbon is not None and not ribbon.is_empty:
                             pos_geoms.append(ribbon)
                             waterCreated += 1
@@ -399,6 +424,18 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
             return _COLORING_EMPTY
         _progress.WarningsOverlay.add_warning(f"All {kind.capitalize()} objects were filtered out due to their size", "warn")
         return _COLORING_FILTERED
+
+    # Smooth the raw OSM boundary (unsimplified GPS-traced nodes are jagged,
+    # which is fine for the flat PAINT overlay but leaves an unprintable,
+    # ragged edge on a SEPARATE/SINGLECOLORMODE extruded solid). Reuses
+    # toleranceElements -- already scened as "Tolerance of the Elements
+    # (Water, Forest)" -- rather than adding a second, redundant setting.
+    tolerance_elements = bpy.context.scene.tp3d.toleranceElements
+    if tolerance_elements > 0:
+        _simplified = final_geom.simplify(tolerance_elements, preserve_topology=True)
+        _simplified = _g2d.validate(_simplified)
+        if _simplified is not None and not _simplified.is_empty:
+            final_geom = _simplified
 
     _t_mesh = time.time()
     result_meshes = []
@@ -698,13 +735,18 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     bm.to_mesh(merged_object.data)
     bm.free()
 
+    # Set the active object before switching modes -- mode_set requires one,
+    # and whatever was active from the split_loose/merge_objects steps above
+    # can be a dangling reference (e.g. the last col_Area-filtered-out object
+    # that got deleted), which makes this poll() fail with "Context missing
+    # active object" whenever exactly one water/element body survives.
+    bpy.context.view_layer.objects.active = merged_object
     bpy.ops.object.mode_set(mode="OBJECT")
 
     if "SINGLECOLORMODE" not in elementMode:
         merged_object.location.z += 0.2
     merged_object.name = name + "_" + kind
 
-    bpy.context.view_layer.objects.active = merged_object
     merged_object.select_set(True)
 
     writeMetadata(merged_object, kind)
