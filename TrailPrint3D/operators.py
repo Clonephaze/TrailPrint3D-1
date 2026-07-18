@@ -35,6 +35,35 @@ class TP3D_OT_run_generation(bpy.types.Operator):
         
         return {'FINISHED'}
 
+class TP3D_OT_shapely_status(bpy.types.Operator):
+    bl_idname = "tp3d.shapely_status"
+    bl_label = "Shapely failed to load"
+
+    @classmethod
+    def description(cls, context, properties):
+        from .utils import geometry2d as _g2d
+        err = str(_g2d._SHAPELY_IMPORT_ERROR) if _g2d._SHAPELY_IMPORT_ERROR is not None else _("Unknown error")
+        return _(
+            "Elements and Single-color mode might not work properly\n"
+            "{err}\n"
+            "Try reinstalling the addon or wait for an update"
+        ).format(err=err)
+
+    def execute(self, context):
+        from .utils import geometry2d as _g2d
+        err_text = str(_g2d._SHAPELY_IMPORT_ERROR) if _g2d._SHAPELY_IMPORT_ERROR is not None else _("Unknown error")
+
+        def _draw(popup_self, context):
+            col = popup_self.layout.column(align=True)
+            col.label(text=_("Elements and Single-color mode might not work properly"))
+            col.label(text=_("The issue is known and im looking for a solution"))
+            #col.label(text=err_text)
+            col.label(text=_("Try reinstalling the addon or wait for an update"))
+
+        context.window_manager.popup_menu(_draw, title=_("Shapely failed to load"), icon='ERROR')
+        return {'FINISHED'}
+
+
 class TP3D_OT_export_stl(bpy.types.Operator):
     bl_idname = "tp3d.export_stl"
     bl_label = "Export STL"
@@ -1953,7 +1982,12 @@ def _collect_existing_maps():
         if obj.get("Object type") != "MAP" and obj.get("objType") != "MAP":
             continue
 
-        shape = "hexagon" if obj.get("Shape") == "HEXAGON" else "rectangle"
+        if obj.get("Shape") == "CUSTOM":
+            shape = "custom"
+        elif obj.get("Shape") == "HEXAGON":
+            shape = "hexagon"
+        else:
+            shape = "rectangle"
 
         if all(k in obj for k in ("edge_south", "edge_north", "edge_west", "edge_east")):
             bounds = {
@@ -1989,11 +2023,17 @@ def _collect_existing_maps():
                 "east": lon_of(cx + half_w), "west": lon_of(cx - half_w),
             }
 
-        maps.append({
+        entry = {
             "shape": shape, "bounds": bounds, "name": obj.name,
             "scaleHor": obj.get("Horizontal Scale"),
             "additionalExtrusion": obj.get("AdditionalExtrusion"),
-        })
+        }
+        if shape == "custom" and obj.get("BoundaryPolygon"):
+            try:
+                entry["polygon"] = json.loads(obj["BoundaryPolygon"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        maps.append(entry)
     return maps
 
 

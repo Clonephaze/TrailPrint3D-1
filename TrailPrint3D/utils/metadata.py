@@ -14,7 +14,15 @@ def writeMetadata(obj, type = "MAP"):
         obj["Addon"] = const.ADDON_NAME
         obj["Version"] = const.ADDON_VERSION
 
-        obj["Shape"] = get_effective_shape(bpy.context.scene.tp3d)
+        # get_effective_shape() reads the base-shape dropdown (HEXAGON/SQUARE/...),
+        # which GeoJSON boundary tiles never go through -- their footprint comes
+        # from the imported polygon instead, so that dropdown's leftover value
+        # (from whatever shape was last picked elsewhere in the UI) would be
+        # meaningless here.
+        if bpy.context.scene.tp3d.mapmode == "GEOJSON":
+            obj["Shape"] = "CUSTOM"
+        else:
+            obj["Shape"] = get_effective_shape(bpy.context.scene.tp3d)
         obj["Resolution"] = bpy.context.scene.tp3d.num_subdivisions
         obj["Elevation Scale"] = bpy.context.scene.tp3d.scaleElevation
         obj["objSize"] = bpy.context.scene.tp3d.objSize

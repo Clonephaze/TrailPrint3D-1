@@ -131,10 +131,24 @@ def _bootstrap_wheels():
     strip a .pyd/.dll after the stamp was written, leaving a stamp that
     points at a broken extraction forever. If the import still fails, the
     stamp is discarded and the wheel is re-extracted.
+
+    Real Extension installs (Blender's Extensions manager, living under
+    .../extensions/<repo>/<addon-id>/) are skipped entirely: Blender already
+    extracts the wheels declared in blender_manifest.toml and puts them on
+    sys.path itself before this module runs. Manually inserting our own path
+    on top of that is redundant at best, and Blender's extension validator
+    flags it as a policy violation ("Policy violation with sys.path") -- this
+    function's manual extraction is only meant for dev-mode installs
+    (a symlink/junction into scripts/addons), which have no such manifest
+    processing.
     """
     import zipfile
 
     _addon_dir = os.path.dirname(__file__)
+    _path_parts = {_p.lower() for _p in os.path.normpath(_addon_dir).split(os.sep)}
+    if "extensions" in _path_parts:
+        return  # Extension install -- Blender owns wheel extraction, not us.
+
     _wheels_dir = os.path.join(_addon_dir, "wheels")
     if not os.path.isdir(_wheels_dir):
         return
@@ -220,6 +234,7 @@ classes = [
     panels.TP3D_PT_shapes,
     panels.TP3D_OT_show_custom_props_popup,
     operators.TP3D_OT_run_generation,
+    operators.TP3D_OT_shapely_status,
     operators.TP3D_OT_export_stl,
     operators.TP3D_OT_export_obj,
     operators.TP3D_OT_export_three_mf,
@@ -286,7 +301,10 @@ _PREMIUM_CLASS_NAMES = [
 def startup_function(scene, dummy = None):
 
     print("Trailprint3D Launching Startup functions")
-    
+
+    for scn in bpy.data.scenes:
+        props.repair_invalid_shape(scn)
+
     utils.loadCollections(scene, dummy)
 
     export.is_3mf_extension_installed()
@@ -351,6 +369,11 @@ def register():
 
 def _load_collections_deferred():
     try:
+        # Repairs the *already open* session too, not just future file loads
+        # (load_post only fires on the next file-open) -- covers an addon
+        # reload/update leaving `shape` pointed at a now-removed enum item.
+        for scn in bpy.data.scenes:
+            props.repair_invalid_shape(scn)
         utils.loadCollections(None, None)
     except Exception as e:
         print(f"TrailPrint3D: deferred collection load failed: {e}")
