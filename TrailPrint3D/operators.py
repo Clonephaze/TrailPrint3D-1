@@ -664,9 +664,8 @@ class TP3D_OT_dovetail(bpy.types.Operator):
 
 
             #Check for selection and custom property
-            if zobj:
-                if "objSize" not in zobj:
-                    break
+            if zobj and "objSize" in zobj:
+                break
             
             obj_size = zobj["objSize"]
             shapeRotation = zobj["shapeRotation"]
@@ -912,10 +911,9 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
             if obj.type != 'MESH' or obj["Object type"] != "MAP" or max_z == 0:
                 print("Not Applied")
                 continue
-            if "lastMountianCut" in obj:
-                if obj["lastMountianCut"] == tres:
-                    utils.show_message_box("Already Applied mountains at this height")
-                    return{'FINISHED'}
+            if "lastMountianCut" in obj and obj["lastMountianCut"] == tres:
+                utils.show_message_box("Already Applied mountains at this height")
+                return{'FINISHED'}
                 
             print("Apply Mountain Color")
 
