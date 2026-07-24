@@ -457,7 +457,8 @@ class TP3D_OT_pin_coords(bpy.types.Operator):
 
 
 
-        xp,yp,zp = utils.convert_to_blender_coordinates(float(centerlat),float(centerlon),0,0)
+        # _zp underscored because it's unused
+        xp,yp,_zp = utils.convert_to_blender_coordinates(float(centerlat),float(centerlon),0,0) 
         name = "Pin_" + str(round(centerlat,2)) + "." + str(round(centerlon,2))
 
         #Delete existing object with same name (optional)
