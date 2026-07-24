@@ -1025,6 +1025,8 @@ class TP3D_OT_popup_merge(bpy.types.Operator):
 
     def check(self, context):
         obj = context.active_object
+        if self._start_location is None or self._start_rotation is None or self._start_scale is None:
+            return False    
 
         # Apply transforms
         obj.location.x = self._start_location.x + self.xOffset
