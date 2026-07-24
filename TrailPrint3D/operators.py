@@ -530,13 +530,13 @@ class TP3D_OT_magnet_holes(bpy.types.Operator):
 
             #Check for selection and custom property
             if zobj:
-                if "objSize" in zobj.keys():
+                if "objSize" in zobj:
                     obj_size = zobj["objSize"]
             elif not zobj:
                     print("Select a Map.")
                     return{'FINISHED'}
             
-            if "MagnetHoles" not in zobj.keys():
+            if "MagnetHoles" not in zobj:
                 continue
 
             if zobj["MagnetHoles"]:
@@ -653,7 +653,7 @@ class TP3D_OT_dovetail(bpy.types.Operator):
             if zobj.type != 'MESH':
                 continue
 
-            if "Dovetail" not in zobj.keys():
+            if "Dovetail" not in zobj:
                 continue
 
             if zobj["Dovetail"]:
@@ -665,7 +665,7 @@ class TP3D_OT_dovetail(bpy.types.Operator):
 
             #Check for selection and custom property
             if zobj:
-                if "objSize" not in zobj.keys():
+                if "objSize" not in zobj:
                     break
             
             obj_size = zobj["objSize"]
@@ -804,7 +804,7 @@ class TP3D_OT_bottom_mark(bpy.types.Operator):
         for zobj in selected_objects:
         
             #Check for selection and custom property
-            if "BottomMark" not in zobj.keys():
+            if "BottomMark" not in zobj:
                 continue
 
             if zobj["BottomMark"]:
@@ -883,7 +883,7 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
             return {'CANCELLED'}
 
         for obj in selected_objects:
-            if "lowestZ" in obj.keys() and "highestZ" in obj.keys() and obj["highestZ"] != 0:
+            if "lowestZ" in obj and "highestZ" in obj and obj["highestZ"] != 0:
                 low = obj["lowestZ"]
                 high = obj["highestZ"]
                 minThickness = obj["minThickness"]
@@ -912,7 +912,7 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
             if obj.type != 'MESH' or obj["Object type"] != "MAP" or max_z == 0:
                 print("Not Applied")
                 continue
-            if "lastMountianCut" in obj.keys():
+            if "lastMountianCut" in obj:
                 if obj["lastMountianCut"] == tres:
                     utils.show_message_box("Already Applied mountains at this height")
                     return{'FINISHED'}
@@ -1126,7 +1126,7 @@ class TP3D_OT_import_text(bpy.types.Operator):
             utils.show_message_box("No Map Selected")
             return {'FINISHED'}
 
-        if "objSize" not in obj.keys():
+        if "objSize" not in obj:
             utils.show_message_box("Selected object is not a Map")
             return {'FINISHED'}
 
@@ -1395,7 +1395,7 @@ class TP3D_OT_import_svg(bpy.types.Operator):
             utils.show_message_box("No Map Selected")
             return {'FINISHED'}
 
-        if "objSize" not in obj.keys():
+        if "objSize" not in obj:
             utils.show_message_box("Selected object is not a Map")
             return {'FINISHED'}
 
@@ -1574,7 +1574,7 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
             self.report({'WARNING'}, "No object selected")
             return {'CANCELLED'}
         
-        if "highestZ" in map.keys():
+        if "highestZ" in map:
 
             self.topZ = map["highestZ"] + map["minThickness"] + 0.5 + map.location.z
             self.bottomZ = map.location.z - 0.5
@@ -1626,7 +1626,7 @@ class TP3D_OT_import_pin(bpy.types.Operator):
             utils.show_message_box("No Map Selected")
             return {'FINISHED'}
 
-        if "objSize" not in obj.keys():
+        if "objSize" not in obj:
             utils.show_message_box("Selected object is not a Map")
             return {'FINISHED'}
 
@@ -1750,7 +1750,7 @@ class TP3D_OT_popup_pin(bpy.types.Operator):
         if mat:
             obj.data.materials.append(mat)
 
-        if "highestZ" in map.keys():
+        if "highestZ" in map:
             self.topZ = map["highestZ"] + map["minThickness"] + 0.5 + map.location.z
         else:
             _bot, top = utils.getHighestLowest(map)
@@ -2515,7 +2515,7 @@ class TP3D_OT_append_collection(bpy.types.Operator):
         for obs in bpy.data.objects:
             obj_2d        = Vector((obs.location.x, obs.location.y))
             obj_2d_offset = obj_2d
-            if "xTerrainOffset" in obs.keys() or "yTerrainOffset" in obs.keys():
+            if "xTerrainOffset" in obs or "yTerrainOffset" in obs:
                 obj_2d_offset = Vector((obs.location.x - obs["xTerrainOffset"], obs.location.y - obs["yTerrainOffset"]))
             if (obj_2d - target_2d).length <= 0.1 or (obj_2d - target_2d_offset).length <= 0.1:
                 bpy.data.objects.remove(obs, do_unlink=True)
