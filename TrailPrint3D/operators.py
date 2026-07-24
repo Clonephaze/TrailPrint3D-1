@@ -1327,6 +1327,10 @@ class TP3D_OT_popup_text(bpy.types.Operator):
 
         bpy.ops.object.text_add(location=context.scene.cursor.location)
         obj = context.active_object
+        
+        if obj is None:
+            self.report({'WARNING'}, "Failed to create text object, no active object")
+            return {'CANCELLED'}
 
 
         if "type" not in obj:
@@ -2467,6 +2471,9 @@ class TP3D_OT_append_collection(bpy.types.Operator):
             flags = utils._GEN_FLAGS[11]
 
         props = utils._rg_validate_inputs(flags)
+        if props is None:
+            self.report({'WARNING'}, "Invalid input properties")
+            return {'CANCELLED'}
         singleColorMode = props['singleColorMode']
 
         coord_data = utils._rg_load_coordinates(flags, props)
