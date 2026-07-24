@@ -16,7 +16,7 @@ from bpy.app.translations import (
     pgettext_iface as _,  # type: ignore #For Translation of Text Required
 )
 from bpy.props import StringProperty  # type: ignore
-from mathutils import Euler, Quaternion, Vector, bvhtree  # type: ignore
+from mathutils import Euler, Quaternion, Vector  # type: ignore
 
 from . import addon_preferences, utils
 from . import constants as const
