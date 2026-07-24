@@ -263,12 +263,11 @@ class TP3D_OT_rescale(bpy.types.Operator):
                 for i, vert in enumerate(mesh.vertices):
                     if vert.co.z < lowestZ and vert.co.z > 0.1:
                         lowestZ = vert.co.z
-            if obj.type == "CURVE":
-                if lowestZ == 1000:
-                    for spline in obj.data.splines:
-                        for point in spline.bezier_points:
-                            if point.co.z > 0.1 and point.co.z < lowestZ:
-                                lowestZ = point.co.z
+            if obj.type == "CURVE" and lowestZ == 1000:
+                for spline in obj.data.splines:
+                    for point in spline.bezier_points:
+                        if point.co.z > 0.1 and point.co.z < lowestZ:
+                            lowestZ = point.co.z
 
         print(f"lowestZ: {lowestZ}")
 
