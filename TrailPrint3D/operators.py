@@ -468,7 +468,7 @@ class TP3D_OT_pin_coords(bpy.types.Operator):
         # Get map object for raycasting
         map_obj = None
         active = context.view_layer.objects.active
-        if active and "objSize" in active.keys():
+        if active and "objSize" in active:
             map_obj = active
         elif context.scene.tp3d.currentMap:
             map_obj = context.scene.tp3d.currentMap
