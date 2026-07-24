@@ -381,7 +381,7 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path == "/generate":
             try:
                 config = json.loads(body)
-            except Exception:
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 config = {}
             with _lock:
                 _pending_config = config
