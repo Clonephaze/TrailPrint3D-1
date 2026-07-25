@@ -315,7 +315,6 @@ def read_gpx_and_create_heightmap(length=100.0, height=20.0):
     curve_obj.select_set(True)
     bpy.ops.object.convert(target='MESH')
 
-    mesh_obj = bpy.context.object
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.mesh.extrude_region_move(TRANSFORM_OT_translate={"value": (0, 0, 1)})
