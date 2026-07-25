@@ -306,7 +306,7 @@ def create_circle(radius, num_subdivisions = 1, name = "Circle", num_segments=64
     # Ensure we are in Object Mode
     try:
         bpy.ops.object.mode_set(mode='OBJECT')
-    except:
+    except RuntimeError:
         pass
 
     # Create a new mesh and object
@@ -375,7 +375,7 @@ def create_ellipse(radius, num_subdivisions = 1, name = "Ellipse", aspect_ratio 
     # Ensure we are in Object Mode
     try:
         bpy.ops.object.mode_set(mode='OBJECT')
-    except:
+    except RuntimeError:
         pass
 
     # Create a new mesh and object
