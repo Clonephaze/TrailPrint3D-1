@@ -618,8 +618,8 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
           f"non-manifold={cutter_nm_v}v/{cutter_nm_e}e  |  "
           f"map: {len(map.data.vertices)}v non-manifold={map_nm_v}v/{map_nm_e}e")
     if cutter_nm_v > 0 or cutter_nm_e > 0:
-        print(f"  [manifold-check] WARNING: cutter has non-manifold geometry — "
-              f"boolean may be a no-op or produce garbage")
+        print("  [manifold-check] WARNING: cutter has non-manifold geometry — "
+              "boolean may be a no-op or produce garbage")
     # ────────────────────────────────────────────────────────────────────────
 
     def _apply_boolean(obj, solver):
