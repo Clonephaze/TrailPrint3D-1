@@ -121,7 +121,7 @@ def _bring_blender_to_foreground() -> None:
             user32.SetForegroundWindow(hwnd)
             if user32.GetForegroundWindow() != hwnd:
                 print("[TP3D picker_server] Minimize/restore fallback also didn't take foreground.")
-    except Exception as e:
+    except (OSError, ImportError, AttributeError) as e:
         print(f"[TP3D picker_server] _bring_blender_to_foreground failed: {e}")
 
 def _free_port() -> int:
@@ -233,7 +233,7 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 self.state_path.write_bytes(body)
                 print(f"[TP3D picker] /save_state wrote {len(body)} bytes to {self.state_path}")
-            except Exception as e:
+            except OSError as e:
                 print(f"[TP3D picker] /save_state FAILED to write {self.state_path}: {e}")
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
@@ -307,8 +307,8 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     if _active_server is not None:
         try:
             _active_server.shutdown()
-        except Exception:
-            pass
+        except OSError as e:
+            print(f"[TP3D picker] Failed to shut down previous server: {e}")
         _active_server = None
 
     html_path = pathlib.Path(html_path) if html_path else _HTML_PATH
