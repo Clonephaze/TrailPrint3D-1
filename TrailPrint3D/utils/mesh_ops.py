@@ -764,13 +764,14 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
         try:
             if prev_mode != bpy.context.mode:
                 bpy.ops.object.mode_set(mode=prev_mode)
-        except Exception:
+        except RuntimeError:
             # ignoring mode restore errors (some modes cannot be restored trivially)
             pass
 
         return True, "Boolean INTERSECT applied and duplicate tile removed."
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — broad catch intentional; all errors returned to caller
+        print(f"[TP3D intersectWithTile] error: {e}")
         # Attempt to clean up the duplicate if it exists
         dup_obj = bpy.data.objects.get(f"{tile.name}_duplicate_for_bool")
         if dup_obj:
@@ -779,7 +780,7 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
                 dup_obj.select_set(True)
                 bpy.context.view_layer.objects.active = dup_obj
                 bpy.ops.object.delete()
-            except Exception:
+            except RuntimeError:
                 pass
         return False, f"Error: {e}"
 
@@ -2392,7 +2393,7 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
 
     try:
         min_z = min(v.co.z for v in bm.verts)
-    except:
+    except ValueError:
         bm.free()
         bpy.ops.object.mode_set(mode='OBJECT')
         return
