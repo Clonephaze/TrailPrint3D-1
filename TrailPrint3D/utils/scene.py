@@ -142,7 +142,7 @@ def get_object_surface_area(obj, apply_modifiers=True, z_threshold = 0.00):
     if obj.type != 'MESH':
         raise TypeError(f"Object '{obj.name}' is not a mesh.")
 
-    # Get evaluated mesh if needed
+    obj_eval = None
     if apply_modifiers:
         depsgraph = bpy.context.evaluated_depsgraph_get()
         obj_eval = obj.evaluated_get(depsgraph)
@@ -152,27 +152,23 @@ def get_object_surface_area(obj, apply_modifiers=True, z_threshold = 0.00):
         mesh = obj.data
         world_matrix = obj.matrix_world
 
-    # Build bmesh
-    bm = bmesh.new()
-    bm.from_mesh(mesh)
-    bm.normal_update()
+    try:
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        bm.normal_update()
 
-    # World-space normal transform
-    normal_matrix = world_matrix.to_3x3()
+        normal_matrix = world_matrix.to_3x3()
+        total_area = 0.0
 
-    total_area = 0.0
+        for f in bm.faces:
+            world_normal = (normal_matrix @ f.normal).normalized()
+            if world_normal.z < z_threshold:
+                total_area += f.calc_area()
 
-    for f in bm.faces:
-        world_normal = (normal_matrix @ f.normal).normalized()
-
-        # Count only faces pointing downward
-        if world_normal.z < z_threshold:
-            total_area += f.calc_area()
-
-    # Cleanup
-    bm.free()
-    if apply_modifiers:
-        obj_eval.to_mesh_clear()
+        bm.free()
+    finally:
+        if obj_eval is not None:
+            obj_eval.to_mesh_clear()
 
     return total_area
 
