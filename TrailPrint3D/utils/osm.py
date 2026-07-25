@@ -1347,8 +1347,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
                     if "width" in tags:
                         try:
                             s = str(tags["width"]).strip().lower()
-                            if s.endswith("m"):
-                                s = s[:-1]
+                            s = s.removesuffix("m")
                             width_m = float(s)
                         except Exception:
                             width_m = None
