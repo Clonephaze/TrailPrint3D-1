@@ -929,7 +929,7 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
                 plane_co = Vector((0, 0, z_height))
                 plane_no = Vector((0, 0, 1))
 
-                result = bmesh.ops.bisect_plane(
+                bmesh.ops.bisect_plane(
                     bm,
                     geom=bm.verts[:] + bm.edges[:] + bm.faces[:],
                     plane_co=plane_co,
@@ -1922,8 +1922,8 @@ class TP3D_OT_remake_buildings(bpy.types.Operator):
         return m is not None and m.name in bpy.data.objects and tp3d.el_bActive
 
     def execute(self, context):
-        from .utils.osm import create_buildings
         from .utils.metadata import writeMetadata
+        from .utils.osm import create_buildings
 
         tp3d = context.scene.tp3d
         map_obj = tp3d.currentMap
@@ -2175,6 +2175,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
     def invoke(self, context, event):
         import tempfile
+
         from . import picker_server as mp
 
         self._result_path = str(
