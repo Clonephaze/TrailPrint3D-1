@@ -482,9 +482,6 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     tile_label: optional prefix for progress messages (e.g. "Tile 2/6") used by
     multi-tile callers so element messages keep their tile context visible.
     """
-    from .mesh_ops import (
-        intersectWithTile,  # deferred to avoid circular import at load time
-    )
     from .metadata import (
         writeMetadata,  # deferred to avoid circular import at load time
     )
@@ -747,7 +744,6 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     from .mesh_ops import (  # deferred to avoid circular import at load time
         boolean_operation,
         recalculateNormals,
-        remeshClearing,
         selectBottomFaces,
         single_color_mode_curve,
         single_color_mode_mesh_remesh,
