@@ -8,7 +8,9 @@ def writeMetadata(obj, type = "MAP"):
     if obj is None:
         return
 
-    from ..props import get_effective_shape  # deferred to avoid circular import at load time
+    from ..props import (
+        get_effective_shape,  # deferred to avoid circular import at load time
+    )
 
     if type == "MAP":
         obj["Object type"] = type
@@ -62,7 +64,9 @@ def writeMetadata(obj, type = "MAP"):
         obj["mapScale"] = bpy.context.scene.tp3d.o_mapScale
         obj["centerx"] = bpy.context.scene.tp3d.o_centerx
         obj["centery"] = bpy.context.scene.tp3d.o_centery
-        from .geo import convert_to_geo  # deferred to avoid circular import at load time
+        from .geo import (
+            convert_to_geo,  # deferred to avoid circular import at load time
+        )
         obj["latitude"], obj["longitude"] = convert_to_geo(bpy.context.scene.tp3d.o_centerx,bpy.context.scene.tp3d.o_centery)
         _scale_elev = bpy.context.scene.tp3d.scaleElevation
         _auto_scale = bpy.context.scene.tp3d.sAutoScale
