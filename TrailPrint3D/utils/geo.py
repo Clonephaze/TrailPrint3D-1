@@ -18,7 +18,7 @@ def calculate_scale(mapSize, coordinates, gen_type, diagonal=False):
     max_lat = max(point[0] for point in coordinates)
     min_lon = min(point[1] for point in coordinates)
     max_lon = max(point[1] for point in coordinates)
-
+    mf = 1
     R = const.R
 
     x1, y1, _e = convert_to_neutral_coordinates(min_lat, min_lon, 0,0)
