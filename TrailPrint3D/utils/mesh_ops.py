@@ -886,7 +886,7 @@ def intersect_alltrails_with_existing_box(cutobject):
 
         merged_object = bpy.context.active_object
 
-        bool_mod = cube.modifiers.new(name=f"Intersect", type='BOOLEAN')
+        bool_mod = cube.modifiers.new(name="Intersect", type='BOOLEAN')
         bool_mod.operation = 'INTERSECT'
         bool_mod.object = merged_object
         bpy.context.view_layer.objects.active = cube
