@@ -236,7 +236,6 @@ def read_gpx_file():
     if file_extension == '.gpx':
         tree = ET.parse(gpx_file_path)
         root = tree.getroot()
-        version = root.get("version")
 
         ns = {'default': root.tag.split('}')[0].strip('{')}
         GPXsections = len(root.findall(".//default:trkseg", ns))
