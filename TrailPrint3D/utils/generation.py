@@ -1110,7 +1110,7 @@ def _subdivide_long_segments(coords, max_xy_dist, depsgraph=None):
         dx, dy = x2 - x1, y2 - y1
         dist_xy = math.sqrt(dx * dx + dy * dy)
         if dist_xy > max_xy_dist:
-            n = int(math.ceil(dist_xy / max_xy_dist))
+            n = math.ceil(dist_xy / max_xy_dist)
             for j in range(1, n):
                 t = j / n
                 xi, yi = x1 + t * dx, y1 + t * dy
