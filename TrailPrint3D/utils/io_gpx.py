@@ -191,6 +191,7 @@ def read_gpx_directory(directory_path):
             filepath = os.path.join(directory_path, filename)
 
             file_extension = os.path.splitext(filepath)[1].lower()
+            co = None
             if file_extension == '.gpx':
                 tree = ET.parse(filepath)
                 root = tree.getroot()
@@ -200,6 +201,9 @@ def read_gpx_directory(directory_path):
             elif file_extension == '.igc':
                 co = read_igc(filepath)
 
+            if co is None:
+                print(f"Failed to read coordinates from file: {filename}")
+                return
             # Keep all segments from this file together as a group
             if co:
                 coordinatesByFile.append(co)
