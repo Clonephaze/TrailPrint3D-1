@@ -392,7 +392,6 @@ def create_ellipse(radius, num_subdivisions = 1, name = "Ellipse", aspect_ratio 
 
     # Generate circle vertices
     verts = []
-    faces = []
 
     for i in range(num_segments):
         angle = math.radians(360 * i / num_segments)
