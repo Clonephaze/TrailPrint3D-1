@@ -112,7 +112,7 @@ def _rg_validate_inputs(flags):
         gpx_file_path = bpy.path.abspath(gpx_file_path)
         file_extension = os.path.splitext(gpx_file_path)[1].lower()
         if file_extension != '.gpx' and file_extension != ".igc":
-            show_message_box(f"Invalid file format. Please Use a .GPX file")
+            show_message_box("Invalid file format. Please Use a .GPX file")
             return None
     if "gpx_chain" in flags:
         if not gpx_chain_path or gpx_chain_path == "":
