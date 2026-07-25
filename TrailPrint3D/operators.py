@@ -2490,12 +2490,6 @@ class TP3D_OT_append_collection(bpy.types.Operator):
             utils.convert_to_blender_coordinates(lat, lon, ele, timestamp)
             for lat, lon, ele, timestamp in coordinates
         ]
-        blender_coords_separate = []
-        if "separate_paths" in flags or len(separate_paths) > 1:
-            blender_coords_separate = [
-                [utils.convert_to_blender_coordinates(lat, lon, ele, timestamp) for lat, lon, ele, timestamp in path]
-                for path in separate_paths
-            ]
         min_x = min(p[0] for p in blender_coords)
         max_x = max(p[0] for p in blender_coords)
         min_y = min(p[1] for p in blender_coords)
