@@ -372,7 +372,7 @@ class TP3D_OT_clear_cache(bpy.types.Operator):
         try:
             shutil.rmtree(const.cache_dir)
             print(f"Deleted cache directory: {const.cache_dir}")
-        except Exception as e:
+        except OSError as e:
             print(f"Failed to delete cache directory: {e}")
 
         # Clear the in-memory elevation cache so the load guard doesn't
@@ -1154,7 +1154,7 @@ class TP3D_OT_popup_text(bpy.types.Operator):
                     
                     if obj.data.font != new_fnt:
                         obj.data.font = new_fnt
-                except Exception as e:
+                except (RuntimeError, OSError) as e:
                     print(f"Font Load Error: {e}")
 
     text: StringProperty(name="Name", default="Text") # type: ignore
@@ -1794,7 +1794,7 @@ class TP3D_OT_install_three_mf(bpy.types.Operator):
             bpy.ops.extensions.repo_sync_all()
             bpy.ops.extensions.package_install(repo_index=0, pkg_id=pkg_idd)
             
-        except Exception as e:
+        except RuntimeError as e:
             print({'ERROR'}, f"Install failed: {e}")
             utils.show_message_box("Install failed: Online access may be disabled. Please enable it in Blender Preferences > System > Network.", "ERROR", "3MF Install Failed")
 
@@ -1812,7 +1812,7 @@ def _redraw_all_areas():
         for window in bpy.context.window_manager.windows:
             for area in window.screen.areas:
                 area.tag_redraw()
-    except Exception:
+    except (AttributeError, ReferenceError):
         pass
     return 0.5 if updater.status == "checking" or updater.premium_status == "checking" else None
 
@@ -2160,14 +2160,14 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         try:
             data = json.loads(rp.read_text(encoding='utf-8'))
             self._apply_puzzle_result(context, data)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - Wide exception catch for puzzle result application
             import traceback
             traceback.print_exc()
             self.report({'ERROR'}, f"Puzzle generator: {exc}")
         finally:
             try:
                 rp.unlink()
-            except Exception:
+            except OSError:
                 pass
             self._cleanup(context)
 
