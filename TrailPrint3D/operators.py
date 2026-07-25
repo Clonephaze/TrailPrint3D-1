@@ -2456,7 +2456,6 @@ class TP3D_OT_append_collection(bpy.types.Operator):
 
         #Set the Mapsize to the Size in the Collection name
         collection_name = bpy.context.scene.tp3d.specialCollectionName
-        collection = bpy.data.collections.get(collection_name)
         parts = collection_name.split("_")
         for part in parts[1:]:          # everything after a "_"
             num = part.split("mm")[0]   # take what's before "mm"
@@ -2475,11 +2474,10 @@ class TP3D_OT_append_collection(bpy.types.Operator):
         if props is None:
             self.report({'WARNING'}, "Invalid input properties")
             return {'CANCELLED'}
-        singleColorMode = props['singleColorMode']
 
         coord_data = utils._rg_load_coordinates(flags, props)
 
-        coordinates, separate_paths, coordinates2, _ = coord_data
+        coordinates, *_ = coord_data
 
         print(f"Coord data: {coordinates}")
         scaleHor = utils.calculate_scale(props['size'], coordinates, 10)
@@ -2528,9 +2526,6 @@ class TP3D_OT_append_collection(bpy.types.Operator):
             utils.runGeneration(20)
         elif bpy.context.scene.tp3d.generation_mode == 'MULTI':
             utils.runGeneration(21)
-
-        currentMap = bpy.context.scene.tp3d.currentMap
-        currentTrail = bpy.context.scene.tp3d.currentTrail
 
         #utils.merge_with_map(currentMap, currentTrail, False, False)
 
