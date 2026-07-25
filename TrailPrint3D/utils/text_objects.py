@@ -503,7 +503,6 @@ def HexagonInnerText(MapObject):
     iconString3 = bpy.context.scene.tp3d.iconText3
     xTerrainOffset = bpy.context.scene.tp3d.xTerrainOffset
     yTerrainOffset = bpy.context.scene.tp3d.yTerrainOffset
-    pathScale = bpy.context.scene.tp3d.pathScale
 
     textSize = bpy.context.scene.tp3d.textSize
     textSize2 = bpy.context.scene.tp3d.textSizeTitle
@@ -981,10 +980,6 @@ def HexagonFrontText():
     transform_MapObject(outerHex, centerx, centery)
 
     dist = outersize/2
-
-    temp_y = math.sin(math.radians(90)) * (dist  * math.cos(math.radians(30)))
-
-
 
     for i, (text_name, angle) in enumerate(zip(["t_name","t_length", "t_elevation", "t_duration"], [90 + text_angle_preset, 210 + text_angle_preset, 270 + text_angle_preset, 330 + text_angle_preset])):
         angle_centered = angle + 90
@@ -1553,9 +1548,6 @@ def MedalText():
 def BottomText(obj):
 
     from . import transform_MapObject  # deferred to avoid circular import at load time
-
-    pathScale = bpy.context.scene.tp3d.pathScale
-
 
     name = obj.name
     if "objSize" in obj:
