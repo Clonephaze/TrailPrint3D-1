@@ -757,32 +757,31 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
  
 
     thickerCurves = []
-    if props['singleColorMode']:
-        if curveObjs:
-            dpt = 1
-            dup = obj.copy()
-            dup.data = obj.data.copy()
-            dup.name = f"{obj.name}_dup_for_projection"
-            if obj.users_collection:
-                for coll in obj.users_collection:
-                    coll.objects.link(dup)
-            survivingCurveObjs = []
-            for tcrv in curveObjs:
-                result = single_color_mode_curve(tcrv, obj, True, dpt, dup)
-                if result is not None and result[1] is not None:
-                    survivingCurveObjs.append(result[0])
-                    thickerCurves.append(result[1])
-            remove_objects(dup)
-            for tcrv in thickerCurves:
-                bpy.ops.object.select_all(action='DESELECT')
-                tcrv.select_set(True)
-                bpy.context.view_layer.objects.active = tcrv
-            for i in range(len(thickerCurves)):
-                recalculateNormals(thickerCurves[i])
-                thickerCurves[i].location.z -= 0.001
-                for j in range(i + 1, len(survivingCurveObjs)):
-                    recalculateNormals(survivingCurveObjs[j])
-                    boolean_operation(survivingCurveObjs[j], thickerCurves[i])
+    if props['singleColorMode'] and curveObjs:
+        dpt = 1
+        dup = obj.copy()
+        dup.data = obj.data.copy()
+        dup.name = f"{obj.name}_dup_for_projection"
+        if obj.users_collection:
+            for coll in obj.users_collection:
+                coll.objects.link(dup)
+        survivingCurveObjs = []
+        for tcrv in curveObjs:
+            result = single_color_mode_curve(tcrv, obj, True, dpt, dup)
+            if result is not None and result[1] is not None:
+                survivingCurveObjs.append(result[0])
+                thickerCurves.append(result[1])
+        remove_objects(dup)
+        for tcrv in thickerCurves:
+            bpy.ops.object.select_all(action='DESELECT')
+            tcrv.select_set(True)
+            bpy.context.view_layer.objects.active = tcrv
+        for i in range(len(thickerCurves)):
+            recalculateNormals(thickerCurves[i])
+            thickerCurves[i].location.z -= 0.001
+            for j in range(i + 1, len(survivingCurveObjs)):
+                recalculateNormals(survivingCurveObjs[j])
+                boolean_operation(survivingCurveObjs[j], thickerCurves[i])
 
     if props['elementMode'] == "SEPARATE" and 1 == 0:
         for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
