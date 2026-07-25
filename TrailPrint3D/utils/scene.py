@@ -38,7 +38,7 @@ def zoom_camera_to_objects(objs):
             continue
     bpy.context.view_layer.objects.active = objs[0]
 
-    area = [area for area in bpy.context.screen.areas if area.type == "VIEW_3D"][0]
+    area = next(area for area in bpy.context.screen.areas if area.type == "VIEW_3D")
     region = area.regions[-1]
 
     with bpy.context.temp_override(area=area, region=region):
