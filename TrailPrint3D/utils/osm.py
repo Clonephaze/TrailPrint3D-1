@@ -13,6 +13,7 @@ from mathutils import Vector  # type: ignore
 
 from .. import constants as const
 from .. import progress as _progress
+import itertools
 
 
 class OsmFetchSettings(NamedTuple):
@@ -1380,7 +1381,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
 
                     # Compute segment directions and per-node perpendiculars (2D perp)
                     seg_dirs = []
-                    for a, b in zip(pts[:-1], pts[1:]):
+                    for a, b in itertools.pairwise(pts):
                         d = (b - a)
                         if d.length == 0:
                             seg_dirs.append(Vector((0.0, 0.0, 0.0)))
