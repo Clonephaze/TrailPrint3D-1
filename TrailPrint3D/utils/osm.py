@@ -1268,10 +1268,8 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
     lon_step = 2
 
 
-    if maxLat - minLat < lat_step:
-        lat_step = maxLat - minLat
-    if maxLon - minLon < lon_step:
-        lon_step = maxLon - minLon
+    lat_step = min(lat_step, maxLat - minLat)
+    lon_step = min(lon_step, maxLon - minLon)
 
     lats = math.ceil((maxLat - minLat) / lat_step)
     lons = math.ceil((maxLon - minLon) / lon_step)
