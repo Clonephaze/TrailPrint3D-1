@@ -493,7 +493,7 @@ def _find_chromium():
         winreg.CloseKey(key)
         if os.path.exists(path):
             return path
-    except Exception:
+    except OSError:
         pass
     for p in candidates:
         if os.path.exists(p):
@@ -539,7 +539,7 @@ def _load_icons():
         if p.exists():
             try:
                 icons[key] = _process_svg(p.read_text(encoding='utf-8'))
-            except Exception:
+            except (OSError, UnicodeDecodeError):
                 pass
     return icons
 
@@ -556,7 +556,7 @@ def _run_browser(json_path):
     cancel_path = json_path.parent / 'trailprint_cancel.flag'
     try:
         cancel_path.unlink()
-    except Exception:
+    except OSError:
         pass
 
     class _Handler(BaseHTTPRequestHandler):
@@ -566,7 +566,7 @@ def _run_browser(json_path):
             elif self.path == '/state':
                 try:
                     body = json_path.read_bytes()
-                except Exception:
+                except OSError:
                     body = b'{"active":true,"percent":0,"phase":"Starting...","message":""}'
                 self._respond(200, 'application/json', body)
             else:
@@ -577,7 +577,7 @@ def _run_browser(json_path):
             if self.path == '/cancel':
                 try:
                     cancel_path.write_text('1', encoding='utf-8')
-                except Exception:
+                except OSError:
                     pass
                 self._respond(200, 'text/plain', b'ok')
             else:
@@ -625,7 +625,7 @@ def _run_browser(json_path):
             if not json.loads(json_path.read_text(encoding='utf-8')).get('active', True):
                 time.sleep(0.9)   # let browser receive the final state & close
                 break
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError):
             pass
 
     server.shutdown()
@@ -642,7 +642,7 @@ def _run_console(json_path):
             ctypes.windll.kernel32.GetConsoleMode(h, ctypes.byref(m))
             ctypes.windll.kernel32.SetConsoleMode(h, m.value | 4)
             ctypes.windll.kernel32.SetConsoleTitleW('TrailPrint3D — Generating')
-        except Exception:
+        except (OSError, AttributeError):
             pass
 
     ORANGE = '\033[38;5;214m'
@@ -673,7 +673,7 @@ def _run_console(json_path):
                 f'  {GREY}{message}{RESET}\n'
             )
             sys.stdout.flush()
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError):
             pass
 
 
@@ -686,7 +686,7 @@ if __name__ == '__main__':
     if sys.platform in ('win32', 'darwin'):
         try:
             _run_browser(_path)
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
             print(f'TrailPrint3D progress: browser failed ({e}), using console', file=sys.stderr)
             _run_console(_path)
     else:
