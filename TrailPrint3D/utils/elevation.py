@@ -92,7 +92,7 @@ def load_elevation_cache():
             with open(const.elevation_cache_file, "r") as f:
                 const._elevation_cache = json.load(f)
         except Exception as e:
-            print(f"Error loading elevation cache: {str(e)}")
+            print(f"Error loading elevation cache: {e!s}")
             const._elevation_cache = {}
     else:
         const._elevation_cache = {}
