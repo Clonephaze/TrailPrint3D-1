@@ -696,8 +696,8 @@ def get_elevation_openTopography(coords, lenv=0, pointsDone=0, progress_cb=None)
         progress_cb(80)
 
     def _sample(lat, lon):
-        col_i = int(round((lon - xll) / cellsize))
-        row_i = int(round((nrows - 1) - (lat - yll) / cellsize))
+        col_i = round((lon - xll) / cellsize)
+        row_i = round((nrows - 1) - (lat - yll) / cellsize)
         col_i = max(0, min(col_i, ncols - 1))
         row_i = max(0, min(row_i, nrows - 1))
         if row_i < len(grid_rows) and col_i < len(grid_rows[row_i]):
