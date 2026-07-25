@@ -851,8 +851,8 @@ def calculate_polygon_area_2d(coords):
 
         n = len(coords)
         for i in range(n):
-            x0, y0, z0 = coords[i]
-            x1, y1, z1 = coords[(i + 1) % n]  # Wrap around to the first point
+            x0, y0, _z0 = coords[i]
+            x1, y1, _z1 = coords[(i + 1) % n]  # Wrap around to the first point
             area += (x0 * y1) - (x1 * y0)
 
     return abs(area) * 0.5
