@@ -896,7 +896,7 @@ def _rg_assign_materials(obj, curveObjs, textobj, plateobj, props, shellobj=None
         writeMetadata,  # deferred to avoid circular import at load time
     )
 
-    shape = props['shape'] if "shape" in props.keys() else None
+    shape = props['shape'] if "shape" in props else None
 
     bpy.ops.object.select_all(action='DESELECT')
 
@@ -956,7 +956,7 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
         zoom_camera_to_selected,  # deferred to avoid circular import at load time
     )
 
-    shape = props['shape'] if "shape" in props.keys() else None
+    shape = props['shape'] if "shape" in props else None
 
     tp3d_props = bpy.context.scene.tp3d
     if getattr(tp3d_props, 'disable_auto_export', False):
@@ -1258,7 +1258,7 @@ def runGeneration(type, locked_scale=None):
     for obs in bpy.data.objects:
         obj_2d        = Vector((obs.location.x, obs.location.y))
         obj_2d_offset = obj_2d
-        if "xTerrainOffset" in obs.keys() or "yTerrainOffset" in obs.keys():
+        if "xTerrainOffset" in obs or "yTerrainOffset" in obs:
             obj_2d_offset = Vector((obs.location.x - obs["xTerrainOffset"], obs.location.y - obs["yTerrainOffset"]))
         if (obj_2d - target_2d).length <= 0.2 or (obj_2d - target_2d_offset).length <= 0.2:
             bpy.data.objects.remove(obs, do_unlink=True)
