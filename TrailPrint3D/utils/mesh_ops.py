@@ -1767,10 +1767,6 @@ def single_color_mode_mesh_wireframe(original, map, tolerance = None):
     if tolerance == None:
         tolerance = bpy.context.scene.tp3d.toleranceElements
 
-    voxelSize = 0.1
-
-
-    #recalculateNormals(original)
 
     obj = original.copy()             # copy the object
     obj.data = obj.data.copy()   # copy the mesh (optional: if you want unique mesh)
