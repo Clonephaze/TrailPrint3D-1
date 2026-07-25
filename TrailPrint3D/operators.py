@@ -1806,6 +1806,7 @@ class TP3D_OT_install_three_mf(bpy.types.Operator):
 def _redraw_all_areas():
     """Timer callback: keep redrawing until the update check finishes."""
     import bpy
+
     from . import updater
     try:
         for window in bpy.context.window_manager.windows:
@@ -1964,8 +1965,8 @@ class TP3D_OT_remake_roads(bpy.types.Operator):
                 and any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive]))
 
     def execute(self, context):
-        from .utils.osm import create_roads
         from .utils.metadata import writeMetadata
+        from .utils.osm import create_roads
 
         tp3d = context.scene.tp3d
         map_obj = tp3d.currentMap
