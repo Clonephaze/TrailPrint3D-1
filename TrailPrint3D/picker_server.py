@@ -14,6 +14,7 @@ import sys
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import cast
 
 _HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'multitile_configurator.html'
 
@@ -208,7 +209,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         body = (
             self.html_path.read_text(encoding='utf-8')
-            .replace('__PORT__', str(self.server.server_address[1]))
+            .replace('__PORT__', str(cast(tuple[str, int], self.server.server_address)[1]))
             .replace('__OBJSIZE__', str(self.obj_size))
             .encode('utf-8')
         )
