@@ -381,7 +381,7 @@ def _rg_create_map_object(flags, props, modelname, centerx, centery):
     targety = centery + yTerrainOffset
     if scalemode == "COORDINATES" and "chain_coords_center" in flags:
         midLat, midLon = midpoint_spherical(props['scaleLat1'], props['scaleLon1'], props['scaleLat2'], props['scaleLon2'])
-        targetx, targety, el = convert_to_blender_coordinates(midLat, midLon, 0, 0)
+        targetx, targety, _el = convert_to_blender_coordinates(midLat, midLon, 0, 0)
 
     transform_MapObject(MapObject, targetx, targety)
     return MapObject
