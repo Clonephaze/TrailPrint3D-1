@@ -1143,13 +1143,12 @@ def runGeneration(type, locked_scale=None):
         xyz = np.array([(c[0], c[1], c[2]) for c in coordinates], dtype=np.float64)
         mids = (xyz[:-1] + xyz[1:]) / 2.0
         # Interleave originals and midpoints: [orig0, mid0, orig1, mid1, ..., origN]
-        out = [None] * (2 * n - 1)
-        out[0::2] = coordinates
-        out[1::2] = [
-            (mids[i, 0], mids[i, 1], mids[i, 2], coordinates[i][3])
-            for i in range(n - 1)
-        ]
-        coordinates = out
+        interleaved: list = []
+        for i in range(n - 1):
+            interleaved.append(coordinates[i])
+            interleaved.append((mids[i, 0], mids[i, 1], mids[i, 2], coordinates[i][3]))
+        interleaved.append(coordinates[-1])
+        coordinates = interleaved
 
     # --- Phase 5: Calculate horizontal scale factor ---
     overlay.update(0.20, "Scale Calculation", "Computing horizontal scale…")
