@@ -956,7 +956,7 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
         zoom_camera_to_selected,  # deferred to avoid circular import at load time
     )
 
-    shape = props['shape'] if "shape" in props else None
+    shape = props.get('shape', None)
 
     tp3d_props = bpy.context.scene.tp3d
     if getattr(tp3d_props, 'disable_auto_export', False):
