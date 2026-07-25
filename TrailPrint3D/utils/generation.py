@@ -1974,9 +1974,8 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
             continue
         if "objType" in zobj and zobj["objType"] != "MAP":
             continue
-        if "highestZ" in zobj and "lowestZ" in zobj:
-            if zobj["highestZ"] != 0 and zobj["lowestZ"] != 0:
-                continue
+        if "highestZ" in zobj and "lowestZ" in zobj and zobj["highestZ"] != 0 and zobj["lowestZ"] != 0:
+            continue
 
         if _mp_tiles_info and _progress.SubprocessProgress.get().is_cancel_requested():
             break
