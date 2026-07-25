@@ -37,6 +37,7 @@ class TP3D_OT_run_generation(bpy.types.Operator):
 class TP3D_OT_shapely_status(bpy.types.Operator):
     bl_idname = "tp3d.shapely_status"
     bl_label = "Shapely failed to load"
+    # TODO: CLEAN THIS WHOLE CLASS
 
     @classmethod
     def description(cls, context, properties):
