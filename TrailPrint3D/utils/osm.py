@@ -1122,7 +1122,7 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
                         if s.endswith('m'):
                             s = s[:-1].strip()
                         return float(s)
-                    except Exception:
+                    except (ValueError, TypeError):
                         return float(default_height)
 
 
@@ -1344,12 +1344,12 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
                             s = str(tags["width"]).strip().lower()
                             s = s.removesuffix("m")
                             width_m = float(s)
-                        except Exception:
+                        except (ValueError, TypeError):
                             width_m = None
                     if width_m is None and "lanes" in tags:
                         try:
                             width_m = float(tags["lanes"]) * 3.0
-                        except Exception:
+                        except (ValueError, TypeError):
                             width_m = None
                     if width_m is None:
                         width_m = highway_default_width(tags.get("highway"))
@@ -1490,7 +1490,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
                         # in some contexts modifier_apply may fail; print and continue
                         print(f"Failed to apply modifier {mname} on {obj.name}: {e}")
                 obj.select_set(False)
-            except Exception as e:
+            except (RuntimeError, AttributeError) as e:
                 print(f"Error applying modifiers on {obj.name}: {e}")
 
         if _ov.active:
@@ -1507,7 +1507,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
 
         try:
             bpy.ops.object.join()
-        except Exception as e:
+        except RuntimeError as e:
             print(f"Join failed: {e}")
 
         if _ov.active:
@@ -1519,8 +1519,8 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
         # Shade flat and assign material
         try:
             bpy.ops.object.shade_flat()
-        except Exception:
-            pass
+        except RuntimeError as e:
+            print(f"Failed to shade flat on {merged_obj.name}: {e}")
 
         # restore selection / active if needed (optional)
         bpy.ops.object.select_all(action='DESELECT')
