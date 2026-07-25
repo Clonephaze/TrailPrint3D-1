@@ -165,6 +165,8 @@ def read_igc(filepath):
 
                 except (ValueError, IndexError) as e:
                     print(f"Error parsing IGC line: {line.strip()}")
+                    if bpy.app.debug:
+                        print(f"Exception details: {e}")
                     continue
 
     bpy.context.scene.tp3d["o_verticesPath"] = "Path vertices: " + str(len(coordinates))
