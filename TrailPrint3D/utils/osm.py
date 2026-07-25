@@ -558,17 +558,17 @@ def _classify_element(element, active_kinds, settings=None):
         natural  = tags.get("natural", "")
         water    = tags.get("water", "")
         waterway = tags.get("waterway", "")
-        if natural == "water":
-            if settings is None or settings.water_ponds:
-                return "WATER"
-        if water in {"river", "lake", "stream", "canal"}:
-            if settings is None or settings.water_ponds:
-                return "WATER"
-        if waterway in {"stream", "river", "canal", "ditch", "drain"}:
-            if settings is None or settings.water_small_rivers:
-                return "WATER"
-            elif settings is not None and settings.water_big_rivers and tags.get("wikidata"):
-                return "WATER"
+
+        is_pond_or_lake = natural == "water" or water in {"river", "lake", "stream", "canal"}
+        is_small_river  = waterway in {"stream", "river", "canal", "ditch", "drain"}
+        is_big_river    = is_small_river and tags.get("wikidata")
+
+        ponds_on = settings is None or settings.water_ponds
+        small_on = settings is None or settings.water_small_rivers
+        big_on   = settings is not None and settings.water_big_rivers
+
+        if (is_pond_or_lake and ponds_on) or (is_small_river and small_on) or (is_big_river and big_on):
+            return "WATER"
 
     # FOREST
     if "FOREST" in active_kinds:
