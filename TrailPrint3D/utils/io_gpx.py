@@ -160,8 +160,7 @@ def read_igc(filepath):
 
                     coordinates.append((lat, lon, elevation, timestamp))
 
-                    if elevation < lowestElevation:
-                        lowestElevation = elevation
+                    lowestElevation = min(lowestElevation, elevation)
 
                 except (ValueError, IndexError) as e:
                     print(f"Error parsing IGC line: {line.strip()}")
