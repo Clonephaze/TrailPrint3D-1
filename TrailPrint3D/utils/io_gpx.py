@@ -146,7 +146,7 @@ def read_igc(filepath):
                         lon = -lon
 
                     # Extract pressure altitude (in meters)
-                    pressure_alt = int(line[25:30])
+                    _pressure_alt = int(line[25:30]) # if used in the future, remove _ which signifies not using the variable to the IDE
 
                     # Extract GPS altitude (in meters)
                     gps_alt = int(line[30:35])
