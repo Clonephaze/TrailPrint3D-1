@@ -69,10 +69,6 @@ def selectBottomFaces(obj):
     # Threshold for downward-facing
     threshold = -0.95
 
-    # Object world matrix for local-to-global transformation
-    world_matrix = obj.matrix_world
-
-
     for f in mesh.faces:
         if f.normal.normalized().z < threshold:
             f.select = True  # Optional: visually select in viewport
@@ -124,10 +120,6 @@ def selectTopFaces(obj):
 
     # Threshold for downward-facing
     threshold = 0.99
-
-    # Object world matrix for local-to-global transformation
-    world_matrix = obj.matrix_world
-
 
     for f in mesh.faces:
         if f.normal.normalized().z > threshold:
