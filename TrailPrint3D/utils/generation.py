@@ -896,7 +896,7 @@ def _rg_assign_materials(obj, curveObjs, textobj, plateobj, props, shellobj=None
         writeMetadata,  # deferred to avoid circular import at load time
     )
 
-    shape = props['shape'] if "shape" in props else None
+    shape = props.get('shape', None)
 
     bpy.ops.object.select_all(action='DESELECT')
 
