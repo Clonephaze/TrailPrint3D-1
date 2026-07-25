@@ -91,7 +91,7 @@ def appendCollection():
                         break
 
                 return_obj = obj
-            if "objSize" in obj.keys():
+            if "objSize" in obj:
                 scaleFactor = 1/100 * bpy.context.scene.tp3d.objSize
                 obj.scale = (scaleFactor, scaleFactor, scaleFactor)
 
