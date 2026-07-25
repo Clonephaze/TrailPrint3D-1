@@ -196,18 +196,20 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
 
     if kind == "WATER":
         col_Area = (bpy.context.scene.tp3d.col_wArea)
-    if kind == "FOREST":
+    elif kind == "FOREST":
         col_Area = (bpy.context.scene.tp3d.col_fArea)
-    if kind == "SCREE":
+    elif kind == "SCREE":
         col_Area = (bpy.context.scene.tp3d.col_scrArea)
-    if kind == "CITY":
+    elif kind == "CITY":
         col_Area = (bpy.context.scene.tp3d.col_cArea)
-    if kind == "GREENSPACE":
+    elif kind == "GREENSPACE":
         col_Area = (bpy.context.scene.tp3d.col_grArea)
-    if kind == "FARMLAND":
+    elif kind == "FARMLAND":
         col_Area = (bpy.context.scene.tp3d.col_faArea)
-    if kind == "GLACIER":
+    elif kind == "GLACIER":
         col_Area = (bpy.context.scene.tp3d.col_glArea)
+    else:
+        col_Area = 0.0
 
     elementMode = (bpy.context.scene.tp3d.elementMode)
     exportformat = "STL"
