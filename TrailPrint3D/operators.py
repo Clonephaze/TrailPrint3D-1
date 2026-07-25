@@ -50,7 +50,7 @@ class TP3D_OT_shapely_status(bpy.types.Operator):
 
     def execute(self, context):
         from .utils import geometry2d as _g2d
-        err_text = str(_g2d._SHAPELY_IMPORT_ERROR) if _g2d._SHAPELY_IMPORT_ERROR is not None else _("Unknown error")
+        _err_text = str(_g2d._SHAPELY_IMPORT_ERROR) if _g2d._SHAPELY_IMPORT_ERROR is not None else _("Unknown error")
 
         def _draw(popup_self, context):
             col = popup_self.layout.column(align=True)
