@@ -1758,9 +1758,8 @@ def exaggeratedLayers(objs):
 
         objs = list(bpy.context.scene.objects)
         for o in objs:
-            if "Object type" in o and "PARENT" in o:
-                if o["PARENT"] == obj and  o["Object type"] == "LINES":
-                    bpy.data.objects.remove(o, do_unlink=True)
+            if "Object type" in o and "PARENT" in o and o["PARENT"] == obj and  o["Object type"] == "LINES":
+                bpy.data.objects.remove(o, do_unlink=True)
 
         # Deselect everything
         bpy.ops.object.select_all(action='DESELECT')
@@ -1851,9 +1850,8 @@ def contourLines(objs):
 
         objs = list(bpy.context.scene.objects)
         for o in objs:
-            if "Object type" in o and "PARENT" in o:
-                if o["PARENT"] == obj and  o["Object type"] == "LINES":
-                    bpy.data.objects.remove(o, do_unlink=True)
+            if "Object type" in o and "PARENT" in o and o["PARENT"] == obj and  o["Object type"] == "LINES":
+                bpy.data.objects.remove(o, do_unlink=True)
 
         # Deselect everything
         bpy.ops.object.select_all(action='DESELECT')
