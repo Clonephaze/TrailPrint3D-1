@@ -396,7 +396,9 @@ def toggle_console():
 
 
 def importSVGtoMerge(Mapobject):
-    from .mesh_ops import merge_objects  # deferred to avoid circular import at load time
+    from .mesh_ops import (
+        merge_objects,  # deferred to avoid circular import at load time
+    )
 
     svg_path = bpy.context.scene.tp3d.svg_path
     extrude_depth = 0.01
