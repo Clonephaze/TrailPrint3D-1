@@ -183,7 +183,7 @@ def create_rectangle(width, height, num_subdivisions = 1, name="Rectangle"):
 
     # 2. Calculate cuts needed to keep cells square
     target_cell_size = width/cuts
-    cuts_y = max(0, int(round(height / target_cell_size)) - 1)
+    cuts_y = max(0, round(height / target_cell_size) - 1)
 
     # 3. Apply the cuts
     bpy.context.view_layer.objects.active = obj
