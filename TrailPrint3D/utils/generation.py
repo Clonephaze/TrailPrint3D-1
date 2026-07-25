@@ -263,7 +263,7 @@ def _rg_load_coordinates(flags, props):
         if "jmap_bbox" in flags:
             separate_paths.append([(props['jMapLat1'], props['jMapLon1'], 0, 0)])
             separate_paths.append([(props['jMapLat2'], props['jMapLon2'], 0, 0)])
-    except Exception as e:
+    except Exception:  # noqa: BLE001 — GPX/IGC parsing can raise many unpredictable types
         #show_message_box(f"Something went Wrong reading the GPX. Type {type}")
         _progress.WarningsOverlay.add_warning("Something went Wrong reading the GPX file", "error")
         return None
@@ -783,7 +783,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                 recalculateNormals(survivingCurveObjs[j])
                 boolean_operation(survivingCurveObjs[j], thickerCurves[i])
 
-    if props['elementMode'] == "SEPARATE" and 1 == 0:
+    if props['elementMode'] == "SEPARATE" and False:
         for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
 
             elem_obj = terrain.get(key)
@@ -1418,7 +1418,7 @@ def runGeneration(type, locked_scale=None):
                 create_curve_from_coordinates(crds)
             bpy.ops.object.join()
             curveObjs = [bpy.context.view_layer.objects.active]
-    except Exception as e:
+    except RuntimeError:
         show_message_box("Bad Response from API while creating the curve. If this happens everytime contact dev")
         overlay.finish()
         return
@@ -2143,7 +2143,7 @@ def generateJustTrail(material="TRAIL"):
 
     try:
         separate_paths = read_gpx_file()
-    except Exception as e:
+    except Exception:  # noqa: BLE001 — GPX/IGC parsing can raise many unpredictable types
         show_message_box(f"Something went Wrong reading the GPX. Type {type}")
     coordinates = [item for sublist in separate_paths for item in sublist]
 
@@ -2185,7 +2185,7 @@ def generateJustTrail(material="TRAIL"):
 
                 bpy.ops.object.join()
                 curveObj = bpy.context.view_layer.objects.active
-    except Exception as e:
+    except RuntimeError as e:
         show_message_box(e)
 
 
