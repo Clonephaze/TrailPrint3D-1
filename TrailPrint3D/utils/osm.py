@@ -1281,7 +1281,12 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
 
     lats = math.ceil((maxLat - minLat) / lat_step)
     lons = math.ceil((maxLon - minLon) / lon_step)
-
+    
+    _ov = _progress.ProgressOverlay.get()
+    created_objects = []
+    original_active = None
+    original_selection = []
+    any_adjusted = False
 
     if lats * lons < 20:
         for k in range(lats):
@@ -1289,7 +1294,6 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
                 _cntr = (k) * lons + l + 1
                 _maxcntr = lats * lons
                 print(f"Roads loop: {_cntr}/{_maxcntr}")
-                _ov = _progress.ProgressOverlay.get()
                 if _ov.active:
                     _ov.update(message=f"Roads: tile {_cntr}/{_maxcntr} — processing…")
                     _ov.set_fetch_progress('roads', 0.0)
@@ -1443,7 +1447,6 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
                     _ov.update(message=f"Roads: tile {_cntr}/{_maxcntr} — creating {n_roads} road mesh…")
 
                 # Create mesh objects for each group
-                created_objects = []
                 for key in sorted(groups.keys()):
                     group = groups[key]
                     if not group['verts'] or not group['faces']:
