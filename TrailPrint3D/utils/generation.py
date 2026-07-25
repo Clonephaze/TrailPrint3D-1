@@ -245,7 +245,7 @@ def _rg_load_coordinates(flags, props):
     try:
         if "gpx_file" in flags and "trail_map" not in flags:
             separate_paths = read_gpx_file()
-        if "gpx_chain" in flags not in flags:
+        if "gpx_chain" in flags:
             separate_paths_by_file = read_gpx_directory(props['gpx_chain_path'])
             separate_paths = [seg for file_segs in separate_paths_by_file for seg in file_segs]
         if "jmap" in flags:
