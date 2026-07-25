@@ -1617,7 +1617,7 @@ def fetch_coastline_ways(prefetched_tiles, scaleHor):
     chains = []
     seen_way_ids = set()
 
-    for bbox, (data, _from_cache) in prefetched_tiles.items():
+    for bbox, (data, _from_cache) in prefetched_tiles.values():
         if not data or "elements" not in data:
             continue
 
