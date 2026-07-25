@@ -2076,8 +2076,6 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
 
         _rg_assign_materials(zobj, curveObjs, None, None, props)
 
-        #utils.export_to_STL(zobj)
-
     # Mark all tiles done in the preview
     if _mp_tiles_info:
         for _info in _mp_tiles_info:
