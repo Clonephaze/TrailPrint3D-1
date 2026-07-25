@@ -597,9 +597,8 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     # the mesh operations for that kind are complete.
     if _ov.active:
         for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS:
-            if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1) and map_km <= max_size:
-                if _all_prefetched.get(key.upper()):
-                    _ov.set_fetch_ready(key)
+            if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1) and map_km <= max_size and _all_prefetched.get(key.upper()):
+                _ov.set_fetch_ready(key)
         # Buildings, roads, and ocean are pre-fetched in the same batch but aren't
         # in COLORING_ELEMENTS, so mark them ready here too.
         if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE and _all_prefetched.get('BUILDINGS'):
