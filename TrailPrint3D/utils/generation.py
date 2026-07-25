@@ -214,9 +214,14 @@ def _rg_load_coordinates(flags, props):
 
     Returns (coordinates, separate_paths, coordinates2) or None on error.
     """
-    from .primitives import setupColors  # deferred to avoid circular import at load time
-    from .io_gpx import read_gpx_file, read_gpx_directory  # deferred to avoid circular import at load time
     from .geo import move_coordinates  # deferred to avoid circular import at load time
+    from .io_gpx import (  # deferred to avoid circular import at load time
+        read_gpx_directory,
+        read_gpx_file,
+    )
+    from .primitives import (
+        setupColors,  # deferred to avoid circular import at load time
+    )
 
     setupColors()
 
