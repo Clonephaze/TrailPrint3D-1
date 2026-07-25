@@ -1500,7 +1500,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
 
         if _ov.active:
             _ov.set_fetch_progress('roads', 0.65)
-            _ov.update(message=f"Roads: Merge road segments into single object")
+            _ov.update(message="Roads: Merge road segments into single object")
 
 
         # Merge (join) all created objects into a single object
@@ -1548,7 +1548,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
         bpy.ops.object.mode_set(mode='OBJECT')
 
         if _ov.active:
-            _ov.update(message=f"Roads: Remeshing roads for clean geometry")
+            _ov.update(message="Roads: Remeshing roads for clean geometry")
             _ov.set_fetch_progress('roads', 0.75)
 
         remeshClearing(roads, 0.2, 0, map)
