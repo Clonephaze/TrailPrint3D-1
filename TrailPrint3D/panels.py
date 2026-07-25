@@ -36,7 +36,7 @@ class TP3D_PT_generate(bpy.types.Panel):
         if update_available and addon_preferences.get_prefs().dismissed_update_version != latest_str:
             box = layout.box()
             header = box.row()
-            header.label(text=_(f"Update available: v{latest_str}"), icon='FUND')
+            header.label(text=_("Update available: v%s") % latest_str, icon='FUND')
             header.operator("tp3d.dismiss_update", text="", icon='X', emboss=False).version = latest_str
             col = box.column(align=True)
             col.scale_y = 1.3
