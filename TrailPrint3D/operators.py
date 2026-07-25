@@ -2048,11 +2048,11 @@ def _collect_existing_maps():
             cx, cy, _ = obj.matrix_world.translation
             R = const.R
 
-            def lon_of(x):
-                return math.degrees(x / (R * scale_hor))
+            def lon_of(x, _R=R, _s=scale_hor):
+                return math.degrees(x / (_R * _s))
 
-            def lat_of(y):
-                return math.degrees(2 * math.atan(math.exp(y / (R * scale_hor))) - math.pi / 2)
+            def lat_of(y, _R=R, _s=scale_hor):
+                return math.degrees(2 * math.atan(math.exp(y / (_R * _s))) - math.pi / 2)
 
             bounds = {
                 "north": lat_of(cy + half_h), "south": lat_of(cy - half_h),
@@ -2518,9 +2518,8 @@ class TP3D_OT_append_collection(bpy.types.Operator):
             obj_2d_offset = obj_2d
             if "xTerrainOffset" in obs or "yTerrainOffset" in obs:
                 obj_2d_offset = Vector((obs.location.x - obs["xTerrainOffset"], obs.location.y - obs["yTerrainOffset"]))
-            if (obj_2d - target_2d).length <= 0.1 or (obj_2d - target_2d_offset).length <= 0.1:
-                bpy.data.objects.remove(obs, do_unlink=True)
-            elif (obj_2d_offset - target_2d).length <= 0.1 or (obj_2d_offset - target_2d_offset).length <= 0.1:
+            if ((obj_2d - target_2d).length <= 0.1 or (obj_2d - target_2d_offset).length <= 0.1
+                    or (obj_2d_offset - target_2d).length <= 0.1 or (obj_2d_offset - target_2d_offset).length <= 0.1):
                 bpy.data.objects.remove(obs, do_unlink=True)
         bpy.ops.object.select_all(action='DESELECT')
 
