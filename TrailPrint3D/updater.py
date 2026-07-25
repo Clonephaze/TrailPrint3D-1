@@ -74,12 +74,9 @@ def _check_worker():
             if ver > const.ADDON_VERSION and html_ver > const.ADDON_VERSION
             else "up_to_date"
         )
-    except Exception as e:
+    except (requests.RequestException, ValueError) as e:
         status = "error"
         error_message = str(e)
-
-
-def start_check():
     """Start a background version check. Non-blocking."""
     global status
     status = "checking"
@@ -116,7 +113,7 @@ def _check_premium_worker():
         premium_latest_version = ver
         premium_post_url = post_url
         premium_status = "update_available" if ver > const.ADDON_VERSION else "up_to_date"
-    except Exception as e:
+    except (requests.RequestException, ValueError) as e:
         premium_status = "error"
         premium_error_message = str(e)
 
@@ -156,14 +153,14 @@ def _install_timer():
         if 'FINISHED' not in result:
             status = "error"
             error_message = f"Install operator returned {result}"
-    except Exception as e:
+    except RuntimeError as e:
         status = "error"
         error_message = str(e)
         print(f"TrailPrint3D updater: install exception: {e}")
     finally:
         try:
             os.remove(path)
-        except Exception as e:
+        except OSError as e:
             print(f"TrailPrint3D updater: could not remove temp zip: {e}")
     return None  # don't repeat
 
@@ -196,5 +193,5 @@ def download_and_install():
         bpy.app.timers.register(_install_timer, first_interval=0.5)
         return True, None
 
-    except Exception as e:
+    except (requests.RequestException, OSError) as e:
         return False, str(e)
