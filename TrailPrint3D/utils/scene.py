@@ -26,7 +26,7 @@ def zoom_camera_to_objects(objs):
     if not objs:
         return
     try:
-        objs[0].select_set  # raises ReferenceError if the object was freed
+        _ = objs[0].select_set  # raises ReferenceError if the object was freed
     except ReferenceError:
         return
 
@@ -69,7 +69,7 @@ def set_origin_to_3d_cursor_objects(objs):
     if not objs:
         return
     try:
-        objs[0].select_set  # raises ReferenceError if the object was freed
+        _ = objs[0].select_set  # raises ReferenceError if the object was freed
     except ReferenceError:
         return
 
