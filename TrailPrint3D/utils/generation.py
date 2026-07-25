@@ -812,7 +812,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
 
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
-            _ov.update(message=f"Applying Single-color Mode…")
+            _ov.update(message="Applying Single-color Mode…")
         # Maps key -> thicker mesh object, filled as each element is processed.
         thicker_by_key = {}
 
