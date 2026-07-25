@@ -9,7 +9,7 @@ from mathutils import Vector  # type: ignore
 from .mesh_ops import recalculateNormals
 
 try:
-    from ..premium.utils_pe import textIcon
+    from ..premium.utils_pe import textIcon  # type: ignore[import]
 except ImportError:
     def textIcon(*_):
         return None
@@ -484,7 +484,10 @@ def _add_medal_handle(plate_obj, thickness, style, bevel_amount):
 
 def HexagonInnerText(MapObject):
 
-    from . import transform_MapObject, projection  # deferred to avoid circular import at load time
+    from . import (  # deferred to avoid circular import at load time
+        projection,
+        transform_MapObject,
+    )
 
     size = bpy.context.scene.tp3d.objSize
     name = bpy.context.scene.tp3d.modelname
