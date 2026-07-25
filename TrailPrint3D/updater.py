@@ -186,8 +186,7 @@ def download_and_install():
 
         install_zip = os.path.join(tempfile.gettempdir(), "TrailPrint3D_update.zip")
         with open(install_zip, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=32768):
-                f.write(chunk)
+            f.writelines(resp.iter_content(chunk_size=32768))
 
         _pending_install_zip = install_zip
         bpy.app.timers.register(_install_timer, first_interval=0.5)
