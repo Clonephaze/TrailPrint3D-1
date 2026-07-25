@@ -52,7 +52,7 @@ def _fetch_tiles_parallel(tasks, kind, semaphore, settings=None, max_workers=4):
             try:
                 result = fetch_osm_data(bbox, kind, return_cache_status=True,
                                         settings=settings)
-            except Exception as e:
+            except (OSError, ValueError, KeyError) as e:
                 print(f"[_fetch_tiles_parallel] tile {bbox} failed: {e}")
                 return
         if result:
@@ -121,7 +121,7 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
             semaphore.acquire()
         try:
             tile_result = fetch_osm_combined(bbox, kinds, settings=settings, tile_progress=tile_progress)
-        except Exception as e:
+        except (OSError, ValueError, KeyError) as e:
             print(f"[_fetch_all_kinds_parallel] tile {bbox} failed: {e}")
             return
         finally:
@@ -285,7 +285,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                         src = "cache" if from_cache else "Overpass"
                         print(f"OSM tile ({kind}): loaded from {src} (on-demand)")
 
-                except Exception as e:
+                except (OSError, ValueError, KeyError) as e:
                     show_message_box(f"Something went wrong with fetching OSM data: {e}")
                     _progress.WarningsOverlay.add_warning(f"Something went wrong with fetching OSM data: {e}", "error")
                     continue
