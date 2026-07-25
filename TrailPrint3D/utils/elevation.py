@@ -6,7 +6,7 @@ import struct
 import time
 import zipfile
 import zlib
-from datetime import date, datetime
+from datetime import datetime, timezone
 
 import bpy  # type: ignore
 import requests  # type: ignore
@@ -47,8 +47,8 @@ def update_request_counter():
 
     api = bpy.context.scene.tp3d.api
 
-    today_date = date.today().isoformat()
-    today_month = date.today().month
+    today_date = datetime.now(tz=timezone.utc).date().isoformat()
+    today_month = datetime.now(tz=timezone.utc).date().month
     count_openTopodata, date_openTopoData, count_openElevation, date_openElevation = load_counter()
 
     # Reset counter if the date has changed
@@ -73,7 +73,7 @@ def send_api_request(addition = ""):
     api = bpy.context.scene.tp3d.api
 
     request_count = update_request_counter()
-    now = datetime.now()
+    now = datetime.now(tz=timezone.utc)
     if api == "OPENTOPODATA":
         print(f"{now.hour:02d}:{now.minute:02d} | Fetching: {addition} | API Usage: {request_count} | {dataset}")
     elif api == "OPEN-ELEVATION":
@@ -407,7 +407,7 @@ def get_elevation_TerrainTiles(coords, lenv=0, pointsDone=0, zoom=10, progress_c
     for i, ((xtile, ytile), idx_lat_lon_list) in enumerate(tile_dict.items(), 1):
         percent_complete = int((i/ total_tiles) * 100)
         if percent_complete in progress_intervals:
-            print(f"{datetime.now().strftime('%H:%M:%S')} - Elevation {percent_complete}% complete, {i}")
+            print(f"{datetime.now(tz=timezone.utc).strftime('%H:%M:%S')} - Elevation {percent_complete}% complete, {i}")
             progress_intervals.remove(percent_complete)
             if progress_cb:
                 progress_cb(percent_complete)
@@ -520,7 +520,7 @@ def get_elevation_Mapterhorn(coords, lenv=0, pointsDone=0, zoom=10, progress_cb=
     for i, ((xtile, ytile), idx_lat_lon_list) in enumerate(tile_dict.items(), 1):
         percent_complete = int((i / total_tiles) * 100)
         if percent_complete in progress_intervals:
-            print(f"{datetime.now().strftime('%H:%M:%S')} - Mapterhorn elevation {percent_complete}% ({i}/{total_tiles})")
+            print(f"{datetime.now(tz=timezone.utc).strftime('%H:%M:%S')} - Mapterhorn elevation {percent_complete}% ({i}/{total_tiles})")
             progress_intervals.discard(percent_complete)
             if progress_cb:
                 progress_cb(percent_complete)
