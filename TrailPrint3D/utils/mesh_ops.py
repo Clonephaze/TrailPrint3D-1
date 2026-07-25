@@ -2408,8 +2408,7 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
             v.select = True
         else:
             v.select = False
-            if v.co.z < lowestVert:
-                lowestVert = v.co.z
+            v.co.z = min(lowestVert, v.co.z)
 
 
     if flatBottom == False: #Extrudes terrain shape down 1mm
