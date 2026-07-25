@@ -322,7 +322,6 @@ def create_circle(radius, num_subdivisions = 1, name = "Circle", num_segments=64
 
     # Generate circle vertices
     verts = []
-    faces = []
 
     for i in range(num_segments):
         angle = math.radians(360 * i / num_segments)
