@@ -331,6 +331,8 @@ def _rg_create_map_object(flags, props, modelname, centerx, centery):
     xTerrainOffset = props['xTerrainOffset']
     yTerrainOffset = props['yTerrainOffset']
 
+    MapObject = None
+
     if "append_collection" not in flags and "use_active_object" not in flags:
         print(f"[map_object] creating '{shape}' N={num_subdivisions} size={size:.1f}…")
         _t_shape = time.time()
