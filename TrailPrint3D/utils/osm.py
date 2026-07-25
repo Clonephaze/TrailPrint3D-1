@@ -1,4 +1,5 @@
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -13,7 +14,6 @@ from mathutils import Vector  # type: ignore
 
 from .. import constants as const
 from .. import progress as _progress
-import itertools
 
 
 class OsmFetchSettings(NamedTuple):
