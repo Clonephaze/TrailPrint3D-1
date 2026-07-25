@@ -226,10 +226,8 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     total_fetched = 0
     _api_empty    = False   # set True when OSM responded with 0 usable features
 
-    if maxLat - minLat < lat_step:
-        lat_step = maxLat - minLat
-    if maxLon - minLon < lon_step:
-        lon_step = maxLon - minLon
+    lat_step = min(lat_step, maxLat - minLat)
+    lon_step = min(lon_step, maxLon - minLon)
 
     lats = math.ceil((maxLat - minLat) / lat_step)
     lons = math.ceil((maxLon - minLon) / lon_step)
@@ -740,8 +738,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
         lowestVert = 100
         for v in bm.verts:
             if abs(v.co.z - min_z) > tol and v.co.z >= bpy.context.scene.tp3d.minThickness:
-                if v.co.z < lowestVert:
-                    lowestVert = v.co.z
+                lowestVert = min(lowestVert, v.co.z)
         for v in bm.verts:
             if abs(v.co.z - min_z) < tol:
                 v.co.z = lowestVert - 1
