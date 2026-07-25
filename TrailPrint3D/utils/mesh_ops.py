@@ -2,6 +2,7 @@ import math
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
+from bpy.app.translations import pgettext_iface as _  # type: ignore
 from mathutils import Matrix, Vector, bvhtree  # type: ignore
 
 
@@ -49,6 +50,9 @@ def recalculateNormals(obj, ins = False):
 
 
 def selectBottomFaces(obj):
+
+    if obj is None or obj.type != 'MESH':
+        raise TP3D_MeshSelectionError(_("Please select a mesh object."))
 
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
@@ -111,7 +115,7 @@ def getBottomFacesArea(obj):
 
 def selectTopFaces(obj):
     if obj is None or obj.type != 'MESH':
-        raise Exception("Please select a mesh object.")
+        raise TP3D_MeshSelectionError(_("Please select a mesh object."))
 
 
     # Enter Edit Mode
