@@ -5,6 +5,10 @@ import bpy  # type: ignore
 from mathutils import Matrix, Vector, bvhtree  # type: ignore
 
 
+class TP3D_MeshSelectionError(Exception):
+    """Raised when a mesh operation receives an invalid object selection."""
+
+
 def applyModifier(obj, modifier):
         depsgraph = bpy.context.evaluated_depsgraph_get()
         eval_obj = obj.evaluated_get(depsgraph)
