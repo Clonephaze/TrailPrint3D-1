@@ -1,7 +1,7 @@
 import math
 
 import bpy  # type: ignore
-import numpy as np
+import numpy as np  # type: ignore
 
 from .. import constants as const
 
