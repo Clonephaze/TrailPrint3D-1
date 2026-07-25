@@ -146,12 +146,24 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
 
 
 def coloring_main(map, kind="WATER", prefetched_tiles=None):
-    from .osm import fetch_osm_data, build_osm_nodes, extract_multipolygon_bodies  # deferred to avoid circular import at load time
-    from .geo import convert_to_blender_coordinates  # deferred to avoid circular import at load time
-    from .mesh_ops import merge_objects  # deferred to avoid circular import at load time
-    from .scene import show_message_box  # deferred to avoid circular import at load time
-    from .metadata import writeMetadata  # deferred to avoid circular import at load time
     from . import geometry2d as _g2d  # Shapely-based 2D geometry helpers
+    from .geo import (
+        convert_to_blender_coordinates,  # deferred to avoid circular import at load time
+    )
+    from .mesh_ops import (
+        merge_objects,  # deferred to avoid circular import at load time
+    )
+    from .metadata import (
+        writeMetadata,  # deferred to avoid circular import at load time
+    )
+    from .osm import (  # deferred to avoid circular import at load time
+        build_osm_nodes,
+        extract_multipolygon_bodies,
+        fetch_osm_data,
+    )
+    from .scene import (
+        show_message_box,  # deferred to avoid circular import at load time
+    )
 
     _t_color = time.time()          # master timer: whole coloring_main
     _t_tiles_total = 0.0            # accumulated OSM fetch + Shapely ring building
@@ -471,7 +483,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     # Shift vertex coords so the object origin sits at the 3D cursor.
     # Keeps vertex coordinates close to zero and avoids float32 precision
     # artifacts when the map is far from the world origin.
-    import numpy as _np
+    import numpy as _np  # type: ignore
     _cursor = bpy.context.scene.cursor.location.copy()
     _me = merged_object.data
     _co = _np.empty(len(_me.vertices) * 3, dtype=_np.float32)
@@ -775,8 +787,10 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
 
     up_threshold = dot(normal, Z) must be greater than this value.
     """
-    from .mesh_ops import recalculateNormals  # deferred to avoid circular import at load time
     from . import geometry2d as _g2d
+    from .mesh_ops import (
+        recalculateNormals,  # deferred to avoid circular import at load time
+    )
 
     if map_obj.type != 'MESH' or terrain_obj.type != 'MESH':
         print("Both inputs must be mesh objects.")
@@ -829,7 +843,10 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
 
 
 def plateInsert(plate, map):
-    from .mesh_ops import selectBottomFaces, recalculateNormals  # deferred to avoid circular import at load time
+    from .mesh_ops import (  # deferred to avoid circular import at load time
+        recalculateNormals,
+        selectBottomFaces,
+    )
 
     bpy.ops.object.select_all(action="DESELECT")
 
@@ -1403,8 +1420,10 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
 
     Returns a Blender mesh object or None.
     """
-    from .mesh_ops import merge_objects  # deferred to avoid circular import at load time
-    from . import geometry2d as _g2d    # Shapely-based 2D geometry helpers
+    from . import geometry2d as _g2d  # Shapely-based 2D geometry helpers
+    from .mesh_ops import (
+        merge_objects,  # deferred to avoid circular import at load time
+    )
 
     ocean_faces = []
 
@@ -1620,10 +1639,17 @@ def createOcean(prefetched_coastline, scaleHor, tile):
     scaleHor             : float  horizontal scale factor
     tile                 : bpy.types.Object  the map mesh (used for location)
     """
-    from .osm import fetch_coastline_ways  # deferred to avoid circular import at load time
-    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
-    from .mesh_ops import projection, recalculateNormals  # deferred to avoid circular import at load time
     from .. import constants as _const  # deferred to avoid circular import at load time
+    from .mesh_ops import (  # deferred to avoid circular import at load time
+        projection,
+        recalculateNormals,
+    )
+    from .osm import (
+        fetch_coastline_ways,  # deferred to avoid circular import at load time
+    )
+    from .scene import (
+        set_origin_to_3d_cursor,  # deferred to avoid circular import at load time
+    )
 
     _t_ocean = time.time()
 
@@ -1707,8 +1733,12 @@ def createOcean(prefetched_coastline, scaleHor, tile):
 
 
 def exaggeratedLayers(objs):
-    from .scene import show_message_box  # deferred to avoid circular import at load time
-    from .metadata import writeMetadata  # deferred to avoid circular import at load time
+    from .metadata import (
+        writeMetadata,  # deferred to avoid circular import at load time
+    )
+    from .scene import (
+        show_message_box,  # deferred to avoid circular import at load time
+    )
 
     selected_objects = objs
 
@@ -1795,8 +1825,12 @@ def exaggeratedLayers(objs):
     bpy.context.view_layer.objects.active = selected_objects[0]
 
 def contourLines(objs):
-    from .scene import show_message_box  # deferred to avoid circular import at load time
-    from .metadata import writeMetadata  # deferred to avoid circular import at load time
+    from .metadata import (
+        writeMetadata,  # deferred to avoid circular import at load time
+    )
+    from .scene import (
+        show_message_box,  # deferred to avoid circular import at load time
+    )
 
     selected_objects = objs
     cl_thickness = bpy.context.scene.tp3d.cl_thickness
