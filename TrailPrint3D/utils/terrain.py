@@ -245,6 +245,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     cntr = 0
     maxcntr = lats * lons
     _t_tiles_start = time.time()
+    _ov = _progress.ProgressOverlay.get()
     if lats * lons < 20 or prefetched_tiles is not None:
         for k in range(lats):
             for l in range(lons):
