@@ -635,6 +635,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
 
     new_mesh = _apply_boolean(merged_object, 'MANIFOLD')
     solver_used = 'MANIFOLD'
+    result_zs: list = []
 
     if new_mesh.vertices:
         result_zs = [v.co.z for v in new_mesh.vertices]
