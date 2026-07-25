@@ -819,46 +819,45 @@ def intersect_alltrails_with_existing_box(cutobject):
     boolObjects = []
     trail_mesh = None
     for robj in bpy.data.objects:
-        if "_Trail" in robj.name and robj.type in {'CURVE', 'MESH'}:
-            if not robj.hide_get():
-                # Convert curve to mesh
-                if robj.type == 'CURVE':
-                    bpy.context.view_layer.objects.active = robj
-                    bpy.ops.object.select_all(action='DESELECT')
-                    robj2 = robj.copy()
-                    robj2.data = robj.data.copy()
-                    bpy.context.collection.objects.link(robj2)
-                    robj2.select_set(True)
-                    bpy.ops.object.convert(target='MESH')
-                    trail_mesh = robj2
+        if "_Trail" in robj.name and robj.type in {'CURVE', 'MESH'} and not robj.hide_get():
+            # Convert curve to mesh
+            if robj.type == 'CURVE':
+                bpy.context.view_layer.objects.active = robj
+                bpy.ops.object.select_all(action='DESELECT')
+                robj2 = robj.copy()
+                robj2.data = robj.data.copy()
+                bpy.context.collection.objects.link(robj2)
+                robj2.select_set(True)
+                bpy.ops.object.convert(target='MESH')
+                trail_mesh = robj2
+            else:
+                trail_mesh = robj
+
+            #robj.hide_set(True)
+
+            if trail_mesh:
+                if trail_mesh.type == "MESH" and len(trail_mesh.data.vertices) > 0:
+                    # Check if any vertex is inside the cube
+                    for v in trail_mesh.data.vertices:
+                        global_coord = trail_mesh.matrix_world @ v.co
+                        if is_point_inside_cube(global_coord, cube_bb):
+                            # Apply Boolean modifier
+                            #print(f"{trail_mesh.name} is inside the Boundaries")
+                            if trail_mesh not in boolObjects:
+                                boolObjects.append(trail_mesh)
+                            #Set done to True so it doesnt delete the object later
+                            done = True
+                            #Change Collection
+                            continue  # No need to keep checking this object
+                        else:
+                            pass
+                            #print(f"{trail_mesh.name} is NOT inside the Boundaries")
                 else:
-                    trail_mesh = robj
+                    print("No Vertices for Trail Found")
+                    bpy.data.objects.remove(trail_mesh, do_unlink=True)
 
-                #robj.hide_set(True)
-
-                if trail_mesh:
-                    if trail_mesh.type == "MESH" and len(trail_mesh.data.vertices) > 0:
-                        # Check if any vertex is inside the cube
-                        for v in trail_mesh.data.vertices:
-                            global_coord = trail_mesh.matrix_world @ v.co
-                            if is_point_inside_cube(global_coord, cube_bb):
-                                # Apply Boolean modifier
-                                #print(f"{trail_mesh.name} is inside the Boundaries")
-                                if trail_mesh not in boolObjects:
-                                    boolObjects.append(trail_mesh)
-                                #Set done to True so it doesnt delete the object later
-                                done = True
-                                #Change Collection
-                                continue  # No need to keep checking this object
-                            else:
-                                pass
-                                #print(f"{trail_mesh.name} is NOT inside the Boundaries")
-                    else:
-                        print("No Vertices for Trail Found")
-                        bpy.data.objects.remove(trail_mesh, do_unlink=True)
-
-                #bpy.data.objects.remove(robj, do_unlink=True)
-                #break
+            #bpy.data.objects.remove(robj, do_unlink=True)
+            #break
     if done == False:
         bpy.data.objects.remove(cutobject, do_unlink=True)
         if trail_mesh and trail_mesh.name in bpy.data.objects:
