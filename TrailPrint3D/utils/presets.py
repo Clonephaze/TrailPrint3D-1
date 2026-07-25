@@ -31,7 +31,7 @@ def save_myproperties_to_csv(filename):
 
             try:
                 value = getattr(props, name)
-            except:
+            except AttributeError:
                 continue
 
             # Convert lists/tuples to string
@@ -175,13 +175,13 @@ def load_myproperties_from_csv(filename):
                     value = [float(v) for v in value.split(",")]
 
                 # strings stay strings
-            except:
+            except (ValueError, TypeError):
                 # Failed conversion → keep original
                 continue
 
             try:
                 setattr(props, name, value)
-            except:
+            except (AttributeError, TypeError):
                 pass
 
 def delete_preset_file(preset_name):
@@ -200,7 +200,7 @@ def delete_preset_file(preset_name):
         os.remove(filepath)
         print("Deleted:", filepath)
         return True
-    except Exception as e:
+    except OSError as e:
         print("Error deleting file:", e)
         return False
 
