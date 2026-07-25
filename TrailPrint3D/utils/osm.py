@@ -571,23 +571,20 @@ def _classify_element(element, active_kinds, settings=None):
             return "WATER"
 
     # FOREST
-    if "FOREST" in active_kinds:
-        if tags.get("natural") == "wood" or tags.get("landuse") == "forest":
-            return "FOREST"
+    if "FOREST" in active_kinds and (tags.get("natural") == "wood" or tags.get("landuse") == "forest"):
+        return "FOREST"
 
     # GLACIER
     if "GLACIER" in active_kinds and tags.get("natural") == "glacier":
         return "GLACIER"
 
     # SCREE
-    if "SCREE" in active_kinds:
-        if tags.get("natural") in {"scree", "stone", "boulder", "rock", "bare_rock"}:
-            return "SCREE"
+    if "SCREE" in active_kinds and (tags.get("natural") in {"scree", "stone", "boulder", "rock", "bare_rock"}):
+        return "SCREE"
 
     # CITY — urban land use
-    if "CITY" in active_kinds:
-        if tags.get("landuse") in {"residential", "urban", "commercial", "industrial"}:
-            return "CITY"
+    if "CITY" in active_kinds and (tags.get("landuse") in {"residential", "urban", "commercial", "industrial"}):
+        return "CITY"
 
     # GREENSPACE — parks and grassy areas
     if "GREENSPACE" in active_kinds:
@@ -602,9 +599,8 @@ def _classify_element(element, active_kinds, settings=None):
             return "GREENSPACE"
 
     # FARMLAND
-    if "FARMLAND" in active_kinds:
-        if tags.get("landuse") in {"farmland", "farmyard"}:
-            return "FARMLAND"
+    if "FARMLAND" in active_kinds and (tags.get("landuse") in {"farmland", "farmyard"}):
+        return "FARMLAND"
 
     # COASTLINE
     if "COASTLINE" in active_kinds and tags.get("natural") == "coastline":
