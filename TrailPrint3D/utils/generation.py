@@ -1,7 +1,6 @@
 import math
 import os
 import platform
-import random
 import threading
 import time
 
