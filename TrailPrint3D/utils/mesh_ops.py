@@ -900,7 +900,9 @@ def intersect_alltrails_with_existing_box(cutobject):
         cube.data.materials.clear()
         cube.data.materials.append(mat)
 
-        from .metadata import writeMetadata  # deferred to avoid circular import at load time
+        from .metadata import (
+            writeMetadata,  # deferred to avoid circular import at load time
+        )
         writeMetadata(cube,"TRAIL")
 
 
@@ -1058,7 +1060,9 @@ def intersect_trail_with_existing_box(cutobject,trail):
         cube.data.materials.clear()
         cube.data.materials.append(mat)
 
-        from .metadata import writeMetadata  # deferred to avoid circular import at load time
+        from .metadata import (
+            writeMetadata,  # deferred to avoid circular import at load time
+        )
         writeMetadata(cube,"TRAIL")
 
 
@@ -1395,7 +1399,8 @@ def _resolve_holder_font(font_filename):
     """
     if not font_filename:
         return None
-    import sys, os
+    import os
+    import sys
     if sys.platform != 'win32':
         return None
     candidate = f"C:/WINDOWS/FONTS/{font_filename}"
@@ -1414,7 +1419,9 @@ def _emboss_holder_text(holder_obj, text, outer_w, outer_h, wall_width, top_z,
     length.
     """
     from . import text_objects as txt  # deferred: text_objects imports from this module
-    from .primitives import setupColors  # deferred to avoid circular import at load time
+    from .primitives import (
+        setupColors,  # deferred to avoid circular import at load time
+    )
 
     text = (text or "").strip()
     if not text:
@@ -1494,7 +1501,9 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     `cut_into_puzzle_pieces` / `single_color_mode_curve`.
     """
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
-    from .primitives import setupColors  # deferred to avoid circular import at load time
+    from .primitives import (
+        setupColors,  # deferred to avoid circular import at load time
+    )
 
     objs = [o for o in (piece_objs or []) if o is not None]
     if not objs:
@@ -1707,7 +1716,9 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     # instead of the map it belongs to. Re-home it to the 3D cursor, which
     # createTerrainFromSelected's per-tile loop already parks at the map's
     # own location before trail processing runs.
-    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
+    from .scene import (
+        set_origin_to_3d_cursor,  # deferred to avoid circular import at load time
+    )
     set_origin_to_3d_cursor(crv)
 
     # Build the wider carving tool and cut the groove directly into `map`
@@ -2252,7 +2263,9 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
         # collapsing; shrinks the island holes by the same amount, giving a
         # matching gap around enclosed land; and extends the cutter past the
         # map edge at the boundary, so the terrain side walls get cut away too.
-        from .. import constants as _const  # deferred to avoid circular import at load time
+        from .. import (
+            constants as _const,  # deferred to avoid circular import at load time
+        )
         gap = tolerance * _const.SCM_ELEMENT_GAP_FACTOR
         if gap > 0:
             fp = fp.buffer(gap)
@@ -2470,7 +2483,9 @@ def merge_active_with_map(map_obj, active_obj):
     True otherwise -- including the "invalid active type" case, which only
     warns and lets the caller continue on to the next object.
     """
-    from .scene import show_message_box  # deferred to avoid circular import at load time
+    from .scene import (
+        show_message_box,  # deferred to avoid circular import at load time
+    )
 
     if map_obj is None:
         show_message_box("No Map Selected")
@@ -2516,8 +2531,10 @@ def merge_active_with_map(map_obj, active_obj):
 
 
 def projection(operation, Mapobject, obj):
-    from .terrain import color_map_faces_by_terrain  # deferred to avoid circular import at load time
     from .scene import remove_objects  # deferred to avoid circular import at load time
+    from .terrain import (
+        color_map_faces_by_terrain,  # deferred to avoid circular import at load time
+    )
 
     for label, o in (("Mapobject", Mapobject), ("obj", obj)):
         if o is None:
