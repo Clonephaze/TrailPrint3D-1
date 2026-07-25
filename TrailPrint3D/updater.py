@@ -78,7 +78,6 @@ def _check_worker():
         status = "error"
         error_message = str(e)
     """Start a background version check. Non-blocking."""
-    global status
     status = "checking"
     threading.Thread(target=_check_worker, daemon=True).start()
 
