@@ -58,9 +58,6 @@ def selectBottomFaces(obj):
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
 
-    if obj is None or obj.type != 'MESH':
-        raise Exception("Please select a mesh object.")
-
 
     # Enter Edit Mode
     bpy.ops.object.mode_set(mode='EDIT')
