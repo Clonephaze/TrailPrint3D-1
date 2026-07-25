@@ -115,7 +115,6 @@ def simplify_curve(points_with_extra, min_distance=0.1000):
             last_xyz = current_xyz
         else:
             skipped += 1
-            pass
 
     print(f"Smooth curve: Removed {skipped} vertices")
     return simplified
