@@ -1413,8 +1413,9 @@ def runGeneration(type, locked_scale=None):
     if bpy.app.debug:
         _t_slopes = []
         for edge in mesh.edges:
-            v1 = mesh.vertices[edge.vertices[0]].co
-            v2 = mesh.vertices[edge.vertices[1]].co
+            verts = tuple(edge.vertices)
+            v1 = mesh.vertices[verts[0]].co
+            v2 = mesh.vertices[verts[1]].co
             _h = math.sqrt((v2.x-v1.x)**2 + (v2.y-v1.y)**2)
             if _h > 0:
                 _t_slopes.append(abs(v2.z - v1.z) / _h)
