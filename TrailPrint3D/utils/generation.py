@@ -1260,12 +1260,9 @@ def runGeneration(type, locked_scale=None):
         obj_2d_offset = obj_2d
         if "xTerrainOffset" in obs or "yTerrainOffset" in obs:
             obj_2d_offset = Vector((obs.location.x - obs["xTerrainOffset"], obs.location.y - obs["yTerrainOffset"]))
-        if (
-            (obj_2d - target_2d).length <= 0.2
-            or (obj_2d - target_2d_offset).length <= 0.2
-            or (obj_2d_offset - target_2d).length <= 0.2
-            or (obj_2d_offset - target_2d_offset).length <= 0.2
-        ):
+        if (obj_2d - target_2d).length <= 0.2 or (obj_2d - target_2d_offset).length <= 0.2:
+            bpy.data.objects.remove(obs, do_unlink=True)
+        elif (obj_2d_offset - target_2d).length <= 0.2 or (obj_2d_offset - target_2d_offset).length <= 0.2:
             bpy.data.objects.remove(obs, do_unlink=True)
     bpy.ops.object.select_all(action='DESELECT')
 
@@ -1335,11 +1332,8 @@ def runGeneration(type, locked_scale=None):
         autoScale = scaleHor
     bpy.context.scene.tp3d.sAutoScale = autoScale
 
-    if not props['fixedElevationScale']:
-        if diff == 0:
-            _progress.WarningsOverlay.add_warning("Terrain seems to be really flat. If not intended, increase Elevation scale", icon="warn")
-        elif (diff / 1000) * autoScale * props['scaleElevation'] < 2:
-            _progress.WarningsOverlay.add_warning("Terrain seems to be really flat. If not intended, increase Elevation scale", icon="warn")
+    if not props['fixedElevationScale'] and (diff == 0 or (diff / 1000) * autoScale * props['scaleElevation'] < 2):
+        _progress.WarningsOverlay.add_warning("Terrain seems to be really flat. If not intended, increase Elevation scale", icon="warn")
 
     # Recalculate blender coords with elevation applied, simplify, deduplicate
     blender_coords = convert_to_blender_coordinates_batch(coordinates)
