@@ -622,14 +622,6 @@ def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
             # graze a near-vertical side wall and report a "successful" hit
             # at the wrong height.
             hit_ok = is_map_hit and hit_result[2].z >= 0.5
-            if not hit_ok:
-                if not hit_result[0]:
-                    reason = "no hit"
-                elif not is_map_hit:
-                    reason = f"hit non-map object"
-                else:
-                    reason = f"normal.z={hit_result[2].z:.2f} (not upward)"
-                hit_obj_name = hit_obj.name if hit_obj else None
             hits.append(curve_world_inv @ hit_result[1] if hit_ok else None)
 
         # Fill gaps from the nearest point along the spline that DID hit --
