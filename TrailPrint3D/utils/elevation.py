@@ -815,9 +815,7 @@ def fix_invalid_elevations(elevations):
     def is_invalid(e):
         if e < -500 or e > 9000:
             return True
-        if std > 0 and abs(e - mean) > 8 * std:
-            return True
-        return False
+        return bool(std > 0 and abs(e - mean) > 8 * std)
 
     count = sum(1 for e in elevations if is_invalid(e))
     if count == 0:
