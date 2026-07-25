@@ -177,9 +177,6 @@ def read_igc(filepath):
 def read_gpx_directory(directory_path):
     """Reads all GPX files in a directory and extracts coordinates, elevation, and timestamps."""
 
-    # Define GPX namespace
-    ns = {'default': 'http://www.topografix.com/GPX/1/1'}
-
     # List to store all coordinates from all GPX files, grouped by file.
     # Structure: [[seg1, seg2, ...], [seg1, ...], ...] — one inner list per file,
     # each inner list contains that file's track segments.
