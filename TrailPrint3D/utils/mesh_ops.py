@@ -2455,9 +2455,6 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
             bottom_drop = max(bottom_drop, 0.0)
         bpy.ops.transform.translate(value=(0, 0, bottom_drop), orient_type='LOCAL')
 
-        #bpy.ops.mesh.select_all(action='DESELECT')
-        pass
-
 
     bmesh.update_edit_mesh(mergeobject.data)
     bpy.ops.object.mode_set(mode="OBJECT")
