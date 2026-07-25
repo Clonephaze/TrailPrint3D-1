@@ -2432,9 +2432,9 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
         bm.faces.ensure_lookup_table()
 
         for v in bm.verts:
-                if v.co.z < lowestprojection:
-                    lowestprojection = v.co.z
-                if v.co.z < secondlowestprojection and v.co.z > lowestprojection:
+                
+                lowestprojection = min(lowestprojection, v.co.z)
+                if lowestprojection < v.co.z < secondlowestprojection:
                     secondlowestprojection = v.co.z
 
 
