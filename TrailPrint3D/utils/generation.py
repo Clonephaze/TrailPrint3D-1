@@ -1260,9 +1260,12 @@ def runGeneration(type, locked_scale=None):
         obj_2d_offset = obj_2d
         if "xTerrainOffset" in obs or "yTerrainOffset" in obs:
             obj_2d_offset = Vector((obs.location.x - obs["xTerrainOffset"], obs.location.y - obs["yTerrainOffset"]))
-        if (obj_2d - target_2d).length <= 0.2 or (obj_2d - target_2d_offset).length <= 0.2:
-            bpy.data.objects.remove(obs, do_unlink=True)
-        elif (obj_2d_offset - target_2d).length <= 0.2 or (obj_2d_offset - target_2d_offset).length <= 0.2:
+        if (
+            (obj_2d - target_2d).length <= 0.2
+            or (obj_2d - target_2d_offset).length <= 0.2
+            or (obj_2d_offset - target_2d).length <= 0.2
+            or (obj_2d_offset - target_2d_offset).length <= 0.2
+        ):
             bpy.data.objects.remove(obs, do_unlink=True)
     bpy.ops.object.select_all(action='DESELECT')
 
