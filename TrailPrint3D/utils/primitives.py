@@ -5,8 +5,6 @@ import bmesh  # type: ignore
 import bpy  # type: ignore
 from mathutils import Vector  # type: ignore
 
-from .text_objects import _apply_plate_bevel
-
 
 def _setup_material(name, color):
     if name not in bpy.data.materials:
