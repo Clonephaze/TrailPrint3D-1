@@ -849,7 +849,10 @@ def compute_and_store_tile_bounds(obj):
 
     Returns (world_verts, num_subdivisions, disable_cache, minLat, maxLat, minLon, maxLon).
     """
-    from .geo import convert_to_geo, haversine  # deferred to avoid circular import at load time
+    from .geo import (  # deferred to avoid circular import at load time
+        convert_to_geo,
+        haversine,
+    )
 
     mesh = obj.data
     vertices = list(mesh.vertices)
