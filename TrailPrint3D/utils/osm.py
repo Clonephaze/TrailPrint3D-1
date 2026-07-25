@@ -1452,7 +1452,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
                     mesh.from_pydata(group['verts'], [], group['faces'])
                     mesh.update(calc_edges=True)
 
-                    obj_name = f"Road_{str(key)}"
+                    obj_name = f"Road_{key!s}"
                     obj = bpy.data.objects.new(obj_name, mesh)
                     bpy.context.collection.objects.link(obj)
 
