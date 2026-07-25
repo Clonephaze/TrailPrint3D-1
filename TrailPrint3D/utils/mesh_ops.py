@@ -1889,8 +1889,6 @@ def single_color_mode_mesh_wireframe(original, map, tolerance = None):
             bpy.context.view_layer.objects.active = map
             bpy.ops.object.material_slot_remove()
 
-    return None
-
 
 def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
 
