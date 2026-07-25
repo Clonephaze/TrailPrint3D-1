@@ -886,7 +886,7 @@ def _build_terrain_height_sampler(bvh, x_min, x_max, y_min, y_max,
     appear on this is visually indistinguishable from per-vertex raycasting;
     raise *resolution* if roads/buildings cut into or float over steep terrain.
     """
-    import numpy as np
+    import numpy as np  # type: ignore
     ray_down = Vector((0, 0, -1))
     nx = ny = max(2, int(resolution))
     gxs = np.linspace(x_min, x_max, nx)
@@ -919,13 +919,20 @@ def _build_terrain_height_sampler(bvh, x_min, x_max, y_min, y_max,
 
 
 def create_buildings(map, default_height=10, scaleHor=1.0):
-    import numpy as np  # bundled wheel; deferred to keep module import light
-    from .geo import convert_to_blender_coordinates  # deferred to avoid circular import at load time
-    from .mesh_ops import recalculateNormals  # deferred to avoid circular import at load time
-    from .scene import remove_objects  # deferred to avoid circular import at load time
-    from .geometry2d import _earcut_triangulate  # deferred to avoid circular import at load time
-    from . import geometry2d as g2d  # deferred to avoid circular import at load time
+    import numpy as np  # type: ignore - deferred to keep module import light
     from mathutils.bvhtree import BVHTree  # type: ignore
+
+    from . import geometry2d as g2d  # deferred to avoid circular import at load time
+    from .geo import (
+        convert_to_blender_coordinates,  # deferred to avoid circular import at load time
+    )
+    from .geometry2d import (
+        _earcut_triangulate,  # deferred to avoid circular import at load time
+    )
+    from .mesh_ops import (
+        recalculateNormals,  # deferred to avoid circular import at load time
+    )
+    from .scene import remove_objects  # deferred to avoid circular import at load time
 
     # Mercator scale used by convert_to_blender_coordinates (it reads sScaleHor
     # from the scene). Read once so the vectorized node conversion matches.
@@ -1241,9 +1248,18 @@ def highway_default_width(highway):
 
 
 def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
-    from .geo import convert_to_blender_coordinates  # deferred to avoid circular import at load time
-    from .mesh_ops import extrude_plane, selectBottomFacesByZ, remeshClearing, boolean_operation  # deferred to avoid circular import at load time
-    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
+    from .geo import (
+        convert_to_blender_coordinates,  # deferred to avoid circular import at load time
+    )
+    from .mesh_ops import (  # deferred to avoid circular import at load time
+        boolean_operation,
+        extrude_plane,
+        remeshClearing,
+        selectBottomFacesByZ,
+    )
+    from .scene import (
+        set_origin_to_3d_cursor,  # deferred to avoid circular import at load time
+    )
 
     minLat = bpy.context.scene.tp3d.minLat
     minLon = bpy.context.scene.tp3d.minLon
@@ -1592,6 +1608,7 @@ def fetch_coastline_ways(prefetched_tiles, scaleHor):
     scaleHor         : float  horizontal scale factor
     """
     import math as _math
+
     from .. import constants as _const  # type: ignore
 
     def _ll_to_bl(lat, lon):
