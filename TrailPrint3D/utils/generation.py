@@ -2074,11 +2074,6 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
         zobj["lowestZ"] += additionalExtrusion
         zobj["highestZ"] += additionalExtrusion
 
-        elementMode = (bpy.context.scene.tp3d.elementMode)
-        exportformat = "STL"
-        if elementMode == "PAINT":
-            exportformat = "OBJ"
-
         _rg_assign_materials(zobj, curveObjs, None, None, props)
 
         #utils.export_to_STL(zobj)
