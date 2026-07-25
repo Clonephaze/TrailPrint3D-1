@@ -920,9 +920,6 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
     from mathutils.bvhtree import BVHTree  # type: ignore
 
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
-    from .geo import (
-        convert_to_blender_coordinates,  # deferred to avoid circular import at load time
-    )
     from .geometry2d import (
         _earcut_triangulate,  # deferred to avoid circular import at load time
     )
@@ -1131,8 +1128,6 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
 
                 # Build a lookup for ways by id, so relations can reference them
                 ways_by_id = {e['id']: e for e in data['elements'] if e['type'] == 'way'}
-
-                relation_elements = [e for e in data['elements'] if e['type'] == 'relation']
 
                 _t0 = time.time()
                 _tile_total = max(1, len(data['elements']))
