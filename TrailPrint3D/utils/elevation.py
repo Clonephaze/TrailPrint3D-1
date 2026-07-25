@@ -112,7 +112,7 @@ def save_elevation_cache():
         with open(const.elevation_cache_file, "w") as f:
             json.dump(const._elevation_cache, f)
     except Exception as e:
-        print(f"Error saving elevation cache: {str(e)}")
+        print(f"Error saving elevation cache: {e!s}")
 
 def get_cached_elevation(lat, lon, api_type="opentopodata"):
     """Get elevation from cache if available"""
