@@ -216,10 +216,19 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
     Returns the new tagged "MAP" tile object (selected + active), or None on
     a degenerate/empty polygon.
     """
-    from .geo import convert_to_neutral_coordinates, convert_to_blender_coordinates, convert_to_geo  # deferred to avoid circular import at load time
-    from .elevation import compute_and_store_tile_bounds, get_tile_elevation  # deferred to avoid circular import at load time
-    from .primitives import create_rectangle  # deferred to avoid circular import at load time
     from . import mesh_ops  # deferred to avoid circular import at load time
+    from .elevation import (  # deferred to avoid circular import at load time
+        compute_and_store_tile_bounds,
+        get_tile_elevation,
+    )
+    from .geo import (  # deferred to avoid circular import at load time
+        convert_to_blender_coordinates,
+        convert_to_geo,
+        convert_to_neutral_coordinates,
+    )
+    from .primitives import (
+        create_rectangle,  # deferred to avoid circular import at load time
+    )
 
     tp3d = bpy.context.scene.tp3d
 
@@ -345,7 +354,9 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
 
     map_km = bpy.context.scene.tp3d.get("sMapInKm", 0)
     if map_km > _LARGE_AREA_WARN_KM:
-        from .. import progress as _progress  # deferred to avoid circular import at load time
+        from .. import (
+            progress as _progress,  # deferred to avoid circular import at load time
+        )
         _progress.WarningsOverlay.add_warning(
             f"This boundary spans ~{map_km:.0f} km — fetching roads/water/forest over "
             "an area this large can take a while (or time out on the Overpass API).",
