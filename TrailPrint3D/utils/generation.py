@@ -275,7 +275,12 @@ def _rg_load_coordinates(flags, props):
 
 def _rg_compute_trail_stats(flags, coordinates):
     """Calculate trail statistics and store them in scene properties."""
-    from .geo import calculate_total_length, calculate_total_elevation, calculate_total_time, calculate_date  # deferred to avoid circular import at load time
+    from .geo import (  # deferred to avoid circular import at load time
+        calculate_date,
+        calculate_total_elevation,
+        calculate_total_length,
+        calculate_total_time,
+    )
 
     total_length = 0
     total_elevation = 0
@@ -405,8 +410,10 @@ def _rg_start_osm_prefetch(tp3d, map_km):
     The caller must call thread.join() before consuming the result dict.
     Returns (None, {}) immediately if no coloring elements are active.
     """
-    from .terrain import _fetch_all_kinds_parallel  # deferred to avoid circular import at load time
-    from .osm import OsmFetchSettings               # deferred to avoid circular import at load time
+    from .osm import OsmFetchSettings  # deferred to avoid circular import at load time
+    from .terrain import (
+        _fetch_all_kinds_parallel,  # deferred to avoid circular import at load time
+    )
 
     _lat_span  = tp3d.maxLat - tp3d.minLat
     _lon_span  = tp3d.maxLon - tp3d.minLon
@@ -475,12 +482,28 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     tile_label: optional prefix for progress messages (e.g. "Tile 2/6") used by
     multi-tile callers so element messages keep their tile context visible.
     """
-    from .terrain import coloring_main, createOcean, _COLORING_EMPTY, _COLORING_PAINTED, _COLORING_FILTERED, _fetch_all_kinds_parallel  # deferred to avoid circular import at load time
-    from .osm import OsmFetchSettings  # deferred to avoid circular import at load time
-    from .osm import create_buildings, create_roads  # deferred to avoid circular import at load time
-    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
-    from .mesh_ops import intersectWithTile  # deferred to avoid circular import at load time
-    from .metadata import writeMetadata  # deferred to avoid circular import at load time
+    from .mesh_ops import (
+        intersectWithTile,  # deferred to avoid circular import at load time
+    )
+    from .metadata import (
+        writeMetadata,  # deferred to avoid circular import at load time
+    )
+    from .osm import (  # deferred to avoid circular import at load time
+        OsmFetchSettings,  # deferred to avoid circular import at load time
+        create_buildings,
+        create_roads,
+    )
+    from .scene import (
+        set_origin_to_3d_cursor,  # deferred to avoid circular import at load time
+    )
+    from .terrain import (  # deferred to avoid circular import at load time
+        _COLORING_EMPTY,
+        _COLORING_FILTERED,
+        _COLORING_PAINTED,
+        _fetch_all_kinds_parallel,
+        coloring_main,
+        createOcean,
+    )
 
     tp3d   = bpy.context.scene.tp3d
     map_km = tp3d["sMapInKm"]
@@ -722,7 +745,15 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     To add a new terrain layer, append its key to TERRAIN_PRIORITY_ORDER and make
     sure it is populated in the terrain dict passed by the caller.
     """
-    from .mesh_ops import single_color_mode_curve, single_color_mode_mesh_wireframe, single_color_mode_mesh_remesh, boolean_operation, selectBottomFaces, recalculateNormals, remeshClearing  # deferred to avoid circular import at load time
+    from .mesh_ops import (  # deferred to avoid circular import at load time
+        boolean_operation,
+        recalculateNormals,
+        remeshClearing,
+        selectBottomFaces,
+        single_color_mode_curve,
+        single_color_mode_mesh_remesh,
+        single_color_mode_mesh_wireframe,
+    )
     from .scene import remove_objects  # deferred to avoid circular import at load time
 
     # Priority order: index 0 = highest priority (subtracted from everything below it).
@@ -867,7 +898,9 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
 
 def _rg_assign_materials(obj, curveObjs, textobj, plateobj, props, shellobj=None):
     """Write metadata and assign materials to all generated objects."""
-    from .metadata import writeMetadata  # deferred to avoid circular import at load time
+    from .metadata import (
+        writeMetadata,  # deferred to avoid circular import at load time
+    )
 
     shape = props['shape'] if "shape" in props.keys() else None
 
@@ -917,9 +950,17 @@ def _rg_assign_materials(obj, curveObjs, textobj, plateobj, props, shellobj=None
 
 def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_time, exportformat, elements=None, shellobj=None):
     """Export all geometry, update API counters, and zoom camera."""
-    from ..export import export_to_STL, export_selected_to_3mf, is_3mf_extension_installed  # deferred to avoid circular import at load time
-    from .elevation import load_counter  # deferred to avoid circular import at load time
-    from .scene import zoom_camera_to_selected  # deferred to avoid circular import at load time
+    from ..export import (  # deferred to avoid circular import at load time
+        export_selected_to_3mf,
+        export_to_STL,
+        is_3mf_extension_installed,
+    )
+    from .elevation import (
+        load_counter,  # deferred to avoid circular import at load time
+    )
+    from .scene import (
+        zoom_camera_to_selected,  # deferred to avoid circular import at load time
+    )
 
     shape = props['shape'] if "shape" in props.keys() else None
 
@@ -1098,13 +1139,41 @@ def _subdivide_long_segments(coords, max_xy_dist, depsgraph=None):
 def runGeneration(type, locked_scale=None):
 
     """Orchestrate the full 3D map generation pipeline."""
-    from .geo import calculate_scale, convert_to_blender_coordinates_batch, haversine, separate_duplicate_xy  # deferred to avoid circular import at load time
-    from .primitives import simplify_curve, create_curve_from_coordinates  # deferred to avoid circular import at load time
-    from .elevation import get_tile_elevation  # deferred to avoid circular import at load time
-    from .scene import zoom_camera_to_selected, show_message_box, transform_MapObject, set_origin_to_3d_cursor, remove_objects  # deferred to avoid circular import at load time
-    from .mesh_ops import RaycastCurveToMesh, splitCurves, recalculateNormals, merge_with_map, build_map_shell  # deferred to avoid circular import at load time
-    from .text_objects import HexagonInnerText, HexagonOuterText, HexagonFrontText, OctagonOuterText, MedalText  # deferred to avoid circular import at load time
+    from .elevation import (
+        get_tile_elevation,  # deferred to avoid circular import at load time
+    )
+    from .geo import (  # deferred to avoid circular import at load time
+        calculate_scale,
+        convert_to_blender_coordinates_batch,
+        haversine,
+        separate_duplicate_xy,
+    )
+    from .mesh_ops import (  # deferred to avoid circular import at load time
+        RaycastCurveToMesh,
+        build_map_shell,
+        merge_with_map,
+        recalculateNormals,
+        splitCurves,
+    )
+    from .primitives import (  # deferred to avoid circular import at load time
+        create_curve_from_coordinates,
+        simplify_curve,
+    )
+    from .scene import (  # deferred to avoid circular import at load time
+        remove_objects,
+        set_origin_to_3d_cursor,
+        show_message_box,
+        transform_MapObject,
+        zoom_camera_to_selected,
+    )
     from .terrain import plateInsert  # deferred to avoid circular import at load time
+    from .text_objects import (  # deferred to avoid circular import at load time
+        HexagonFrontText,
+        HexagonInnerText,
+        HexagonOuterText,
+        MedalText,
+        OctagonOuterText,
+    )
 
     flags = _GEN_FLAGS[type]
 
@@ -1641,7 +1710,9 @@ def _ctfs_apply_elevation(zobj, props, progress_cb=None, skip_bottom_recess=Fals
     pass and this function's, not a real seam to protect, and the 1mm-step
     loop below would force at least a 1mm recess off that noise alone.
     """
-    from .elevation import get_tile_elevation  # deferred to avoid circular import at load time
+    from .elevation import (
+        get_tile_elevation,  # deferred to avoid circular import at load time
+    )
     from .geo import convert_to_geo  # deferred to avoid circular import at load time
 
     scaleElevation      = props['scaleElevation']
@@ -1753,7 +1824,9 @@ def _ctfs_handle_trail(zobj, duplicate, singleColorMode):
 
     Returns curveObjs list (may be empty).
     """
-    from .mesh_ops import intersect_trail_with_existing_box  # deferred to avoid circular import at load time
+    from .mesh_ops import (
+        intersect_trail_with_existing_box,  # deferred to avoid circular import at load time
+    )
 
     def _xy_extents(obj):
         corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
@@ -1824,9 +1897,15 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     docstring. Pass True for fresh single-tile callers with no neighbor
     baseline to protect (e.g. the puzzle generator).
     """
-    from .primitives import setupColors  # deferred to avoid circular import at load time
-    from .metadata import writeMetadata  # deferred to avoid circular import at load time
-    from .mesh_ops import recalculateNormals  # deferred to avoid circular import at load time
+    from .mesh_ops import (
+        recalculateNormals,  # deferred to avoid circular import at load time
+    )
+    from .metadata import (
+        writeMetadata,  # deferred to avoid circular import at load time
+    )
+    from .primitives import (
+        setupColors,  # deferred to avoid circular import at load time
+    )
 
     props = _ctfs_load_props()
     start_time = time.time()
@@ -1850,7 +1929,9 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
 
     selected_objects = bpy.context.selected_objects
     if not selected_objects:
-        from .scene import show_message_box  # deferred to avoid circular import at load time
+        from .scene import (
+            show_message_box,  # deferred to avoid circular import at load time
+        )
         show_message_box("No objects selected")
         if manage_overlay:
             overlay.finish()
@@ -2043,11 +2124,21 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
 
 
 def generateJustTrail(material="TRAIL"):
-    from .scene import show_message_box  # deferred to avoid circular import at load time
+    from .geo import (  # deferred to avoid circular import at load time
+        convert_to_blender_coordinates,
+        separate_duplicate_xy,
+    )
     from .io_gpx import read_gpx_file  # deferred to avoid circular import at load time
-    from .geo import convert_to_blender_coordinates, separate_duplicate_xy  # deferred to avoid circular import at load time
-    from .primitives import simplify_curve, create_curve_from_coordinates  # deferred to avoid circular import at load time
-    from .mesh_ops import RaycastCurveToAnyMesh  # deferred to avoid circular import at load time
+    from .mesh_ops import (
+        RaycastCurveToAnyMesh,  # deferred to avoid circular import at load time
+    )
+    from .primitives import (  # deferred to avoid circular import at load time
+        create_curve_from_coordinates,
+        simplify_curve,
+    )
+    from .scene import (
+        show_message_box,  # deferred to avoid circular import at load time
+    )
 
     props = bpy.context.scene.tp3d
 
