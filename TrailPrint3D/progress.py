@@ -623,7 +623,6 @@ def _invoke_warnings_modal():
         bpy.ops.tp3d.warnings_mouse('INVOKE_DEFAULT')
     except RuntimeError:
         pass
-    return None  # one-shot
 
 
 # ---------------------------------------------------------------------------
