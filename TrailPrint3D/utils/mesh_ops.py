@@ -2491,7 +2491,7 @@ def merge_active_with_map(map_obj, active_obj):
         show_message_box("No Map Selected")
         return False
 
-    if "objSize" not in map_obj.keys():
+    if "objSize" not in map_obj:
         show_message_box("Selected object is not a Map")
         return False
 
