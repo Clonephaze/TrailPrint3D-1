@@ -285,18 +285,18 @@ def _rg_compute_trail_stats(flags, coordinates):
         trail_date      = calculate_date(coordinates)
         if total_time is not None and total_time > 0:
             average_speed = total_length / total_time
-
-    hours = int(total_time)
-    minutes = int((total_time - hours) * 60)
-    time_str = f"{hours}h {minutes}m"
-
-    tp3d = bpy.context.scene.tp3d
-    tp3d.sTime_str      = time_str
-    tp3d.total_length   = total_length
-    tp3d.total_elevation = total_elevation
-    tp3d.total_time     = total_time
-    tp3d.average_speed  = average_speed
-    tp3d.trail_date     = trail_date
+            
+    if total_time is not None and total_time > 0:
+        hours = int(total_time)
+        minutes = int((total_time - hours) * 60)
+        time_str = f"{hours}h {minutes}m"
+        tp3d = bpy.context.scene.tp3d
+        tp3d.sTime_str      = time_str
+        tp3d.total_length   = total_length
+        tp3d.total_elevation = total_elevation
+        tp3d.total_time     = total_time
+        tp3d.average_speed  = average_speed
+        tp3d.trail_date     = trail_date
 
 
 def _rg_create_map_object(flags, props, modelname, centerx, centery):
