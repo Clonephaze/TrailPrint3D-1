@@ -21,7 +21,7 @@ def load_counter():
             with open(const.counter_file, "r") as f:
                 data = json.load(f)
                 return data.get("count_openTopodata", 0), data.get("date_openTopoData", ""), data.get("count_openElevation",0), data.get("date_openElevation","")
-        except:
+        except (OSError, json.JSONDecodeError, ValueError, KeyError):
             return 0, "", 0, ""
     return 0, "", 0, ""
 
@@ -35,7 +35,7 @@ def load_generation_counter():
             with open(const.generation_counter_file, "r") as f:
                 data = json.load(f)
                 return data.get("total_maps_generated", 0)
-        except:
+        except (OSError, json.JSONDecodeError, ValueError, KeyError):
             return 0
     return 0
 
@@ -91,7 +91,7 @@ def load_elevation_cache():
         try:
             with open(const.elevation_cache_file, "r") as f:
                 const._elevation_cache = json.load(f)
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, ValueError) as e:
             print(f"Error loading elevation cache: {e!s}")
             const._elevation_cache = {}
     else:
@@ -111,7 +111,7 @@ def save_elevation_cache():
     try:
         with open(const.elevation_cache_file, "w") as f:
             json.dump(const._elevation_cache, f)
-    except Exception as e:
+    except OSError as e:
         print(f"Error saving elevation cache: {e!s}")
 
 def get_cached_elevation(lat, lon, api_type="opentopodata"):
@@ -414,7 +414,7 @@ def get_elevation_TerrainTiles(coords, lenv=0, pointsDone=0, zoom=10, progress_c
         try:
             png_bytes = fetch_terrarium_tile_raw(zoom, xtile, ytile)
             rgb_array = parse_png_rgb_data(png_bytes)
-        except Exception as e:
+        except (requests.RequestException, OSError, AssertionError, ValueError, struct.error, zlib.error) as e:
             print(f"Failed to fetch or parse tile {zoom}/{xtile}/{ytile}: {e}")
             for idx, _, _ in idx_lat_lon_list:
                 elevations[idx] = 0
@@ -542,7 +542,7 @@ def get_elevation_Mapterhorn(coords, lenv=0, pointsDone=0, zoom=10, progress_cb=
                     continue
                 print(f"Failed to fetch Mapterhorn tile {actual_zoom}/{actual_xtile}/{actual_ytile}: {e}")
                 break
-            except Exception as e:
+            except (requests.RequestException, OSError) as e:
                 print(f"Failed to fetch Mapterhorn tile {actual_zoom}/{actual_xtile}/{actual_ytile}: {e}")
                 break
 
@@ -554,7 +554,7 @@ def get_elevation_Mapterhorn(coords, lenv=0, pointsDone=0, zoom=10, progress_cb=
 
         try:
             rgb_array = parse_webp_rgb_data(tile_path)
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError, AttributeError) as e:
             print(f"Failed to parse Mapterhorn tile {actual_zoom}/{actual_xtile}/{actual_ytile}: {e}")
             invalidElevations += len(idx_lat_lon_list)
             for idx, _, _ in idx_lat_lon_list:
@@ -650,7 +650,7 @@ def get_elevation_openTopography(coords, lenv=0, pointsDone=0, progress_cb=None)
         # Plain-text .asc response
         try:
             asc_data = content.decode('utf-8')
-        except Exception as e:
+        except (UnicodeDecodeError, AttributeError) as e:
             _progress.WarningsOverlay.add_warning(
                 f"OpenTopography: could not decode response — {e}", "error")
             return [0.0] * len(coords)
@@ -933,7 +933,7 @@ def get_tile_elevation(obj, progress_cb=None):
                 return elevations, diff
             else:
                 print(f"Elevation cache vertex count mismatch ({len(elevations)} vs {len(world_verts)}) — refetching")
-        except Exception as _e:
+        except (OSError, zlib.error, struct.error) as _e:
             print(f"Elevation cache read error: {_e} — refetching")
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -983,7 +983,7 @@ def get_tile_elevation(obj, progress_cb=None):
             _packed = struct.pack("<I", _n) + struct.pack(f"<{_n}f", *elevations)
             with open(_cache_path, "wb") as _f:
                 _f.write(zlib.compress(_packed, level=1))
-        except Exception as _e:
+        except (OSError, struct.error, zlib.error) as _e:
             print(f"Elevation cache write error: {_e}")
 
     lowestElevation = min(elevations)
