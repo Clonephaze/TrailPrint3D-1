@@ -1097,6 +1097,7 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
                     print("No Building data returned")
                     continue
 
+                assert isinstance(data, dict)
                 n_buildings = len([e for e in data['elements'] if e['type'] == 'way'])
                 if _ov.active:
                     _ov.update(message=f"Buildings: tile {_cntr}/{_maxcntr} — calculating {n_buildings} buildings…")
@@ -1309,6 +1310,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
                     print("No Road data returned")
                     return None
 
+                assert isinstance(data, dict)
                 # Build node dict (id -> (lat, lon))
                 nodes = {el['id']:(el['lat'], el['lon']) for el in data['elements'] if el['type'] == "node"}
                 print(f"Road nodes: {len(nodes)}")
