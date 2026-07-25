@@ -411,7 +411,7 @@ def RaycastPointToMeshZ(point, mesh_obj, offset_z=1000.0):
     ray_direction_local = (mesh_world_inv.to_3x3() @ ray_direction_world).normalized()
 
     # Raycast
-    success, hit_loc, normal, face_index = eval_mesh_obj.ray_cast(
+    success, hit_loc, *_ = eval_mesh_obj.ray_cast(
         ray_origin_local,
         ray_direction_local
     )
@@ -489,7 +489,7 @@ def RaycastCurveToMesh(curve_obj, mesh_obj):
             originals.append(point.co.xyz if spline.type != 'BEZIER' else point.co.copy())
 
             co_local = mesh_world_inv @ co_world
-            success, hit_loc, normal, face_index = eval_mesh_obj.ray_cast(co_local, direction_local)
+            success, hit_loc, normal, _ = eval_mesh_obj.ray_cast(co_local, direction_local)
             if success:
                 world_normal = (mesh_world.to_3x3() @ normal).normalized()
                 if world_normal.z < 0.1:
