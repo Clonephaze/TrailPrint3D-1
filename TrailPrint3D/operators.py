@@ -2350,7 +2350,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             highest_z = max(highest_z, val)
         props.sAdditionalExtrusion = lowest_z
 
-        overlay.add_completed_step(f"Preview elevation — z {lowest_z:.1f}–{highest_z:.1f}")
+        overlay.add_completed_step(f"Preview elevation — z {lowest_z:.1f}-{highest_z:.1f}")
 
         bpy.ops.object.select_all(action='DESELECT')
         blank.select_set(True)
