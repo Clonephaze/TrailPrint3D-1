@@ -6,7 +6,7 @@ import threading
 import time
 
 import bpy  # type: ignore
-import numpy as np
+import numpy as np  # type: ignore
 from bpy.app.translations import pgettext as _
 from mathutils import Vector  # type: ignore
 
@@ -25,8 +25,12 @@ def _rg_validate_inputs(flags):
     Returns a props dict on success, or None if validation fails (console
     is toggled closed before returning None).
     """
-    from .scene import show_message_box  # deferred to avoid circular import at load time
-    from ..props import get_effective_shape  # deferred to avoid circular import at load time
+    from ..props import (
+        get_effective_shape,  # deferred to avoid circular import at load time
+    )
+    from .scene import (
+        show_message_box,  # deferred to avoid circular import at load time
+    )
 
     start_time = time.time()
     for i in range(30):
@@ -297,11 +301,27 @@ def _rg_compute_trail_stats(flags, coordinates):
 
 def _rg_create_map_object(flags, props, modelname, centerx, centery):
     """Create, rotate, and position the base map shape object."""
-    from .primitives import create_rectangle, create_hexagon, create_heart, create_octagon, create_circle, create_ellipse  # deferred to avoid circular import at load time
-    from .presets import appendCollection  # deferred to avoid circular import at load time
-    from .mesh_ops import recalculateNormals  # deferred to avoid circular import at load time
-    from .geo import midpoint_spherical, convert_to_blender_coordinates  # deferred to avoid circular import at load time
-    from .scene import transform_MapObject  # deferred to avoid circular import at load time
+    from .geo import (  # deferred to avoid circular import at load time
+        convert_to_blender_coordinates,
+        midpoint_spherical,
+    )
+    from .mesh_ops import (
+        recalculateNormals,  # deferred to avoid circular import at load time
+    )
+    from .presets import (
+        appendCollection,  # deferred to avoid circular import at load time
+    )
+    from .primitives import (  # deferred to avoid circular import at load time
+        create_circle,
+        create_ellipse,
+        create_heart,
+        create_hexagon,
+        create_octagon,
+        create_rectangle,
+    )
+    from .scene import (
+        transform_MapObject,  # deferred to avoid circular import at load time
+    )
 
     shape          = props['shape']
     size           = props['size']
