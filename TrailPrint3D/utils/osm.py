@@ -1318,7 +1318,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize = 1):
                 # Cache converted coordinates per node id (as Vector)
                 coord_cache = {}
                 for nid, (lat, lon) in nodes.items():
-                    x, y, z = convert_to_blender_coordinates(lat, lon, 0, scaleHor)
+                    x, y, _z = convert_to_blender_coordinates(lat, lon, 0, scaleHor)
                     coord_cache[nid] = Vector((x, y, 0))
 
                 wm = bpy.context.window_manager
