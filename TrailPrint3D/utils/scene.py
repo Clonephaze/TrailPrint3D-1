@@ -244,7 +244,7 @@ def setOriginToTerrainFace(obj,tol=0.1,seed=None,max_tries=200):
         # set origin to cursor
         bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
 
-    except Exception as e:
+    except RuntimeError as e:
         # restore cursor & selection before returning
         scene.cursor.location = prev_cursor
         # restore active & selection
@@ -254,7 +254,7 @@ def setOriginToTerrainFace(obj,tol=0.1,seed=None,max_tries=200):
         if prev_mode:
             try:
                 bpy.ops.object.mode_set(mode=prev_mode)
-            except Exception:
+            except RuntimeError:
                 pass
         return {"success": False, "face_index": face_idx, "center": center_world,
                 "message": f"Error while setting origin: {e}"}
@@ -269,7 +269,7 @@ def setOriginToTerrainFace(obj,tol=0.1,seed=None,max_tries=200):
     if prev_mode:
         try:
             bpy.ops.object.mode_set(mode=prev_mode)
-        except Exception:
+        except RuntimeError:
             pass
 
     return
@@ -391,7 +391,7 @@ def toggle_console():
     try:
         if platform.system() == "Windows":
             bpy.ops.wm.console_toggle()
-    except Exception as e:
+    except RuntimeError as e:
         print(f"Could not toggle console: {e}")
 
 
