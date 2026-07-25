@@ -1,6 +1,6 @@
 import os
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
 
 import bpy  # type: ignore
 
@@ -152,8 +152,8 @@ def read_igc(filepath):
                     gps_alt = int(line[30:35])
 
                     # Create timestamp (using current date since IGC files don't store date in B records)
-                    now = datetime.now()
-                    timestamp = datetime(now.year, now.month, now.day, hours, minutes, seconds)
+                    now = datetime.now(tz=timezone.utc)
+                    timestamp = datetime(now.year, now.month, now.day, hours, minutes, seconds, tzinfo=timezone.utc)
 
                     # Use GPS altitude for elevation
                     elevation = gps_alt
