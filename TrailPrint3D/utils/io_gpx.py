@@ -30,7 +30,7 @@ def _parse_points(points, point_type):
                 datetime.fromisoformat(time.text.replace("Z", "+00:00"))
                 if time is not None else None
             )
-        except Exception:
+        except (ValueError, AttributeError):
             timestamp = None
 
         segcoords.append((lat, lon, elevation, timestamp))
