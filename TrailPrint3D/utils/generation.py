@@ -1717,7 +1717,7 @@ def _ctfs_apply_elevation(zobj, props, progress_cb=None, skip_bottom_recess=Fals
     print(f"additionalExtrusion: {additionalExtrusion}")
 
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-    tileVerts, diff = get_tile_elevation(zobj, progress_cb=progress_cb)
+    tileVerts, _diff = get_tile_elevation(zobj, progress_cb=progress_cb)
 
     # Reset scene property to original value before this tile
     bpy.context.scene.tp3d.sAdditionalExtrusion = additionalExtrusion
