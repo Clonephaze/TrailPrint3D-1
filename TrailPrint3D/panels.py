@@ -655,7 +655,7 @@ class TP3D_OT_show_custom_props_popup(bpy.types.Operator):
             layout.label(text= _("No active object."), icon="ERROR")
             return
 
-        custom_props = [k for k in obj.keys() if not k.startswith("_")]
+        custom_props = [k for k in obj if not k.startswith("_")]
 
         if not custom_props:
             layout.label(text= _("No custom properties found. Please Select a Map"), icon="INFO")
@@ -687,7 +687,7 @@ class TP3D_OT_show_custom_props_popup(bpy.types.Operator):
 
     def invoke(self, context, event):
         obj = context.active_object
-        custom_props = [k for k in obj.keys() if not k.startswith("_")] if obj else []
+        custom_props = [k for k in obj if not k.startswith("_")] if obj else []
         width = self.DOUBLE_WIDTH if len(custom_props) > self.MAX_PER_COLUMN else self.NORMAL_WIDTH
         return context.window_manager.invoke_props_dialog(self, width=width)
 
