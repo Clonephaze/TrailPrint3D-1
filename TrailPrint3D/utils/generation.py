@@ -1648,7 +1648,7 @@ def runGeneration(type, locked_scale=None):
 
     print(f"Finished. Generating Map took {duration:.0f} seconds")
     print("----------------------------------------------------------------")
-    print(f"")
+    print(" ")
 
 
     _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
