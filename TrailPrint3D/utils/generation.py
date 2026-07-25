@@ -1581,17 +1581,16 @@ def runGeneration(type, locked_scale=None):
     # Plate insert
     bpy.ops.object.select_all(action='DESELECT')
     dist = bpy.context.scene.tp3d.plateInsertValue
-    if shape in {"HEXAGON OUTER TEXT", "OCTAGON OUTER TEXT", "HEXAGON FRONT TEXT", "CIRCLE OUTER TEXT"}:
-        if plateobj and textobj:
-            transform_MapObject(plateobj, props['xTerrainOffset'], props['yTerrainOffset'])
-            transform_MapObject(textobj,  props['xTerrainOffset'], props['yTerrainOffset'])
-            set_origin_to_3d_cursor(plateobj)
-            set_origin_to_3d_cursor(textobj)
-            if dist > 0:
-                plateInsert(plateobj, obj)
-                textobj.location.z += dist
-            if shapeRotation != 0:
-                textobj.rotation_euler[2] += shapeRotation * (3.14159265 / 180)
+    if shape in {"HEXAGON OUTER TEXT", "OCTAGON OUTER TEXT", "HEXAGON FRONT TEXT", "CIRCLE OUTER TEXT"} and plateobj and textobj:
+        transform_MapObject(plateobj, props['xTerrainOffset'], props['yTerrainOffset'])
+        transform_MapObject(textobj,  props['xTerrainOffset'], props['yTerrainOffset'])
+        set_origin_to_3d_cursor(plateobj)
+        set_origin_to_3d_cursor(textobj)
+        if dist > 0:
+            plateInsert(plateobj, obj)
+            textobj.location.z += dist
+        if shapeRotation != 0:
+            textobj.rotation_euler[2] += shapeRotation * (3.14159265 / 180)
 
     # --- Material preview mode ---
     for area in bpy.context.screen.areas:
