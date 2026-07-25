@@ -142,7 +142,7 @@ def _install_timer():
     _pending_install_zip = None
     if not path or not os.path.exists(path):
         print(f"TrailPrint3D updater: no pending zip found at {path!r}")
-        return None
+        return
     try:
         result = bpy.ops.extensions.package_install_files(
             filepath=path,
@@ -162,7 +162,7 @@ def _install_timer():
             os.remove(path)
         except OSError as e:
             print(f"TrailPrint3D updater: could not remove temp zip: {e}")
-    return None  # don't repeat
+    return  # don't repeat
 
 
 def download_and_install():
