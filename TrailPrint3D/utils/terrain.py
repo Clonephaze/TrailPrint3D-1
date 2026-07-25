@@ -1772,6 +1772,8 @@ def exaggeratedLayers(objs):
         bpy.ops.mesh.primitive_plane_add(size=size + 10, enter_editmode=False, align='WORLD',
                                         location=bpy.context.scene.cursor.location)
         plane = bpy.context.active_object
+        if plane is None:
+            continue
         plane.name = "CuttingPlane"
         plane.location.z += 0.1 + layerThickness/2
 
@@ -1865,6 +1867,8 @@ def contourLines(objs):
         bpy.ops.mesh.primitive_plane_add(size=size + 10, enter_editmode=False, align='WORLD',
                                         location=bpy.context.scene.cursor.location)
         plane = bpy.context.active_object
+        if plane is None:
+            continue
         plane.name = "CuttingPlane"
         plane.location.z += cl_offset
 
