@@ -473,9 +473,9 @@ def parse_webp_rgb_data(webp_path):
         row = []
         for x in range(width):
             i = (y * width + x) * 4
-            r = int(round(pixels[i]     * 255))
-            g = int(round(pixels[i + 1] * 255))
-            b = int(round(pixels[i + 2] * 255))
+            r = round(pixels[i]     * 255)
+            g = round(pixels[i + 1] * 255)
+            b = round(pixels[i + 2] * 255)
             row.append((r, g, b))
         rgb_array.append(row)
     return rgb_array
