@@ -1822,7 +1822,8 @@ def exaggeratedLayers(objs):
     bpy.ops.object.select_all(action='DESELECT')
     for obj in selected_objects:
         obj.select_set(True)
-    bpy.context.view_layer.objects.active = selected_objects[0]
+    if selected_objects:
+        bpy.context.view_layer.objects.active = selected_objects[0]
 
 def contourLines(objs):
     from .metadata import (
@@ -1912,4 +1913,5 @@ def contourLines(objs):
     bpy.ops.object.select_all(action='DESELECT')
     for obj in selected_objects:
         obj.select_set(True)
-    bpy.context.view_layer.objects.active = selected_objects[0]
+    if selected_objects:
+        bpy.context.view_layer.objects.active = selected_objects[0]
