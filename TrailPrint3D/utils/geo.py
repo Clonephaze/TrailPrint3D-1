@@ -21,8 +21,8 @@ def calculate_scale(mapSize, coordinates, gen_type, diagonal=False):
 
     R = const.R
 
-    x1, y1, e = convert_to_neutral_coordinates(min_lat, min_lon, 0,0)
-    x2, y2, e = convert_to_neutral_coordinates(max_lat, max_lon, 0,0)
+    x1, y1, _e = convert_to_neutral_coordinates(min_lat, min_lon, 0,0)
+    x2, y2, _e = convert_to_neutral_coordinates(max_lat, max_lon, 0,0)
 
     if scalemode == "FACTOR" and gen_type != 2:
         width = abs(x2 - x1)
@@ -180,7 +180,6 @@ def calculate_total_time(points):
     return hrs
 
 def calculate_date(points):
-    hrs = 0
     #Calculates the total time taken between the first and last points.
     if len(points) < 2:
         return ""
