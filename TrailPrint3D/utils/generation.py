@@ -2012,11 +2012,11 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
         overlay.update(base_pct + step * 0.00, "Fetching Elevation", f"{tile_label} — querying elevation API…")
         overlay.set_fetch_progress('elevation', 0.0)
 
-        def _elev_progress(pct):
+        def _elev_progress(pct, _base_pct=base_pct, _step=step, _tile_label=tile_label):
             t = pct / 100.0
-            overlay.update(base_pct + step * t * 0.50,
+            overlay.update(_base_pct + _step * t * 0.50,
                            "Fetching Elevation",
-                           f"{tile_label} — {pct}% complete…",
+                           f"{_tile_label} — {pct}% complete…",
                            sub_percent=t,
                            sub_label="Elevation tiles")
             overlay.set_fetch_progress('elevation', t)
