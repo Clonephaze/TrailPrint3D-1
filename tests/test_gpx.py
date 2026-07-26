@@ -54,8 +54,9 @@ def _assert_all_passed():
 # ===========================================================================
 # Shared fixture — parse once, reuse across tests
 # ===========================================================================
-_one_segs  = None
-_many_segs = None
+_one_segs:    list[list] = []
+_many_segs:   list[list] = []
+_munich_segs: list[list] = []
 
 def _load():
     global _one_segs, _many_segs
