@@ -1,4 +1,4 @@
-r"""Tests for the GPX reader (io_gpx.read_gpx).
+"""Tests for the GPX reader (io_gpx.read_gpx).
 
 Uses real GPX files from tests/Resources/:
   - OneSegment.gpx   — Garmin Connect export, 1 segment, 30 615 pts, has timestamps
@@ -6,7 +6,7 @@ Uses real GPX files from tests/Resources/:
 
 Run with:
   & "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --factory-startup --python-exit-code 1 -P tests/test_gpx.py
-"""
+"""  # noqa: W605
 
 import logging
 import os
