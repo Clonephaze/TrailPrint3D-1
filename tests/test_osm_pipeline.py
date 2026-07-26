@@ -53,7 +53,7 @@ def _run(name, fn):
         fn()
         print(f"  PASS  {name}")
         _passed += 1
-    except Exception:
+    except Exception:  # noqa: BLE001 - test runner needs to catch any failure to keep suite running
         print(f"  FAIL  {name}")
         traceback.print_exc()
         _failed += 1
