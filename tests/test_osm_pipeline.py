@@ -782,7 +782,6 @@ _COASTLINE_BBOX = (60.6419, 17.1906, 60.7008, 17.3296)  # (south, west, north, e
 
 def test_stitch_empty_input():
     from TrailPrint3D.utils.terrain import _stitch_coastline_chains
-    open_chains, _closed_loops = _stitch_coastline_chains([])
     open_chains, closed_loops = _stitch_coastline_chains([])
     assert open_chains == [] and closed_loops == [], "Empty input must return two empty lists"
 
