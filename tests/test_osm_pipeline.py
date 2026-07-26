@@ -17,6 +17,7 @@ Run with:
 
 --python-exit-code 1 exits Blender with code 1 on any unhandled exception
 (including AssertionError), making failures visible to CI.
+"""  # noqa: W605
 
 import os
 import sys
