@@ -74,7 +74,7 @@ def _check_worker():
             if ver > const.ADDON_VERSION and html_ver > const.ADDON_VERSION
             else "up_to_date"
         )
-    except (requests.RequestException, ValueError) as e:
+    except (requests.RequestException, OSError, ValueError) as e:
         status = "error"
         error_message = str(e)
 
@@ -116,7 +116,7 @@ def _check_premium_worker():
         premium_latest_version = ver
         premium_post_url = post_url
         premium_status = "update_available" if ver > const.ADDON_VERSION else "up_to_date"
-    except (requests.RequestException, ValueError) as e:
+    except (requests.RequestException, OSError, ValueError) as e:
         premium_status = "error"
         premium_error_message = str(e)
 
