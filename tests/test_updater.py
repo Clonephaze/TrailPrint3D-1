@@ -15,8 +15,8 @@ faked via sys.modules injection rather than needing a real Blender bpy.
 Run with:
   blender --background --factory-startup --python-exit-code 1 -P tests/test_updater.py
   or, as part of the full suite:
-  & "C:\\Program Files\\Blender Foundation\\Blender 5.1\\blender.exe" --background --factory-startup --python-exit-code 1 -P tests/run_all_tests.py
-"""
+  & "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --factory-startup --python-exit-code 1 -P tests/run_all_tests.py
+"""  # noqa: W605
 
 import os
 import sys
