@@ -7,13 +7,11 @@ Run with:
   & "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --factory-startup --python-exit-code 1 -P tests/test_geo_elevation.py
 """
 
-import sys
-import os
 import math
+import os
+import sys
 import traceback
 from datetime import datetime, timedelta
-
-import bpy  # type: ignore  — provided by Blender's Python
 
 # ---------------------------------------------------------------------------
 # Path setup
