@@ -13,8 +13,6 @@ import os
 import sys
 import traceback
 
-import bpy  # type: ignore
-
 # ---------------------------------------------------------------------------
 # Path setup
 # ---------------------------------------------------------------------------
@@ -37,7 +35,7 @@ def _run(name, fn):
         fn()
         print(f"  PASS  {name}")
         _passed += 1
-    except Exception:
+    except Exception:  # noqa: BLE001 - wide exception needeed to keep test runner going
         print(f"  FAIL  {name}")
         traceback.print_exc()
         _failed += 1
@@ -100,7 +98,6 @@ def test_no_holes_in_source():
 # ---------------------------------------------------------------------------
 
 def test_bare_geometry_top_level():
-    from TrailPrint3D.utils import geometry2d as g2d
     from TrailPrint3D.utils.io_geojson import _geometry_to_polygons
     bare = {"type": "Polygon", "coordinates": [[[0, 0], [4, 0], [4, 4], [0, 4], [0, 0]]]}
     polys = _geometry_to_polygons(bare)
@@ -251,8 +248,8 @@ def test_missing_file_raises():
     try:
         read_geojson_file("/nonexistent/path/file.geojson")
         assert False, "Expected an exception for missing file"
-    except Exception:
-        pass  # any exception is acceptable (FileNotFoundError, JSONDecodeError, etc.)
+    except Exception as e:  # noqa: BLE001 - wide exception needeed to keep test runner going
+        print(f"GeoJSON import error: {e}")
 
 
 def test_malformed_json_raises():
@@ -266,8 +263,8 @@ def test_malformed_json_raises():
         try:
             read_geojson_file(tmp_path)
             assert False, "Expected an exception for malformed JSON"
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 - wide exception needeed to keep test runner going
+            print(f"GeoJSON read error: {e}")
     finally:
         os.unlink(tmp_path)
 
@@ -284,8 +281,8 @@ def test_non_polygon_geometry_raises():
         try:
             read_geojson_file(tmp_path)
             assert False, "Expected a ValueError for a file with no Polygon/MultiPolygon geometry"
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 - wide exception needeed to keep test runner going
+            print(f"GeoJSON non-polygon geometry error: {e}")
     finally:
         os.unlink(tmp_path)
 
