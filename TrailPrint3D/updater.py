@@ -77,7 +77,11 @@ def _check_worker():
     except (requests.RequestException, ValueError) as e:
         status = "error"
         error_message = str(e)
+
+
+def start_check():
     """Start a background version check. Non-blocking."""
+    global status
     status = "checking"
     threading.Thread(target=_check_worker, daemon=True).start()
 
