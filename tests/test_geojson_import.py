@@ -6,7 +6,7 @@ Uses a real département boundary from tests/Resources/:
 
 Run with:
   & "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --factory-startup --python-exit-code 1 -P tests/test_geojson_import.py
-"""
+"""  # noqa: W605
 
 import sys
 import os

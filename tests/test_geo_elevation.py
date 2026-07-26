@@ -5,7 +5,7 @@ functions take plain Python arguments and return plain values.
 
 Run with:
   & "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --factory-startup --python-exit-code 1 -P tests/test_geo_elevation.py
-"""
+"""  # noqa: W605
 
 import math
 import os
