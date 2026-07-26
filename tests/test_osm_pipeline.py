@@ -570,17 +570,17 @@ _MUNICH_BBOX = (48.140, 11.550, 48.160, 11.580)  # (south, west, north, east)
 def _munich_settings(**overrides):
     """Return an OsmFetchSettings for the Munich integration bbox."""
     from TrailPrint3D.utils.osm import OsmFetchSettings
-    defaults = dict(
-        disable_cache=True,  # always go to the network; no stale results
-        api_retries=2,
-        mapsize=5.0,
-        road_big=True,
-        road_med=True,
-        road_small=False,
-        water_ponds=True,
-        water_small_rivers=True,
-        water_big_rivers=True,
-    )
+    defaults = {
+        "disable_cache": True,  # always go to the network; no stale results
+        "api_retries": 2,
+        "mapsize": 5.0,
+        "road_big": True,
+        "road_med": True,
+        "road_small": False,
+        "water_ponds": True,
+        "water_small_rivers": True,
+        "water_big_rivers": True,
+    }
     defaults.update(overrides)
     return OsmFetchSettings(**defaults)
 
