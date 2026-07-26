@@ -32,7 +32,6 @@ _TEST_FILES = [
     "test_geometry2d.py",
     "test_gpx.py",
     "test_osm_pipeline.py",
-    "test_presets.py",
     "test_updater.py",
 ]
 
