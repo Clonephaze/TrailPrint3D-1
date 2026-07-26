@@ -45,14 +45,14 @@ Run with:
 (including AssertionError), making failures visible to CI.
 """  # noqa: W605
 
-import sys
-import os
 import math
+import os
 import shutil
+import sys
 import traceback
 from collections import Counter
 
-import bpy         # type: ignore  — provided by Blender's Python
+import bpy  # type: ignore  — provided by Blender's Python
 from mathutils import Vector  # type: ignore
 
 # ---------------------------------------------------------------------------
@@ -68,8 +68,7 @@ _OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 if "TrailPrint3D" not in bpy.context.preferences.addons:
     bpy.ops.preferences.addon_enable(module="TrailPrint3D")
 
-from TrailPrint3D.utils.generation import runGeneration  # noqa: E402
-
+from TrailPrint3D.utils.generation import runGeneration
 
 # ---------------------------------------------------------------------------
 # Minimal test runner (matches the pattern used by the other tests/*.py files)
