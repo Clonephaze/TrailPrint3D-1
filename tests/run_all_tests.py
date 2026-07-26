@@ -13,6 +13,12 @@ outside this addon's control (rate limiting, timeouts, upstream outages), so
 they're skipped by default here. They always run when test_osm_pipeline.py
 is invoked directly on its own.
 
+Pass --integration to also run the full end-to-end generation pipeline
+tests (test_generation_pipeline.py). These hit real MapTerhorn + Overpass
+network, generate real geometry with booleans, and are noticeably slower
+than the fast suite, so they're excluded by default:
+  blender --background --factory-startup --python-exit-code 1 -P tests/run_all_tests.py -- --integration
+
 Each test file is executed in its own namespace so module-level state
 does not leak between files. The per-file _passed/_failed counters are
 collected after each run and aggregated into a final total.
@@ -25,6 +31,7 @@ _TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 _script_args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 _RUN_OVERPASS = "--overpass" in _script_args
+_RUN_INTEGRATION = "--integration" in _script_args
 
 _TEST_FILES = [
     "test_geo_elevation.py",
@@ -35,17 +42,15 @@ _TEST_FILES = [
     "test_updater.py",
 ]
 
-# test_generation_pipeline.py is intentionally excluded from this aggregate
-# run: it hits real network (MapTerhorn + Overpass) on every scenario and is
-# noticeably slower, so it's meant to be run on its own, not bundled in with
-# the fast/offline suite here:
-#   blender --background --factory-startup --python-exit-code 1 -P tests/test_generation_pipeline.py
+if _RUN_INTEGRATION:
+    _TEST_FILES.append("test_generation_pipeline.py")
 
 total_passed = 0
 total_failed = 0
 results = []
 
 print(f"live Overpass/coastline network tests: {'ENABLED (--overpass)' if _RUN_OVERPASS else 'skipped (pass -- --overpass to enable)'}")
+print(f"generation pipeline integration tests: {'ENABLED (--integration)' if _RUN_INTEGRATION else 'skipped (pass -- --integration to enable)'}")
 
 for filename in _TEST_FILES:
     filepath = os.path.join(_TESTS_DIR, filename)
