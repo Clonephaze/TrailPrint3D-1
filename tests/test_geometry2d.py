@@ -57,9 +57,8 @@ def _run(name, fn):
         fn()
         print(f"  PASS  {name}")
         _passed += 1
-    except Exception:  # noqa: BLE001 - wide exception needeed to keep test runner going
-        print(f"  FAIL  {name}")
-        print(f"  FAIL  {name}")
+    except Exception as e:  # noqa: BLE001 - wide exception needeed to keep test runner going
+        print(f"  FAIL  {name} - exception occurred: {e}")
         traceback.print_exc()
         _failed += 1
 
