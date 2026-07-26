@@ -2110,7 +2110,7 @@ def _generate_trails(context, gpx_paths, overlay, progress_start, progress_end):
     props = context.scene.tp3d
     n_trails = len(gpx_paths)
     overlay.update(progress_start, "Generating trails…", f"{n_trails} trail(s) to process…")
-    initial_gpx = bpy.context.scene.tp3d.get('file_path', None)
+    initial_gpx = props.file_path
     props.file_path = gpx_paths[0]
 
     materials = ["TRAIL", "YELLOW"]
@@ -2399,6 +2399,14 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             utils.zoom_camera_to_objects(piece_objs + ([holder_obj] if holder_obj is not None else []))
         except (ReferenceError, AttributeError, IndexError):
             pass
+
+        # Material preview mode -- mirrors runGeneration's own finishing step
+        # (generation.py), which the puzzle flow doesn't go through at all.
+        for area in bpy.context.screen.areas:
+            if area.type == 'VIEW_3D':
+                for space in area.spaces:
+                    if space.type == 'VIEW_3D':
+                        space.shading.type = 'MATERIAL'
 
         bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
         overlay.finish()
