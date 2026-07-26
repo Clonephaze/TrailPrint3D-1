@@ -53,7 +53,10 @@ def read_gpx(filepath):
     - files without namespaces
     """
 
-    tree = ET.parse(filepath)
+    try:
+        tree = ET.parse(filepath)
+    except ET.ParseError as exc:
+        raise RuntimeError(f"Malformed GPX file '{filepath}': {exc}") from exc
     root = tree.getroot()
 
     segmentlist = []
