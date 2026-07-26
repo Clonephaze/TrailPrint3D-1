@@ -19,12 +19,12 @@ Run with:
 (including AssertionError), making failures visible to CI.
 """
 
-import sys
 import os
+import sys
 import traceback
 
-import bpy         # type: ignore  — provided by Blender's Python
-import bmesh       # type: ignore
+import bmesh  # type: ignore
+import bpy  # type: ignore  — provided by Blender's Python
 from mathutils import Vector  # type: ignore
 
 # ---------------------------------------------------------------------------
@@ -87,6 +87,7 @@ def _make_response(status_code, body=None):
 
 def test_overpass_request_success_first_try():
     from unittest.mock import patch
+
     from TrailPrint3D.utils.osm import _overpass_request
 
     data = {"elements": [{"type": "node", "id": 1}]}
@@ -101,6 +102,7 @@ def test_overpass_request_success_first_try():
 
 def test_overpass_request_retries_then_succeeds():
     from unittest.mock import patch
+
     from TrailPrint3D.utils.osm import _overpass_request
 
     data = {"elements": []}
@@ -115,6 +117,7 @@ def test_overpass_request_retries_then_succeeds():
 
 def test_overpass_request_exhausted_returns_none():
     from unittest.mock import patch
+
     from TrailPrint3D.utils.osm import _overpass_request
 
     fail = _make_response(500)
@@ -126,8 +129,10 @@ def test_overpass_request_exhausted_returns_none():
 
 
 def test_overpass_request_timeout_triggers_retry():
-    import requests as _requests
     from unittest.mock import patch
+
+    import requests as _requests
+
     from TrailPrint3D.utils.osm import _overpass_request
 
     ok = _make_response(200, {"elements": []})
@@ -141,6 +146,7 @@ def test_overpass_request_timeout_triggers_retry():
 
 def test_overpass_request_log_callback_called_on_error():
     from unittest.mock import patch
+
     from TrailPrint3D.utils.osm import _overpass_request
 
     messages = []
@@ -157,6 +163,7 @@ def test_overpass_request_log_callback_called_on_error():
 def test_overpass_request_get_method():
     """method='GET' uses requests.get, not requests.post."""
     from unittest.mock import patch
+
     from TrailPrint3D.utils.osm import _overpass_request
 
     data = {"elements": []}
@@ -179,6 +186,7 @@ def test_overpass_request_get_method():
 def test_fetch_tiles_parallel_all_tiles_fetched():
     import threading
     from unittest.mock import patch
+
     from TrailPrint3D.utils.terrain import _fetch_tiles_parallel
 
     tasks = [(0.0, 0.0, 2.0, 2.0), (2.0, 0.0, 4.0, 2.0), (4.0, 0.0, 6.0, 2.0)]
@@ -200,6 +208,7 @@ def test_fetch_tiles_parallel_all_tiles_fetched():
 def test_fetch_tiles_parallel_failed_tile_excluded():
     import threading
     from unittest.mock import patch
+
     from TrailPrint3D.utils.terrain import _fetch_tiles_parallel
 
     good = (0.0, 0.0, 2.0, 2.0)
@@ -221,6 +230,7 @@ def test_fetch_tiles_parallel_failed_tile_excluded():
 def test_fetch_tiles_parallel_result_carries_cache_flag():
     import threading
     from unittest.mock import patch
+
     from TrailPrint3D.utils.terrain import _fetch_tiles_parallel
 
     bbox = (0.0, 0.0, 2.0, 2.0)
@@ -239,6 +249,7 @@ def test_fetch_tiles_parallel_respects_semaphore():
     """Semaphore(1) must limit concurrency — verify no deadlock and correct output."""
     import threading
     from unittest.mock import patch
+
     from TrailPrint3D.utils.terrain import _fetch_tiles_parallel
 
     tasks = [(float(i), 0.0, float(i + 2), 2.0) for i in range(6)]
@@ -266,6 +277,7 @@ def test_fetch_tiles_parallel_actually_concurrent():
     """
     import threading
     from unittest.mock import patch
+
     from TrailPrint3D.utils.terrain import _fetch_tiles_parallel
 
     CONCURRENCY_TARGET = 3
@@ -292,6 +304,7 @@ def test_fetch_tiles_parallel_semaphore_caps_concurrency():
     """
     import threading
     from unittest.mock import patch
+
     from TrailPrint3D.utils.terrain import _fetch_tiles_parallel
 
     SEM_LIMIT = 2
@@ -328,6 +341,7 @@ def test_fetch_tiles_parallel_semaphore_caps_concurrency():
 
 def test_coloring_main_has_prefetched_tiles_param():
     import inspect
+
     from TrailPrint3D.utils.terrain import coloring_main
 
     sig = inspect.signature(coloring_main)
@@ -578,6 +592,7 @@ def test_real_overpass_union_query():
     """The union QL query must be accepted by the Overpass server and return
     a non-empty elements list for a well-populated urban area (Munich)."""
     import threading
+
     from TrailPrint3D.utils.osm import fetch_osm_combined
 
     result = fetch_osm_combined(
@@ -603,7 +618,8 @@ def test_real_overpass_classifier():
     Central Munich must yield at least one element in each of the three
     requested kinds — STREETS, WATER, and FOREST."""
     import threading
-    from TrailPrint3D.utils.osm import fetch_osm_combined, _classify_element
+
+    from TrailPrint3D.utils.osm import _classify_element, fetch_osm_combined
 
     settings = _munich_settings(disable_cache=False)
     result = fetch_osm_combined(
@@ -649,6 +665,7 @@ def test_fetch_all_kinds_fetches_every_kind():
     """Every requested kind must appear in the result dict."""
     import threading
     from unittest.mock import patch
+
     from TrailPrint3D.utils.terrain import _fetch_all_kinds_parallel
 
     bbox = (0.0, 0.0, 2.0, 2.0)
@@ -670,6 +687,7 @@ def test_fetch_all_kinds_failed_kind_excluded():
     """A kind whose fetch returns nothing must have an empty dict in the result."""
     import threading
     from unittest.mock import patch
+
     from TrailPrint3D.utils.terrain import _fetch_all_kinds_parallel
 
     bbox = (0.0, 0.0, 2.0, 2.0)
@@ -692,6 +710,7 @@ def test_fetch_all_kinds_actually_concurrent():
     """All tile tasks must be in-flight simultaneously (barrier proof)."""
     import threading
     from unittest.mock import patch
+
     from TrailPrint3D.utils.terrain import _fetch_all_kinds_parallel
 
     N_TILES = 4
@@ -719,6 +738,7 @@ def test_fetch_all_kinds_semaphore_caps_concurrency():
     """Shared semaphore must limit peak concurrent Overpass requests."""
     import threading
     from unittest.mock import patch
+
     from TrailPrint3D.utils.terrain import _fetch_all_kinds_parallel
 
     SEM_LIMIT = 2
@@ -973,7 +993,8 @@ def test_fetch_coastline_ways_deduplicates_across_tiles():
 def test_real_coastline_fetch_returns_ways():
     """Overpass must return at least one natural=coastline way for the Gävle bbox."""
     import threading
-    from TrailPrint3D.utils.osm import fetch_osm_combined, OsmFetchSettings
+
+    from TrailPrint3D.utils.osm import OsmFetchSettings, fetch_osm_combined
 
     settings = OsmFetchSettings(
         disable_cache=True, api_retries=2, mapsize=10.0,
@@ -997,9 +1018,17 @@ def test_real_coastline_stitch_and_polygon():
     """End-to-end: fetch → stitch → close with bbox → polygon has ≥3 vertices."""
     import math
     import threading
-    from TrailPrint3D.utils.osm import fetch_osm_combined, fetch_coastline_ways, OsmFetchSettings
-    from TrailPrint3D.utils.terrain import _stitch_coastline_chains, _close_chain_with_bbox
+
     from TrailPrint3D import constants as const
+    from TrailPrint3D.utils.osm import (
+        OsmFetchSettings,
+        fetch_coastline_ways,
+        fetch_osm_combined,
+    )
+    from TrailPrint3D.utils.terrain import (
+        _close_chain_with_bbox,
+        _stitch_coastline_chains,
+    )
 
     settings = OsmFetchSettings(
         disable_cache=False, api_retries=2, mapsize=10.0,
