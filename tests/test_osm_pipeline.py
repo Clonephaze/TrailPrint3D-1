@@ -603,7 +603,8 @@ def test_real_overpass_union_query():
     assert result, "Overpass returned no data at all — check network/query syntax"
     print()
     total_elements = 0
-    for kind, (_data, from_cache) in result.items():
+    for kind in result:
+        data, _ = result[kind]
         elems = data.get("elements", [])
         ways = [e for e in elems if e.get("type") != "node"]
         print(f"    {kind:12s}: {len(elems):4d} elements  ({len(ways)} ways/relations)")
