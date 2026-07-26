@@ -238,7 +238,7 @@ def test_fetch_tiles_parallel_result_carries_cache_flag():
     with patch("TrailPrint3D.utils.osm.fetch_osm_data", _mock_fetch):
         result = _fetch_tiles_parallel([bbox], "WATER", __import__("threading").Semaphore(1))
 
-    data, from_cache = result[bbox]
+    _data, from_cache = result[bbox]
     assert from_cache is True
 
 
@@ -783,6 +783,7 @@ _COASTLINE_BBOX = (60.6419, 17.1906, 60.7008, 17.3296)  # (south, west, north, e
 def test_stitch_empty_input():
     from TrailPrint3D.utils.terrain import _stitch_coastline_chains
     open_chains, _closed_loops = _stitch_coastline_chains([])
+    open_chains, closed_loops = _stitch_coastline_chains([])
     assert open_chains == [] and closed_loops == [], "Empty input must return two empty lists"
 
 
@@ -790,7 +791,7 @@ def test_stitch_already_closed_single_way():
     """A single way whose first ≈ last point is classified as a closed loop."""
     from TrailPrint3D.utils.terrain import _stitch_coastline_chains
     ring = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]
-    open_chains, _closed_loops = _stitch_coastline_chains([ring])
+    open_chains, closed_loops = _stitch_coastline_chains([ring])
     assert len(closed_loops) == 1, f"Expected 1 closed loop, got {len(closed_loops)}"
     assert len(open_chains) == 0, f"Expected 0 open chains, got {len(open_chains)}"
 
@@ -800,7 +801,7 @@ def test_stitch_two_fragments_join():
     from TrailPrint3D.utils.terrain import _stitch_coastline_chains
     a = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]   # ends at (2,0)
     b = [(2.0, 0.0), (3.0, 0.0), (4.0, 0.0)]   # starts at (2,0)
-    open_chains, _closed_loops = _stitch_coastline_chains([a, b])
+    open_chains, closed_loops = _stitch_coastline_chains([a, b])
     assert len(open_chains) == 1, f"Expected 1 merged chain, got {len(open_chains)}"
     assert len(closed_loops) == 0
     merged = open_chains[0]
@@ -846,7 +847,7 @@ def test_stitch_fragments_form_closed_ring():
     from TrailPrint3D.utils.terrain import _stitch_coastline_chains
     a = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)]
     b = [(1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]
-    open_chains, _closed_loops = _stitch_coastline_chains([a, b])
+    open_chains, closed_loops = _stitch_coastline_chains([a, b])
     assert len(closed_loops) == 1, f"Expected 1 closed loop, got {len(closed_loops)}"
     assert len(open_chains) == 0
 
@@ -1050,7 +1051,7 @@ def test_real_coastline_stitch_and_polygon():
     print(f"\n    raw ways: {len(raw_chains)}")
     assert raw_chains, "No raw chains from fetch_coastline_ways"
 
-    open_chains, _closed_loops = _stitch_coastline_chains(raw_chains)
+    open_chains, closed_loops = _stitch_coastline_chains(raw_chains)
     print(f"    open chains: {len(open_chains)}  closed loops: {len(closed_loops)}")
 
     # Compute the tile bbox using the same inline Mercator formula as createOcean
