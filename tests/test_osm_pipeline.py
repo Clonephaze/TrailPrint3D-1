@@ -34,6 +34,14 @@ _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+# Live Overpass/coastline tests hit the real, shared Overpass API and can
+# fail for reasons outside this addon's control (rate limiting, timeouts,
+# upstream outages). They always run when this file is invoked directly.
+# When exec'd from run_all_tests.py, that runner injects _TP3D_RUN_OVERPASS
+# into this module's globals — False unless it was itself invoked with
+# --overpass — so they're skipped there by default.
+_RUN_LIVE_OVERPASS = globals().get("_TP3D_RUN_OVERPASS", True)
+
 # ---------------------------------------------------------------------------
 # Minimal test runner
 # ---------------------------------------------------------------------------
@@ -582,7 +590,7 @@ def test_real_overpass_union_query():
     assert result, "Overpass returned no data at all — check network/query syntax"
     print()
     total_elements = 0
-    for kind, (data, from_cache) in result.items():
+    for kind, (_data, from_cache) in result.items():
         elems = data.get("elements", [])
         ways = [e for e in elems if e.get("type") != "node"]
         print(f"    {kind:12s}: {len(elems):4d} elements  ({len(ways)} ways/relations)")
@@ -757,7 +765,7 @@ _COASTLINE_BBOX = (60.6419, 17.1906, 60.7008, 17.3296)  # (south, west, north, e
 
 def test_stitch_empty_input():
     from TrailPrint3D.utils.terrain import _stitch_coastline_chains
-    open_chains, closed_loops = _stitch_coastline_chains([])
+    open_chains, _closed_loops = _stitch_coastline_chains([])
     assert open_chains == [] and closed_loops == [], "Empty input must return two empty lists"
 
 
@@ -765,7 +773,7 @@ def test_stitch_already_closed_single_way():
     """A single way whose first ≈ last point is classified as a closed loop."""
     from TrailPrint3D.utils.terrain import _stitch_coastline_chains
     ring = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]
-    open_chains, closed_loops = _stitch_coastline_chains([ring])
+    open_chains, _closed_loops = _stitch_coastline_chains([ring])
     assert len(closed_loops) == 1, f"Expected 1 closed loop, got {len(closed_loops)}"
     assert len(open_chains) == 0, f"Expected 0 open chains, got {len(open_chains)}"
 
@@ -775,7 +783,7 @@ def test_stitch_two_fragments_join():
     from TrailPrint3D.utils.terrain import _stitch_coastline_chains
     a = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]   # ends at (2,0)
     b = [(2.0, 0.0), (3.0, 0.0), (4.0, 0.0)]   # starts at (2,0)
-    open_chains, closed_loops = _stitch_coastline_chains([a, b])
+    open_chains, _closed_loops = _stitch_coastline_chains([a, b])
     assert len(open_chains) == 1, f"Expected 1 merged chain, got {len(open_chains)}"
     assert len(closed_loops) == 0
     merged = open_chains[0]
@@ -788,7 +796,7 @@ def test_stitch_reversed_fragment_joins():
     from TrailPrint3D.utils.terrain import _stitch_coastline_chains
     a = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]
     b = [(4.0, 0.0), (3.0, 0.0), (2.0, 0.0)]   # reversed: end=(2,0) matches a's end
-    open_chains, closed_loops = _stitch_coastline_chains([a, b])
+    open_chains, _closed_loops = _stitch_coastline_chains([a, b])
     assert len(open_chains) == 1, f"Expected 1 merged chain, got {len(open_chains)}"
     merged = open_chains[0]
     assert merged[0] == (0.0, 0.0) and merged[-1] == (4.0, 0.0), \
@@ -801,7 +809,7 @@ def test_stitch_three_fragments_chain():
     a = [(0.0, 0.0), (1.0, 0.0)]
     b = [(1.0, 0.0), (2.0, 0.0)]
     c = [(2.0, 0.0), (3.0, 0.0)]
-    open_chains, closed_loops = _stitch_coastline_chains([a, b, c])
+    open_chains, _closed_loops = _stitch_coastline_chains([a, b, c])
     assert len(open_chains) == 1, f"Expected 1 chain, got {len(open_chains)}"
     assert len(open_chains[0]) == 4, \
         f"Expected 4 pts after stitching 3 fragments, got {len(open_chains[0])}"
@@ -812,7 +820,7 @@ def test_stitch_disjoint_chains_stay_separate():
     from TrailPrint3D.utils.terrain import _stitch_coastline_chains
     a = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]
     b = [(10.0, 0.0), (11.0, 0.0), (12.0, 0.0)]
-    open_chains, closed_loops = _stitch_coastline_chains([a, b])
+    open_chains, _closed_loops = _stitch_coastline_chains([a, b])
     assert len(open_chains) == 2, f"Expected 2 separate chains, got {len(open_chains)}"
 
 
@@ -821,7 +829,7 @@ def test_stitch_fragments_form_closed_ring():
     from TrailPrint3D.utils.terrain import _stitch_coastline_chains
     a = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)]
     b = [(1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]
-    open_chains, closed_loops = _stitch_coastline_chains([a, b])
+    open_chains, _closed_loops = _stitch_coastline_chains([a, b])
     assert len(closed_loops) == 1, f"Expected 1 closed loop, got {len(closed_loops)}"
     assert len(open_chains) == 0
 
@@ -1016,7 +1024,7 @@ def test_real_coastline_stitch_and_polygon():
     print(f"\n    raw ways: {len(raw_chains)}")
     assert raw_chains, "No raw chains from fetch_coastline_ways"
 
-    open_chains, closed_loops = _stitch_coastline_chains(raw_chains)
+    open_chains, _closed_loops = _stitch_coastline_chains(raw_chains)
     print(f"    open chains: {len(open_chains)}  closed loops: {len(closed_loops)}")
 
     # Compute the tile bbox using the same inline Mercator formula as createOcean
@@ -1083,9 +1091,13 @@ if __name__ == "__main__":
     _run("ribbon merge: two ribbons merged → 8 verts",    test_ribbon_merge_vertex_count)
     _run("ribbon merge: single ribbon fast path",         test_ribbon_merge_single_ribbon_is_unchanged)
 
-    # Live Overpass integration (network required)
-    _run("live overpass: union query accepted by server", test_real_overpass_union_query)
-    _run("live overpass: classifier bins Munich elements",test_real_overpass_classifier)
+    # Live Overpass integration (network required) — skipped unless this
+    # file is run directly, or run_all_tests.py was invoked with --overpass.
+    if _RUN_LIVE_OVERPASS:
+        _run("live overpass: union query accepted by server", test_real_overpass_union_query)
+        _run("live overpass: classifier bins Munich elements",test_real_overpass_classifier)
+    else:
+        print("  SKIP  live overpass tests (pass -- --overpass to run_all_tests.py to enable)")
 
     # Coastline pipeline — unit tests (no network, no bpy objects)
     _run("coastline stitch: empty input",                         test_stitch_empty_input)
@@ -1103,8 +1115,12 @@ if __name__ == "__main__":
     _run("fetch_coastline_ways: ignores non-coastline tags",      test_fetch_coastline_ways_ignores_non_coastline_tags)
     _run("fetch_coastline_ways: deduplicates across tiles",       test_fetch_coastline_ways_deduplicates_across_tiles)
 
-    # Live coastline integration (network required, Gävle coast)
-    _run("live coastline: overpass returns ways",                 test_real_coastline_fetch_returns_ways)
-    _run("live coastline: stitch + polygon end-to-end",           test_real_coastline_stitch_and_polygon)
+    # Live coastline integration (network required, Gävle coast) — same
+    # skip rule as the live Overpass tests above.
+    if _RUN_LIVE_OVERPASS:
+        _run("live coastline: overpass returns ways",                 test_real_coastline_fetch_returns_ways)
+        _run("live coastline: stitch + polygon end-to-end",           test_real_coastline_stitch_and_polygon)
+    else:
+        print("  SKIP  live coastline tests (pass -- --overpass to run_all_tests.py to enable)")
 
     _assert_all_passed()
