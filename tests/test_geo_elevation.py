@@ -204,8 +204,8 @@ def test_total_time_none_timestamps():
 
 def test_total_time_one_hour():
     from TrailPrint3D.utils.geo import calculate_total_time
-    t0 = datetime(2024, 6, 1, 9, 0, 0)
-    t1 = datetime(2024, 6, 1, 10, 0, 0)
+    t0 = datetime(2024, 6, 1, 9, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2024, 6, 1, 10, 0, 0, tzinfo=timezone.utc)
     pts = [(0, 0, 0, t0), (0, 0, 0, None), (0, 0, 0, t1)]
     result = calculate_total_time(pts)
     assert _approx_rel(result, 1.0), f"Expected 1.0 h, got {result}"
@@ -213,8 +213,8 @@ def test_total_time_one_hour():
 
 def test_total_time_ninety_minutes():
     from TrailPrint3D.utils.geo import calculate_total_time
-    t0 = datetime(2024, 6, 1, 8, 0, 0)
-    t1 = datetime(2024, 6, 1, 9, 30, 0)
+    t0 = datetime(2024, 6, 1, 8, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2024, 6, 1, 9, 30, 0, tzinfo=timezone.utc)
     pts = [(0, 0, 0, t0), (0, 0, 0, t1)]
     result = calculate_total_time(pts)
     assert _approx_rel(result, 1.5), f"Expected 1.5 h, got {result}"
@@ -237,7 +237,7 @@ def test_calculate_date_none_timestamp():
 
 def test_calculate_date_known_date():
     from TrailPrint3D.utils.geo import calculate_date
-    t = datetime(2024, 6, 15, 10, 0, 0)
+    t = datetime(2024, 6, 15, 10, 0, 0, tzinfo=timezone.utc)
     pts = [(0, 0, 0, t), (1, 1, 0, None)]
     assert calculate_date(pts) == "2024-06-15"
 
@@ -315,7 +315,7 @@ def test_midpoint_spherical_symmetric():
 
 
 def test_midpoint_spherical_equidistant_from_endpoints():
-    from TrailPrint3D.utils.geo import midpoint_spherical, haversine
+    from TrailPrint3D.utils.geo import haversine, midpoint_spherical
     lat1, lon1 = 40.0, -10.0
     lat2, lon2 = 50.0,  20.0
     mid_lat, mid_lon = midpoint_spherical(lat1, lon1, lat2, lon2)
@@ -358,7 +358,7 @@ def test_move_coordinates_west_decreases_longitude():
 
 
 def test_move_coordinates_distance_roundtrip():
-    from TrailPrint3D.utils.geo import move_coordinates, haversine
+    from TrailPrint3D.utils.geo import haversine, move_coordinates
     for direction in ['n', 's', 'e', 'w']:
         lat2, lon2 = move_coordinates(0.0, 0.0, 100.0, direction)
         dist = haversine(0.0, 0.0, lat2, lon2)
