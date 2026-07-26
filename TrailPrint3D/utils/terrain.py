@@ -1595,7 +1595,24 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
             (max_x, max_y),
             (min_x, max_y),
         ]
-        face_obj = _make_ocean_face(outer, "full-tile ocean")
+        if island_loops:
+            # Islands need to be cut out as real holes -- route through the
+            # Shapely/earcut pipeline so the result is a valid, triangulated
+            # polygon-with-holes.
+            face_obj = _make_ocean_face(outer, "full-tile ocean")
+        else:
+            # No coastline data at all: the tile is 100% open ocean with no
+            # holes to cut, so build a single flat quad directly rather than
+            # routing a plain rectangle through Shapely validation and
+            # earcut triangulation -- both unnecessary overhead, and earcut
+            # always splits even a convex quad into 2 triangles, which is
+            # avoidable here.
+            mesh = bpy.data.meshes.new("_OceanFace")
+            face_obj = bpy.data.objects.new("_OceanFace", mesh)
+            bpy.context.collection.objects.link(face_obj)
+            coords = [(x, y, 0.0) for x, y in outer]
+            mesh.from_pydata(coords, [], [list(range(len(coords)))])
+            mesh.update()
         if face_obj and len(face_obj.data.vertices) > 0:
             ocean_faces.append(face_obj)
 
