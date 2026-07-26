@@ -423,6 +423,39 @@ def test_get_premium_update_url_falls_back_to_patreon_page():
     assert updater.get_premium_update_url() == updater._PATREON_URL
 
 
+def test_check_worker_sets_zip_url_when_asset_found():
+    """_latest_release_zip_url is populated when the release has a matching .zip asset."""
+    from TrailPrint3D import updater
+    _reset_updater_state(updater)
+
+    gh_resp = _make_response(json_body=_github_release_json("v99.0.0"))
+    html_resp = _make_response(text="99.0.0\n")
+
+    with patch("TrailPrint3D.updater.requests.get", side_effect=[gh_resp, html_resp]):
+        updater._check_worker()
+
+    assert updater._latest_release_zip_url is not None
+    assert updater._latest_release_zip_url.endswith(".zip")
+
+
+def test_check_worker_zip_url_none_when_no_asset():
+    """_latest_release_zip_url stays None when the release has no .zip asset."""
+    from TrailPrint3D import updater
+    _reset_updater_state(updater)
+
+    release_without_zip = {
+        "tag_name": "v99.0.0",
+        "assets": [{"browser_download_url": "https://example.com/somefile.tar.gz"}],
+    }
+    gh_resp = _make_response(json_body=release_without_zip)
+    html_resp = _make_response(text="99.0.0\n")
+
+    with patch("TrailPrint3D.updater.requests.get", side_effect=[gh_resp, html_resp]):
+        updater._check_worker()
+
+    assert updater._latest_release_zip_url is None
+
+
 # ---------------------------------------------------------------------------
 # start_check / start_premium_check — threading + status flip
 # ---------------------------------------------------------------------------
@@ -715,6 +748,8 @@ if __name__ == "__main__":
     _run("premium check: exception -> error",                     test_check_premium_worker_error_on_exception)
     _run("get_premium_update_url: prefers announced post",        test_get_premium_update_url_prefers_announced_post)
     _run("get_premium_update_url: falls back to Patreon page",    test_get_premium_update_url_falls_back_to_patreon_page)
+    _run("latest_release_zip_url: set when asset matches",        test_check_worker_sets_zip_url_when_asset_found)
+    _run("latest_release_zip_url: None when no asset matches",    test_check_worker_zip_url_none_when_no_asset)
 
     # start_check / start_premium_check
     _run("start_check: status flips to checking immediately",    test_start_check_sets_status_checking_immediately)
