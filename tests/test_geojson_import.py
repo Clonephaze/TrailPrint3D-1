@@ -8,9 +8,9 @@ Run with:
   & "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --factory-startup --python-exit-code 1 -P tests/test_geojson_import.py
 """  # noqa: W605
 
-import sys
-import os
 import json
+import os
+import sys
 import traceback
 
 import bpy  # type: ignore
@@ -112,6 +112,7 @@ def test_feature_collection_keeps_all_parts():
     # Mainland + island: both separate polygon parts must survive as one
     # MultiPolygon, not get reduced to just the larger one.
     import tempfile
+
     from TrailPrint3D.utils.io_geojson import read_geojson_file
     fc = {
         "type": "FeatureCollection",
@@ -138,6 +139,7 @@ def test_read_geojson_files_fuses_adjacent_boundaries():
     # Two files sharing an exact edge (like two neighbouring departements)
     # must merge into ONE seamless Polygon, not stay as two separate parts.
     import tempfile
+
     from TrailPrint3D.utils.io_geojson import read_geojson_files
     left = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}
     right = {"type": "Polygon", "coordinates": [[[1, 0], [2, 0], [2, 1], [1, 1], [1, 0]]]}
@@ -213,6 +215,7 @@ def test_simplify_zero_tolerance_is_noop():
 
 def test_subdivide_grid_fill_adds_faces_not_just_verts():
     import bmesh
+
     from TrailPrint3D.utils import geometry2d as g2d
 
     # A simple pentagon cap, triangulated via the same polygon_to_mesh() path
@@ -254,6 +257,7 @@ def test_missing_file_raises():
 
 def test_malformed_json_raises():
     import tempfile
+
     from TrailPrint3D.utils.io_geojson import read_geojson_file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".geojson", delete=False, encoding="utf-8") as f:
         f.write("{ this is not valid json ]")
@@ -270,6 +274,7 @@ def test_malformed_json_raises():
 
 def test_non_polygon_geometry_raises():
     import tempfile
+
     from TrailPrint3D.utils.io_geojson import read_geojson_file
     line = {"type": "LineString", "coordinates": [[0, 0], [1, 1]]}
     with tempfile.NamedTemporaryFile(mode="w", suffix=".geojson", delete=False, encoding="utf-8") as f:
