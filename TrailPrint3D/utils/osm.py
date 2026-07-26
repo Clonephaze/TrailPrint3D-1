@@ -73,17 +73,25 @@ def _overpass_request(query, overpass_url, method='POST', timeout=60, max_retrie
                     print(f"Attempt {attempt + 1}: Invalid JSON response")
                     # fall through to retry
             else:
-                retry_num = attempt + 2
-                print(f"Status ({response.status_code}), retrying... {retry_num}/{max_retries}")
-                if log_callback:
-                    log_callback(f"Overpass error {response.status_code} — retrying {retry_num}/{max_retries}")
+                next_attempt = attempt + 2
+                if next_attempt <= max_retries:
+                    print(f"Status ({response.status_code}), retrying... {next_attempt}/{max_retries}")
+                    if log_callback:
+                        log_callback(f"Overpass error {response.status_code} — retrying {next_attempt}/{max_retries}")
+                else:
+                    print(f"Status ({response.status_code}), giving up after {max_retries} attempts")
+                    if log_callback:
+                        log_callback(f"Overpass error {response.status_code} — giving up")
                 time.sleep(5 + attempt)
 
         except requests.exceptions.Timeout:
-            retry_num = attempt + 2
+            next_attempt = attempt + 2
             print(f"Request timed out (attempt {attempt + 1}/{max_retries})")
             if log_callback:
-                log_callback(f"Timed out — retrying {retry_num}/{max_retries}")
+                if next_attempt <= max_retries:
+                    log_callback(f"Timed out — retrying {next_attempt}/{max_retries}")
+                else:
+                    log_callback(f"Timed out — giving up")
             time.sleep(5)
         except requests.RequestException as e:
             print(f"Request failed: {e}")
