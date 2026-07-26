@@ -24,7 +24,6 @@ import traceback
 
 import bmesh  # type: ignore
 import bpy  # type: ignore  — provided by Blender's Python
-from mathutils import Vector  # type: ignore
 
 # ---------------------------------------------------------------------------
 # Path setup — makes TrailPrint3D importable as a package from source
@@ -227,7 +226,6 @@ def test_fetch_tiles_parallel_failed_tile_excluded():
 
 
 def test_fetch_tiles_parallel_result_carries_cache_flag():
-    import threading
     from unittest.mock import patch
 
     from TrailPrint3D.utils.terrain import _fetch_tiles_parallel
