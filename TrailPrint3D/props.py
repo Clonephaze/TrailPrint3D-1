@@ -95,7 +95,27 @@ SHAPE_TEXT_STYLES = {
 def get_shape_text_style_items(self, context):
     # Items must be a callback (not a static list) since the available
     # styles depend on which base shape is currently selected.
-    return SHAPE_TEXT_STYLES.get(self.shape, [("NONE", _("None"), _("No text overlay available for this shape"))])
+    items = SHAPE_TEXT_STYLES.get(self.shape, [("NONE", _("None"), _("No text overlay available for this shape"))])
+    if not temp.PREMIUMVERSION:
+        # Shell is Premium-exclusive -- stays visible in the dropdown (so free
+        # users know it exists) but gets a lock icon and a "(Premium)" label.
+        # Blender's Enum dropdown can't disable a single item outright, so
+        # actually picking it is caught by shape_text_style_update below,
+        # which snaps the selection back to NONE.
+        items = [
+            (ident, _("%s (Premium)") % label, desc, 'LOCKED', i) if ident == "SHELL"
+            else (ident, label, desc, 'NONE', i)
+            for i, (ident, label, desc) in enumerate(items)
+        ]
+    return items
+
+
+def shape_text_style_update(self, context):
+    if self.shapeTextStyle == "SHELL" and not temp.PREMIUMVERSION:
+        self.shapeTextStyle = "NONE"
+        utils.show_message_box(
+            _("Shell is a Patreon-exclusive feature."), "INFO", _("Premium Feature")
+        )
 
 
 def get_effective_shape(tp3d):
@@ -106,6 +126,11 @@ def get_effective_shape(tp3d):
     shape (e.g. left over from a different shape)."""
     base = tp3d.shape
     style = tp3d.shapeTextStyle
+    if style == "SHELL" and not temp.PREMIUMVERSION:
+        # Guards against a SHELL value left over from a Premium session/preset
+        # -- Shell is Premium-exclusive, so free builds always fall back to
+        # the bare base shape instead of acting on a stale selection.
+        return base
     valid_styles = {ident for ident, _label, _desc in SHAPE_TEXT_STYLES.get(base, [])}
     if style and style != "NONE" and style in valid_styles:
         return f"{base} {style}"
@@ -166,6 +191,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name = _("Shape Extras"),
         description = _("Add an extra (text/plate overlay or shell) to the selected shape"),
         items = get_shape_text_style_items,
+        update = shape_text_style_update,
         # Dynamic-items EnumProperty can't take an explicit `default=` -- see
         # get_special_blend_items above for why. "NONE" is first in every
         # per-shape list in SHAPE_TEXT_STYLES, so it's the default.

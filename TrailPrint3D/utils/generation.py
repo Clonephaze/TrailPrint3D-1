@@ -1149,11 +1149,15 @@ def runGeneration(type, locked_scale=None):
     )
     from .mesh_ops import (  # deferred to avoid circular import at load time
         RaycastCurveToMesh,
-        build_map_shell,
         merge_with_map,
         recalculateNormals,
         splitCurves,
     )
+    try:
+        from ..premium.utils_pe import build_map_shell  # Premium-only: Shell shape extra
+    except ImportError:
+        def build_map_shell(*_args, **_kwargs):
+            return None
     from .primitives import (  # deferred to avoid circular import at load time
         create_curve_from_coordinates,
         simplify_curve,

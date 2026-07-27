@@ -627,7 +627,12 @@ class TP3D_PT_shapes(bpy.types.Panel):
                 layout.prop(props, "plateBevel")
                 layout.label(text=_("Medal Handle"))
                 row = layout.row(align=True)
-                row.prop(props, "handleStyle", expand=True)
+                if temp.PREMIUMVERSION:
+                    row.prop(props, "handleStyle", expand=True)
+                else:
+                    row.prop_enum(props, "handleStyle", 'NONE')
+                    row.operator("tp3d.terrain_dummy", text=_("Round"), icon='LOCKED')
+                    row.operator("tp3d.terrain_dummy", text=_("Flat"), icon='LOCKED')
 
         elif effective_shape.endswith(" SHELL"):
             layout.prop(props, "shellWallThickness")
