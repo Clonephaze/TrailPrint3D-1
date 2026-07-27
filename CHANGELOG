@@ -1,3 +1,32 @@
+Version 3.2
+27.07.2026
+
+Added: GeoJSON boundary import as a new Terrain map mode, including MultiPolygon (islands/exclaves) support and merging multiple boundary files into one shape (by Louisefeige)
+Added: Coordinate search with city lookup and lat/lon input, plus new map layers
+Added: Circle Outer Text shape
+Added: Medal handle support (shell geometry) for text-based shapes
+Added: Material preview mode in the Puzzle Configurator
+Added: Shapely/Earcut status indicators and clearer error messages when Shapely fails to load
+Added: ARM64 and macOS 10.13 x86_64 wheels for Shapely and Mapbox Earcut
+Added: Ocean creation now supports merging with the map
+Changed: Default terrain source is now Mapterhorn
+Changed: Smoother raw OSM element boundaries before extrusion, and fetched OSM polygons are now clipped to the query bbox
+Changed: Faster full-ocean tile mesh generation
+Changed: Updated projection logic for Ocean creation
+Changed: Restructured Shape selection UI
+Changed: Improved update checker reliability
+Changed: Updated export format handling for terrain-element colors in Paint mode
+Fixed: Steep (60°) walls were incorrectly detected as vertical walls during raycast
+Fixed: Trail points bouncing in one direction during Multi-generation
+Fixed: Buggy BMesh shapes causing issues with Rivers and unreliable element painting
+Fixed: Trails clipping through hills
+Fixed: Progress bar/browser window not opening properly in app mode when no Chromium browser is found
+Fixed: Spike artifacts on complex GeoJSON boundaries
+Fixed: Crash in Separate/Single-Color element mode with exactly one surviving part
+Fixed: GPX chain import not working due to a broken condition check
+Fixed: Malformed GPX files crashing the addon instead of showing a clear error
+Fixed: Incorrect vertex selection/lowest point calculation for Oceans
+-----------------------------
 Version 3.1.1
 01.07.2026
 
