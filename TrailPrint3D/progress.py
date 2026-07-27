@@ -13,16 +13,17 @@ Usage:
     overlay.finish()
 """
 
-import math
-import time
 import json
+import math
 import pathlib
 import subprocess
 import sys
 import tempfile
+import time
+
+import blf
 import bpy
 import gpu
-import blf
 from gpu_extras.batch import batch_for_shader
 
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == 'win32' else 0
@@ -58,7 +59,7 @@ class SubprocessProgress:
     def start(self):
         try:
             self._cancel_path.unlink()
-        except Exception:
+        except OSError:
             pass
         self._write({'active': True, 'percent': 0.0, 'phase': 'Starting…', 'message': ''})
         if bpy.app.background:
@@ -73,7 +74,7 @@ class SubprocessProgress:
                 [sys.executable, str(script), str(self._json_path)],
                 creationflags=_CREATE_NO_WINDOW,
             )
-        except Exception as e:
+        except OSError as e:
             print(f'TrailPrint3D: Could not launch progress window: {e}')
             self._proc = None
 
@@ -105,17 +106,17 @@ class SubprocessProgress:
         if self._proc is not None:
             try:
                 self._proc.wait(timeout=3)
-            except Exception:
+            except (subprocess.TimeoutExpired, OSError):
                 try:
                     self._proc.kill()
-                except Exception:
+                except OSError:
                     pass
             self._proc = None
 
     def _write(self, data):
         try:
             self._json_path.write_text(json.dumps(data), encoding='utf-8')
-        except Exception:
+        except OSError:
             pass
 
 
@@ -620,9 +621,8 @@ def _invoke_warnings_modal():
     """Called via timer so a valid window context exists."""
     try:
         bpy.ops.tp3d.warnings_mouse('INVOKE_DEFAULT')
-    except Exception:
+    except RuntimeError:
         pass
-    return None  # one-shot
 
 
 # ---------------------------------------------------------------------------
@@ -670,7 +670,7 @@ def _force_redraw():
                 region=target_region,
             ):
                 bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-        except Exception:
+        except RuntimeError:
             pass
 
 

@@ -1,7 +1,13 @@
-import bpy  # type: ignore
-import bmesh  # type: ignore
 import math
-from mathutils import Vector, Matrix, bvhtree  # type: ignore
+
+import bmesh  # type: ignore
+import bpy  # type: ignore
+from bpy.app.translations import pgettext_iface as _  # type: ignore
+from mathutils import Matrix, Vector, bvhtree  # type: ignore
+
+
+class TP3D_MeshSelectionError(Exception):
+    """Raised when a mesh operation receives an invalid object selection."""
 
 
 def applyModifier(obj, modifier):
@@ -45,12 +51,12 @@ def recalculateNormals(obj, ins = False):
 
 def selectBottomFaces(obj):
 
+    if obj is None or obj.type != 'MESH':
+        raise TP3D_MeshSelectionError(_("Please select a mesh object."))
+
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
-
-    if obj is None or obj.type != 'MESH':
-        raise Exception("Please select a mesh object.")
 
 
     # Enter Edit Mode
@@ -62,10 +68,6 @@ def selectBottomFaces(obj):
 
     # Threshold for downward-facing
     threshold = -0.95
-
-    # Object world matrix for local-to-global transformation
-    world_matrix = obj.matrix_world
-
 
     for f in mesh.faces:
         if f.normal.normalized().z < threshold:
@@ -106,7 +108,7 @@ def getBottomFacesArea(obj):
 
 def selectTopFaces(obj):
     if obj is None or obj.type != 'MESH':
-        raise Exception("Please select a mesh object.")
+        raise TP3D_MeshSelectionError(_("Please select a mesh object."))
 
 
     # Enter Edit Mode
@@ -118,10 +120,6 @@ def selectTopFaces(obj):
 
     # Threshold for downward-facing
     threshold = 0.99
-
-    # Object world matrix for local-to-global transformation
-    world_matrix = obj.matrix_world
-
 
     for f in mesh.faces:
         if f.normal.normalized().z > threshold:
@@ -413,7 +411,7 @@ def RaycastPointToMeshZ(point, mesh_obj, offset_z=1000.0):
     ray_direction_local = (mesh_world_inv.to_3x3() @ ray_direction_world).normalized()
 
     # Raycast
-    success, hit_loc, normal, face_index = eval_mesh_obj.ray_cast(
+    success, hit_loc, *_ = eval_mesh_obj.ray_cast(
         ray_origin_local,
         ray_direction_local
     )
@@ -491,7 +489,7 @@ def RaycastCurveToMesh(curve_obj, mesh_obj):
             originals.append(point.co.xyz if spline.type != 'BEZIER' else point.co.copy())
 
             co_local = mesh_world_inv @ co_world
-            success, hit_loc, normal, face_index = eval_mesh_obj.ray_cast(co_local, direction_local)
+            success, hit_loc, normal, _ = eval_mesh_obj.ray_cast(co_local, direction_local)
             if success:
                 world_normal = (mesh_world.to_3x3() @ normal).normalized()
                 if world_normal.z < 0.1:
@@ -624,14 +622,6 @@ def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
             # graze a near-vertical side wall and report a "successful" hit
             # at the wrong height.
             hit_ok = is_map_hit and hit_result[2].z >= 0.5
-            if not hit_ok:
-                if not hit_result[0]:
-                    reason = "no hit"
-                elif not is_map_hit:
-                    reason = f"hit non-map object"
-                else:
-                    reason = f"normal.z={hit_result[2].z:.2f} (not upward)"
-                hit_obj_name = hit_obj.name if hit_obj else None
             hits.append(curve_world_inv @ hit_result[1] if hit_ok else None)
 
         # Fill gaps from the nearest point along the spline that DID hit --
@@ -774,13 +764,14 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
         try:
             if prev_mode != bpy.context.mode:
                 bpy.ops.object.mode_set(mode=prev_mode)
-        except Exception:
+        except RuntimeError:
             # ignoring mode restore errors (some modes cannot be restored trivially)
             pass
 
         return True, "Boolean INTERSECT applied and duplicate tile removed."
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — broad catch intentional; all errors returned to caller
+        print(f"[TP3D intersectWithTile] error: {e}")
         # Attempt to clean up the duplicate if it exists
         dup_obj = bpy.data.objects.get(f"{tile.name}_duplicate_for_bool")
         if dup_obj:
@@ -789,7 +780,7 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
                 dup_obj.select_set(True)
                 bpy.context.view_layer.objects.active = dup_obj
                 bpy.ops.object.delete()
-            except Exception:
+            except RuntimeError:
                 pass
         return False, f"Error: {e}"
 
@@ -829,46 +820,45 @@ def intersect_alltrails_with_existing_box(cutobject):
     boolObjects = []
     trail_mesh = None
     for robj in bpy.data.objects:
-        if "_Trail" in robj.name and robj.type in {'CURVE', 'MESH'}:
-            if not robj.hide_get():
-                # Convert curve to mesh
-                if robj.type == 'CURVE':
-                    bpy.context.view_layer.objects.active = robj
-                    bpy.ops.object.select_all(action='DESELECT')
-                    robj2 = robj.copy()
-                    robj2.data = robj.data.copy()
-                    bpy.context.collection.objects.link(robj2)
-                    robj2.select_set(True)
-                    bpy.ops.object.convert(target='MESH')
-                    trail_mesh = robj2
+        if "_Trail" in robj.name and robj.type in {'CURVE', 'MESH'} and not robj.hide_get():
+            # Convert curve to mesh
+            if robj.type == 'CURVE':
+                bpy.context.view_layer.objects.active = robj
+                bpy.ops.object.select_all(action='DESELECT')
+                robj2 = robj.copy()
+                robj2.data = robj.data.copy()
+                bpy.context.collection.objects.link(robj2)
+                robj2.select_set(True)
+                bpy.ops.object.convert(target='MESH')
+                trail_mesh = robj2
+            else:
+                trail_mesh = robj
+
+            #robj.hide_set(True)
+
+            if trail_mesh:
+                if trail_mesh.type == "MESH" and len(trail_mesh.data.vertices) > 0:
+                    # Check if any vertex is inside the cube
+                    for v in trail_mesh.data.vertices:
+                        global_coord = trail_mesh.matrix_world @ v.co
+                        if is_point_inside_cube(global_coord, cube_bb):
+                            # Apply Boolean modifier
+                            #print(f"{trail_mesh.name} is inside the Boundaries")
+                            if trail_mesh not in boolObjects:
+                                boolObjects.append(trail_mesh)
+                            #Set done to True so it doesnt delete the object later
+                            done = True
+                            #Change Collection
+                            continue  # No need to keep checking this object
+                        else:
+                            pass
+                            #print(f"{trail_mesh.name} is NOT inside the Boundaries")
                 else:
-                    trail_mesh = robj
+                    print("No Vertices for Trail Found")
+                    bpy.data.objects.remove(trail_mesh, do_unlink=True)
 
-                #robj.hide_set(True)
-
-                if trail_mesh:
-                    if trail_mesh.type == "MESH" and len(trail_mesh.data.vertices) > 0:
-                        # Check if any vertex is inside the cube
-                        for v in trail_mesh.data.vertices:
-                            global_coord = trail_mesh.matrix_world @ v.co
-                            if is_point_inside_cube(global_coord, cube_bb):
-                                # Apply Boolean modifier
-                                #print(f"{trail_mesh.name} is inside the Boundaries")
-                                if trail_mesh not in boolObjects:
-                                    boolObjects.append(trail_mesh)
-                                #Set done to True so it doesnt delete the object later
-                                done = True
-                                #Change Collection
-                                continue  # No need to keep checking this object
-                            else:
-                                pass
-                                #print(f"{trail_mesh.name} is NOT inside the Boundaries")
-                    else:
-                        print("No Vertices for Trail Found")
-                        bpy.data.objects.remove(trail_mesh, do_unlink=True)
-
-                #bpy.data.objects.remove(robj, do_unlink=True)
-                #break
+            #bpy.data.objects.remove(robj, do_unlink=True)
+            #break
     if done == False:
         bpy.data.objects.remove(cutobject, do_unlink=True)
         if trail_mesh and trail_mesh.name in bpy.data.objects:
@@ -897,7 +887,7 @@ def intersect_alltrails_with_existing_box(cutobject):
 
         merged_object = bpy.context.active_object
 
-        bool_mod = cube.modifiers.new(name=f"Intersect", type='BOOLEAN')
+        bool_mod = cube.modifiers.new(name="Intersect", type='BOOLEAN')
         bool_mod.operation = 'INTERSECT'
         bool_mod.object = merged_object
         bpy.context.view_layer.objects.active = cube
@@ -911,7 +901,9 @@ def intersect_alltrails_with_existing_box(cutobject):
         cube.data.materials.clear()
         cube.data.materials.append(mat)
 
-        from .metadata import writeMetadata  # deferred to avoid circular import at load time
+        from .metadata import (
+            writeMetadata,  # deferred to avoid circular import at load time
+        )
         writeMetadata(cube,"TRAIL")
 
 
@@ -1043,7 +1035,7 @@ def intersect_trail_with_existing_box(cutobject,trail):
 
         merged_object = bpy.context.active_object
 
-        bool_mod = cube.modifiers.new(name=f"Intersect", type='BOOLEAN')
+        bool_mod = cube.modifiers.new(name="Intersect", type='BOOLEAN')
         bool_mod.operation = 'INTERSECT'
         bool_mod.object = merged_object
         bpy.context.view_layer.objects.active = cube
@@ -1069,7 +1061,9 @@ def intersect_trail_with_existing_box(cutobject,trail):
         cube.data.materials.clear()
         cube.data.materials.append(mat)
 
-        from .metadata import writeMetadata  # deferred to avoid circular import at load time
+        from .metadata import (
+            writeMetadata,  # deferred to avoid circular import at load time
+        )
         writeMetadata(cube,"TRAIL")
 
 
@@ -1406,7 +1400,8 @@ def _resolve_holder_font(font_filename):
     """
     if not font_filename:
         return None
-    import sys, os
+    import os
+    import sys
     if sys.platform != 'win32':
         return None
     candidate = f"C:/WINDOWS/FONTS/{font_filename}"
@@ -1425,7 +1420,9 @@ def _emboss_holder_text(holder_obj, text, outer_w, outer_h, wall_width, top_z,
     length.
     """
     from . import text_objects as txt  # deferred: text_objects imports from this module
-    from .primitives import setupColors  # deferred to avoid circular import at load time
+    from .primitives import (
+        setupColors,  # deferred to avoid circular import at load time
+    )
 
     text = (text or "").strip()
     if not text:
@@ -1505,7 +1502,9 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     `cut_into_puzzle_pieces` / `single_color_mode_curve`.
     """
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
-    from .primitives import setupColors  # deferred to avoid circular import at load time
+    from .primitives import (
+        setupColors,  # deferred to avoid circular import at load time
+    )
 
     objs = [o for o in (piece_objs or []) if o is not None]
     if not objs:
@@ -1718,7 +1717,9 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     # instead of the map it belongs to. Re-home it to the 3D cursor, which
     # createTerrainFromSelected's per-tile loop already parks at the map's
     # own location before trail processing runs.
-    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
+    from .scene import (
+        set_origin_to_3d_cursor,  # deferred to avoid circular import at load time
+    )
     set_origin_to_3d_cursor(crv)
 
     # Build the wider carving tool and cut the groove directly into `map`
@@ -1767,10 +1768,6 @@ def single_color_mode_mesh_wireframe(original, map, tolerance = None):
     if tolerance == None:
         tolerance = bpy.context.scene.tp3d.toleranceElements
 
-    voxelSize = 0.1
-
-
-    #recalculateNormals(original)
 
     obj = original.copy()             # copy the object
     obj.data = obj.data.copy()   # copy the mesh (optional: if you want unique mesh)
@@ -1888,8 +1885,6 @@ def single_color_mode_mesh_wireframe(original, map, tolerance = None):
             map.active_material_index = i
             bpy.context.view_layer.objects.active = map
             bpy.ops.object.material_slot_remove()
-
-    return None
 
 
 def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
@@ -2263,7 +2258,9 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
         # collapsing; shrinks the island holes by the same amount, giving a
         # matching gap around enclosed land; and extends the cutter past the
         # map edge at the boundary, so the terrain side walls get cut away too.
-        from .. import constants as _const  # deferred to avoid circular import at load time
+        from .. import (
+            constants as _const,  # deferred to avoid circular import at load time
+        )
         gap = tolerance * _const.SCM_ELEMENT_GAP_FACTOR
         if gap > 0:
             fp = fp.buffer(gap)
@@ -2396,7 +2393,7 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
 
     try:
         min_z = min(v.co.z for v in bm.verts)
-    except:
+    except ValueError:
         bm.free()
         bpy.ops.object.mode_set(mode='OBJECT')
         return
@@ -2412,8 +2409,7 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
             v.select = True
         else:
             v.select = False
-            if v.co.z < lowestVert:
-                lowestVert = v.co.z
+            lowestVert = min(lowestVert, v.co.z)
 
 
     if flatBottom == False: #Extrudes terrain shape down 1mm
@@ -2437,9 +2433,9 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
         bm.faces.ensure_lookup_table()
 
         for v in bm.verts:
-                if v.co.z < lowestprojection:
-                    lowestprojection = v.co.z
-                if v.co.z < secondlowestprojection and v.co.z > lowestprojection:
+                
+                lowestprojection = min(lowestprojection, v.co.z)
+                if lowestprojection < v.co.z < secondlowestprojection:
                     secondlowestprojection = v.co.z
 
 
@@ -2452,9 +2448,6 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
             # clamp the skirt so it is never pushed below that plane.
             bottom_drop = max(bottom_drop, 0.0)
         bpy.ops.transform.translate(value=(0, 0, bottom_drop), orient_type='LOCAL')
-
-        #bpy.ops.mesh.select_all(action='DESELECT')
-        pass
 
 
     bmesh.update_edit_mesh(mergeobject.data)
@@ -2481,13 +2474,15 @@ def merge_active_with_map(map_obj, active_obj):
     True otherwise -- including the "invalid active type" case, which only
     warns and lets the caller continue on to the next object.
     """
-    from .scene import show_message_box  # deferred to avoid circular import at load time
+    from .scene import (
+        show_message_box,  # deferred to avoid circular import at load time
+    )
 
     if map_obj is None:
         show_message_box("No Map Selected")
         return False
 
-    if "objSize" not in map_obj.keys():
+    if "objSize" not in map_obj:
         show_message_box("Selected object is not a Map")
         return False
 
@@ -2527,8 +2522,10 @@ def merge_active_with_map(map_obj, active_obj):
 
 
 def projection(operation, Mapobject, obj):
-    from .terrain import color_map_faces_by_terrain  # deferred to avoid circular import at load time
     from .scene import remove_objects  # deferred to avoid circular import at load time
+    from .terrain import (
+        color_map_faces_by_terrain,  # deferred to avoid circular import at load time
+    )
 
     for label, o in (("Mapobject", Mapobject), ("obj", obj)):
         if o is None:

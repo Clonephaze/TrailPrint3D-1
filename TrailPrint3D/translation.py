@@ -40,6 +40,7 @@ translations_dict = {
         ("*", "Show what Settings were used to Generate this Object (With Map object Selected)"): "Zeige die Einstellungen an, die zum Generieren dieses Objekts verwendet wurden (Karte ausgewählt).",
         ("*", "No active object."): "kein Objekt ausgewählt",
         ("*", "No custom properties found. Please Select a Map"): "Keine eigenschaften gefunden. Bitte eine Karte auswählen",
+        ("*", "Please select a mesh object."): "Bitte ein Mesh-Objekt auswählen.",
         ("*", "Export OBJ"): "Als OBJ exportieren",
         ("*", "File Path"): "Dateipfad",
         ("*", "Select a file"): "Wähle eine Datei",
@@ -423,6 +424,7 @@ translations_dict = {
             "显示生成该对象时使用的设置（需选中地图对象）",
         ("*", "No active object."): "没有活动对象",
         ("*", "No custom properties found. Please Select a Map"): "未找到自定义属性，请选择一张地图",
+        ("*", "Please select a mesh object."): "请选择一个网格对象。",
 
         ("*", "Export OBJ"): "导出 OBJ",
         ("*", "File Path"): "文件路径",
@@ -840,6 +842,7 @@ translations_dict = {
             "Показать настройки, использованные для генерации этого объекта (выберите объект карты)",
         ("*", "No active object."): "Нет активного объекта.",
         ("*", "No custom properties found. Please Select a Map"): "Свойства не найдены. Пожалуйста, выберите карту",
+        ("*", "Please select a mesh object."): "Пожалуйста, выберите объект-сетку.",
         ("*", "Export OBJ"): "Экспорт OBJ",
         ("*", "File Path"): "Путь к файлу",
         ("*", "Select a file"): "Выберите файл",

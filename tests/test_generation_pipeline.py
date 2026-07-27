@@ -43,16 +43,16 @@ Run with:
 
 --python-exit-code 1 exits Blender with code 1 on any unhandled exception
 (including AssertionError), making failures visible to CI.
-"""
+"""  # noqa: W605
 
-import sys
-import os
 import math
+import os
 import shutil
+import sys
 import traceback
 from collections import Counter
 
-import bpy         # type: ignore  — provided by Blender's Python
+import bpy  # type: ignore  — provided by Blender's Python
 from mathutils import Vector  # type: ignore
 
 # ---------------------------------------------------------------------------
@@ -68,8 +68,7 @@ _OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 if "TrailPrint3D" not in bpy.context.preferences.addons:
     bpy.ops.preferences.addon_enable(module="TrailPrint3D")
 
-from TrailPrint3D.utils.generation import runGeneration  # noqa: E402
-
+from TrailPrint3D.utils.generation import runGeneration
 
 # ---------------------------------------------------------------------------
 # Minimal test runner (matches the pattern used by the other tests/*.py files)
@@ -84,7 +83,7 @@ def _run(name, fn):
         fn()
         print(f"  PASS  {name}")
         _passed += 1
-    except Exception:
+    except Exception:  # noqa: BLE001 - wide exception needeed to keep test runner going
         print(f"  FAIL  {name}")
         traceback.print_exc()
         _failed += 1
@@ -131,6 +130,8 @@ def _reset_scene_defaults():
     tp3d.el_sMedActive = False
     tp3d.el_sSmallActive = False
     tp3d.el_oActive = False
+    tp3d.ellipseRatio = 0.75
+    tp3d.rectangleHeight = 100
 
 
 def _cleanup_objects(objects):
@@ -435,6 +436,161 @@ def test_hexagon_outer_text_paint_forest_water():
         f"PAINT mode should export .obj, got {stats['exported_files']}"
 
 
+def test_hexagon_inner_text():
+    """3BergeTour hike, HEXAGON INNER TEXT — text is inserted into the map
+    surface itself (TRAIL material on the text object, no separate plate)."""
+    stats = _run_generation_scenario(
+        "hexagon_inner_text",
+        "3BergeTour.gpx",
+        {"shape": "HEXAGON", "shapeTextStyle": "INNER TEXT"},
+    )
+    _print_stats("hexagon inner text (3BergeTour)", stats)
+
+    # Map + trail + embedded text object.
+    assert stats["object_count"] >= 3, \
+        f"Expected map+trail+text objects, got {stats['object_count']}"
+    assert stats["total_vertices"] > 0
+    # INNER TEXT uses TRAIL material on the text, not WHITE.
+    assert stats["faces_by_color"].get("TRAIL", 0) > 0, \
+        "Expected TRAIL-material faces (trail + inner text)"
+
+
+def test_hexagon_front_text():
+    """3BergeTour hike, HEXAGON FRONT TEXT — text + plate on the front face."""
+    stats = _run_generation_scenario(
+        "hexagon_front_text",
+        "3BergeTour.gpx",
+        {"shape": "HEXAGON", "shapeTextStyle": "FRONT TEXT"},
+    )
+    _print_stats("hexagon front text (3BergeTour)", stats)
+
+    assert stats["object_count"] >= 4, \
+        f"Expected map+trail+text+plate objects, got {stats['object_count']}"
+    assert stats["faces_by_color"].get("WHITE", 0) > 0, "Expected WHITE text object"
+    assert stats["faces_by_color"].get("BLACK", 0) > 0, "Expected BLACK plate object"
+
+
+def test_hexagon_shell():
+    """3BergeTour hike, HEXAGON SHELL — generates a snug protective shell
+    around the map's sides and bottom in addition to the base map + trail."""
+    stats = _run_generation_scenario(
+        "hexagon_shell",
+        "3BergeTour.gpx",
+        {"shape": "HEXAGON", "shapeTextStyle": "SHELL"},
+    )
+    _print_stats("hexagon shell (3BergeTour)", stats)
+
+    assert stats["object_count"] >= 3, \
+        f"Expected map+trail+shell objects, got {stats['object_count']}"
+    assert stats["total_vertices"] > 0
+
+
+def test_circle_outer_text():
+    """3BergeTour hike, CIRCLE OUTER TEXT — circular map with a backplate and
+    curved text overlay."""
+    stats = _run_generation_scenario(
+        "circle_outer_text",
+        "3BergeTour.gpx",
+        {"shape": "CIRCLE", "shapeTextStyle": "OUTER TEXT"},
+    )
+    _print_stats("circle outer text (3BergeTour)", stats)
+
+    assert stats["object_count"] >= 4, \
+        f"Expected map+trail+text+plate objects, got {stats['object_count']}"
+    assert stats["faces_by_color"].get("WHITE", 0) > 0, "Expected WHITE text object"
+    assert stats["faces_by_color"].get("BLACK", 0) > 0, "Expected BLACK plate object"
+
+
+def test_octagon_outer_text():
+    """3BergeTour hike, OCTAGON OUTER TEXT — octagon map with a backplate and
+    text overlay."""
+    stats = _run_generation_scenario(
+        "octagon_outer_text",
+        "3BergeTour.gpx",
+        {"shape": "OCTAGON", "shapeTextStyle": "OUTER TEXT"},
+    )
+    _print_stats("octagon outer text (3BergeTour)", stats)
+
+    assert stats["object_count"] >= 4, \
+        f"Expected map+trail+text+plate objects, got {stats['object_count']}"
+    assert stats["faces_by_color"].get("WHITE", 0) > 0, "Expected WHITE text object"
+    assert stats["faces_by_color"].get("BLACK", 0) > 0, "Expected BLACK plate object"
+
+
+def test_square_paint_forest_water():
+    """3BergeTour hike, SQUARE (rectangle) shape, PAINT mode with real
+    forest + water.  Also exercises the rectangleHeight property."""
+    stats = _run_generation_scenario(
+        "square_paint_forest_water",
+        "3BergeTour.gpx",
+        {
+            "shape": "SQUARE",
+            "rectangleHeight": 80,
+            "col_fActive": True,
+            "col_wPondsActive": True,
+        },
+    )
+    _print_stats("square / paint / real forest+water (3BergeTour)", stats)
+
+    assert stats["object_count"] >= 2
+    assert stats["faces_by_color"].get("BASE", 0) > 0
+    assert stats["faces_by_color"].get("FOREST", 0) > 0, "Expected FOREST-painted faces"
+    assert stats["faces_by_color"].get("WATER", 0) > 0, "Expected WATER-painted faces"
+
+
+def test_square_shell():
+    """3BergeTour hike, SQUARE SHELL — rectangle map with a protective shell."""
+    stats = _run_generation_scenario(
+        "square_shell",
+        "3BergeTour.gpx",
+        {"shape": "SQUARE", "shapeTextStyle": "SHELL"},
+    )
+    _print_stats("square shell (3BergeTour)", stats)
+
+    assert stats["object_count"] >= 3, \
+        f"Expected map+trail+shell objects, got {stats['object_count']}"
+    assert stats["total_vertices"] > 0
+
+
+def test_ellipse_paint_forest_water():
+    """3BergeTour hike, ELLIPSE shape, PAINT mode with real forest + water.
+    Also exercises the ellipseRatio property."""
+    stats = _run_generation_scenario(
+        "ellipse_paint_forest_water",
+        "3BergeTour.gpx",
+        {
+            "shape": "ELLIPSE",
+            "ellipseRatio": 0.6,
+            "col_fActive": True,
+            "col_wPondsActive": True,
+        },
+    )
+    _print_stats("ellipse / paint / ellipseRatio=0.6 / real forest+water (3BergeTour)", stats)
+
+    assert stats["object_count"] >= 2
+    assert stats["faces_by_color"].get("BASE", 0) > 0
+    assert stats["faces_by_color"].get("FOREST", 0) > 0, "Expected FOREST-painted faces"
+
+
+def test_heart_paint_forest_water():
+    """3BergeTour hike, HEART shape, PAINT mode with real forest + water.
+    HEART has no text-style extras."""
+    stats = _run_generation_scenario(
+        "heart_paint_forest_water",
+        "3BergeTour.gpx",
+        {
+            "shape": "HEART",
+            "col_fActive": True,
+            "col_wPondsActive": True,
+        },
+    )
+    _print_stats("heart / paint / real forest+water (3BergeTour)", stats)
+
+    assert stats["object_count"] >= 2
+    assert stats["faces_by_color"].get("BASE", 0) > 0
+    assert stats["total_vertices"] > 0
+
+
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     print("\n" + "=" * 60)
@@ -449,5 +605,14 @@ if __name__ == "__main__":
     _run("octagon + real forest+water (100KmTour)",                test_octagon_forest_water_long_route)
     _run("separate + real forest+water (100KmTour)",               test_separate_forest_water_long_route)
     _run("hexagon outer text + resolution 8 + real forest+water",  test_hexagon_outer_text_paint_forest_water)
+    _run("hexagon inner text (3BergeTour)",                        test_hexagon_inner_text)
+    _run("hexagon front text (3BergeTour)",                        test_hexagon_front_text)
+    _run("hexagon shell (3BergeTour)",                             test_hexagon_shell)
+    _run("circle outer text (3BergeTour)",                         test_circle_outer_text)
+    _run("octagon outer text (3BergeTour)",                        test_octagon_outer_text)
+    _run("square/paint + real forest+water (3BergeTour)",          test_square_paint_forest_water)
+    _run("square shell (3BergeTour)",                              test_square_shell)
+    _run("ellipse/paint + real forest+water (3BergeTour)",         test_ellipse_paint_forest_water)
+    _run("heart/paint + real forest+water (3BergeTour)",           test_heart_paint_forest_water)
 
     _assert_all_passed()

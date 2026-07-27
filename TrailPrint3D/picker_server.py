@@ -13,9 +13,8 @@ import subprocess as sp
 import sys
 import tempfile
 import threading
-import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
-
+from typing import cast
 
 _HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'multitile_configurator.html'
 
@@ -122,7 +121,7 @@ def _bring_blender_to_foreground() -> None:
             user32.SetForegroundWindow(hwnd)
             if user32.GetForegroundWindow() != hwnd:
                 print("[TP3D picker_server] Minimize/restore fallback also didn't take foreground.")
-    except Exception as e:
+    except (OSError, ImportError, AttributeError) as e:
         print(f"[TP3D picker_server] _bring_blender_to_foreground failed: {e}")
 
 def _free_port() -> int:
@@ -210,7 +209,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         body = (
             self.html_path.read_text(encoding='utf-8')
-            .replace('__PORT__', str(self.server.server_address[1]))
+            .replace('__PORT__', str(cast(tuple[str, int], self.server.server_address)[1]))
             .replace('__OBJSIZE__', str(self.obj_size))
             .encode('utf-8')
         )
@@ -234,7 +233,7 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 self.state_path.write_bytes(body)
                 print(f"[TP3D picker] /save_state wrote {len(body)} bytes to {self.state_path}")
-            except Exception as e:
+            except OSError as e:
                 print(f"[TP3D picker] /save_state FAILED to write {self.state_path}: {e}")
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
@@ -308,8 +307,8 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     if _active_server is not None:
         try:
             _active_server.shutdown()
-        except Exception:
-            pass
+        except OSError as e:
+            print(f"[TP3D picker] Failed to shut down previous server: {e}")
         _active_server = None
 
     html_path = pathlib.Path(html_path) if html_path else _HTML_PATH
