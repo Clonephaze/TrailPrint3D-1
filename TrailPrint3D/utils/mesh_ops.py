@@ -621,7 +621,14 @@ def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
             # face) -- near a jigsaw piece's boundary the ray can otherwise
             # graze a near-vertical side wall and report a "successful" hit
             # at the wrong height.
-            hit_ok = is_map_hit and hit_result[2].z >= 0.5
+            #
+            # Threshold is 0.1, not 0.5, for the same reason RaycastCurveToMesh
+            # uses 0.1: jigsaw walls are truly vertical (normal.z ~ 0) so 0.1
+            # still catches them, but 0.5 incorrectly rejected steep terrain at
+            # high elevation scales, replacing valid hits with a borrowed
+            # neighbour Z instead -- flat plateaus followed by sudden vertical
+            # steps. This function had drifted out of sync with that fix.
+            hit_ok = is_map_hit and hit_result[2].z >= 0.1
             hits.append(curve_world_inv @ hit_result[1] if hit_ok else None)
 
         # Fill gaps from the nearest point along the spline that DID hit --
@@ -1149,31 +1156,40 @@ def _ensure_outward_normals(obj):
     recalculateNormals()'s normals_make_consistent() only guarantees every
     face is consistent with its neighbors -- for a thin/concave solid like a
     jigsaw piece it can end up fully consistent but globally INVERTED (a
-    known limitation of that heuristic), which is exactly what happened to
-    one piece. A closed manifold's signed volume (divergence theorem: sum
-    each face's contribution to the volume integral) is a deterministic,
-    purely geometric way to tell which way is actually outward -- positive
-    means correctly outward, negative means the whole mesh is inside-out --
-    independent of whatever normals_make_consistent() decided.
+    known limitation of that heuristic).
+
+    Previously checked via a closed manifold's signed volume (divergence
+    theorem), but that sums two nearly-equal, opposite-sign top/bottom cap
+    contributions on these thin flat-prism pieces -- the kind of near-
+    cancellation that's numerically noisy in float precision, and it still
+    came out wrong on some pieces. The bottom face is a simpler and
+    unambiguous reference instead: on a flat-prism puzzle piece it must
+    always point straight down, so check that directly rather than integrate
+    over the whole solid.
     """
     recalculateNormals(obj)
 
+    mesh = obj.data
+    if not mesh.polygons:
+        return
+    min_z = min(v.co.z for v in mesh.vertices)
+    z_tol = max(1e-3, (max(v.co.z for v in mesh.vertices) - min_z) * 0.01)
+    bottom_normals_z = [
+        p.normal.z for p in mesh.polygons
+        if all(abs(mesh.vertices[vi].co.z - min_z) < z_tol for vi in p.vertices)
+    ]
+    if not bottom_normals_z or sum(bottom_normals_z) / len(bottom_normals_z) < 0:
+        return  # already facing down -- nothing to do
+
+    # Bottom face(s) point up instead of down -- the whole mesh is globally
+    # inside-out. Reverse every face (never just the bottom ones) so the
+    # flip keeps the mesh internally consistent with its neighbors.
     bm = bmesh.new()
-    bm.from_mesh(obj.data)
-    bm.faces.ensure_lookup_table()
-    volume = 0.0
-    for f in bm.faces:
-        if len(f.verts) < 3:
-            continue
-        v0 = f.verts[0].co
-        for i in range(1, len(f.verts) - 1):
-            volume += v0.dot(f.verts[i].co.cross(f.verts[i + 1].co))
-    volume /= 6.0
-    if volume < 0:
-        bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
-        bm.to_mesh(obj.data)
-        obj.data.update()
+    bm.from_mesh(mesh)
+    bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
+    bm.to_mesh(mesh)
     bm.free()
+    mesh.update()
 
 
 def _bevel_bottom_edges(obj, bevel_width):
@@ -1372,7 +1388,19 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
         piece_obj["PuzzleCol"] = col
         piece_objs.append(piece_obj)
 
-    bpy.data.objects.remove(terrain_obj, do_unlink=True)
+    if bpy.app.debug:
+        # Keep the original, uncut tile around for inspection when debugging
+        # -- shifted aside (same offset the debug cutters above use, so it
+        # lands next to them rather than overlapping the real pieces) and
+        # stripped of its MAP tag so later scene-wide raycasts/map pickers
+        # (e.g. RaycastCurveToAnyMesh's "is this a MAP object" check) can't
+        # mistake this leftover for a real, currently-active map.
+        terrain_obj.name = f"{terrain_obj.name}_DebugOriginal"
+        terrain_obj.location.y += debug_y_offset
+        terrain_obj.pop("objType", None)
+        terrain_obj.pop("Object type", None)
+    else:
+        bpy.data.objects.remove(terrain_obj, do_unlink=True)
     return piece_objs
 
 

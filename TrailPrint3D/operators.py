@@ -2363,20 +2363,33 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # own re-derived one, not a real need to dig into the bottom.
         utils.createTerrainFromSelected(manage_overlay=False, skip_bottom_recess=True)
 
-        overlay.update(0.6, "Cutting puzzle pieces…", f"{len(pieces)} piece(s)…")
+        # Create and elevation-snap each trail BEFORE cutting the puzzle apart
+        # -- raycasting after the cut left any point whose XY falls in the
+        # tiny tolerance gap between two adjacent pieces with no mesh under it
+        # at all (nothing in the whole scene to hit there), which silently
+        # moved that point to whatever fallback position RaycastCurveToAnyMesh's
+        # miss-handling produced instead of the terrain's actual surface.
+        # Snapping against `blank` while it's still one continuous tile (no
+        # internal gaps yet) guarantees every point finds a hit.
+        trails = []
+        if gpx_paths:
+            overlay.update(0.6, "Generating trails…", f"{len(gpx_paths)} trail(s)…")
+            trails = _generate_trails(context, gpx_paths, overlay, 0.6, 0.75)
+
+        overlay.update(0.75, "Cutting puzzle pieces…", f"{len(pieces)} piece(s)…")
         piece_objs = utils.cut_into_puzzle_pieces(blank, pieces, tolerance)
 
-        if gpx_paths:
-            # Merge trails into the individual PIECES, not the single tile
-            # before cutting -- merge_active_with_map's non-single-color-mode
-            # path builds a separate trail-decal object intersected against
-            # whatever map object it's given; merging into the one big tile
-            # before the cut produced a decal that was never cut apart along
-            # the jigsaw lines at all. Same bbox-overlap-per-tile pattern the
-            # regular multi-tile map picker uses, so a trail spanning several
-            # pieces correctly gets merged into each one it crosses.
-            overlay.update(0.85, "Generating trails…", f"{len(gpx_paths)} trail(s)…")
-            trails = _generate_trails(context, gpx_paths, overlay, 0.85, 0.95)
+        if trails:
+            # The actual per-piece decal is still built AFTER the cut, though
+            # -- merge_active_with_map's non-single-color-mode path builds a
+            # separate trail-decal object intersected against whatever map
+            # object it's given; merging the (already snapped) curve into each
+            # overlapping PIECE here (not into the one big tile before the
+            # cut) is what gives every piece its own correctly-cut trail
+            # decal. Same bbox-overlap-per-tile pattern the regular multi-tile
+            # map picker uses, so a trail spanning several pieces correctly
+            # gets merged into each one it crosses.
+            overlay.update(0.85, "Merging trails into pieces…", f"{len(trails)} trail(s)…")
             for trail_obj in trails:
                 for piece_obj in piece_objs:
                     if utils.is_bbox_overlapping(trail_obj, piece_obj):
