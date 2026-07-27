@@ -209,16 +209,16 @@ def unregister():
 
     try:
         bpy.app.handlers.load_post.remove(startup_function)
-    except RuntimeError:
+    except ValueError:
         pass
 
     try:
         del bpy.types.Scene.tp3d
-    except RuntimeError:
+    except AttributeError:
         pass
 
     try:
         del bpy.types.Scene.preset_list
-    except RuntimeError:
+    except AttributeError:
         pass
 
