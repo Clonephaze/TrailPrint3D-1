@@ -1620,7 +1620,7 @@ def createOcean(prefetched_coastline, scaleHor, tile):
     """
     from .osm import fetch_coastline_ways  # deferred to avoid circular import at load time
     from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
-    from .mesh_ops import projection, recalculateNormals  # deferred to avoid circular import at load time
+    from .mesh_ops import projection, recalculateNormals, merge_with_map  # deferred to avoid circular import at load time
     from .. import constants as _const  # deferred to avoid circular import at load time
 
     _t_ocean = time.time()
@@ -1685,7 +1685,15 @@ def createOcean(prefetched_coastline, scaleHor, tile):
         projection("paint", tile, ocean_obj)
         return None
     elif elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
-        projection("singleColorMode_remesh", tile, ocean_obj)
+        # Only clip ocean_obj to the plate's footprint here -- do NOT cut the
+        # ocean recess into the plate yet. `tile` (the real plate object,
+        # not a copy) must stay uncut until _rg_apply_single_color_mode has
+        # taken its trail-intersection copy, otherwise the trail curves get
+        # intersected against a plate that's already missing the ocean area.
+        # The recess itself is cut later by _rg_apply_single_color_mode's
+        # TERRAIN_PRIORITY_ORDER loop, which handles 'ocean' like every other
+        # element.
+        merge_with_map(tile, ocean_obj, True)
         mat = bpy.data.materials.get("WATER")
         ocean_obj.data.materials.clear()
         ocean_obj.data.materials.append(mat)

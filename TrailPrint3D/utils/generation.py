@@ -802,8 +802,13 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
 
             _scm_done += 1
 
-        for thicker in thicker_by_key.values():
-            remove_objects(thicker)
+        if bpy.app.debug:
+            obj_size = props.get('size', 100)
+            for thicker in thicker_by_key.values():
+                thicker.location.x += obj_size
+        else:
+            for thicker in thicker_by_key.values():
+                remove_objects(thicker)
 
     if props['elementMode'] == "SEPARATE" and thickerCurves:
         for key in TERRAIN_PRIORITY_ORDER:
