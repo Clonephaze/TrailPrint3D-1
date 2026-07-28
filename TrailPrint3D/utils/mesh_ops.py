@@ -1255,7 +1255,17 @@ def _bevel_bottom_edges(obj, bevel_width):
     print(f"[TP3D puzzle bevel] {obj.name}: {n_edges} boundary edge(s) selected, beveling {bevel_width}mm")
 
     if n_edges > 0:
-        bpy.ops.mesh.bevel(offset=bevel_width, offset_type='OFFSET', segments=1, affect='EDGES')
+        # clamp_overlap: without it, a fixed-width bevel is applied
+        # unconditionally everywhere, including at sharp/acute corners
+        # (common on the radial puzzle shape's hub and ring-split
+        # junctions, and on tab-curve corners generally) where a full-width
+        # bevel geometrically overlaps itself, producing the self-
+        # intersecting sliver faces seen at those corners. With it,
+        # Blender's own bevel operator automatically shrinks the offset
+        # locally wherever the full width would overlap, instead of always
+        # applying the same fixed width.
+        bpy.ops.mesh.bevel(offset=bevel_width, offset_type='OFFSET', segments=1, affect='EDGES',
+                            clamp_overlap=True)
 
     bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -1436,16 +1446,19 @@ def _resolve_holder_font(font_filename):
     return candidate if os.path.isfile(candidate) else None
 
 
-def _emboss_holder_text(holder_obj, text, outer_w, outer_h, wall_width, top_z,
+def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_z,
                          font="", text_size_mm=None):
     """Emboss *text* centered on the front (south, -Y) rim of holder_obj and
     join it in as one printable part, in the WHITE material.
 
     The text's natural size is measured at scale 1 (instead of assuming a
     fixed font size) so it's scaled to *text_size_mm* (or, if not given, to
-    fit the rim strip's available height) -- and always clamped by available
-    width too, for long strings -- regardless of font metrics or string
-    length.
+    fit the rim strip's available height) -- and always clamped to
+    *available_w* too, for long strings -- regardless of font metrics or
+    string length. *available_w* is the caller's job to compute (the outer
+    shape's actual width at the text's own Y position -- simply outer_w-ish
+    for a rectangle, but a circle's rim is narrower there than its full
+    diameter, see build_circular_puzzle_holder).
     """
     from . import text_objects as txt  # deferred: text_objects imports from this module
     from .primitives import (
@@ -1475,7 +1488,6 @@ def _emboss_holder_text(holder_obj, text, outer_w, outer_h, wall_width, top_z,
         return holder_obj
 
     target_h = text_size_mm if text_size_mm and text_size_mm > 0 else max(0.5, wall_width - 1.5)
-    available_w = max(1.0, outer_w - 6.0)   # margin so text clears the rim's outer/inner edges
     scale = min(target_h / natural_h, available_w / natural_w)
     text_obj.scale = (scale, scale, 1)
 
@@ -1596,7 +1608,8 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     bpy.data.objects.remove(cutter_obj, do_unlink=True)
 
     if text:
-        _emboss_holder_text(holder_obj, text, outer_w, outer_h, wall_width, wall_height,
+        available_w = max(1.0, outer_w - 6.0)  # margin so text clears the rim's outer/inner edges
+        _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, wall_height,
                              font=font, text_size_mm=text_size_mm)
 
     # Positioned at the puzzle's own XY center; Z so the pocket floor's TOP

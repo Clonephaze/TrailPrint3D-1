@@ -1053,7 +1053,7 @@ def OctagonOuterText():
     return textobj, plateobj
 
 
-def _wrap_mesh_around_circle(obj, radius, base_angle_rad, upper, anchor_x=0.0, anchor_y=0.0):
+def wrap_mesh_around_circle(obj, radius, base_angle_rad, upper, anchor_x=0.0, anchor_y=0.0):
     """Bend a flat mesh into an arc of the given radius, centered on base_angle_rad.
 
     Local X (the flat reading direction) becomes angle around the circle;
@@ -1280,7 +1280,7 @@ def MedalText():
         # rest of the bottom arc's "lower" convention rather than flipping
         # to match the title's "upper" one right at that boundary.
         upper = math.sin(math.radians(angle_deg)) > 0
-        _wrap_mesh_around_circle(txt_obj, text_radius, math.radians(angle_deg), upper, anchor_x, anchor_y)
+        wrap_mesh_around_circle(txt_obj, text_radius, math.radians(angle_deg), upper, anchor_x, anchor_y)
         transform_MapObject(txt_obj, centerx, centery)
 
     bpy.ops.object.select_all(action='DESELECT')

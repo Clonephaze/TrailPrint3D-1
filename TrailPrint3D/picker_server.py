@@ -203,6 +203,34 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path.startswith('/get_gpx_content?'):
+            from urllib.parse import parse_qs, urlparse
+            query = parse_qs(urlparse(self.path).query)
+            raw_path = query.get('path', [''])[0]
+            # Only ever re-serves a file /upload_gpx itself just wrote (same
+            # temp dir, same 'trailprint_' name prefix) -- not an arbitrary
+            # local-file read. Used so a picker page can redraw a
+            # previously-imported trail on reopen (saveState/restoreState
+            # only persist the path/name, not the raw GPX content itself).
+            candidate = pathlib.Path(raw_path)
+            expected_dir = pathlib.Path(tempfile.gettempdir())
+            if candidate.parent != expected_dir or not candidate.name.startswith('trailprint_'):
+                self.send_response(403)
+                self.end_headers()
+                return
+            try:
+                body = candidate.read_bytes()
+            except OSError:
+                self.send_response(404)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/gpx+xml')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path != '/':
             self.send_response(404)
             self.end_headers()

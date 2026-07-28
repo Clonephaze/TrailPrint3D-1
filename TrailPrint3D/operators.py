@@ -2177,6 +2177,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         import tempfile
 
         from . import picker_server as mp
+        from . import temp
 
         self._result_path = str(
             pathlib.Path(tempfile.gettempdir()) / 'trailprint_puzzlepicker.json'
@@ -2185,7 +2186,12 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         if rp.exists():
             rp.unlink()
 
-        html_path = pathlib.Path(__file__).parent / 'puzzleGenerator.html'
+        # The hex/circular puzzle shapes are Premium-exclusive -- their
+        # actual generation code only exists in the Premium build's own
+        # picker page, not this one, so there's nothing to unlock by
+        # tampering with a served free page.
+        html_filename = 'premium/puzzleGenerator_pe.html' if temp.PREMIUMVERSION else 'puzzleGenerator.html'
+        html_path = pathlib.Path(__file__).parent / html_filename
         self._server = mp.start_picker(
             self._result_path,
             existing_maps=_collect_existing_maps(),
@@ -2211,6 +2217,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         _generate_trails, merge_active_with_map) directly rather than
         refactoring that larger, already-working method.
         """
+        from . import temp
         from .utils.geo import convert_to_neutral_coordinates
 
         props = context.scene.tp3d
@@ -2247,7 +2254,21 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         puzzle_corner_radius = float(data.get('puzzleCornerRadius') or 0)
         rows_n = int(data.get('rows') or 0)
         cols_n = int(data.get('cols') or 0)
-        puzzle_name = (data.get('name') or '').strip() or f"{rows_n}-{cols_n}_Puzzle"
+        shape_name = data.get('shape')
+        if shape_name in ('hex', 'radial') and not temp.PREMIUMVERSION:
+            # Defensive fallback only -- the free picker page has no code
+            # path that can produce this in the first place (the hex/radial
+            # generation JS lives solely in the Premium build's own picker
+            # page), but a hand-crafted result file shouldn't be able to
+            # trigger the Premium-only circular holder below either.
+            shape_name = None
+        if shape_name == 'hex':
+            default_name = f"Hex_{cols_n}-{rows_n}_Puzzle"
+        elif shape_name == 'radial':
+            default_name = f"Radial_{cols_n}-{rows_n}_Puzzle"
+        else:
+            default_name = f"{rows_n}-{cols_n}_Puzzle"
+        puzzle_name = (data.get('name') or '').strip() or default_name
 
         if not bbox or not pieces:
             self.report({'WARNING'}, "Nothing to generate — draw a rectangle first")
@@ -2400,15 +2421,33 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         holder_data = data.get('holder') or {}
         if holder_data.get('enabled'):
             overlay.update(0.97, "Generating holder…", "")
-            holder_obj = utils.build_puzzle_holder(
-                piece_objs,
-                text=holder_data.get('text', ''),
-                wall_width=float(holder_data.get('wallWidth') or 4.0),
-                corner_radius=float(holder_data.get('cornerRadius') or 0),
-                pocket_corner_radius=puzzle_corner_radius,
-                font=holder_data.get('font', ''),
-                text_size_mm=float(holder_data.get('textSize') or 0) or None,
-            )
+            if shape_name in ('hex', 'radial'):
+                # Both shapes' assembled outer boundary is a true circle
+                # (the hex shape via its warp+clip to an exact target
+                # circle, the radial shape by construction) -- a round
+                # holder matches that instead of a rounded rectangle.
+                # Premium-exclusive: build_circular_puzzle_holder only
+                # exists in the Premium build (premium/utils_pe.py) -- see
+                # the shape_name fallback above, which guarantees this
+                # branch is unreachable without temp.PREMIUMVERSION.
+                from .premium import utils_pe
+                holder_obj = utils_pe.build_circular_puzzle_holder(
+                    piece_objs,
+                    text=holder_data.get('text', ''),
+                    wall_width=float(holder_data.get('wallWidth') or 4.0),
+                    font=holder_data.get('font', ''),
+                    text_size_mm=float(holder_data.get('textSize') or 0) or None,
+                )
+            else:
+                holder_obj = utils.build_puzzle_holder(
+                    piece_objs,
+                    text=holder_data.get('text', ''),
+                    wall_width=float(holder_data.get('wallWidth') or 4.0),
+                    corner_radius=float(holder_data.get('cornerRadius') or 0),
+                    pocket_corner_radius=puzzle_corner_radius,
+                    font=holder_data.get('font', ''),
+                    text_size_mm=float(holder_data.get('textSize') or 0) or None,
+                )
             if holder_obj is not None:
                 holder_obj.name = f"{puzzle_name}_Holder"
 
