@@ -1,3 +1,5 @@
+import math
+
 import bpy  # type: ignore
 
 from .. import constants as const
@@ -67,11 +69,18 @@ def writeMetadata(obj, type = "MAP"):
         from .geo import (
             convert_to_geo,  # deferred to avoid circular import at load time
         )
-        obj["latitude"], obj["longitude"] = convert_to_geo(bpy.context.scene.tp3d.o_centerx,bpy.context.scene.tp3d.o_centery)
+        _latitude, obj["longitude"] = convert_to_geo(bpy.context.scene.tp3d.o_centerx,bpy.context.scene.tp3d.o_centery)
+        obj["latitude"] = _latitude
         _scale_elev = bpy.context.scene.tp3d.scaleElevation
         _auto_scale = bpy.context.scene.tp3d.sAutoScale
-        if _scale_elev != 0 and _auto_scale != 0:
-            obj["Elevation Range (m)"] = round((bpy.context.scene.tp3d.highestZ - bpy.context.scene.tp3d.lowestZ) * 1000 / _scale_elev / _auto_scale, 1)
+        # Vertex Z is displaced by scaleElevation * autoScale * merc (merc = the
+        # per-vertex Mercator latitude factor applied in generation.py/geo.py's
+        # elevation pass), so recovering real-world meters from the model's Z
+        # range has to divide that same factor back out -- otherwise this value
+        # is inflated by ~1/cos(latitude) away from the equator.
+        _merc = 1 / math.cos(math.radians(_latitude))
+        if _scale_elev != 0 and _auto_scale != 0 and _merc != 0:
+            obj["Elevation Range (m)"] = round((bpy.context.scene.tp3d.highestZ - bpy.context.scene.tp3d.lowestZ) * 1000 / _scale_elev / _auto_scale / _merc, 1)
         else:
             obj["Elevation Range (m)"] = 0
         obj["sMapInKm"] = bpy.context.scene.tp3d.sMapInKm

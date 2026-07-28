@@ -1855,6 +1855,28 @@ def exaggeratedLayers(objs):
     if selected_objects:
         bpy.context.view_layer.objects.active = selected_objects[0]
 
+def _elevation_mm_per_meter(obj):
+    """Model-space mm per real-world elevation meter for this specific map object.
+
+    Derived from the elevation-scale metadata frozen onto the object at
+    generation time (so it stays correct even if the scene's current
+    scaleElevation/autoScale belong to a differently-scaled map generated
+    afterward). Falls back to the scene's current elevation-scale settings
+    if the object predates this metadata.
+    """
+    elev_range_m = obj.get("Elevation Range (m)")
+    lowestZ = obj.get("lowestZ")
+    highestZ = obj.get("highestZ")
+    if elev_range_m and lowestZ is not None and highestZ is not None:
+        z_range = highestZ - lowestZ
+        if z_range:
+            return z_range / elev_range_m
+
+    scale_elevation = bpy.context.scene.tp3d.scaleElevation
+    auto_scale = bpy.context.scene.tp3d.sAutoScale
+    return scale_elevation * auto_scale / 1000
+
+
 def contourLines(objs):
     from .metadata import (
         writeMetadata,  # deferred to avoid circular import at load time
@@ -1862,11 +1884,15 @@ def contourLines(objs):
     from .scene import (
         show_message_box,  # deferred to avoid circular import at load time
     )
+    from .mesh_ops import (
+        boolean_operation,  # deferred to avoid circular import at load time
+    )
 
     selected_objects = objs
     cl_thickness = bpy.context.scene.tp3d.cl_thickness
     cl_distance = bpy.context.scene.tp3d.cl_distance
     cl_offset = bpy.context.scene.tp3d.cl_offset
+    cl_useRealMeters = bpy.context.scene.tp3d.cl_useRealMeters
 
     size = bpy.context.scene.tp3d.objSize
 
@@ -1883,6 +1909,28 @@ def contourLines(objs):
         if obj["Object type"] != "MAP":
             continue
 
+        # cl_distance/cl_offset are entered in real-world elevation meters
+        # when the toggle is on -- convert to this map's own model-space mm
+        # using the elevation scale frozen onto it at generation time.
+        if cl_useRealMeters:
+            mm_per_meter = _elevation_mm_per_meter(obj)
+            cl_distance_eff = cl_distance * mm_per_meter
+            cl_offset_eff = cl_offset * mm_per_meter
+        else:
+            cl_distance_eff = cl_distance
+            cl_offset_eff = cl_offset
+
+        if cl_distance_eff <= cl_thickness:
+            distance_label = (
+                f"{cl_distance:g}m = {cl_distance_eff:.3f}mm" if cl_useRealMeters
+                else f"{cl_distance_eff:.3f}mm"
+            )
+            show_message_box(
+                f"Contour Line distance ({distance_label}) must be greater than the Contour Line "
+                f"thickness ({cl_thickness:.3f}mm) for '{obj.name}'. Skipping."
+            )
+            continue
+
         objs = list(bpy.context.scene.objects)
         for o in objs:
             if "Object type" in o and "PARENT" in o and o["PARENT"] == obj and  o["Object type"] == "LINES":
@@ -1891,19 +1939,19 @@ def contourLines(objs):
         # Deselect everything
         bpy.ops.object.select_all(action='DESELECT')
 
-        # Create plane at 3D cursor
+        # Create plane at the map object's own origin
         bpy.ops.mesh.primitive_plane_add(size=size + 10, enter_editmode=False, align='WORLD',
-                                        location=bpy.context.scene.cursor.location)
+                                        location=obj.location)
         plane = bpy.context.active_object
         if plane is None:
             continue
         plane.name = "CuttingPlane"
-        plane.location.z += cl_offset
+        plane.location.z += cl_offset_eff
 
         # Add Array modifier in Z direction
         array_mod = plane.modifiers.new(name="ArrayZ", type='ARRAY')
         array_mod.relative_offset_displace = (0, 0, 0)   # disable relative offset
-        array_mod.constant_offset_displace = (0, 0, cl_distance)   # fixed step in Z
+        array_mod.constant_offset_displace = (0, 0, cl_distance_eff)   # fixed step in Z
         array_mod.use_relative_offset = False
         array_mod.use_constant_offset = True
         array_mod.count = 100  # you can adjust how many slices
@@ -1916,6 +1964,16 @@ def contourLines(objs):
         bpy.context.view_layer.objects.active = plane
         bpy.ops.object.modifier_apply(modifier=array_mod.name)
         bpy.ops.object.modifier_apply(modifier=solidify_mod.name)
+
+        # Duplicate the still-blank stack of squares before it gets cut down
+        # to the map's shape -- this copy is used below to carve the same
+        # bands out of the map so the lines don't sit flush on top of it.
+        bpy.ops.object.select_all(action='DESELECT')
+        plane.select_set(True)
+        bpy.context.view_layer.objects.active = plane
+        bpy.ops.object.duplicate()
+        cutter = bpy.context.active_object
+        cutter.name = "CuttingPlaneCutter"
 
         # Add Boolean modifier with INTERSECT mode
         bool_mod = plane.modifiers.new(name="Boolean", type='BOOLEAN')
@@ -1939,6 +1997,11 @@ def contourLines(objs):
         bpy.context.view_layer.objects.active = plane
 
         bpy.ops.object.modifier_apply(modifier=bool_mod.name)
+
+        # Subtract the same bands from the map itself so the lines aren't
+        # duplicated (coincident) geometry sitting on top of the map surface.
+        boolean_operation(obj, cutter, operation='DIFFERENCE', solver='MANIFOLD')
+        bpy.data.objects.remove(cutter, do_unlink=True)
 
 
 

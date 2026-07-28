@@ -466,9 +466,10 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     el_oMinIslandArea: FloatProperty(name=_("Min Island Area"), default=2.0, min=0.0, soft_max=100.0, description=_("Islands smaller than this area (in map units²) are not punched out of the ocean. At a 100mm map size, 1 map unit ≈ 1mm on the print, so the default 2.0 ≈ a ~1.4×1.4mm patch. Set to 0 to punch all islands.")) # type: ignore
     el_oRdpEpsilon: FloatProperty(name=_("Coastline Simplify"), default=0.1, min=0.0, soft_max=2.0, precision=3, description=_("Douglas-Peucker simplification tolerance (map units) applied to the coastline before building the ocean. Higher = fewer points but can introduce self-intersections on convoluted coasts. Set to 0 to disable simplification. Testing aid.")) # type: ignore
     mountain_treshold:IntProperty(name= _("Mountain Threshold"), default = 60, min = 0, max = 100,subtype='PERCENTAGE', description= _("Height Threshold to Color Mountains")) # type: ignore
-    cl_thickness: FloatProperty(name= _("Contour Line Thickness"), default = 0.2, description = _("Thickness of the Contour Line")) # type: ignore
+    cl_thickness: FloatProperty(name= _("Contour Line Thickness (mm)"), default = 0.2, description = _("Thickness of the Contour Line")) # type: ignore
     cl_distance: FloatProperty(name= _("Contour Line distance"), default = 2, description = _("Distance between Contour lines")) # type: ignore
     cl_offset: FloatProperty(name= _("Contour Line offset"), default = 0.0, description = _("Offset of the Contour lines")) # type: ignore
+    cl_useRealMeters: BoolProperty(name= _("Use Real-World Meters"), default = True, description = _("Interpret the Contour Line distance/offset as real-world elevation meters instead of mm on the printed model")) # type: ignore
 
     generation_mode: EnumProperty(
         name="Generation Mode",

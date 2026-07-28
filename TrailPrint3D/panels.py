@@ -398,8 +398,9 @@ class TP3D_PT_advanced(bpy.types.Panel):
             sub.label(text=_("Contour Lines"), icon='ALIGN_JUSTIFY')
             col = sub.column(align=True)
             col.prop(props, "cl_thickness")
-            col.prop(props, "cl_distance")
-            col.prop(props, "cl_offset")
+            col.prop(props, "cl_distance", text=_("Distance (m)") if props.cl_useRealMeters else _("Distance (mm)"))
+            col.prop(props, "cl_offset", text=_("Offset (m)") if props.cl_useRealMeters else _("Offset (mm)"))
+            col.prop(props, "cl_useRealMeters")
             col.operator("tp3d.contour_lines", icon="ALIGN_JUSTIFY")
 
             #sub = box.box()
