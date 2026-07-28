@@ -2246,6 +2246,18 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             _progress.WarningsOverlay.add_warning(
                 "Buildings and Roads aren't supported in puzzles — disabled automatically.", "warn"
             )
+        if props.singleColorMode:
+            # Single-Color Mode builds each trail decal as its own standalone
+            # object (single_color_mode_curve) rather than merging it into the
+            # piece mesh -- on top of every other Single-Color-only element
+            # being unsupported here (see above), it also has its own origin
+            # handling tied to the regular per-tile flow (createTerrainFromSelected),
+            # not the puzzle's per-piece cut. Force it off so trails go through
+            # the regular merge_with_map path puzzles are actually built for.
+            props.singleColorMode = False
+            _progress.WarningsOverlay.add_warning(
+                "Single-Color Mode isn't supported in puzzles — disabled automatically.", "warn"
+            )
 
         bbox = data.get('bbox')
         pieces = data.get('pieces') or []
