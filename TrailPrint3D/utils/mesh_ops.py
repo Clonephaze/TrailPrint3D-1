@@ -2333,8 +2333,33 @@ def merge_active_with_map(map_obj, active_obj):
 
     elif active_obj.type == "CURVE":
         if not bpy.context.scene.tp3d.singleColorMode:
-            merge_with_map(map_obj, active_obj, True, False)
+            # merge_with_map's CURVE branch builds `duplicate` as a straight
+            # mapobject.copy() (map_obj.copy() inherits whatever transform
+            # map_obj currently has -- identity/world-origin for a freshly cut
+            # puzzle piece that hasn't had its own origin fixed up yet) and
+            # returns it without ever touching its origin. Re-home it to the
+            # 3D cursor here, same convention single_color_mode_curve's own
+            # per-piece decal already uses below (and which the puzzle
+            # generator's trail-merge loop primes with this piece's own
+            # location before calling in here) -- otherwise this decal is
+            # left sitting at world (0,0,0) forever.
+            duplicate = merge_with_map(map_obj, active_obj, True, False)
             active_obj.hide_set(True)
+            if duplicate is not None:
+                # intersect_trail_with_existing_box (called from inside
+                # merge_with_map) silently deletes `duplicate` itself when no
+                # trail vertex actually lands inside its box -- a real case
+                # here, since the caller's overlap check is a coarser 2D bbox
+                # test. merge_with_map still returns that now-dangling
+                # reference either way, so `duplicate is not None` alone
+                # doesn't mean the object is still alive.
+                try:
+                    from .scene import (
+                        set_origin_to_3d_cursor,  # deferred to avoid circular import at load time
+                    )
+                    set_origin_to_3d_cursor(duplicate)
+                except ReferenceError:
+                    pass
         else:
             dup = active_obj.copy()
             dup.data = active_obj.data.copy()

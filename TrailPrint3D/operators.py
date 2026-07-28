@@ -2414,8 +2414,20 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             for trail_obj in trails:
                 for piece_obj in piece_objs:
                     if utils.is_bbox_overlapping(trail_obj, piece_obj):
+                        # Both the Single Color Mode decal (single_color_mode_curve)
+                        # and the regular-mode decal (merge_with_map's CURVE branch)
+                        # home their origin to whatever the 3D cursor is currently at
+                        # -- left untouched here on purpose, so every trail decal ends
+                        # up sharing the SAME point as the pieces themselves below:
+                        # wherever the user actually parked the cursor before running
+                        # the generator, not a computed per-piece position.
                         utils.merge_active_with_map(piece_obj, trail_obj)
-            #remove_objects(trails)
+            # merge_active_with_map only hides each original whole trail (hide_set(True))
+            # rather than removing it -- fine for the regular single-tile flow where that
+            # curve is the only copy, but here every piece merge leaves its own cut decal
+            # behind, so the original, uncut trail is pure leftover once every piece has
+            # had a chance to merge with it.
+            utils.remove_objects(trails)
 
         holder_obj = None
         holder_data = data.get('holder') or {}
@@ -2452,6 +2464,10 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
                 holder_obj.name = f"{puzzle_name}_Holder"
 
         try:
+            # Leaves the 3D cursor exactly where the user put it -- every piece
+            # (and every trail decal merged into one above) ends up sharing that
+            # same point as its origin, matching normal Blender "Set Origin ->
+            # Origin to 3D Cursor" behaviour for a multi-object selection.
             utils.set_origin_to_3d_cursor_objects(piece_objs)
         except (ReferenceError, AttributeError, IndexError):
             pass

@@ -172,7 +172,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         maxlen=1024,
         subtype='DIR_PATH'  # Enables folder selection
     )# type: ignore
-    trailName: StringProperty(name= _("Name"), default="", description="Leave empty to use the Filename") # type: ignore
+    trailName: StringProperty(name= _("Name"), default="", description=_("Leave empty to use the Filename")) # type: ignore
 
     shape: EnumProperty(
         name = "Shape",
@@ -321,7 +321,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default='distance'
     )# type: ignore
     iconText2: EnumProperty(
-        name="Text 2 Icon",
+        name=_("Text 2 Icon"),
         items=[
             ('distance', _("Distance Icon"), _("Distance Icon before the Text")),
             ('elevation', _("Elevation Icon"), _("Elevation Icon before the Text")),
@@ -333,7 +333,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default='elevation'
     )# type: ignore
     iconText3: EnumProperty(
-        name="Text 3 Icon",
+        name=_("Text 3 Icon"),
         items=[
             ('distance', _("Distance Icon"), _("Distance Icon before the Text")),
             ('elevation', _("Elevation Icon"), _("Elevation Icon before the Text")),
@@ -412,7 +412,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     thickenValue: FloatProperty(name= _("thickenValue"), default = 1, description = _("Makes your Map 1mm thicker")) # type: ignore
     fixedElevationScale: BoolProperty(name= _("FixedElevationScale(10mm)"), default=False, description = _("Force the elevation to be 10mm High from highest to lowest point (ElevationScale still applies after that)")) # type: ignore
     singleColorMode: BoolProperty(name= _("SingleColorMode Trail"), default = False, description = _("Enable this if you don't have a Multicolor printer")) # type: ignore
-    tolerance: FloatProperty(name= _("SingleColorMode Tolerance"), default = 0.2, description="Tolerance of the Trail for the SingleColorMode") # type: ignore
+    tolerance: FloatProperty(name= _("SingleColorMode Tolerance"), default = 0.2, description=_("Tolerance of the Trail for the SingleColorMode")) # type: ignore
     toleranceElements: FloatProperty(name= _("ToleranceElements"), default = 0.4, description= _("Tolerance of the Elements (Water, Forest) for the SingleColorMode")) # type: ignore
     disableCache: BoolProperty(name= _("disableCache"), default = False, description = _("Disable cache if you encounter random holes in your mesh")) # type: ignore
     disableElevationOutlierFix: BoolProperty(name= _("Disable Buggy Elevation Fixes"), default = False, description = _("Disable automatic correction of statistically outlying elevation values. Enable this if a real peak/valley is being incorrectly flattened")) # type: ignore
@@ -504,12 +504,12 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     pinLon: FloatProperty(name= _("Longitude"), default = 8.00) # type: ignore
 
     mapmode: EnumProperty(
-        name="mapmode",
+        name=_("mapmode"),
         items=[
-            ('FROMPLANE', _("From Selected"), "Generate the Map from a Flat Plane"),
-            ('FROMCENTER', _("Center + Radius"), "Generate the Map from a Point coordinate and a Radius"),
-            ('2POINTS', _("2 Points"), "Generate the Map from 2 Coordinates"),
-            ('GEOJSON', _("GeoJSON Boundary"), "Generate the Map clipped to a GeoJSON polygon boundary"),
+            ('FROMPLANE', _("From Selected"), _("Generate the Map from a Flat Plane")),
+            ('FROMCENTER', _("Center + Radius"), _("Generate the Map from a Point coordinate and a Radius")),
+            ('2POINTS', _("2 Points"), _("Generate the Map from 2 Coordinates")),
+            ('GEOJSON', _("GeoJSON Boundary"), _("Generate the Map clipped to a GeoJSON polygon boundary")),
         ],
         default='FROMPLANE'
     )# type: ignore
