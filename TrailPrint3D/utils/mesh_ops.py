@@ -1301,8 +1301,12 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
     min(0.5mm, minThickness / 2), so pieces seat into each other more easily
     and the bottom edge isn't perfectly sharp.
 
-    Returns the list of newly created piece objects. `terrain_obj` itself is
-    removed once every piece has been extracted.
+    Returns `(piece_objs, seam_polys)` -- the list of newly created piece
+    objects, and the list of each survivor's own true (pre-tolerance-shrink)
+    world-space Shapely polygon in the same order, for callers that want the
+    exact jigsaw seam lines (e.g. build_puzzle_holder engraving them onto the
+    holder floor). `terrain_obj` itself is removed once every piece has been
+    extracted.
     """
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
 
@@ -1323,6 +1327,7 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
     terrain_metadata = dict(terrain_obj.items())
     bevel_width = min(0.5, bpy.context.scene.tp3d.minThickness / 2)
     piece_objs = []
+    seam_polys = []
 
     # DEBUG ONLY: flat (z=0) copies of each piece's actual cutter polygon
     # (the same outline -- post tolerance-buffer -- that gets extruded into
@@ -1342,6 +1347,13 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
         poly = g2d.xy_ring_to_polygon(world_xy)
         if poly is None or poly.is_empty:
             continue
+        # Captured BEFORE the tolerance shrink below -- this is the true,
+        # gap-free jigsaw seam (tabs/blanks included) two neighboring pieces
+        # actually share, which is what build_puzzle_holder engraves onto the
+        # holder floor. The shrunk version used for the cut itself leaves a
+        # tiny tolerance gap on every edge that would otherwise double every
+        # seam line into two parallel ones.
+        seam_poly = poly
         if tolerance_mm > 0:
             # join_style='mitre' (not the default 'round'): a round join adds
             # up to 8 small arc segments at every convex corner it shrinks,
@@ -1397,6 +1409,7 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
         piece_obj["PuzzleRow"] = row
         piece_obj["PuzzleCol"] = col
         piece_objs.append(piece_obj)
+        seam_polys.append(seam_poly)
 
     if bpy.app.debug:
         # Keep the original, uncut tile around for inspection when debugging
@@ -1411,7 +1424,7 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
         terrain_obj.pop("Object type", None)
     else:
         bpy.data.objects.remove(terrain_obj, do_unlink=True)
-    return piece_objs
+    return piece_objs, seam_polys
 
 
 def _rounded_rect_polygon(width, height, radius, quad_segs=8):
@@ -1517,7 +1530,8 @@ def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_
 
 def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
                          floor_thickness=2.0, clearance=0.1, corner_radius=5.0,
-                         pocket_corner_radius=0.0, font="", text_size_mm=None):
+                         pocket_corner_radius=0.0, font="", text_size_mm=None,
+                         piece_seam_polys=None, seam_width=0.6, seam_depth=0.4):
     """Build a rounded-rectangle tray sized to hold an already-generated
     jigsaw puzzle (cut_into_puzzle_pieces' output).
 
@@ -1537,6 +1551,13 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     top, leaving a solid floor of *floor_thickness* underneath -- the rim
     outside the pocket keeps the full *wall_height*. The holder gets the
     BLACK material; embossed text (see `_emboss_holder_text`) gets WHITE.
+
+    If *piece_seam_polys* is given (cut_into_puzzle_pieces' own second return
+    value -- each piece's true, pre-tolerance-shrink world-space polygon,
+    tabs/blanks included), every one of those polygons' boundary rings gets
+    engraved as a shallow groove into the pocket floor, so the jigsaw layout
+    is visible even with the pieces lifted out. Clipped to the pocket itself,
+    so a seam within `seam_width` of the wall doesn't cut into it.
 
     Reuses the same flat-prism + boolean technique as
     `cut_into_puzzle_pieces` / `single_color_mode_curve`.
@@ -1606,6 +1627,36 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
 
     boolean_operation(holder_obj, cutter_obj, 'DIFFERENCE')
     bpy.data.objects.remove(cutter_obj, do_unlink=True)
+
+    if piece_seam_polys:
+        # Seam polygons are in the same world space as piece_objs' own bound
+        # boxes -- shift into the holder's local frame (centered on the
+        # puzzle) before building ribbon/pocket geometry from them.
+        seam_lines = []
+        for poly in piece_seam_polys:
+            for part in g2d.iter_polygons(poly):
+                for ring in [part.exterior] + list(part.interiors):
+                    seam_lines.append([(x - center_x, y - center_y) for x, y in ring.coords])
+        seam_ribbon = g2d.polylines_to_ribbon(seam_lines, seam_width / 2, quad_segs=4) if seam_lines else None
+        if seam_ribbon is not None and not seam_ribbon.is_empty:
+            seam_ribbon = g2d.validate(seam_ribbon.intersection(pocket_poly))
+        if seam_ribbon is not None and not seam_ribbon.is_empty:
+            # Leaves at least a quarter of the floor intact underneath even if
+            # seam_depth is set larger than the floor itself.
+            cut_depth = min(seam_depth, floor_thickness * 0.75)
+            seam_bottom_z = floor_thickness - cut_depth
+            seam_verts, seam_faces = [], []
+            for part in g2d.iter_polygons(seam_ribbon):
+                _extrude_flat_polygon(g2d, part, seam_bottom_z, wall_height + 5.0, seam_verts, seam_faces)
+            if seam_verts:
+                seam_mesh = bpy.data.meshes.new("PuzzleHolderSeamCutter")
+                seam_mesh.from_pydata(seam_verts, [], seam_faces)
+                seam_mesh.update()
+                _clean_solid_mesh(seam_mesh)
+                seam_cutter_obj = bpy.data.objects.new(seam_mesh.name, seam_mesh)
+                bpy.context.collection.objects.link(seam_cutter_obj)
+                boolean_operation(holder_obj, seam_cutter_obj, 'DIFFERENCE')
+                bpy.data.objects.remove(seam_cutter_obj, do_unlink=True)
 
     if text:
         available_w = max(1.0, outer_w - 6.0)  # margin so text clears the rim's outer/inner edges

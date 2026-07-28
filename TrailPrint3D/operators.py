@@ -2410,7 +2410,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             trails = _generate_trails(context, gpx_paths, overlay, 0.6, 0.75)
 
         overlay.update(0.75, "Cutting puzzle pieces…", f"{len(pieces)} piece(s)…")
-        piece_objs = utils.cut_into_puzzle_pieces(blank, pieces, tolerance)
+        piece_objs, piece_seam_polys = utils.cut_into_puzzle_pieces(blank, pieces, tolerance)
 
         if trails:
             # The actual per-piece decal is still built AFTER the cut, though
@@ -2461,6 +2461,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
                     wall_width=float(holder_data.get('wallWidth') or 4.0),
                     font=holder_data.get('font', ''),
                     text_size_mm=float(holder_data.get('textSize') or 0) or None,
+                    piece_seam_polys=piece_seam_polys if holder_data.get('seamEngraving', True) else None,
                 )
             else:
                 holder_obj = utils.build_puzzle_holder(
@@ -2471,6 +2472,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
                     pocket_corner_radius=puzzle_corner_radius,
                     font=holder_data.get('font', ''),
                     text_size_mm=float(holder_data.get('textSize') or 0) or None,
+                    piece_seam_polys=piece_seam_polys if holder_data.get('seamEngraving', True) else None,
                 )
             if holder_obj is not None:
                 holder_obj.name = f"{puzzle_name}_Holder"
