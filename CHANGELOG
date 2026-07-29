@@ -1,14 +1,15 @@
 Version 3.2
-27.07.2026
+Upcoming
 
 Added: GeoJSON boundary import as a new Terrain map mode, including MultiPolygon (islands/exclaves) support and merging multiple boundary files into one shape (by Louisefeige)
-Added: Coordinate search with city lookup and lat/lon input, plus new map layers
+Added: Coordinate search with city lookup and lat/lon input, plus new map layers for Browser based Features (Puzzle/Multitile Configurator)
 Added: Circle Outer Text shape
-Added: Medal handle support (shell geometry) for text-based shapes
+Added: Medal handle support for text-based shapes
+Added: Shell geometry for text-based shapes (Premium)
 Added: Material preview mode in the Puzzle Configurator
+Added: Hexagonal and Concentric-Ring puzzle piece shapes in the Puzzle Configurator (Premium)
 Added: Shapely/Earcut status indicators and clearer error messages when Shapely fails to load
 Added: ARM64 and macOS 10.13 x86_64 wheels for Shapely and Mapbox Earcut
-Added: Ocean creation now supports merging with the map
 Changed: Default terrain source is now Mapterhorn
 Changed: Smoother raw OSM element boundaries before extrusion, and fetched OSM polygons are now clipped to the query bbox
 Changed: Faster full-ocean tile mesh generation
@@ -16,6 +17,9 @@ Changed: Updated projection logic for Ocean creation
 Changed: Restructured Shape selection UI
 Changed: Improved update checker reliability
 Changed: Updated export format handling for terrain-element colors in Paint mode
+Changed: Reworked Contour Lines — now subtracts its bands from the map instead of only intersecting, supports real-world-meter distance/offset (elevation-scale aware, enabled by default) alongside mm, generates at the map's own origin instead of the 3D cursor, and warns instead of failing when distance is smaller than thickness
+Fixed: Shapely should now be installed correctly and no longer throw errors
+Fixed: Ocean creation now supports merging with the map again
 Fixed: Steep (60°) walls were incorrectly detected as vertical walls during raycast
 Fixed: Trail points bouncing in one direction during Multi-generation
 Fixed: Buggy BMesh shapes causing issues with Rivers and unreliable element painting
@@ -26,6 +30,7 @@ Fixed: Crash in Separate/Single-Color element mode with exactly one surviving pa
 Fixed: GPX chain import not working due to a broken condition check
 Fixed: Malformed GPX files crashing the addon instead of showing a clear error
 Fixed: Incorrect vertex selection/lowest point calculation for Oceans
+Fixed: Elevation Range (m) map metadata was inflated by an uncompensated per-vertex Mercator latitude factor baked into terrain height generation, causing incorrect real-world elevation figures away from the equator
 -----------------------------
 Version 3.1.1
 01.07.2026
