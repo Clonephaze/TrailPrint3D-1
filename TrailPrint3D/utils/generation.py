@@ -410,7 +410,9 @@ def _rg_start_osm_prefetch(tp3d, map_km):
     The caller must call thread.join() before consuming the result dict.
     Returns (None, {}) immediately if no coloring elements are active.
     """
-    from .osm import OsmFetchSettings  # deferred to avoid circular import at load time
+    from .osm.fetch_utils import (
+        OsmFetchSettings,  # deferred to avoid circular import at load time
+    )
     from .terrain import (
         _fetch_all_kinds_parallel,  # deferred to avoid circular import at load time
     )
@@ -485,14 +487,10 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     from .metadata import (
         writeMetadata,  # deferred to avoid circular import at load time
     )
-    from .osm import (  # deferred to avoid circular import at load time
-        OsmFetchSettings,  # deferred to avoid circular import at load time
-        create_buildings,
-        create_roads,
-    )
-    from .scene import (
-        set_origin_to_3d_cursor,  # deferred to avoid circular import at load time
-    )
+    from .osm.buildings import create_buildings
+    from .osm.fetch_utils import OsmFetchSettings
+    from .osm.roads import create_roads
+    from .scene import set_origin_to_3d_cursor
     from .terrain import (  # deferred to avoid circular import at load time
         _COLORING_EMPTY,
         _COLORING_FILTERED,

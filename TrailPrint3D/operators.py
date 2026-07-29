@@ -1923,7 +1923,7 @@ class TP3D_OT_remake_buildings(bpy.types.Operator):
 
     def execute(self, context):
         from .utils.metadata import writeMetadata
-        from .utils.osm import create_buildings
+        from .utils.osm.buildings import create_buildings
 
         tp3d = context.scene.tp3d
         map_obj = tp3d.currentMap
@@ -1962,11 +1962,11 @@ class TP3D_OT_remake_roads(bpy.types.Operator):
         tp3d = context.scene.tp3d
         m = tp3d.currentMap
         return (m is not None and m.name in bpy.data.objects
-                and any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive]))
+                and any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive]))
 
     def execute(self, context):
         from .utils.metadata import writeMetadata
-        from .utils.osm import create_roads
+        from .utils.osm.roads import create_roads
 
         tp3d = context.scene.tp3d
         map_obj = tp3d.currentMap
@@ -2231,11 +2231,13 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             _progress.WarningsOverlay.add_warning(
                 "Puzzles only support the \"Paint on Map\" element mode — switched automatically.", "warn"
             )
-        if props.el_bActive or props.el_sBigActive or props.el_sMedActive or props.el_sSmallActive:
+        if props.el_bActive or props.el_sBigActive or props.el_sMedActive or props.el_sSmallActive or props.el_sServiceActive or props.el_sFootwaysActive:
             props.el_bActive = False
             props.el_sBigActive = False
             props.el_sMedActive = False
             props.el_sSmallActive = False
+            props.el_sServiceActive = False
+            props.el_sFootwaysActive = False
             _progress.WarningsOverlay.add_warning(
                 "Buildings and Roads aren't supported in puzzles — disabled automatically.", "warn"
             )
@@ -2379,7 +2381,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             trails = _generate_trails(context, gpx_paths, overlay, 0.85, 0.95)
             for trail_obj in trails:
                 for piece_obj in piece_objs:
-                    if utils.is_bbox_overlapping(trail_obj, piece_obj):
+                    if utils.osm.gen.is_bbox_overlapping(trail_obj, piece_obj):
                         utils.merge_active_with_map(piece_obj, trail_obj)
             #remove_objects(trails)
 
