@@ -24,10 +24,21 @@ def writeMetadata(obj, type = "MAP"):
         # from the imported polygon instead, so that dropdown's leftover value
         # (from whatever shape was last picked elsewhere in the UI) would be
         # meaningless here.
-        if bpy.context.scene.tp3d.mapmode == "GEOJSON":
-            obj["Shape"] = "CUSTOM"
-        else:
-            obj["Shape"] = get_effective_shape(bpy.context.scene.tp3d)
+        #
+        # Callers that already know their own tile's shape (multitile grid
+        # segments, the puzzle picker) stamp "Shape" on the object themselves
+        # before terrain generation runs -- respect that instead of deriving
+        # it from the scene's mapmode, which is the *main* Generate panel's
+        # dropdown and has nothing to do with those flows. Overwriting it
+        # unconditionally meant a stale mapmode == "GEOJSON" (left over from
+        # trying the boundary-import feature) mislabeled every subsequently
+        # generated square/hex multitile tile as "CUSTOM", which made Extend
+        # mode treat them as having no regular neighbor grid at all.
+        if "Shape" not in obj.keys():
+            if bpy.context.scene.tp3d.mapmode == "GEOJSON":
+                obj["Shape"] = "CUSTOM"
+            else:
+                obj["Shape"] = get_effective_shape(bpy.context.scene.tp3d)
         obj["Resolution"] = bpy.context.scene.tp3d.num_subdivisions
         obj["Elevation Scale"] = bpy.context.scene.tp3d.scaleElevation
         obj["objSize"] = bpy.context.scene.tp3d.objSize

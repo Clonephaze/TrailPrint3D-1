@@ -1,7 +1,7 @@
 Version 3.2
 Upcoming
 
-Added: GeoJSON boundary import as a new Terrain map mode, including MultiPolygon (islands/exclaves) support and merging multiple boundary files into one shape (by Louisefeige)
+Added: GeoJSON boundary import as a new Terrain map mode, including MultiPolygon (islands/exclaves) support and merging multiple boundary files into one shape (by Louisefeige) (Premium)
 Added: Coordinate search with city lookup and lat/lon input, plus new map layers for Browser based Features (Puzzle/Multitile Configurator)
 Added: Circle Outer Text shape
 Added: Medal handle support for text-based shapes
