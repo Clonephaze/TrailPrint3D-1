@@ -66,20 +66,20 @@ _SHELL_ITEM = ("SHELL", _("Shell"), _("Snug protective shell around the map's si
 SHAPE_TEXT_STYLES = {
     "HEXAGON": [
         ("NONE",        _("None"),        _("Plain hexagonal map, no text overlay")),
-        _SHELL_ITEM,
         ("INNER TEXT",  _("Inner text"),  _("Hexagonal map with inserted text")),
         ("OUTER TEXT",  _("Outer text"),  _("Hexagonal map with backplate and text")),
         ("FRONT TEXT",  _("Front text"),  _("Hexagonal map with backplate and text on the front")),
+        _SHELL_ITEM,
     ],
     "OCTAGON": [
         ("NONE",       _("None"),        _("Plain octagon map, no text overlay")),
-        _SHELL_ITEM,
         ("OUTER TEXT", _("Outer text"),  _("Octagon map with backplate and text")),
+        _SHELL_ITEM,
     ],
     "CIRCLE": [
         ("NONE",       _("None"),        _("Plain circular map, no text overlay")),
-        _SHELL_ITEM,
         ("OUTER TEXT", _("Outer text"),  _("Circular map with backplate and curved text")),
+        _SHELL_ITEM,
     ],
     "SQUARE": [
         ("NONE", _("None"), _("Plain rectangular map, no extras")),
@@ -116,6 +116,32 @@ def shape_text_style_update(self, context):
         utils.show_message_box(
             _("Shell is a Patreon-exclusive feature."), "INFO", _("Premium Feature")
         )
+        return
+    # shapeTextStyle is a dynamic-items EnumProperty (see get_shape_text_style_items),
+    # so Blender stores it as a bare index -- the identifier it resolves to depends
+    # on whichever items list is current when read. shape_update (below) needs the
+    # identifier the user actually *picked*, independent of that reinterpretation,
+    # so mirror it into a plain string every time it's set while self.shape hasn't
+    # changed yet (i.e. here, where the items list still matches the selection).
+    self.shapeTextStyleCache = self.shapeTextStyle
+
+
+def shape_update(self, context):
+    # Switching self.shape changes shapeTextStyle's item list. Because that
+    # property is stored as an index, re-reading self.shapeTextStyle here would
+    # silently reinterpret the old index against the new list (e.g. index 2 means
+    # "Outer text" under Hexagon but "Shell" under Octagon) instead of reflecting
+    # what the user actually had selected. Use the cached identifier string
+    # instead: keep it if the new shape still offers that option, else fall back
+    # to None.
+    valid_styles = {ident for ident, _label, _desc in SHAPE_TEXT_STYLES.get(self.shape, [])}
+    cached = self.shapeTextStyleCache
+    if cached == "SHELL" and not temp.PREMIUMVERSION:
+        self.shapeTextStyle = "NONE"
+    elif cached in valid_styles:
+        self.shapeTextStyle = cached
+    else:
+        self.shapeTextStyle = "NONE"
 
 
 def get_effective_shape(tp3d):
@@ -185,7 +211,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
             ("HEART", _("Heart"), _("Heart Map")), #Premium
         ],
         default = "HEXAGON",
-        #update = shape_callback #calls shape_callback when user selects diffrent shape to register the Shape Panel
+        update = shape_update,
     )# type: ignore
     shapeTextStyle: EnumProperty(
         name = _("Shape Extras"),
@@ -196,6 +222,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         # get_special_blend_items above for why. "NONE" is first in every
         # per-shape list in SHAPE_TEXT_STYLES, so it's the default.
     )# type: ignore
+    shapeTextStyleCache: StringProperty(default="NONE", options={'HIDDEN'}) # type: ignore
 
     api: bpy.props.EnumProperty(
         name = "api",
