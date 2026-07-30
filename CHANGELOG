@@ -13,6 +13,7 @@ Added: ARM64 and macOS 10.13 x86_64 wheels for Shapely and Mapbox Earcut
 Added: 'Bay' natural features are now fetched and classified as water in OSM data
 Added: Puzzle/Multitile Configurator now remembers the selected base map layer across sessions
 Added: Puzzle Configurator seed input for reproducible puzzle generation
+Added: 'Map Scale Ratio' (1:X) map metadata property, and a matching {scale} code for text-based shapes
 Changed: Default terrain source is now Mapterhorn
 Changed: Smoother raw OSM element boundaries before extrusion, and fetched OSM polygons are now clipped to the query bbox
 Changed: Faster full-ocean tile mesh generation
