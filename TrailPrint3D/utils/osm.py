@@ -263,6 +263,8 @@ def fetch_osm_data(bbox, kind="WATER", max_cache_age_hours=720, return_cache_sta
                 'relation["natural"="water"]',
                 'way["water"~"river|lake|stream|canal"]',
                 'relation["water"~"river|lake|stream|canal"]',
+                'way["natural"="bay"]',
+                'relation["natural"="bay"]',
             ]
         if small_rivers:
             # No wikidata filter — includes all minor waterways
@@ -436,6 +438,8 @@ def _build_union_query(south, west, north, east, kinds, settings=None):
                 'relation["natural"="water"]',
                 'way["water"~"river|lake|stream|canal"]',
                 'relation["water"~"river|lake|stream|canal"]',
+                'way["natural"="bay"]',
+                'relation["natural"="bay"]',
             ]
         if water_small_rivers:
             filters.append('way["waterway"~"stream|river|canal|ditch|drain"]')
@@ -568,7 +572,7 @@ def _classify_element(element, active_kinds, settings=None):
         water    = tags.get("water", "")
         waterway = tags.get("waterway", "")
 
-        is_pond_or_lake = natural == "water" or water in {"river", "lake", "stream", "canal"}
+        is_pond_or_lake = natural in {"water", "bay"} or water in {"river", "lake", "stream", "canal"}
         is_small_river  = waterway in {"stream", "river", "canal", "ditch", "drain"}
         is_big_river    = is_small_river and tags.get("wikidata")
 
