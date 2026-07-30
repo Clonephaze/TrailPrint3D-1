@@ -301,8 +301,13 @@
                 attribution: '&copy; OpenStreetMap contributors'
             })
         };
-        baseLayers['OpenStreetMap'].addTo(map);
+        var activeBaseLayerName = 'OpenStreetMap';
+        baseLayers[activeBaseLayerName].addTo(map);
         L.control.layers(baseLayers, null, { position: 'bottomleft' }).addTo(map);
+        map.on('baselayerchange', function (e) {
+            activeBaseLayerName = e.name;
+            saveState();
+        });
 
         var drawnItems = new L.FeatureGroup();
         map.addLayer(drawnItems);
@@ -504,6 +509,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     lat: c.lat, lng: c.lng, zoom: map.getZoom(),
+                    baseLayer: activeBaseLayerName,
                     length: document.getElementById('lengthInput').value,
                     width: document.getElementById('widthInput').value,
                     rows: document.getElementById('rowsInput').value,
@@ -534,6 +540,11 @@
                 .then(function(s) {
                     console.log('[TP3D picker] /get_state returned:', s);
                     if (!s) return;
+                    if (s.baseLayer && baseLayers[s.baseLayer] && s.baseLayer !== activeBaseLayerName) {
+                        map.removeLayer(baseLayers[activeBaseLayerName]);
+                        baseLayers[s.baseLayer].addTo(map);
+                        activeBaseLayerName = s.baseLayer;
+                    }
                     if (s.length != null) document.getElementById('lengthInput').value = s.length;
                     if (s.width != null) document.getElementById('widthInput').value = s.width;
                     if (s.rows) document.getElementById('rowsInput').value = s.rows;
