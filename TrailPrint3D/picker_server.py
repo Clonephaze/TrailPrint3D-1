@@ -293,12 +293,21 @@ class _Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(length)
         pathlib.Path(self.result_path).write_text(body.decode('utf-8'), encoding='utf-8')
+        # Must run before the response is sent: the picker page calls
+        # window.close() as soon as it sees the response, and this function
+        # AttachThreadInput's onto that browser window's thread. Doing that
+        # while the window is mid-teardown (racing the client's close())
+        # is a known way to wedge Windows' shared input queue -- symptom is
+        # Blender's own window silently stops taking clicks/keys, which only
+        # becomes noticeable once generation finishes and the user tries to
+        # interact again. Running it first, against a still-open window,
+        # removes the race.
+        _bring_blender_to_foreground()
         self.send_response(200)
         self.send_header('Content-Type', 'text/plain')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         self.wfile.write(b'ok')
-        _bring_blender_to_foreground()
         threading.Thread(target=self.server.shutdown, daemon=True).start()
 
 
