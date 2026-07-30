@@ -10,6 +10,9 @@ Added: Material preview mode in the Puzzle Configurator
 Added: Hexagonal and Concentric-Ring puzzle piece shapes in the Puzzle Configurator (Premium)
 Added: Shapely/Earcut status indicators and clearer error messages when Shapely fails to load
 Added: ARM64 and macOS 10.13 x86_64 wheels for Shapely and Mapbox Earcut
+Added: 'Bay' natural features are now fetched and classified as water in OSM data
+Added: Puzzle/Multitile Configurator now remembers the selected base map layer across sessions
+Added: Puzzle Configurator seed input for reproducible puzzle generation
 Changed: Default terrain source is now Mapterhorn
 Changed: Smoother raw OSM element boundaries before extrusion, and fetched OSM polygons are now clipped to the query bbox
 Changed: Faster full-ocean tile mesh generation
@@ -31,6 +34,9 @@ Fixed: GPX chain import not working due to a broken condition check
 Fixed: Malformed GPX files crashing the addon instead of showing a clear error
 Fixed: Incorrect vertex selection/lowest point calculation for Oceans
 Fixed: Elevation Range (m) map metadata was inflated by an uncompensated per-vertex Mercator latitude factor baked into terrain height generation, causing incorrect real-world elevation figures away from the equator
+Fixed: Duplicate warning messages repeating once per tile when generating a multitile batch
+Fixed: Various scaling and logic bugs in the MultiTile Configurator
+Fixed: Map picker window could occasionally freeze Blender's input focus on close
 -----------------------------
 Version 3.1.1
 01.07.2026
