@@ -295,7 +295,7 @@ translations_dict = {
         ("*", "Text 3 Icon"): "Symbol Text 3",
         ("*", "For Maps < 1000Km Recommended"): "Für Karten < 1000 km empfohlen",
         ("*", "title"): "Titel",
-        ("*", "Codes = | {name} | {length} | {elevation} |{date} | {speed}"): "Codes = | {name} | {length} | {elevation} | {date} | {speed}",
+        ("*", "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"): "Codes = | {name} | {length} | {elevation} | {date} | {speed} | {scale}",
         # --- New/Updated in v3.08 ---
         ("*", "Download & Install"): "Herunterladen & Installieren",
         ("*", "Pick Area on Map"): "Bereich auf Karte auswählen",
@@ -776,7 +776,7 @@ translations_dict = {
         ("*", "Text 3 Icon"): "文本 3 图标",
         ("*", "For Maps < 1000Km Recommended"): "推荐用于范围 < 1000 公里的地图",
         ("*", "title"): "标题",
-        ("*", "Codes = | {name} | {length} | {elevation} |{date} | {speed}"): "代码 = | {name} | {length} | {elevation} | {date} | {speed}",
+        ("*", "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"): "代码 = | {name} | {length} | {elevation} | {date} | {speed} | {scale}",
         # --- New/Updated in v3.08 ---
         ("*", "Download & Install"): "下载并安装",
         ("*", "Pick Area on Map"): "在地图上选择区域",
@@ -1208,7 +1208,7 @@ translations_dict = {
         ("*", "Text 3 Icon"): "Значок текста 3",
         ("*", "For Maps < 1000Km Recommended"): "Рекомендуется для карт < 1000 км",
         ("*", "title"): "Заголовок",
-        ("*", "Codes = | {name} | {length} | {elevation} |{date} | {speed}"): "Коды = | {name} | {length} | {elevation} | {date} | {speed}",
+        ("*", "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"): "Коды = | {name} | {length} | {elevation} | {date} | {speed} | {scale}",
         # --- New/Updated in v3.08 ---
         ("*", "Download & Install"): "Скачать и установить",
         ("*", "Pick Area on Map"): "Выбрать область на карте",

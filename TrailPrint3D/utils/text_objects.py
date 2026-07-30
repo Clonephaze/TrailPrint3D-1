@@ -150,6 +150,11 @@ def replaceShapeText(textfield, textobj):
     elif "{speed}" in textfield:
         textfield = textfield.replace("{speed}", f"{average_speed:.2f} km/h")
         update_text_object(textobj.name, textfield)
+    elif "{scale}" in textfield:
+        obj_size_mm = bpy.context.scene.tp3d.objSize
+        map_scale_ratio = f"1:{round(bpy.context.scene.tp3d.sMapInKm * 1_000_000 / obj_size_mm)}" if obj_size_mm != 0 else ""
+        textfield = textfield.replace("{scale}", map_scale_ratio)
+        update_text_object(textobj.name, textfield)
     elif "{name}" in textfield:
         nm = bpy.context.scene.tp3d.modelname
         print(f"Name: {nm}")

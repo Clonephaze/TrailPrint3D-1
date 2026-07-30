@@ -315,12 +315,12 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )# type: ignore
     textSize: IntProperty(name= _("Text Size"), default = 5, min = 0, max = 1000) # type: ignore
     textSizeTitle: IntProperty(name= _("Title Text Size"), default = 0, min = 0, max = 1000, description = _("Keep 0 to use value from 'Text Size'")) # type: ignore
-    titlefield: StringProperty(name= _("title"), default= "{name}", description = _("Codes = | {name} | {length} | {elevation} |{date} | {speed}")) # type: ignore
-    textfield1: StringProperty(name= _("text1"), default = "{length}", description = _("Codes = | {name} | {length} | {elevation} |{date} | {speed}")) # type: ignore
-    textfield2: StringProperty(name= _("text2"), default = "{elevation}", description = _("Codes = | {name} | {length} | {elevation} |{date} | {speed}")) # type: ignore
-    textfield3: StringProperty(name= _("text3"), default = "{duration}", description = _("Codes = | {name} | {length} | {elevation} |{date} | {speed}")) # type: ignore
-    textfield4: StringProperty(name= _("text4"), default = "", description = _("Codes = | {name} | {length} | {elevation} |{date} | {speed}")) # type: ignore
-    textfield5: StringProperty(name= _("text5"), default = "", description = _("Codes = | {name} | {length} | {elevation} |{date} | {speed}")) # type: ignore
+    titlefield: StringProperty(name= _("title"), default= "{name}", description = _("Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}")) # type: ignore
+    textfield1: StringProperty(name= _("text1"), default = "{length}", description = _("Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}")) # type: ignore
+    textfield2: StringProperty(name= _("text2"), default = "{elevation}", description = _("Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}")) # type: ignore
+    textfield3: StringProperty(name= _("text3"), default = "{duration}", description = _("Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}")) # type: ignore
+    textfield4: StringProperty(name= _("text4"), default = "", description = _("Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}")) # type: ignore
+    textfield5: StringProperty(name= _("text5"), default = "", description = _("Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}")) # type: ignore
     titleIcon: EnumProperty(
         name="Title Icon",
         items=[

@@ -96,6 +96,15 @@ def writeMetadata(obj, type = "MAP"):
             obj["Elevation Range (m)"] = 0
         obj["sMapInKm"] = bpy.context.scene.tp3d.sMapInKm
 
+        # Real-world map scale as a "1:X" ratio -- sMapInKm is the real-world
+        # distance (km) the model's footprint (objSize, mm) represents, so
+        # converting both to mm and dividing gives the scale denominator.
+        _obj_size_mm = bpy.context.scene.tp3d.objSize
+        if _obj_size_mm != 0:
+            obj["Map Scale Ratio"] = f"1:{round(bpy.context.scene.tp3d.sMapInKm * 1_000_000 / _obj_size_mm)}"
+        else:
+            obj["Map Scale Ratio"] = ""
+
         obj["col_wPondsActive"] = bpy.context.scene.tp3d.col_wPondsActive
         obj["col_wSmallRiversActive"] = bpy.context.scene.tp3d.col_wSmallRiversActive
         obj["col_wBigRiversActive"] = bpy.context.scene.tp3d.col_wBigRiversActive
