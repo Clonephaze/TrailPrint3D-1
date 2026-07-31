@@ -44,6 +44,7 @@ _TEST_FILES = [
 
 if _RUN_INTEGRATION:
     _TEST_FILES.append("test_generation_pipeline.py")
+    _TEST_FILES.append("test_model_shape_matrix.py")
 
 total_passed = 0
 total_failed = 0

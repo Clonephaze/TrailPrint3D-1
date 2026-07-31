@@ -57,6 +57,7 @@ tests/                         - standalone test suite, run inside Blender's own
   run_all_tests.py              - runs every test_*.py and prints a combined pass/fail summary
   headless_generate.py          - headless generator with a browser-based config UI (manual/dev use)
   test_generation_pipeline.py   - end-to-end runGeneration() tests against real elevation/Overpass APIs
+  test_model_shape_matrix.py    - runGeneration() across every shape/shape-extra/medal-handle combo, exported as 3MF
   test_geo_elevation.py         - unit tests for pure-math functions in geo.py / elevation.py
   test_geojson_import.py        - tests for the GeoJSON boundary reader
   test_geometry2d.py            - unit tests for utils/geometry2d.py
