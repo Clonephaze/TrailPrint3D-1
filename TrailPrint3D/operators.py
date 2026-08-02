@@ -2228,19 +2228,14 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
         # The puzzle cutter only knows how to cut terrain_obj itself apart --
         # elements not painted directly onto it ("Separate objects" /
-        # "Single-Color mode", and Buildings regardless of mode) are built as
-        # their own standalone objects and never get sliced along the jigsaw
-        # lines. Roads are handled separately: cut_into_puzzle_pieces clips the
-        # generated roads object per piece after terrain cutting.
+        # "Single-Color mode") are built as their own standalone objects and
+        # never get sliced along the jigsaw lines. Roads and Buildings are
+        # handled separately: cut_into_puzzle_pieces re-clips their generated
+        # geometry per piece after terrain cutting.
         if props.elementMode != 'PAINT':
             props.elementMode = 'PAINT'
             _progress.WarningsOverlay.add_warning(
                 "Puzzles only support the \"Paint on Map\" element mode — switched automatically.", "warn"
-            )
-        if props.el_bActive:
-            props.el_bActive = False
-            _progress.WarningsOverlay.add_warning(
-                "Buildings aren't supported in puzzles — disabled automatically.", "warn"
             )
         if props.singleColorMode:
             # Single-Color Mode builds each trail decal as its own standalone
@@ -2399,6 +2394,15 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             bpy.data.objects.remove(roads_obj, do_unlink=True)
         from .utils import generation as _gen_utils
         roads_data = getattr(_gen_utils, '_puzzle_roads_data', None)
+
+        # buildings_obj was only needed as an intermediate whole-map mesh;
+        # per-piece building geometry is rebuilt from the footprint cache below.
+        buildings_obj = bpy.data.objects.get(f"{puzzle_name}_BUILDINGS")
+        if buildings_obj is not None:
+            bpy.data.objects.remove(buildings_obj, do_unlink=True)
+        from .utils.osm import buildings as _bld_utils
+        buildings_data = getattr(_bld_utils, '_puzzle_buildings_data', None)
+
         # Snap trails against the continuous tile before cutting — avoids raycasting misses in the inter-piece gaps.
         trails = []
         if gpx_paths:
@@ -2406,7 +2410,9 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             trails = _generate_trails(context, gpx_paths, overlay, 0.6, 0.75)
 
         overlay.update(0.75, "Cutting puzzle pieces…", f"{len(pieces)} piece(s)…")
-        piece_objs, piece_seam_polys = utils.cut_into_puzzle_pieces(blank, pieces, tolerance, roads_data=roads_data)
+        piece_objs, piece_seam_polys = utils.cut_into_puzzle_pieces(
+            blank, pieces, tolerance, roads_data=roads_data, buildings_data=buildings_data
+        )
 
         if trails:
             # The actual per-piece decal is still built AFTER the cut, though

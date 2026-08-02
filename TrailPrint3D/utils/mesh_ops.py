@@ -1315,7 +1315,7 @@ def _bevel_bottom_edges(obj, bevel_width):
     bpy.ops.object.mode_set(mode='OBJECT')
 
 
-def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=None):
+def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=None, buildings_data=None):
     """Cut a single finished map tile into separate jigsaw puzzle piece objects.
 
     `terrain_obj` -- a normal, already-generated (and trail-merged, if
@@ -1335,6 +1335,13 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
     Applied as a uniform inward `buffer()` on every piece polygon, which
     gives every shared edge -- straight or curved tab/blank alike -- the same
     gap without any jigsaw-specific tolerance math.
+
+    `roads_data` / `buildings_data` -- caches produced by the puzzle blank's
+    own generation pass (see `_puzzle_roads_data` in generation.py and
+    `_puzzle_buildings_data` in osm/buildings.py). Both elements are built as
+    standalone whole-map objects that this function never slices directly;
+    instead their footprints are re-clipped to each piece's own polygon and
+    joined onto that piece here.
 
     Reuses the exact same flat-prism-then-INTERSECT technique already proven
     for `single_color_mode_curve`: `_extrude_flat_polygon` for a clean
@@ -1466,6 +1473,25 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
                     piece_obj.select_set(True)
                     bpy.context.view_layer.objects.active = piece_obj
                     bpy.ops.object.join()
+
+        if buildings_data is not None:
+            from .osm.buildings import buildings_geometry_for_polygon  # deferred to avoid circular import
+            b_verts, b_faces = buildings_geometry_for_polygon(poly, buildings_data)
+            if b_verts:
+                b_mesh = bpy.data.meshes.new(f"_buildings_{row}_{col}")
+                b_mesh.from_pydata(b_verts, [], b_faces)
+                b_mesh.update()
+                b_mesh.validate(verbose=False)
+                buildings_mat = bpy.data.materials.get("BUILDINGS")
+                if buildings_mat:
+                    b_mesh.materials.append(buildings_mat)
+                b_piece = bpy.data.objects.new(b_mesh.name, b_mesh)
+                bpy.context.collection.objects.link(b_piece)
+                bpy.ops.object.select_all(action='DESELECT')
+                b_piece.select_set(True)
+                piece_obj.select_set(True)
+                bpy.context.view_layer.objects.active = piece_obj
+                bpy.ops.object.join()
 
         for k, v in terrain_metadata.items():
             piece_obj[k] = v

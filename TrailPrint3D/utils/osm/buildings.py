@@ -15,6 +15,11 @@ from ..mesh_ops import recalculateNormals
 from ..scene import remove_objects
 from .fetch_solo import fetch_osm_data
 
+# Set after each buildings-enabled generation; read by the puzzle flow to clip
+# per-building footprints against each jigsaw piece (buildings are otherwise
+# a single standalone object never cut along the puzzle's own seams).
+_puzzle_buildings_data: tuple | None = None
+
 
 def _build_terrain_height_sampler(
     bvh, x_min, x_max, y_min, y_max, z_cast, z_floor, resolution=160
@@ -65,6 +70,78 @@ def _build_terrain_height_sampler(
         return z0 * (1.0 - ty) + z1 * ty
 
     return sample
+
+
+def _append_building(poly, z_offset, sample_z, b_verts, b_faces):
+    # poly: shapely Polygon (single, possibly with holes). Builds a manifold
+    # prism with a flat floor at the lowest terrain point under the footprint
+    # and a flat roof at the highest terrain point + height.
+    ext = list(poly.exterior.coords)
+    if len(ext) > 1 and ext[0] == ext[-1]:
+        ext = ext[:-1]
+    if len(ext) < 3:
+        return
+    holes = []
+    for interior in poly.interiors:
+        ring = list(interior.coords)
+        if len(ring) > 1 and ring[0] == ring[-1]:
+            ring = ring[:-1]
+        if len(ring) >= 3:
+            holes.append(ring)
+    ec = _earcut_triangulate(ext, holes)
+    if ec is None:
+        return
+    verts2d, cap_tris = ec
+    # Vectorized terrain-height lookup for every footprint vertex at once.
+    _vx = [v[0] for v in verts2d]
+    _vy = [v[1] for v in verts2d]
+    zs = sample_z(_vx, _vy)
+    z_min = float(zs.min())
+    z_top = float(zs.max()) + z_offset
+    n2 = len(verts2d)
+    base = len(b_verts)
+    for vx, vy in verts2d:
+        b_verts.append((vx, vy, z_min))
+    for vx, vy in verts2d:
+        b_verts.append((vx, vy, z_top))
+    for ia, ib, ic in cap_tris:
+        b_faces.append([base + ic, base + ib, base + ia])  # floor (down)
+        b_faces.append(
+            [base + n2 + ia, base + n2 + ib, base + n2 + ic]
+        )  # roof (up)
+    # Walls around the exterior ring and each hole. Ring ranges follow
+    # earcut's vertex order (exterior first, then holes).
+    start = 0
+    for ring in [ext] + holes:
+        rn = len(ring)
+        for i in range(rn):
+            a = base + start + i
+            b = base + start + (i + 1) % rn
+            c = base + n2 + start + (i + 1) % rn
+            d = base + n2 + start + i
+            b_faces.append([a, b, c, d])
+        start += rn
+
+
+def buildings_geometry_for_polygon(piece_polygon, buildings_data):
+    """Return (verts, faces) for every building footprint clipped to *piece_polygon*.
+
+    Mirrors roads_geometry_for_polygon but for buildings: `buildings_data` is
+    the (footprints, sample_z) tuple cached in `_puzzle_buildings_data` by
+    create_buildings during the puzzle blank's own generation, since buildings
+    are otherwise a single standalone object never cut along the jigsaw seams.
+    """
+    footprints, sample_z = buildings_data
+    b_verts, b_faces = [], []
+    for poly, z_offset in footprints:
+        clipped = g2d.validate(poly.intersection(piece_polygon))
+        if clipped is None or clipped.is_empty:
+            continue
+        for part in g2d.iter_polygons(clipped):
+            _append_building(part, z_offset, sample_z, b_verts, b_faces)
+    if not b_verts:
+        return None, None
+    return b_verts, b_faces
 
 
 def create_buildings(map, default_height=10, scaleHor=1.0):
@@ -129,6 +206,11 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
     # into one mesh at the very end.
     b_verts = []
     b_faces = []
+    # Every (footprint, z_offset) pair that fed the mesh above, cached into
+    # _puzzle_buildings_data at the end of this function -- the puzzle flow
+    # re-clips these per piece since the mesh itself is never cut along the
+    # jigsaw seams.
+    _puzzle_footprints = []
     b_height_mult = bpy.context.scene.tp3d.el_bHeightMultiplier
 
     # Clip footprints to the map outline in 2D so buildings never spill past the
@@ -151,56 +233,6 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
     # is inherently scale-aware: the same mm cutoff culls a larger real-world
     # building on a larger-km map, where everything prints smaller.
     min_area = bpy.context.scene.tp3d.el_bMinPrintMM**2
-
-    def _append_building(poly, z_offset):
-        # poly: shapely Polygon (single, possibly with holes). Builds a manifold
-        # prism with a flat floor at the lowest terrain point under the footprint
-        # and a flat roof at the highest terrain point + height.
-        ext = list(poly.exterior.coords)
-        if len(ext) > 1 and ext[0] == ext[-1]:
-            ext = ext[:-1]
-        if len(ext) < 3:
-            return
-        holes = []
-        for interior in poly.interiors:
-            ring = list(interior.coords)
-            if len(ring) > 1 and ring[0] == ring[-1]:
-                ring = ring[:-1]
-            if len(ring) >= 3:
-                holes.append(ring)
-        ec = _earcut_triangulate(ext, holes)
-        if ec is None:
-            return
-        verts2d, cap_tris = ec
-        # Vectorized terrain-height lookup for every footprint vertex at once.
-        _vx = [v[0] for v in verts2d]
-        _vy = [v[1] for v in verts2d]
-        zs = _sample_z(_vx, _vy)
-        z_min = float(zs.min())
-        z_top = float(zs.max()) + z_offset
-        n2 = len(verts2d)
-        base = len(b_verts)
-        for vx, vy in verts2d:
-            b_verts.append((vx, vy, z_min))
-        for vx, vy in verts2d:
-            b_verts.append((vx, vy, z_top))
-        for ia, ib, ic in cap_tris:
-            b_faces.append([base + ic, base + ib, base + ia])  # floor (down)
-            b_faces.append(
-                [base + n2 + ia, base + n2 + ib, base + n2 + ic]
-            )  # roof (up)
-        # Walls around the exterior ring and each hole. Ring ranges follow
-        # earcut's vertex order (exterior first, then holes).
-        start = 0
-        for ring in [ext] + holes:
-            rn = len(ring)
-            for i in range(rn):
-                a = base + start + i
-                b = base + start + (i + 1) % rn
-                c = base + n2 + start + (i + 1) % rn
-                d = base + n2 + start + i
-                b_faces.append([a, b, c, d])
-            start += rn
 
     lat_step = 2
     lon_step = 2
@@ -350,7 +382,8 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
 
                     # Each (clipped) polygon part becomes its own manifold prism.
                     for part in g2d.iter_polygons(poly, min_area=min_area):
-                        _append_building(part, z_offset)
+                        _puzzle_footprints.append((part, z_offset))
+                        _append_building(part, z_offset, _sample_z, b_verts, b_faces)
 
                 _t_geom += time.time() - _t0
 
@@ -368,6 +401,9 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
         _ov.update(message="Buildings: building mesh…")
     _t0 = time.time()
     remove_objects(wall_obj)
+
+    global _puzzle_buildings_data
+    _puzzle_buildings_data = (_puzzle_footprints, _sample_z)
 
     if not b_verts:
         return None
