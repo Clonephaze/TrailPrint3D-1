@@ -200,6 +200,8 @@ class TP3D_PT_generate(bpy.types.Panel):
             scm_row.prop(props, "singleColorMode")
             if _elem_scm:
                 col.label(text=_("Auto-enabled with SCM Elements"), icon='LOCKED')
+            if props.singleColorMode or _elem_scm:
+                col.prop(props, "singleColorModeHeight")
 
             # Scale
             box = layout.box()

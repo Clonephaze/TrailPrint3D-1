@@ -439,6 +439,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     thickenValue: FloatProperty(name= _("thickenValue"), default = 1, description = _("Makes your Map 1mm thicker")) # type: ignore
     fixedElevationScale: BoolProperty(name= _("FixedElevationScale(10mm)"), default=False, description = _("Force the elevation to be 10mm High from highest to lowest point (ElevationScale still applies after that)")) # type: ignore
     singleColorMode: BoolProperty(name= _("SingleColorMode Trail"), default = False, description = _("Enable this if you don't have a Multicolor printer")) # type: ignore
+    singleColorModeHeight: FloatProperty(name= _("Trail Height"), default = 0.4, min=0.0, max=10.0, description = _("How far the SCM trail strip rises above the terrain surface (mm). 0 = flush with terrain. Works the same as Road Height.")) # type: ignore
     tolerance: FloatProperty(name= _("SingleColorMode Tolerance"), default = 0.2, description=_("Tolerance of the Trail for the SingleColorMode")) # type: ignore
     toleranceElements: FloatProperty(name= _("ToleranceElements"), default = 0.4, description= _("Tolerance of the Elements (Water, Forest) for the SingleColorMode")) # type: ignore
     disableCache: BoolProperty(name= _("disableCache"), default = False, description = _("Disable cache if you encounter random holes in your mesh")) # type: ignore

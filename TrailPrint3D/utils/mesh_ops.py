@@ -1821,6 +1821,7 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
 
     bottom_z = lowest_z - trailCutDepth
     top_z = bottom_z + 100.0  # tall enough to clear any terrain
+    trail_height = bpy.context.scene.tp3d.singleColorModeHeight
 
     verts, faces = [], []
     for poly in g2d.iter_polygons(ribbon):
@@ -1870,6 +1871,25 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     if len(crv.data.vertices) == 0:
         bpy.data.objects.remove(crv, do_unlink=True)
         return None
+
+    # Extrude top-facing faces upward so the strip rises above terrain by
+    # trail_height rather than being flush with the terrain surface.
+    if trail_height > 0:
+        bpy.ops.object.select_all(action='DESELECT')
+        crv.select_set(True)
+        bpy.context.view_layer.objects.active = crv
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.mesh.select_mode(type='FACE')
+        _bm = bmesh.from_edit_mesh(crv.data)
+        _bm.normal_update()
+        for _f in _bm.faces:
+            _f.select = _f.normal.z > 0.5
+        bmesh.update_edit_mesh(crv.data)
+        bpy.ops.mesh.extrude_region_move(
+            TRANSFORM_OT_translate={"value": (0, 0, trail_height)}
+        )
+        bpy.ops.object.mode_set(mode='OBJECT')
 
     # crv.matrix_world was reset to identity above (verts/faces are already
     # in world space), which left its origin sitting at world (0,0,0)
