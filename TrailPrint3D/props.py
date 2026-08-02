@@ -430,6 +430,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
 
     el_sMultiplier: FloatProperty(name= _("Road Width Multiplier"), default = 1, description = _("To make Roads thicker or thinner")) # type: ignore
     el_sHeight: FloatProperty(name= _("Road Height"), default = 0.4, min=0.0, description = _("Height of road geometry above terrain")) # type: ignore
+    el_sCutTolerance: FloatProperty(name= _("Road Cutout Tolerance"), default = 0.2, min=0.0, description = _("Extra clearance added around roads when cutting their footprint out of terrain/elements in SEPARATE/SingleColorMode, so the printed road piece seats without an overly tight fit. Same idea as Tolerance Elements, but for roads.")) # type: ignore
     el_sExcludeAlleys: BoolProperty(name= _("Exclude Alleys/Driveways"), default=True, description = _("Drops OSM highway=service ways explicitly tagged service=alley, service=driveway, service=parking_aisle, or service=drive-through -- the actual back-alley/driveway/parking-lot clutter -- while keeping plain service roads. Uses OSM's own tagging instead of guessing from geometry (a single street is often split into many short ways at every intersection, so filtering by length would wrongly cull real streets too).")) # type: ignore
 
     show_water: BoolProperty(name= _("Water & Ocean"), default=False) # type: ignore
