@@ -156,7 +156,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     from .metadata import (
         writeMetadata,  # deferred to avoid circular import at load time
     )
-    from .osm.fetch_utils import fetch_osm_data
+    from .osm.fetch_solo import fetch_osm_data
     from .osm.gen import (  # deferred to avoid circular import at load time
         build_osm_nodes,
         extract_multipolygon_bodies,
