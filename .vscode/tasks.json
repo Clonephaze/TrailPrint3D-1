@@ -1,0 +1,54 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Trailprint3d",
+            "type": "shell",
+            "command": ".\\build.ps1",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build and Open Folder",
+            "type": "shell",
+            "command": "Invoke-Item .",
+            "dependsOn": "Build Trailprint3d",
+            "presentation": {
+                "reveal": "never"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Run Fast Test Suite",
+            "type": "shell",
+            "command": "blender --background --factory-startup --python-exit-code 1 -P tests/run_all_tests.py",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Run Generation Pipeline Tests (Integration)",
+            "type": "shell",
+            "command": "blender --background --factory-startup --python-exit-code 1 -P tests/run_all_tests.py -- --integration",
+            "detail": "Slow, network-dependent (real MapTerhorn + Overpass) — runs via the main test runner with --integration flag",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

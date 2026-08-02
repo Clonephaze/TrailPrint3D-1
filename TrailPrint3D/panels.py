@@ -194,7 +194,12 @@ class TP3D_PT_generate(bpy.types.Panel):
             col = box.column(align=True)
             col.prop(props, "scaleElevation")
             col.prop(props, "pathThickness")
-            col.prop(props, "singleColorMode")
+            _elem_scm = props.elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH")
+            scm_row = col.row()
+            scm_row.enabled = not _elem_scm
+            scm_row.prop(props, "singleColorMode")
+            if _elem_scm:
+                col.label(text=_("Auto-enabled with SCM Elements"), icon='LOCKED')
 
             # Scale
             box = layout.box()
