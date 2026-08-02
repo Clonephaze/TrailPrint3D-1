@@ -665,7 +665,7 @@ class TP3D_OT_dovetail(bpy.types.Operator):
 
 
             #Check for selection and custom property
-            if zobj and "objSize" in zobj:
+            if zobj and "objSize" not in zobj:
                 break
             
             obj_size = zobj["objSize"]

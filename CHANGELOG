@@ -1,5 +1,10 @@
-Version 3.2
+Version 3.21
 Upcoming
+
+Fixed: Dovetail Cutouts doing nothing due to an inverted condition from a previous refactor
+-----------------------------
+Version 3.2
+31.07.2026
 
 Added: GeoJSON boundary import as a new Terrain map mode, including MultiPolygon (islands/exclaves) support and merging multiple boundary files into one shape (by Louisefeige) (Premium)
 Added: Coordinate search with city lookup and lat/lon input, plus new map layers for Browser based Features (Puzzle/Multitile Configurator)
