@@ -12,7 +12,12 @@ from mathutils import Vector  # type: ignore
 from .. import addon_preferences
 from .. import constants as const
 from .. import progress as _progress
+from . import geometry2d as g2d
 from .elevation import compute_and_store_tile_bounds
+
+# Set after each road-enabled generation; read by the puzzle flow to clip road
+# geometry per piece without re-running the road pipeline.
+_puzzle_roads_data: tuple | None = None
 
 # ---------------------------------------------------------------------------
 # runGeneration sub-phase helpers
@@ -72,7 +77,7 @@ def _rg_validate_inputs(flags):
     col_grActive       = tp3d.col_grActive
     col_glActive       = tp3d.col_glActive
     el_bActive         = tp3d.el_bActive
-    el_sActive         = any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive])
+    el_sActive         = any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive])
     jMapLat            = tp3d.get("jMapLat", 49)
     jMapLon            = tp3d.get("jMapLon", 9)
     jMapRadius         = tp3d.get("jMapRadius", 50)
@@ -444,6 +449,9 @@ def _rg_start_osm_prefetch(tp3d, map_km):
         water_ponds         = bool(tp3d.col_wPondsActive),
         water_small_rivers  = bool(tp3d.col_wSmallRiversActive),
         water_big_rivers    = bool(tp3d.col_wBigRiversActive),
+        exclude_alleys      = bool(tp3d.el_sExcludeAlleys),
+        road_footways       = bool(tp3d.el_sFootwaysActive),
+        road_service        = bool(tp3d.el_sServiceActive),
     )
     _active_kind_tasks = [
         (key.upper(), _tile_tasks)
@@ -453,7 +461,7 @@ def _rg_start_osm_prefetch(tp3d, map_km):
     ]
     if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE:
         _active_kind_tasks.append(("BUILDINGS", _tile_tasks))
-    if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive]) and map_km <= const.ROADS_MAXSIZE:
+    if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive]) and map_km <= const.ROADS_MAXSIZE:
         _active_kind_tasks.append(("STREETS", _tile_tasks))
     if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE:
         _active_kind_tasks.append(("COASTLINE", _tile_tasks))
@@ -526,7 +534,7 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
         [flag for _, flag, size, _, _ in COLORING_ELEMENTS if (flag(tp3d) if callable(flag) else getattr(tp3d, flag) == 1) and map_km <= size]
         + (['_ocean']    if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE else [])
         + (['_buildings'] if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE else [])
-        + (['_roads']    if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive]) and map_km <= const.ROADS_MAXSIZE else [])
+        + (['_roads']    if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive]) and map_km <= const.ROADS_MAXSIZE else [])
     )
     _total_active = max(len(_active_elem_flags), 1)
     _elem_step = (_ELEM_PHASE_END - _ELEM_PHASE_START) / _total_active
@@ -574,6 +582,9 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
             water_ponds         = bool(tp3d.col_wPondsActive),
             water_small_rivers  = bool(tp3d.col_wSmallRiversActive),
             water_big_rivers    = bool(tp3d.col_wBigRiversActive),
+            exclude_alleys      = bool(tp3d.el_sExcludeAlleys),
+            road_footways       = bool(tp3d.el_sFootwaysActive),
+            road_service        = bool(tp3d.el_sServiceActive),
         )
         _active_kind_tasks = [
             (key.upper(), _tile_tasks)
@@ -598,7 +609,7 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
         # in COLORING_ELEMENTS, so mark them ready here too.
         if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE and _all_prefetched.get('BUILDINGS'):
             _ov.set_fetch_ready('buildings')
-        if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive]) and map_km <= const.ROADS_MAXSIZE and _all_prefetched.get('STREETS'):
+        if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive]) and map_km <= const.ROADS_MAXSIZE and _all_prefetched.get('STREETS'):
             _ov.set_fetch_ready('roads')
         if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE and _all_prefetched.get('COASTLINE'):
             _ov.set_fetch_ready('water')
@@ -672,7 +683,7 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     # --------------------------------------------------
     # Warn if buildings or roads are used together with any singleColorMode.
     # --------------------------------------------------
-    _roads_active = any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive])
+    _roads_active = any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive])
     _any_scm = tp3d.singleColorMode or "SINGLECOLORMODE" in tp3d.elementMode
     #if (tp3d.el_bActive == 1 or _roads_active) and _any_scm:
     #    _progress.WarningsOverlay.add_warning("3D Elements (Buildings/Roads) are not compatible with SingleColorMode", "warn")
@@ -704,14 +715,32 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     # Roads — own creation function + clipping + material post-processing.
     # --------------------------------------------------
     terrain['roads'] = None
-    if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive]):
+    if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive]):
         if map_km <= const.ROADS_MAXSIZE:
             _advance_elem_progress("Roads", "Fetching road data…")
             _ov.set_fetch_progress('roads', 0.0)
             _ov.set_fetch_ready('roads')
-            roads = create_roads(obj, tp3d.el_sHeight, scaleHor, map_km)
-            if roads is not None:
-                roads = bpy.context.active_object
+            # PAINT mode: roads is fused visually onto a single-piece terrain,
+            # never printed standalone -- a thin raised strip is fine. Every
+            # other mode (SEPARATE / SINGLECOLORMODE*) needs roads to stand on
+            # its own as a base-to-top piece, like the coloring elements and
+            # the SCM trail groove insert, so it can be printed/assembled
+            # separately instead of being a sliver with nothing to sit on.
+            result = create_roads(obj, tp3d.el_sHeight, scaleHor, map_km,
+                                   full_depth=(tp3d.elementMode != "PAINT"))
+            if result is not None:
+                roads, roads_polygon = result
+                # Cache the terrain's own triangulated grid + the road footprint
+                # NOW, while terrain is still pristine (no boolean cuts yet) --
+                # finalize_roads() (called later, after roads is used as the
+                # cheap boolean cutter) needs the original height data under
+                # the road footprint, which a cut would otherwise destroy.
+                from .osm.roads import _triangulated_terrain_faces
+                terrain['roads_polygon'] = roads_polygon
+                terrain['_terrain_tris_cache'] = _triangulated_terrain_faces(obj)
+                global _puzzle_roads_data
+                _puzzle_roads_data = (roads_polygon, terrain['_terrain_tris_cache'], tp3d.el_sHeight)
+                set_origin_to_3d_cursor(roads)
                 roads.data.materials.clear()
                 roads.data.materials.append(bpy.data.materials.get("BLACK"))
                 terrain['roads'] = roads
@@ -741,6 +770,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     """
     from .mesh_ops import (  # deferred to avoid circular import at load time
         boolean_operation,
+        is_mesh_manifold,
         recalculateNormals,
         selectBottomFaces,
         single_color_mode_curve,
@@ -866,8 +896,92 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             for tcrv in thickerCurves:
                 boolean_operation(elem_obj, tcrv)
 
+    # Cut roads out of every finalized terrain element (element = element -
+    # road), so a road crossing water/forest/city/etc. leaves a continuous
+    # raised strip with the element notched around it instead of the two
+    # objects silently overlapping. Only meaningful once elements exist as
+    # real separate solids (SEPARATE / SINGLECOLORMODE / SINGLECOLORMODE_
+    # REMESH) -- in PAINT mode elements are baked as terrain face materials,
+    # there's no separate mesh to cut. Buildings are intentionally excluded
+    # -- they sit on top of both terrain and elements untouched. This must
+    # run AFTER every element's own cross-element cuts above are finished,
+    # and BEFORE the trail-groove step below, which stays the true last
+    # boolean of the whole pipeline.
+    roads_obj = terrain.get('roads')
+    if roads_obj is not None and props['elementMode'] in ("SEPARATE", "SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
+        # MANIFOLD requires BOTH operands to be watertight -- roads is the
+        # known carrier of a small residual non-manifold defect (see osm.py's
+        # create_roads notes), so it must be checked here too, not just the
+        # element being cut. Checking only elem_obj (as an earlier version of
+        # this fix did) let the solver stay MANIFOLD and silently no-op on
+        # every single cut whenever roads itself was the non-manifold side.
+        roads_manifold = is_mesh_manifold(roads_obj)
+
+        # For the boolean cuts, use a slightly wider cutter built from the
+        # Shapely road polygon buffered outward by el_sCutTolerance.  This
+        # gives a clean, uniform XY expansion without deforming the mesh
+        # (vertex-normal dilation is unreliable on slab geometry with walls).
+        cut_tolerance = bpy.context.scene.tp3d.el_sCutTolerance
+        roads_cutter = roads_obj
+        _cutter_tmp = None
+        if cut_tolerance > 0:
+            _road_poly = terrain.get('roads_polygon')
+            if _road_poly is not None and not _road_poly.is_empty:
+                from .osm.roads import _build_extruded_mesh
+                from . import geometry2d as _g2d
+                from shapely.geometry.polygon import orient as _orient
+                _buffered = _road_poly.buffer(cut_tolerance, join_style='mitre')
+                if _buffered and not _buffered.is_empty:
+                    _all_v2d, _all_tris = [], []
+                    for _part in _g2d.iter_polygons(_buffered):
+                        _part = _orient(_part, sign=1.0)
+                        _ext = list(_part.exterior.coords)[:-1]
+                        _holes = [list(r.coords)[:-1] for r in _part.interiors if len(r.coords) >= 4]
+                        _ec = _g2d._earcut_triangulate(_ext, _holes)
+                        if _ec:
+                            _v2, _t2 = _ec
+                            _base = len(_all_v2d)
+                            _all_v2d.extend(_v2)
+                            _all_tris += [(a + _base, b + _base, c + _base) for a, b, c in _t2]
+                    if _all_v2d and _all_tris:
+                        _mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+                        _bz = min(v.z for v in _mc) - 2.0
+                        _tz = max(v.z for v in _mc) + 20.0
+                        _cutter_tmp = _build_extruded_mesh(_all_v2d, _all_tris, _bz, _tz)
+                        recalculateNormals(_cutter_tmp)
+                        roads_cutter = _cutter_tmp
+
+        # Cut roads out of the main terrain object too, not just the
+        # coloring elements -- otherwise the terrain piece and the roads
+        # piece occupy the same 3D space wherever a road runs (full_depth
+        # roads reaches all the way down to terrain's own base), leaving
+        # no matching recess for the roads piece to sit in when assembled.
+        _ov = _progress.ProgressOverlay.get()
+        if _ov.active:
+            _ov.update(message="Cutting road from Terrain…")
+        solver = 'MANIFOLD' if (roads_manifold and is_mesh_manifold(obj)) else 'EXACT'
+        boolean_operation(obj, roads_cutter, solver=solver)
+
+        for key in TERRAIN_PRIORITY_ORDER:
+            elem_obj = terrain.get(key)
+            if not elem_obj:
+                continue
+            _ov = _progress.ProgressOverlay.get()
+            if _ov.active:
+                _ov.update(message=f"Cutting road from {key.capitalize()}…")
+            solver = 'MANIFOLD' if (roads_manifold and is_mesh_manifold(elem_obj)) else 'EXACT'
+            boolean_operation(elem_obj, roads_cutter, solver=solver)
+
+        if _cutter_tmp is not None:
+            remove_objects(_cutter_tmp)
+
     # Subtract the trail groove from buildings and roads so the trail cutout
-    # isn't blocked by 3D elements regardless of element mode.
+    # isn't blocked by 3D elements regardless of element mode. roads/buildings
+    # meshes can carry a small residual non-manifold defect (see osm.py's
+    # create_roads notes) that the default MANIFOLD solver would silently
+    # no-op on -- check before each boolean and fall back to EXACT, same
+    # pattern used for the terrain-clip boolean inside create_roads. This is
+    # the true last boolean in the pipeline (after it, only cleanup remains).
     if thickerCurves:
         for key in ('buildings', 'roads'):
             elem_obj = terrain.get(key)
@@ -877,7 +991,10 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             if _ov.active:
                 _ov.update(message=f"Subtracting trail from {key.capitalize()}…")
             for tcrv in thickerCurves:
-                boolean_operation(elem_obj, tcrv)
+                # Check BOTH operands -- MANIFOLD silently no-ops if EITHER
+                # side is non-manifold, not just the element being modified.
+                solver = 'MANIFOLD' if (is_mesh_manifold(elem_obj) and is_mesh_manifold(tcrv)) else 'EXACT'
+                boolean_operation(elem_obj, tcrv, solver=solver)
 
     if thickerCurves:
         if bpy.app.debug:
@@ -886,6 +1003,29 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                 tcrv.location.x += obj_size
         else:
             remove_objects(thickerCurves)
+
+    # Rebuild the road top surface from the terrain-grid cache captured before
+    # any of the cuts above, so it shares the exact terrain/element resolution.
+    # Runs last, and only now, so the boolean cuts above used the cheap coarse
+    # cutter mesh instead of this much heavier rebuild.
+    roads_obj = terrain.get('roads')
+    if roads_obj is not None:
+        _ov = _progress.ProgressOverlay.get()
+        if _ov.active:
+            _ov.update(message="Roads: adding terrain detail…")
+        from .osm.roads import finalize_roads  # deferred — only needed here
+        el_sHeight = bpy.context.scene.tp3d.el_sHeight
+        full_depth = props['elementMode'] != 'PAINT'
+        mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+        bottom_z = min(v.z for v in mc) - 1.0
+        finalize_roads(
+            roads_obj,
+            terrain.get('_terrain_tris_cache'),
+            terrain.get('roads_polygon'),
+            el_sHeight,
+            full_depth,
+            bottom_z,
+        )
 
 
 def _rg_assign_materials(obj, curveObjs, textobj, plateobj, props, shellobj=None):
@@ -1080,7 +1220,7 @@ def build_fetch_items(map_km=None):
             active = water_feats or (tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE)
             max_size = None
         elif key == 'roads':
-            active = any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive])
+            active = any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive])
         else:
             active = bool(flag and getattr(tp3d, flag, 0) == 1)
         if active and (max_size is None or map_km <= max_size):
@@ -1608,7 +1748,6 @@ def runGeneration(type, locked_scale=None):
         _osm_prefetch_thread.join()
     elements = _rg_build_terrain_elements(obj, scaleHor, curveObj=curveObjs[0] if curveObjs else None,
                                           prefetched_osm=_osm_prefetched)
-    
 
     # --- Phase 15: Single color mode processing ---
     overlay.update(0.95, "Coloring", "Applying single-color mode…") 

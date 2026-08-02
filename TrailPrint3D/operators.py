@@ -2185,7 +2185,8 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         if rp.exists():
             rp.unlink()
 
-        html_path = pathlib.Path(__file__).parent / 'puzzleGenerator.html'
+        _pe_html = pathlib.Path(__file__).parent / 'premium' / 'puzzleGenerator_pe.html'
+        html_path = _pe_html if _pe_html.exists() else pathlib.Path(__file__).parent / 'puzzleGenerator.html'
         self._server = mp.start_picker(
             self._result_path,
             existing_maps=_collect_existing_maps(),
@@ -2221,25 +2222,19 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
         # The puzzle cutter only knows how to cut terrain_obj itself apart --
         # elements not painted directly onto it ("Separate objects" /
-        # "Single-Color mode", and Buildings/Roads regardless of mode) are
-        # built as their own standalone objects and never get sliced along
-        # the jigsaw lines, leaving them spanning every piece uncut. Rather
-        # than ship that broken result, force compatible settings up front
-        # and tell the user via the warnings overlay.
+        # "Single-Color mode", and Buildings regardless of mode) are built as
+        # their own standalone objects and never get sliced along the jigsaw
+        # lines. Roads are handled separately: cut_into_puzzle_pieces clips the
+        # generated roads object per piece after terrain cutting.
         if props.elementMode != 'PAINT':
             props.elementMode = 'PAINT'
             _progress.WarningsOverlay.add_warning(
                 "Puzzles only support the \"Paint on Map\" element mode — switched automatically.", "warn"
             )
-        if props.el_bActive or props.el_sBigActive or props.el_sMedActive or props.el_sSmallActive or props.el_sServiceActive or props.el_sFootwaysActive:
+        if props.el_bActive:
             props.el_bActive = False
-            props.el_sBigActive = False
-            props.el_sMedActive = False
-            props.el_sSmallActive = False
-            props.el_sServiceActive = False
-            props.el_sFootwaysActive = False
             _progress.WarningsOverlay.add_warning(
-                "Buildings and Roads aren't supported in puzzles — disabled automatically.", "warn"
+                "Buildings aren't supported in puzzles — disabled automatically.", "warn"
             )
 
         bbox = data.get('bbox')
@@ -2365,8 +2360,18 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # own re-derived one, not a real need to dig into the bottom.
         utils.createTerrainFromSelected(manage_overlay=False, skip_bottom_recess=True)
 
+        # roads_obj was used as a boolean cutter during generation; delete it
+        # now — per-piece road geometry is rebuilt from the polygon cache below.
+        roads_obj = bpy.data.objects.get(f"{puzzle_name}_ROADS")
+        if roads_obj is not None:
+            bpy.data.objects.remove(roads_obj, do_unlink=True)
+        from .utils import generation as _gen_utils
+        roads_data = getattr(_gen_utils, '_puzzle_roads_data', None)
         overlay.update(0.6, "Cutting puzzle pieces…", f"{len(pieces)} piece(s)…")
-        piece_objs = utils.cut_into_puzzle_pieces(blank, pieces, tolerance)
+        piece_objs = utils.cut_into_puzzle_pieces(
+            blank, pieces, tolerance,
+            roads_data=roads_data,
+        )
 
         if gpx_paths:
             # Merge trails into the individual PIECES, not the single tile

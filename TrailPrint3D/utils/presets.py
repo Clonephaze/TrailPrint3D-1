@@ -78,7 +78,7 @@ def appendCollection():
             col.objects.unlink(obj)
 
             #eg jigzaw or slider puzzles
-            if "BLANK" in obj.name or "Blank" in obj.name:
+            if "BLANK" in obj.name or "Blank" in obj.name or "MpGround" in obj.name:
                 bpy.ops.object.select_all(action='DESELECT')
                 obj.select_set(True)
                 bpy.context.view_layer.objects.active = obj

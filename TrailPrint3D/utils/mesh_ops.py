@@ -23,6 +23,33 @@ def applyModifier(obj, modifier):
         bpy.data.meshes.remove(old_mesh)
 
 
+def dilate_copy(obj, distance, name_suffix="_dilated"):
+    """Return a new object -- a copy of ``obj`` pushed outward along vertex
+    normals by ``distance``. Used as a slightly-oversized throwaway cutter so
+    a boolean subtraction leaves clearance instead of an exact-fit recess
+    (e.g. roads' cutout tolerance). Returns ``obj`` itself if distance <= 0.
+    """
+    if distance <= 0:
+        return obj
+    dup = obj.copy()
+    dup.data = obj.data.copy()
+    dup.name = obj.name + name_suffix
+    if obj.users_collection:
+        for coll in obj.users_collection:
+            coll.objects.link(dup)
+    else:
+        bpy.context.collection.objects.link(dup)
+    bm = bmesh.new()
+    bm.from_mesh(dup.data)
+    bm.normal_update()
+    for v in bm.verts:
+        v.co += v.normal * distance
+    bm.to_mesh(dup.data)
+    bm.free()
+    dup.data.update()
+    return dup
+
+
 def recalculateNormals(obj, ins = False):
     '''
     OLD WAY THAT DIDNT WORK FOR COMPLETELY FLIPPED VOLUMES
@@ -94,6 +121,7 @@ def selectBottomFacesByZ(obj, tolerance=0.01):
     for v in bm.verts:
         v.select = abs(v.co.z - bottom_z) <= tolerance
     bmesh.update_edit_mesh(obj.data)
+
 
 
 def getBottomFacesArea(obj):
@@ -290,6 +318,23 @@ def delete_selected_verts(obj):
 
     # Update the mesh and viewport
     bmesh.update_edit_mesh(me)
+
+
+def is_mesh_manifold(obj):
+    """Return True if every vertex and edge of obj's mesh is manifold.
+
+    Cheap watertightness check used to decide whether the fast MANIFOLD
+    boolean solver is safe to use, or whether the slower but non-manifold-
+    tolerant EXACT solver is needed instead. MANIFOLD silently no-ops (only
+    a console warning, no exception) when fed non-manifold input, so this
+    check must run BEFORE the boolean, not after.
+    """
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    manifold = (all(v.is_manifold for v in bm.verts)
+                and all(e.is_manifold for e in bm.edges))
+    bm.free()
+    return manifold
 
 
 def boolean_operation(obj_a, obj_b, operation='DIFFERENCE', solver='MANIFOLD'):
@@ -1244,7 +1289,7 @@ def _bevel_bottom_edges(obj, bevel_width):
     bpy.ops.object.mode_set(mode='OBJECT')
 
 
-def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
+def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=None):
     """Cut a single finished map tile into separate jigsaw puzzle piece objects.
 
     `terrain_obj` -- a normal, already-generated (and trail-merged, if
@@ -1361,6 +1406,28 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
             continue
 
         _bevel_bottom_edges(piece_obj, bevel_width)
+
+        if roads_data is not None:
+            from .osm.roads import roads_geometry_for_polygon  # deferred to avoid circular import
+            road_polygon, terrain_tris, el_sHeight = roads_data
+            clipped = road_polygon.intersection(poly)
+            if not clipped.is_empty:
+                road_verts, road_faces = roads_geometry_for_polygon(clipped, terrain_tris, el_sHeight)
+                if road_verts:
+                    road_mesh = bpy.data.meshes.new(f"_road_{row}_{col}")
+                    road_mesh.from_pydata(road_verts, [], road_faces)
+                    road_mesh.update()
+                    road_mesh.validate(verbose=False)
+                    black_mat = bpy.data.materials.get("BLACK")
+                    if black_mat:
+                        road_mesh.materials.append(black_mat)
+                    road_piece = bpy.data.objects.new(road_mesh.name, road_mesh)
+                    bpy.context.collection.objects.link(road_piece)
+                    bpy.ops.object.select_all(action='DESELECT')
+                    road_piece.select_set(True)
+                    piece_obj.select_set(True)
+                    bpy.context.view_layer.objects.active = piece_obj
+                    bpy.ops.object.join()
 
         for k, v in terrain_metadata.items():
             piece_obj[k] = v
@@ -1738,7 +1805,7 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         bpy.ops.object.select_all(action='DESELECT')
         crv_thick.select_set(True)
         bpy.context.view_layer.objects.active = crv_thick
-        remeshClearing(crv_thick, 0.2, 0, map)
+        remeshClearing(crv_thick, 0.05, 0, map)
         #boolean_operation(map, crv_thick, 'DIFFERENCE', solver='EXACT')
         boolean_operation(map, crv_thick, 'DIFFERENCE')
 

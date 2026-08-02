@@ -355,9 +355,10 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 row = sub.row(align=True)
                 row.prop(props, "el_sMultiplier")
                 row.prop(props, "el_sHeight")
+                if props.elementMode != "PAINT":
+                    sub.prop(props, "el_sCutTolerance")
                 if props.el_sServiceActive:
                     sub.prop(props, "el_sExcludeAlleys", icon='CHECKBOX_HLT' if props.el_sExcludeAlleys else 'CHECKBOX_DEHLT')
-                #sub.operator("tp3d.remake_roads", icon='FILE_REFRESH')
 
         # --- PIN ---
         layout.prop(props, "show_pin", icon="TRIA_DOWN" if props.show_pin else "TRIA_RIGHT", emboss=False)
