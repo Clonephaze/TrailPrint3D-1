@@ -17,3 +17,6 @@ __pycache__/
 
 # Test-generated output
 tests/output/
+
+# Local editor settings
+.vscode/settings.json

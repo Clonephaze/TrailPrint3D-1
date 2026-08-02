@@ -203,6 +203,34 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path.startswith('/get_gpx_content?'):
+            from urllib.parse import parse_qs, urlparse
+            query = parse_qs(urlparse(self.path).query)
+            raw_path = query.get('path', [''])[0]
+            # Only ever re-serves a file /upload_gpx itself just wrote (same
+            # temp dir, same 'trailprint_' name prefix) -- not an arbitrary
+            # local-file read. Used so a picker page can redraw a
+            # previously-imported trail on reopen (saveState/restoreState
+            # only persist the path/name, not the raw GPX content itself).
+            candidate = pathlib.Path(raw_path)
+            expected_dir = pathlib.Path(tempfile.gettempdir())
+            if candidate.parent != expected_dir or not candidate.name.startswith('trailprint_'):
+                self.send_response(403)
+                self.end_headers()
+                return
+            try:
+                body = candidate.read_bytes()
+            except OSError:
+                self.send_response(404)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/gpx+xml')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path != '/':
             self.send_response(404)
             self.end_headers()
@@ -265,12 +293,21 @@ class _Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(length)
         pathlib.Path(self.result_path).write_text(body.decode('utf-8'), encoding='utf-8')
+        # Must run before the response is sent: the picker page calls
+        # window.close() as soon as it sees the response, and this function
+        # AttachThreadInput's onto that browser window's thread. Doing that
+        # while the window is mid-teardown (racing the client's close())
+        # is a known way to wedge Windows' shared input queue -- symptom is
+        # Blender's own window silently stops taking clicks/keys, which only
+        # becomes noticeable once generation finishes and the user tries to
+        # interact again. Running it first, against a still-open window,
+        # removes the race.
+        _bring_blender_to_foreground()
         self.send_response(200)
         self.send_header('Content-Type', 'text/plain')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         self.wfile.write(b'ok')
-        _bring_blender_to_foreground()
         threading.Thread(target=self.server.shutdown, daemon=True).start()
 
 

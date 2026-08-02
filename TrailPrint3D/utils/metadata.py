@@ -1,3 +1,5 @@
+import math
+
 import bpy  # type: ignore
 
 from .. import constants as const
@@ -22,10 +24,21 @@ def writeMetadata(obj, type = "MAP"):
         # from the imported polygon instead, so that dropdown's leftover value
         # (from whatever shape was last picked elsewhere in the UI) would be
         # meaningless here.
-        if bpy.context.scene.tp3d.mapmode == "GEOJSON":
-            obj["Shape"] = "CUSTOM"
-        else:
-            obj["Shape"] = get_effective_shape(bpy.context.scene.tp3d)
+        #
+        # Callers that already know their own tile's shape (multitile grid
+        # segments, the puzzle picker) stamp "Shape" on the object themselves
+        # before terrain generation runs -- respect that instead of deriving
+        # it from the scene's mapmode, which is the *main* Generate panel's
+        # dropdown and has nothing to do with those flows. Overwriting it
+        # unconditionally meant a stale mapmode == "GEOJSON" (left over from
+        # trying the boundary-import feature) mislabeled every subsequently
+        # generated square/hex multitile tile as "CUSTOM", which made Extend
+        # mode treat them as having no regular neighbor grid at all.
+        if "Shape" not in obj.keys():
+            if bpy.context.scene.tp3d.mapmode == "GEOJSON":
+                obj["Shape"] = "CUSTOM"
+            else:
+                obj["Shape"] = get_effective_shape(bpy.context.scene.tp3d)
         obj["Resolution"] = bpy.context.scene.tp3d.num_subdivisions
         obj["Elevation Scale"] = bpy.context.scene.tp3d.scaleElevation
         obj["objSize"] = bpy.context.scene.tp3d.objSize
@@ -67,14 +80,30 @@ def writeMetadata(obj, type = "MAP"):
         from .geo import (
             convert_to_geo,  # deferred to avoid circular import at load time
         )
-        obj["latitude"], obj["longitude"] = convert_to_geo(bpy.context.scene.tp3d.o_centerx,bpy.context.scene.tp3d.o_centery)
+        _latitude, obj["longitude"] = convert_to_geo(bpy.context.scene.tp3d.o_centerx,bpy.context.scene.tp3d.o_centery)
+        obj["latitude"] = _latitude
         _scale_elev = bpy.context.scene.tp3d.scaleElevation
         _auto_scale = bpy.context.scene.tp3d.sAutoScale
-        if _scale_elev != 0 and _auto_scale != 0:
-            obj["Elevation Range (m)"] = round((bpy.context.scene.tp3d.highestZ - bpy.context.scene.tp3d.lowestZ) * 1000 / _scale_elev / _auto_scale, 1)
+        # Vertex Z is displaced by scaleElevation * autoScale * merc (merc = the
+        # per-vertex Mercator latitude factor applied in generation.py/geo.py's
+        # elevation pass), so recovering real-world meters from the model's Z
+        # range has to divide that same factor back out -- otherwise this value
+        # is inflated by ~1/cos(latitude) away from the equator.
+        _merc = 1 / math.cos(math.radians(_latitude))
+        if _scale_elev != 0 and _auto_scale != 0 and _merc != 0:
+            obj["Elevation Range (m)"] = round((bpy.context.scene.tp3d.highestZ - bpy.context.scene.tp3d.lowestZ) * 1000 / _scale_elev / _auto_scale / _merc, 1)
         else:
             obj["Elevation Range (m)"] = 0
         obj["sMapInKm"] = bpy.context.scene.tp3d.sMapInKm
+
+        # Real-world map scale as a "1:X" ratio -- sMapInKm is the real-world
+        # distance (km) the model's footprint (objSize, mm) represents, so
+        # converting both to mm and dividing gives the scale denominator.
+        _obj_size_mm = bpy.context.scene.tp3d.objSize
+        if _obj_size_mm != 0:
+            obj["Map Scale Ratio"] = f"1:{round(bpy.context.scene.tp3d.sMapInKm * 1_000_000 / _obj_size_mm)}"
+        else:
+            obj["Map Scale Ratio"] = ""
 
         obj["col_wPondsActive"] = bpy.context.scene.tp3d.col_wPondsActive
         obj["col_wSmallRiversActive"] = bpy.context.scene.tp3d.col_wSmallRiversActive

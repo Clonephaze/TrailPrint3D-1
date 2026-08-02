@@ -13,6 +13,13 @@ water polygon geometry, not simplified synthetic fixtures. A hand-built
 4-vertex rectangle can't reveal a boolean-robustness bug the way a real
 221-way, 27-part forest polygon can.
 
+Shape / "Shape Extras" (shapeTextStyle) / Medal Handle (handleStyle)
+coverage lives in test_model_shape_matrix.py instead (synthetic elevation,
+no network, every shape/extra/handle combination) — every scenario here
+stays on the default HEXAGON. test_terrain_offset is the one exception,
+covering a non-shape parameter (xTerrainOffset/yTerrainOffset) as a paired
+comparison against a zero-offset baseline.
+
 Consequences of this:
   - Every run requires network access and will be considerably slower than a
     typical unit test (real Overpass/MapTerhorn round-trips + real boolean
@@ -26,8 +33,9 @@ Consequences of this:
     snapshots, since live OSM content can change over time.
 
 Every scenario runs with real export enabled (disable_auto_export=False),
-writing to tests/output/<scenario-name>/ (gitignored) so the actual
-generated files can be inspected after a run. PAINT-mode scenarios export as
+writing into a shared tests/output/GenerationTests/ folder (gitignored,
+each scenario's own trailName keeps filenames from colliding) so the
+actual generated files can be inspected after a run. PAINT-mode scenarios export as
 .obj/.mtl (the only format that can carry the painted per-face terrain-
 element colors); SEPARATE/SINGLECOLORMODE_REMESH scenarios export .stl per
 object, since each object already carries exactly one material.
@@ -47,7 +55,6 @@ Run with:
 
 import math
 import os
-import shutil
 import sys
 import traceback
 from collections import Counter
@@ -64,6 +71,7 @@ if _REPO_ROOT not in sys.path:
 
 _RESOURCES_DIR = os.path.join(os.path.dirname(__file__), "Resources")
 _OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+_BUNDLE_DIR = os.path.join(_OUTPUT_DIR, "GenerationTests")
 
 if "TrailPrint3D" not in bpy.context.preferences.addons:
     bpy.ops.preferences.addon_enable(module="TrailPrint3D")
@@ -178,11 +186,17 @@ def _collect_stats(objects):
                 idx = poly.material_index
                 mat = mats[idx] if 0 <= idx < len(mats) else None
                 stats["faces_by_color"][mat.name if mat else "(none)"] += 1
+            entry_min = [math.inf, math.inf, math.inf]
+            entry_max = [-math.inf, -math.inf, -math.inf]
             for corner in obj.bound_box:
                 world_co = obj.matrix_world @ Vector(corner)
                 for i in range(3):
+                    entry_min[i] = min(entry_min[i], world_co[i])
+                    entry_max[i] = max(entry_max[i], world_co[i])
                     stats["bbox_min"][i] = min(stats["bbox_min"][i], world_co[i])
                     stats["bbox_max"][i] = max(stats["bbox_max"][i], world_co[i])
+            entry["bbox_min"] = tuple(entry_min)
+            entry["bbox_max"] = tuple(entry_max)
         elif obj.type == 'CURVE':
             entry["points"] = sum(
                 len(spl.points) + len(spl.bezier_points) for spl in obj.data.splines
@@ -213,7 +227,7 @@ def _print_stats(name, stats):
     print(f"  bbox max:  ({bmax[0]:8.2f}, {bmax[1]:8.2f}, {bmax[2]:8.2f})")
     print(f"  bbox size: ({dims[0]:8.2f}, {dims[1]:8.2f}, {dims[2]:8.2f})")
     if stats.get("exported_files"):
-        print(f"  exported files ({os.path.join('tests', 'output')}/...):")
+        print(f"  exported files ({os.path.join('tests', 'output', 'GenerationTests')}/...):")
         for fname in stats["exported_files"]:
             print(f"    {fname}")
 
@@ -228,8 +242,9 @@ def _run_generation_scenario(name, gpx_filename, overrides):
     created, clean the scene back up, and return the stats dict.
 
     Real export is left ON (disable_auto_export=False), writing into a
-    persistent tests/output/<name>/ folder so the actual generated files can
-    be inspected afterwards.
+    shared tests/output/GenerationTests/ folder (every scenario's own
+    trailName keeps filenames from colliding) so the actual generated files
+    can be inspected afterwards.
     """
     _reset_scene_defaults()
     tp3d = bpy.context.scene.tp3d
@@ -237,10 +252,8 @@ def _run_generation_scenario(name, gpx_filename, overrides):
     gpx_path = os.path.join(_RESOURCES_DIR, gpx_filename)
     tp3d.file_path = gpx_path
 
-    out_dir = os.path.join(_OUTPUT_DIR, name)
-    shutil.rmtree(out_dir, ignore_errors=True)
-    os.makedirs(out_dir, exist_ok=True)
-    tp3d.export_path = out_dir + os.sep  # export_to_STL concatenates path + filename directly
+    tp3d.trailName = name  # -> modelname -> export filename, unique per scenario in the shared bundle folder
+    tp3d.export_path = _BUNDLE_DIR + os.sep  # export_to_STL concatenates path + filename directly
 
     for key, value in overrides.items():
         setattr(tp3d, key, value)
@@ -251,7 +264,12 @@ def _run_generation_scenario(name, gpx_filename, overrides):
     new_objects = list(after - before)
 
     stats = _collect_stats(new_objects)
-    stats["exported_files"] = sorted(os.listdir(out_dir)) if os.path.isdir(out_dir) else []
+    # Only this scenario's own files -- the folder is shared, so a plain
+    # listdir() would also pick up every other scenario's output.
+    stats["exported_files"] = sorted(
+        f for f in os.listdir(_BUNDLE_DIR)
+        if f == name or f.startswith(name + ".") or f.startswith(name + "_")
+    ) if os.path.isdir(_BUNDLE_DIR) else []
     _cleanup_objects(new_objects)
 
     return stats
@@ -279,21 +297,6 @@ def test_hexagon_paint_forest_water():
         f"PAINT mode should export .obj, got {stats['exported_files']}"
 
 
-def test_circle_paint_forest_water():
-    """3BergeTour hike, CIRCLE shape, PAINT mode, real forest + water."""
-    stats = _run_generation_scenario(
-        "circle_paint_forest_water",
-        "3BergeTour.gpx",
-        {"shape": "CIRCLE", "col_fActive": True, "col_wPondsActive": True},
-    )
-    _print_stats("circle / paint / real forest+water (3BergeTour)", stats)
-
-    assert stats["object_count"] >= 2
-    assert stats["faces_by_color"].get("BASE", 0) > 0
-    assert stats["faces_by_color"].get("FOREST", 0) > 0
-    assert stats["faces_by_color"].get("WATER", 0) > 0
-
-
 def test_separate_mode_forest_water_city():
     """3BergeTour hike, SEPARATE element mode with real forest, water, and
     city — each becomes its own object via a real boolean-intersect with the
@@ -317,11 +320,13 @@ def test_separate_mode_forest_water_city():
     assert stats["faces_by_color"].get("WATER", 0) > 0
     assert stats["faces_by_color"].get("CITY", 0) > 0
     # In SEPARATE mode the base map itself should be untouched (all BASE).
-    base_map = next(o for o in stats["objects"] if o["type"] == 'MESH' and o["name"] == "3BergeTour")
+    # Object names follow trailName (set to the scenario name so exports
+    # don't collide in the shared bundle folder), not the GPX filename.
+    base_map = next(o for o in stats["objects"] if o["type"] == 'MESH' and o["name"] == "separate_forest_water_city")
     assert base_map["faces"] > 0
     # Real OSM shapes are complex, multi-part polygons — a simple 4-8 vertex
     # box could never come from real forest/water data at this scale.
-    forest_obj = next(o for o in stats["objects"] if o["name"] == "3BergeTour_FOREST")
+    forest_obj = next(o for o in stats["objects"] if o["name"] == "separate_forest_water_city_FOREST")
     assert forest_obj["vertices"] > 50, \
         f"Real forest geometry should be far more complex than a box, got {forest_obj['vertices']} verts"
 
@@ -372,20 +377,6 @@ def test_long_route_exaggerated_singlecolor_forest_water():
     assert dims[2] > 0, "Exaggerated elevation should still produce vertical relief"
 
 
-def test_octagon_forest_water_long_route():
-    """100KmTour road ride, OCTAGON shape, PAINT mode, real forest + water."""
-    stats = _run_generation_scenario(
-        "octagon_forest_water_long_route",
-        "100KmTour.gpx",
-        {"shape": "OCTAGON", "col_fActive": True, "col_wPondsActive": True},
-    )
-    _print_stats("octagon / paint / real forest+water (100KmTour)", stats)
-
-    assert stats["object_count"] >= 2
-    assert stats["faces_by_color"].get("FOREST", 0) > 0
-    assert stats["faces_by_color"].get("WATER", 0) > 0
-
-
 def test_separate_forest_water_long_route():
     """100KmTour road ride, SEPARATE element mode, real forest + water — the
     boolean-intersect/split-loose path on a much larger real map."""
@@ -402,193 +393,40 @@ def test_separate_forest_water_long_route():
     assert stats["faces_by_color"].get("WATER", 0) > 0
 
 
-def test_hexagon_outer_text_paint_forest_water():
-    """3BergeTour hike, HEXAGON OUTER TEXT shape, PAINT mode, resolution 8
-    (num_subdivisions), real forest + water.
+# ---------------------------------------------------------------------------
+# Non-shape parameter variations — shape/shapeTextStyle/handleStyle coverage
+# itself now lives in test_model_shape_matrix.py, so these scenarios stay on
+# the default HEXAGON and instead vary the other generation parameters, each
+# as a paired comparison against a baseline/alternate value so the assertion
+# checks a real, derivable effect rather than just "didn't crash".
+# ---------------------------------------------------------------------------
 
-    This shape variant adds a separate text object (trail name/stats, WHITE
-    material) and a separate backing plate object (BLACK material) on top of
-    the usual map + trail, so it exercises the text/plate object-creation and
-    material-assignment path together with real painted terrain elements.
-    """
-    stats = _run_generation_scenario(
-        "hexagon_outer_text_paint_forest_water",
-        "3BergeTour.gpx",
-        {
-            "shape": "HEXAGON",
-            "shapeTextStyle": "OUTER TEXT",
-            "num_subdivisions": 8,
-            "col_fActive": True,
-            "col_wPondsActive": True,
-        },
+def test_terrain_offset():
+    """3BergeTour hike, xTerrainOffset/yTerrainOffset — paired against a
+    zero-offset baseline. transform_MapObject() (generation.py,
+    _rg_create_map_object) moves the base map shape to center+offset, so its
+    own bounding-box center should shift by very close to the requested
+    offset."""
+    baseline = _run_generation_scenario("terrain_offset_baseline", "3BergeTour.gpx", {})
+    shifted = _run_generation_scenario(
+        "terrain_offset_shifted", "3BergeTour.gpx",
+        {"xTerrainOffset": 20.0, "yTerrainOffset": -15.0},
     )
-    _print_stats("hexagon outer text / paint / resolution=8 / real forest+water (3BergeTour)", stats)
+    _print_stats("terrain offset baseline (3BergeTour)", baseline)
+    _print_stats("terrain offset xOff=20 yOff=-15 (3BergeTour)", shifted)
 
-    # Base map + trail + text + plate = 4 distinct objects.
-    assert stats["object_count"] >= 4, \
-        f"Expected map+trail+text+plate objects, got {stats['object_count']}"
-    assert stats["faces_by_color"].get("BASE", 0) > 0
-    assert stats["faces_by_color"].get("FOREST", 0) > 0, "Expected real FOREST-painted faces"
-    assert stats["faces_by_color"].get("WATER", 0) > 0, "Expected real WATER-painted faces"
-    assert stats["faces_by_color"].get("WHITE", 0) > 0, "Expected the WHITE text object"
-    assert stats["faces_by_color"].get("BLACK", 0) > 0, "Expected the BLACK backing plate"
-    assert any(f.endswith(".obj") for f in stats["exported_files"]), \
-        f"PAINT mode should export .obj, got {stats['exported_files']}"
+    base_map = next(o for o in baseline["objects"] if o["name"] == "terrain_offset_baseline")
+    shifted_map = next(o for o in shifted["objects"] if o["name"] == "terrain_offset_shifted")
 
+    base_center_x = (base_map["bbox_min"][0] + base_map["bbox_max"][0]) / 2
+    base_center_y = (base_map["bbox_min"][1] + base_map["bbox_max"][1]) / 2
+    shifted_center_x = (shifted_map["bbox_min"][0] + shifted_map["bbox_max"][0]) / 2
+    shifted_center_y = (shifted_map["bbox_min"][1] + shifted_map["bbox_max"][1]) / 2
 
-def test_hexagon_inner_text():
-    """3BergeTour hike, HEXAGON INNER TEXT — text is inserted into the map
-    surface itself (TRAIL material on the text object, no separate plate)."""
-    stats = _run_generation_scenario(
-        "hexagon_inner_text",
-        "3BergeTour.gpx",
-        {"shape": "HEXAGON", "shapeTextStyle": "INNER TEXT"},
-    )
-    _print_stats("hexagon inner text (3BergeTour)", stats)
-
-    # Map + trail + embedded text object.
-    assert stats["object_count"] >= 3, \
-        f"Expected map+trail+text objects, got {stats['object_count']}"
-    assert stats["total_vertices"] > 0
-    # INNER TEXT uses TRAIL material on the text, not WHITE.
-    assert stats["faces_by_color"].get("TRAIL", 0) > 0, \
-        "Expected TRAIL-material faces (trail + inner text)"
-
-
-def test_hexagon_front_text():
-    """3BergeTour hike, HEXAGON FRONT TEXT — text + plate on the front face."""
-    stats = _run_generation_scenario(
-        "hexagon_front_text",
-        "3BergeTour.gpx",
-        {"shape": "HEXAGON", "shapeTextStyle": "FRONT TEXT"},
-    )
-    _print_stats("hexagon front text (3BergeTour)", stats)
-
-    assert stats["object_count"] >= 4, \
-        f"Expected map+trail+text+plate objects, got {stats['object_count']}"
-    assert stats["faces_by_color"].get("WHITE", 0) > 0, "Expected WHITE text object"
-    assert stats["faces_by_color"].get("BLACK", 0) > 0, "Expected BLACK plate object"
-
-
-def test_hexagon_shell():
-    """3BergeTour hike, HEXAGON SHELL — generates a snug protective shell
-    around the map's sides and bottom in addition to the base map + trail."""
-    stats = _run_generation_scenario(
-        "hexagon_shell",
-        "3BergeTour.gpx",
-        {"shape": "HEXAGON", "shapeTextStyle": "SHELL"},
-    )
-    _print_stats("hexagon shell (3BergeTour)", stats)
-
-    assert stats["object_count"] >= 3, \
-        f"Expected map+trail+shell objects, got {stats['object_count']}"
-    assert stats["total_vertices"] > 0
-
-
-def test_circle_outer_text():
-    """3BergeTour hike, CIRCLE OUTER TEXT — circular map with a backplate and
-    curved text overlay."""
-    stats = _run_generation_scenario(
-        "circle_outer_text",
-        "3BergeTour.gpx",
-        {"shape": "CIRCLE", "shapeTextStyle": "OUTER TEXT"},
-    )
-    _print_stats("circle outer text (3BergeTour)", stats)
-
-    assert stats["object_count"] >= 4, \
-        f"Expected map+trail+text+plate objects, got {stats['object_count']}"
-    assert stats["faces_by_color"].get("WHITE", 0) > 0, "Expected WHITE text object"
-    assert stats["faces_by_color"].get("BLACK", 0) > 0, "Expected BLACK plate object"
-
-
-def test_octagon_outer_text():
-    """3BergeTour hike, OCTAGON OUTER TEXT — octagon map with a backplate and
-    text overlay."""
-    stats = _run_generation_scenario(
-        "octagon_outer_text",
-        "3BergeTour.gpx",
-        {"shape": "OCTAGON", "shapeTextStyle": "OUTER TEXT"},
-    )
-    _print_stats("octagon outer text (3BergeTour)", stats)
-
-    assert stats["object_count"] >= 4, \
-        f"Expected map+trail+text+plate objects, got {stats['object_count']}"
-    assert stats["faces_by_color"].get("WHITE", 0) > 0, "Expected WHITE text object"
-    assert stats["faces_by_color"].get("BLACK", 0) > 0, "Expected BLACK plate object"
-
-
-def test_square_paint_forest_water():
-    """3BergeTour hike, SQUARE (rectangle) shape, PAINT mode with real
-    forest + water.  Also exercises the rectangleHeight property."""
-    stats = _run_generation_scenario(
-        "square_paint_forest_water",
-        "3BergeTour.gpx",
-        {
-            "shape": "SQUARE",
-            "rectangleHeight": 80,
-            "col_fActive": True,
-            "col_wPondsActive": True,
-        },
-    )
-    _print_stats("square / paint / real forest+water (3BergeTour)", stats)
-
-    assert stats["object_count"] >= 2
-    assert stats["faces_by_color"].get("BASE", 0) > 0
-    assert stats["faces_by_color"].get("FOREST", 0) > 0, "Expected FOREST-painted faces"
-    assert stats["faces_by_color"].get("WATER", 0) > 0, "Expected WATER-painted faces"
-
-
-def test_square_shell():
-    """3BergeTour hike, SQUARE SHELL — rectangle map with a protective shell."""
-    stats = _run_generation_scenario(
-        "square_shell",
-        "3BergeTour.gpx",
-        {"shape": "SQUARE", "shapeTextStyle": "SHELL"},
-    )
-    _print_stats("square shell (3BergeTour)", stats)
-
-    assert stats["object_count"] >= 3, \
-        f"Expected map+trail+shell objects, got {stats['object_count']}"
-    assert stats["total_vertices"] > 0
-
-
-def test_ellipse_paint_forest_water():
-    """3BergeTour hike, ELLIPSE shape, PAINT mode with real forest + water.
-    Also exercises the ellipseRatio property."""
-    stats = _run_generation_scenario(
-        "ellipse_paint_forest_water",
-        "3BergeTour.gpx",
-        {
-            "shape": "ELLIPSE",
-            "ellipseRatio": 0.6,
-            "col_fActive": True,
-            "col_wPondsActive": True,
-        },
-    )
-    _print_stats("ellipse / paint / ellipseRatio=0.6 / real forest+water (3BergeTour)", stats)
-
-    assert stats["object_count"] >= 2
-    assert stats["faces_by_color"].get("BASE", 0) > 0
-    assert stats["faces_by_color"].get("FOREST", 0) > 0, "Expected FOREST-painted faces"
-
-
-def test_heart_paint_forest_water():
-    """3BergeTour hike, HEART shape, PAINT mode with real forest + water.
-    HEART has no text-style extras."""
-    stats = _run_generation_scenario(
-        "heart_paint_forest_water",
-        "3BergeTour.gpx",
-        {
-            "shape": "HEART",
-            "col_fActive": True,
-            "col_wPondsActive": True,
-        },
-    )
-    _print_stats("heart / paint / real forest+water (3BergeTour)", stats)
-
-    assert stats["object_count"] >= 2
-    assert stats["faces_by_color"].get("BASE", 0) > 0
-    assert stats["total_vertices"] > 0
+    assert abs((shifted_center_x - base_center_x) - 20.0) < 1.0, \
+        f"Expected the base map to shift ~20mm in X, moved {shifted_center_x - base_center_x:.2f}mm"
+    assert abs((shifted_center_y - base_center_y) - (-15.0)) < 1.0, \
+        f"Expected the base map to shift ~-15mm in Y, moved {shifted_center_y - base_center_y:.2f}mm"
 
 
 # ---------------------------------------------------------------------------
@@ -597,22 +435,17 @@ if __name__ == "__main__":
     print("  TrailPrint3D generation-pipeline integration tests (real data)")
     print("=" * 60 + "\n")
 
+    os.makedirs(_BUNDLE_DIR, exist_ok=True)
+    for _f in os.listdir(_BUNDLE_DIR):
+        _fp = os.path.join(_BUNDLE_DIR, _f)
+        if os.path.isfile(_fp):
+            os.remove(_fp)
+
     _run("hexagon/paint + real forest+water (3BergeTour)",         test_hexagon_paint_forest_water)
-    _run("circle/paint + real forest+water (3BergeTour)",          test_circle_paint_forest_water)
     _run("separate + real forest+water+city (3BergeTour)",         test_separate_mode_forest_water_city)
     _run("singlecolormode_remesh + real forest+water (3BergeTour)", test_singlecolormode_remesh_forest_water)
     _run("long route, exaggerated elevation + singlecolor + real elements", test_long_route_exaggerated_singlecolor_forest_water)
-    _run("octagon + real forest+water (100KmTour)",                test_octagon_forest_water_long_route)
     _run("separate + real forest+water (100KmTour)",               test_separate_forest_water_long_route)
-    _run("hexagon outer text + resolution 8 + real forest+water",  test_hexagon_outer_text_paint_forest_water)
-    _run("hexagon inner text (3BergeTour)",                        test_hexagon_inner_text)
-    _run("hexagon front text (3BergeTour)",                        test_hexagon_front_text)
-    _run("hexagon shell (3BergeTour)",                             test_hexagon_shell)
-    _run("circle outer text (3BergeTour)",                         test_circle_outer_text)
-    _run("octagon outer text (3BergeTour)",                        test_octagon_outer_text)
-    _run("square/paint + real forest+water (3BergeTour)",          test_square_paint_forest_water)
-    _run("square shell (3BergeTour)",                              test_square_shell)
-    _run("ellipse/paint + real forest+water (3BergeTour)",         test_ellipse_paint_forest_water)
-    _run("heart/paint + real forest+water (3BergeTour)",           test_heart_paint_forest_water)
+    _run("xTerrainOffset/yTerrainOffset (3BergeTour)",              test_terrain_offset)
 
     _assert_all_passed()

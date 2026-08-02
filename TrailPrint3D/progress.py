@@ -521,8 +521,15 @@ class WarningsOverlay:
         """Append a message to be shown at the end of generation.
 
         icon: "warn" (yellow !), "error" (red ✗), "ok" (green ✓)
+
+        Duplicate (message, icon) pairs are collapsed to one entry --
+        generating several tiles in one batch (multitile configurator)
+        otherwise repeats the same warning once per tile.
         """
-        cls._messages.append((message, icon))
+        entry = (message, icon)
+        if entry in cls._messages:
+            return
+        cls._messages.append(entry)
 
     @classmethod
     def clear(cls):

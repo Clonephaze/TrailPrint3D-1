@@ -2118,7 +2118,7 @@ def _generate_trails(context, gpx_paths, overlay, progress_start, progress_end):
     props = context.scene.tp3d
     n_trails = len(gpx_paths)
     overlay.update(progress_start, "Generating trails…", f"{n_trails} trail(s) to process…")
-    initial_gpx = bpy.context.scene.tp3d.get('file_path', None)
+    initial_gpx = props.file_path
     props.file_path = gpx_paths[0]
 
     materials = ["TRAIL", "YELLOW"]
@@ -2177,6 +2177,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         import tempfile
 
         from . import picker_server as mp
+        from . import temp
 
         self._result_path = str(
             pathlib.Path(tempfile.gettempdir()) / 'trailprint_puzzlepicker.json'
@@ -2185,8 +2186,12 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         if rp.exists():
             rp.unlink()
 
-        _pe_html = pathlib.Path(__file__).parent / 'premium' / 'puzzleGenerator_pe.html'
-        html_path = _pe_html if _pe_html.exists() else pathlib.Path(__file__).parent / 'puzzleGenerator.html'
+        # The hex/circular puzzle shapes are Premium-exclusive -- their
+        # actual generation code only exists in the Premium build's own
+        # picker page, not this one, so there's nothing to unlock by
+        # tampering with a served free page.
+        html_filename = 'premium/puzzleGenerator_pe.html' if temp.PREMIUMVERSION else 'puzzleGenerator.html'
+        html_path = pathlib.Path(__file__).parent / html_filename
         self._server = mp.start_picker(
             self._result_path,
             existing_maps=_collect_existing_maps(),
@@ -2212,6 +2217,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         _generate_trails, merge_active_with_map) directly rather than
         refactoring that larger, already-working method.
         """
+        from . import temp
         from .utils.geo import convert_to_neutral_coordinates
 
         props = context.scene.tp3d
@@ -2236,6 +2242,18 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             _progress.WarningsOverlay.add_warning(
                 "Buildings aren't supported in puzzles — disabled automatically.", "warn"
             )
+        if props.singleColorMode:
+            # Single-Color Mode builds each trail decal as its own standalone
+            # object (single_color_mode_curve) rather than merging it into the
+            # piece mesh -- on top of every other Single-Color-only element
+            # being unsupported here (see above), it also has its own origin
+            # handling tied to the regular per-tile flow (createTerrainFromSelected),
+            # not the puzzle's per-piece cut. Force it off so trails go through
+            # the regular merge_with_map path puzzles are actually built for.
+            props.singleColorMode = False
+            _progress.WarningsOverlay.add_warning(
+                "Single-Color Mode isn't supported in puzzles — disabled automatically.", "warn"
+            )
 
         bbox = data.get('bbox')
         pieces = data.get('pieces') or []
@@ -2244,7 +2262,21 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         puzzle_corner_radius = float(data.get('puzzleCornerRadius') or 0)
         rows_n = int(data.get('rows') or 0)
         cols_n = int(data.get('cols') or 0)
-        puzzle_name = (data.get('name') or '').strip() or f"{rows_n}-{cols_n}_Puzzle"
+        shape_name = data.get('shape')
+        if shape_name in ('hex', 'radial') and not temp.PREMIUMVERSION:
+            # Defensive fallback only -- the free picker page has no code
+            # path that can produce this in the first place (the hex/radial
+            # generation JS lives solely in the Premium build's own picker
+            # page), but a hand-crafted result file shouldn't be able to
+            # trigger the Premium-only circular holder below either.
+            shape_name = None
+        if shape_name == 'hex':
+            default_name = f"Hex_{cols_n}-{rows_n}_Puzzle"
+        elif shape_name == 'radial':
+            default_name = f"Radial_{cols_n}-{rows_n}_Puzzle"
+        else:
+            default_name = f"{rows_n}-{cols_n}_Puzzle"
+        puzzle_name = (data.get('name') or '').strip() or default_name
 
         if not bbox or not pieces:
             self.report({'WARNING'}, "Nothing to generate — draw a rectangle first")
@@ -2367,46 +2399,78 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             bpy.data.objects.remove(roads_obj, do_unlink=True)
         from .utils import generation as _gen_utils
         roads_data = getattr(_gen_utils, '_puzzle_roads_data', None)
-        overlay.update(0.6, "Cutting puzzle pieces…", f"{len(pieces)} piece(s)…")
-        piece_objs = utils.cut_into_puzzle_pieces(
-            blank, pieces, tolerance,
-            roads_data=roads_data,
-        )
-
+        # Snap trails against the continuous tile before cutting — avoids raycasting misses in the inter-piece gaps.
+        trails = []
         if gpx_paths:
-            # Merge trails into the individual PIECES, not the single tile
-            # before cutting -- merge_active_with_map's non-single-color-mode
-            # path builds a separate trail-decal object intersected against
-            # whatever map object it's given; merging into the one big tile
-            # before the cut produced a decal that was never cut apart along
-            # the jigsaw lines at all. Same bbox-overlap-per-tile pattern the
-            # regular multi-tile map picker uses, so a trail spanning several
-            # pieces correctly gets merged into each one it crosses.
-            overlay.update(0.85, "Generating trails…", f"{len(gpx_paths)} trail(s)…")
-            trails = _generate_trails(context, gpx_paths, overlay, 0.85, 0.95)
+            overlay.update(0.6, "Generating trails…", f"{len(gpx_paths)} trail(s)…")
+            trails = _generate_trails(context, gpx_paths, overlay, 0.6, 0.75)
+
+        overlay.update(0.75, "Cutting puzzle pieces…", f"{len(pieces)} piece(s)…")
+        piece_objs, piece_seam_polys = utils.cut_into_puzzle_pieces(blank, pieces, tolerance, roads_data=roads_data)
+
+        if trails:
+            # The actual per-piece decal is still built AFTER the cut, though
+            # -- merge_active_with_map's non-single-color-mode path builds a
+            # separate trail-decal object intersected against whatever map
+            # object it's given; merging the (already snapped) curve into each
+            # overlapping PIECE here (not into the one big tile before the
+            # cut) is what gives every piece its own correctly-cut trail
+            # decal. Same bbox-overlap-per-tile pattern the regular multi-tile
+            # map picker uses, so a trail spanning several pieces correctly
+            # gets merged into each one it crosses.
+            overlay.update(0.85, "Merging trails into pieces…", f"{len(trails)} trail(s)…")
             for trail_obj in trails:
                 for piece_obj in piece_objs:
                     if utils.osm.gen.is_bbox_overlapping(trail_obj, piece_obj):
                         utils.merge_active_with_map(piece_obj, trail_obj)
-            #remove_objects(trails)
+            # merge_active_with_map only hides each original whole trail (hide_set(True))
+            # rather than removing it -- fine for the regular single-tile flow where that
+            # curve is the only copy, but here every piece merge leaves its own cut decal
+            # behind, so the original, uncut trail is pure leftover once every piece has
+            # had a chance to merge with it.
+            utils.remove_objects(trails)
 
         holder_obj = None
         holder_data = data.get('holder') or {}
         if holder_data.get('enabled'):
             overlay.update(0.97, "Generating holder…", "")
-            holder_obj = utils.build_puzzle_holder(
-                piece_objs,
-                text=holder_data.get('text', ''),
-                wall_width=float(holder_data.get('wallWidth') or 4.0),
-                corner_radius=float(holder_data.get('cornerRadius') or 0),
-                pocket_corner_radius=puzzle_corner_radius,
-                font=holder_data.get('font', ''),
-                text_size_mm=float(holder_data.get('textSize') or 0) or None,
-            )
+            if shape_name in ('hex', 'radial'):
+                # Both shapes' assembled outer boundary is a true circle
+                # (the hex shape via its warp+clip to an exact target
+                # circle, the radial shape by construction) -- a round
+                # holder matches that instead of a rounded rectangle.
+                # Premium-exclusive: build_circular_puzzle_holder only
+                # exists in the Premium build (premium/utils_pe.py) -- see
+                # the shape_name fallback above, which guarantees this
+                # branch is unreachable without temp.PREMIUMVERSION.
+                from .premium import utils_pe
+                holder_obj = utils_pe.build_circular_puzzle_holder(
+                    piece_objs,
+                    text=holder_data.get('text', ''),
+                    wall_width=float(holder_data.get('wallWidth') or 4.0),
+                    font=holder_data.get('font', ''),
+                    text_size_mm=float(holder_data.get('textSize') or 0) or None,
+                    piece_seam_polys=piece_seam_polys if holder_data.get('seamEngraving', True) else None,
+                )
+            else:
+                holder_obj = utils.build_puzzle_holder(
+                    piece_objs,
+                    text=holder_data.get('text', ''),
+                    wall_width=float(holder_data.get('wallWidth') or 4.0),
+                    corner_radius=float(holder_data.get('cornerRadius') or 0),
+                    pocket_corner_radius=puzzle_corner_radius,
+                    font=holder_data.get('font', ''),
+                    text_size_mm=float(holder_data.get('textSize') or 0) or None,
+                    piece_seam_polys=piece_seam_polys if holder_data.get('seamEngraving', True) else None,
+                )
             if holder_obj is not None:
                 holder_obj.name = f"{puzzle_name}_Holder"
 
         try:
+            # Leaves the 3D cursor exactly where the user put it -- every piece
+            # (and every trail decal merged into one above) ends up sharing that
+            # same point as its origin, matching normal Blender "Set Origin ->
+            # Origin to 3D Cursor" behaviour for a multi-object selection.
             utils.set_origin_to_3d_cursor_objects(piece_objs)
         except (ReferenceError, AttributeError, IndexError):
             pass
@@ -2415,6 +2479,14 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             utils.zoom_camera_to_objects(piece_objs + ([holder_obj] if holder_obj is not None else []))
         except (ReferenceError, AttributeError, IndexError):
             pass
+
+        # Material preview mode -- mirrors runGeneration's own finishing step
+        # (generation.py), which the puzzle flow doesn't go through at all.
+        for area in bpy.context.screen.areas:
+            if area.type == 'VIEW_3D':
+                for space in area.spaces:
+                    if space.type == 'VIEW_3D':
+                        space.shading.type = 'MATERIAL'
 
         bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
         overlay.finish()

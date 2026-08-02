@@ -666,7 +666,14 @@ def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
             # face) -- near a jigsaw piece's boundary the ray can otherwise
             # graze a near-vertical side wall and report a "successful" hit
             # at the wrong height.
-            hit_ok = is_map_hit and hit_result[2].z >= 0.5
+            #
+            # Threshold is 0.1, not 0.5, for the same reason RaycastCurveToMesh
+            # uses 0.1: jigsaw walls are truly vertical (normal.z ~ 0) so 0.1
+            # still catches them, but 0.5 incorrectly rejected steep terrain at
+            # high elevation scales, replacing valid hits with a borrowed
+            # neighbour Z instead -- flat plateaus followed by sudden vertical
+            # steps. This function had drifted out of sync with that fix.
+            hit_ok = is_map_hit and hit_result[2].z >= 0.1
             hits.append(curve_world_inv @ hit_result[1] if hit_ok else None)
 
         # Fill gaps from the nearest point along the spline that DID hit --
@@ -1194,31 +1201,40 @@ def _ensure_outward_normals(obj):
     recalculateNormals()'s normals_make_consistent() only guarantees every
     face is consistent with its neighbors -- for a thin/concave solid like a
     jigsaw piece it can end up fully consistent but globally INVERTED (a
-    known limitation of that heuristic), which is exactly what happened to
-    one piece. A closed manifold's signed volume (divergence theorem: sum
-    each face's contribution to the volume integral) is a deterministic,
-    purely geometric way to tell which way is actually outward -- positive
-    means correctly outward, negative means the whole mesh is inside-out --
-    independent of whatever normals_make_consistent() decided.
+    known limitation of that heuristic).
+
+    Previously checked via a closed manifold's signed volume (divergence
+    theorem), but that sums two nearly-equal, opposite-sign top/bottom cap
+    contributions on these thin flat-prism pieces -- the kind of near-
+    cancellation that's numerically noisy in float precision, and it still
+    came out wrong on some pieces. The bottom face is a simpler and
+    unambiguous reference instead: on a flat-prism puzzle piece it must
+    always point straight down, so check that directly rather than integrate
+    over the whole solid.
     """
     recalculateNormals(obj)
 
+    mesh = obj.data
+    if not mesh.polygons:
+        return
+    min_z = min(v.co.z for v in mesh.vertices)
+    z_tol = max(1e-3, (max(v.co.z for v in mesh.vertices) - min_z) * 0.01)
+    bottom_normals_z = [
+        p.normal.z for p in mesh.polygons
+        if all(abs(mesh.vertices[vi].co.z - min_z) < z_tol for vi in p.vertices)
+    ]
+    if not bottom_normals_z or sum(bottom_normals_z) / len(bottom_normals_z) < 0:
+        return  # already facing down -- nothing to do
+
+    # Bottom face(s) point up instead of down -- the whole mesh is globally
+    # inside-out. Reverse every face (never just the bottom ones) so the
+    # flip keeps the mesh internally consistent with its neighbors.
     bm = bmesh.new()
-    bm.from_mesh(obj.data)
-    bm.faces.ensure_lookup_table()
-    volume = 0.0
-    for f in bm.faces:
-        if len(f.verts) < 3:
-            continue
-        v0 = f.verts[0].co
-        for i in range(1, len(f.verts) - 1):
-            volume += v0.dot(f.verts[i].co.cross(f.verts[i + 1].co))
-    volume /= 6.0
-    if volume < 0:
-        bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
-        bm.to_mesh(obj.data)
-        obj.data.update()
+    bm.from_mesh(mesh)
+    bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
+    bm.to_mesh(mesh)
     bm.free()
+    mesh.update()
 
 
 def _bevel_bottom_edges(obj, bevel_width):
@@ -1284,7 +1300,17 @@ def _bevel_bottom_edges(obj, bevel_width):
     print(f"[TP3D puzzle bevel] {obj.name}: {n_edges} boundary edge(s) selected, beveling {bevel_width}mm")
 
     if n_edges > 0:
-        bpy.ops.mesh.bevel(offset=bevel_width, offset_type='OFFSET', segments=1, affect='EDGES')
+        # clamp_overlap: without it, a fixed-width bevel is applied
+        # unconditionally everywhere, including at sharp/acute corners
+        # (common on the radial puzzle shape's hub and ring-split
+        # junctions, and on tab-curve corners generally) where a full-width
+        # bevel geometrically overlaps itself, producing the self-
+        # intersecting sliver faces seen at those corners. With it,
+        # Blender's own bevel operator automatically shrinks the offset
+        # locally wherever the full width would overlap, instead of always
+        # applying the same fixed width.
+        bpy.ops.mesh.bevel(offset=bevel_width, offset_type='OFFSET', segments=1, affect='EDGES',
+                            clamp_overlap=True)
 
     bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -1320,8 +1346,12 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
     min(0.5mm, minThickness / 2), so pieces seat into each other more easily
     and the bottom edge isn't perfectly sharp.
 
-    Returns the list of newly created piece objects. `terrain_obj` itself is
-    removed once every piece has been extracted.
+    Returns `(piece_objs, seam_polys)` -- the list of newly created piece
+    objects, and the list of each survivor's own true (pre-tolerance-shrink)
+    world-space Shapely polygon in the same order, for callers that want the
+    exact jigsaw seam lines (e.g. build_puzzle_holder engraving them onto the
+    holder floor). `terrain_obj` itself is removed once every piece has been
+    extracted.
     """
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
 
@@ -1342,6 +1372,7 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
     terrain_metadata = dict(terrain_obj.items())
     bevel_width = min(0.5, bpy.context.scene.tp3d.minThickness / 2)
     piece_objs = []
+    seam_polys = []
 
     # DEBUG ONLY: flat (z=0) copies of each piece's actual cutter polygon
     # (the same outline -- post tolerance-buffer -- that gets extruded into
@@ -1361,6 +1392,13 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
         poly = g2d.xy_ring_to_polygon(world_xy)
         if poly is None or poly.is_empty:
             continue
+        # Captured BEFORE the tolerance shrink below -- this is the true,
+        # gap-free jigsaw seam (tabs/blanks included) two neighboring pieces
+        # actually share, which is what build_puzzle_holder engraves onto the
+        # holder floor. The shrunk version used for the cut itself leaves a
+        # tiny tolerance gap on every edge that would otherwise double every
+        # seam line into two parallel ones.
+        seam_poly = poly
         if tolerance_mm > 0:
             # join_style='mitre' (not the default 'round'): a round join adds
             # up to 8 small arc segments at every convex corner it shrinks,
@@ -1438,9 +1476,22 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
         piece_obj["PuzzleRow"] = row
         piece_obj["PuzzleCol"] = col
         piece_objs.append(piece_obj)
+        seam_polys.append(seam_poly)
 
-    bpy.data.objects.remove(terrain_obj, do_unlink=True)
-    return piece_objs
+    if bpy.app.debug:
+        # Keep the original, uncut tile around for inspection when debugging
+        # -- shifted aside (same offset the debug cutters above use, so it
+        # lands next to them rather than overlapping the real pieces) and
+        # stripped of its MAP tag so later scene-wide raycasts/map pickers
+        # (e.g. RaycastCurveToAnyMesh's "is this a MAP object" check) can't
+        # mistake this leftover for a real, currently-active map.
+        terrain_obj.name = f"{terrain_obj.name}_DebugOriginal"
+        terrain_obj.location.y += debug_y_offset
+        terrain_obj.pop("objType", None)
+        terrain_obj.pop("Object type", None)
+    else:
+        bpy.data.objects.remove(terrain_obj, do_unlink=True)
+    return piece_objs, seam_polys
 
 
 def _rounded_rect_polygon(width, height, radius, quad_segs=8):
@@ -1475,16 +1526,19 @@ def _resolve_holder_font(font_filename):
     return candidate if os.path.isfile(candidate) else None
 
 
-def _emboss_holder_text(holder_obj, text, outer_w, outer_h, wall_width, top_z,
+def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_z,
                          font="", text_size_mm=None):
     """Emboss *text* centered on the front (south, -Y) rim of holder_obj and
     join it in as one printable part, in the WHITE material.
 
     The text's natural size is measured at scale 1 (instead of assuming a
     fixed font size) so it's scaled to *text_size_mm* (or, if not given, to
-    fit the rim strip's available height) -- and always clamped by available
-    width too, for long strings -- regardless of font metrics or string
-    length.
+    fit the rim strip's available height) -- and always clamped to
+    *available_w* too, for long strings -- regardless of font metrics or
+    string length. *available_w* is the caller's job to compute (the outer
+    shape's actual width at the text's own Y position -- simply outer_w-ish
+    for a rectangle, but a circle's rim is narrower there than its full
+    diameter, see build_circular_puzzle_holder).
     """
     from . import text_objects as txt  # deferred: text_objects imports from this module
     from .primitives import (
@@ -1514,7 +1568,6 @@ def _emboss_holder_text(holder_obj, text, outer_w, outer_h, wall_width, top_z,
         return holder_obj
 
     target_h = text_size_mm if text_size_mm and text_size_mm > 0 else max(0.5, wall_width - 1.5)
-    available_w = max(1.0, outer_w - 6.0)   # margin so text clears the rim's outer/inner edges
     scale = min(target_h / natural_h, available_w / natural_w)
     text_obj.scale = (scale, scale, 1)
 
@@ -1544,7 +1597,8 @@ def _emboss_holder_text(holder_obj, text, outer_w, outer_h, wall_width, top_z,
 
 def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
                          floor_thickness=2.0, clearance=0.1, corner_radius=5.0,
-                         pocket_corner_radius=0.0, font="", text_size_mm=None):
+                         pocket_corner_radius=0.0, font="", text_size_mm=None,
+                         piece_seam_polys=None, seam_width=0.6, seam_depth=0.4):
     """Build a rounded-rectangle tray sized to hold an already-generated
     jigsaw puzzle (cut_into_puzzle_pieces' output).
 
@@ -1564,6 +1618,13 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     top, leaving a solid floor of *floor_thickness* underneath -- the rim
     outside the pocket keeps the full *wall_height*. The holder gets the
     BLACK material; embossed text (see `_emboss_holder_text`) gets WHITE.
+
+    If *piece_seam_polys* is given (cut_into_puzzle_pieces' own second return
+    value -- each piece's true, pre-tolerance-shrink world-space polygon,
+    tabs/blanks included), every one of those polygons' boundary rings gets
+    engraved as a shallow groove into the pocket floor, so the jigsaw layout
+    is visible even with the pieces lifted out. Clipped to the pocket itself,
+    so a seam within `seam_width` of the wall doesn't cut into it.
 
     Reuses the same flat-prism + boolean technique as
     `cut_into_puzzle_pieces` / `single_color_mode_curve`.
@@ -1634,8 +1695,39 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     boolean_operation(holder_obj, cutter_obj, 'DIFFERENCE')
     bpy.data.objects.remove(cutter_obj, do_unlink=True)
 
+    if piece_seam_polys:
+        # Seam polygons are in the same world space as piece_objs' own bound
+        # boxes -- shift into the holder's local frame (centered on the
+        # puzzle) before building ribbon/pocket geometry from them.
+        seam_lines = []
+        for poly in piece_seam_polys:
+            for part in g2d.iter_polygons(poly):
+                for ring in [part.exterior] + list(part.interiors):
+                    seam_lines.append([(x - center_x, y - center_y) for x, y in ring.coords])
+        seam_ribbon = g2d.polylines_to_ribbon(seam_lines, seam_width / 2, quad_segs=4) if seam_lines else None
+        if seam_ribbon is not None and not seam_ribbon.is_empty:
+            seam_ribbon = g2d.validate(seam_ribbon.intersection(pocket_poly))
+        if seam_ribbon is not None and not seam_ribbon.is_empty:
+            # Leaves at least a quarter of the floor intact underneath even if
+            # seam_depth is set larger than the floor itself.
+            cut_depth = min(seam_depth, floor_thickness * 0.75)
+            seam_bottom_z = floor_thickness - cut_depth
+            seam_verts, seam_faces = [], []
+            for part in g2d.iter_polygons(seam_ribbon):
+                _extrude_flat_polygon(g2d, part, seam_bottom_z, wall_height + 5.0, seam_verts, seam_faces)
+            if seam_verts:
+                seam_mesh = bpy.data.meshes.new("PuzzleHolderSeamCutter")
+                seam_mesh.from_pydata(seam_verts, [], seam_faces)
+                seam_mesh.update()
+                _clean_solid_mesh(seam_mesh)
+                seam_cutter_obj = bpy.data.objects.new(seam_mesh.name, seam_mesh)
+                bpy.context.collection.objects.link(seam_cutter_obj)
+                boolean_operation(holder_obj, seam_cutter_obj, 'DIFFERENCE')
+                bpy.data.objects.remove(seam_cutter_obj, do_unlink=True)
+
     if text:
-        _emboss_holder_text(holder_obj, text, outer_w, outer_h, wall_width, wall_height,
+        available_w = max(1.0, outer_w - 6.0)  # margin so text clears the rim's outer/inner edges
+        _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, wall_height,
                              font=font, text_size_mm=text_size_mm)
 
     # Positioned at the puzzle's own XY center; Z so the pocket floor's TOP
@@ -2092,209 +2184,6 @@ def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
     recalculateNormals(obj)
 
 
-def _select_bottom_and_sides(obj):
-    """Select obj's bottom face (lowest-Z face -- the single dissolved N-gon
-    the generation pipeline leaves at the bottom) plus every face directly
-    touching it: one "select more" step. Since the bottom is one big N-gon
-    bordering every side-wall face directly, that single step selects
-    exactly bottom + sides, leaving the top (terrain) faces unselected --
-    without needing any normal-angle threshold, so it isn't fooled by steep
-    terrain the way selectTopFaces was. Leaves obj in Edit Mode, face-select
-    mode, with bottom+sides selected."""
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_mode(type='FACE')
-    bpy.ops.mesh.select_all(action='DESELECT')
-    bm = bmesh.from_edit_mesh(obj.data)
-    bm.faces.ensure_lookup_table()
-    bottom_face = min(bm.faces, key=lambda f: sum(v.co.z for v in f.verts) / len(f.verts))
-    bottom_face.select = True
-    bmesh.update_edit_mesh(obj.data)
-    bpy.ops.mesh.select_more()
-
-
-def _extract_bottom_and_sides(map_obj, name):
-    """Duplicate map_obj and keep only its bottom + side-wall faces (the
-    real, terrain-following outer shell) -- discards the top/terrain cap."""
-    bpy.ops.object.select_all(action='DESELECT')
-    map_obj.select_set(True)
-    bpy.context.view_layer.objects.active = map_obj
-    bpy.ops.object.duplicate()
-    shell_obj = bpy.context.view_layer.objects.active
-    shell_obj.name = name
-
-    _select_bottom_and_sides(shell_obj)  # leaves Edit Mode, bottom+sides selected
-    bpy.ops.mesh.select_all(action='INVERT')
-    bpy.ops.mesh.delete(type='FACE')
-    bpy.ops.object.mode_set(mode='OBJECT')
-    return shell_obj
-
-
-def _offset_shell_xy(shell_obj, amount, cx, cy):
-    """Grow every vertex of shell_obj radially outward in the XY plane
-    (about world (cx, cy)) by `amount`, leaving Z untouched entirely -- the
-    tolerance/wall gap, without disturbing the terrain-following heights
-    that came along for free by extracting the map's own real geometry.
-
-    Round-trips through matrix_world rather than assuming world = local +
-    location -- ELLIPSE objects carry a real object-level Y scale (their
-    aspect ratio never gets baked into the mesh), so that shortcut computes
-    the wrong world position and corrupts the offset for that shape.
-    """
-    if amount == 0:
-        return
-    mesh = shell_obj.data
-    mw = shell_obj.matrix_world
-    mw_inv = mw.inverted()
-    for v in mesh.vertices:
-        w = mw @ v.co
-        dx, dy = w.x - cx, w.y - cy
-        d = math.hypot(dx, dy)
-        if d > 1e-9:
-            new_world = Vector((cx + dx / d * (d + amount), cy + dy / d * (d + amount), w.z))
-            v.co = mw_inv @ new_world
-    mesh.update()
-
-
-def _push_bottom_face(obj, amount):
-    """Translate obj's bottom (lowest-Z) face straight down by `amount` --
-    the floor's own tolerance-gap / wall-thickness, kept independent of the
-    XY side offset since a flat floor doesn't get one "for free" the way
-    the sides do."""
-    if amount == 0:
-        return
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_mode(type='FACE')
-    bpy.ops.mesh.select_all(action='DESELECT')
-    bm = bmesh.from_edit_mesh(obj.data)
-    bm.faces.ensure_lookup_table()
-    bottom_face = min(bm.faces, key=lambda f: sum(v.co.z for v in f.verts) / len(f.verts))
-    bottom_face.select = True
-    bmesh.update_edit_mesh(obj.data)
-    bpy.ops.transform.translate(value=(0, 0, -amount))
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-
-def _stretch_up_from_bottom(obj, factor):
-    """Scale obj's Z coordinates by `factor` about its own bottom (lowest-Z)
-    point -- stretches everything above the floor further upward while
-    keeping the floor itself fixed. Used to grow the cavity cutter taller
-    than the outer wall's own highest point, so its cap safely removes
-    everything above it (any residual sliver between the two independently
-    fan-triangulated caps) instead of just meeting it edge-to-edge."""
-    if factor == 1:
-        return
-    mesh = obj.data
-    bottom_z = min(v.co.z for v in mesh.vertices)
-    for v in mesh.vertices:
-        v.co.z = bottom_z + (v.co.z - bottom_z) * factor
-    mesh.update()
-
-
-def _cap_boundary(obj):
-    """Close obj's single open boundary loop (where the top/terrain cap
-    used to be) by fanning triangles out from a center point to every
-    boundary edge -- turns the open bottom+sides shell into a valid closed
-    solid, right at its own natural (terrain-following) height.
-
-    A fan instead of bpy.ops.mesh.fill(): fill() can leave gaps on a
-    genuinely bumpy (non-planar) boundary loop -- fine on a flat rim, but a
-    real terrain-following one trips it up. A fan is reliable here because
-    the map's outline is always convex, so every boundary edge is visible
-    from an interior point regardless of how bumpy the rim's height is; the
-    fan's own shape doesn't matter beyond that; only its outer ring survives
-    the later boolean difference anyway.
-    """
-    bm = bmesh.new()
-    bm.from_mesh(obj.data)
-    bm.verts.ensure_lookup_table()
-    bm.edges.ensure_lookup_table()
-
-    remaining = {e for e in bm.edges if len(e.link_faces) == 1}
-    rings = []
-    while remaining:
-        e0 = next(iter(remaining))
-        remaining.discard(e0)
-        ring = [e0.verts[0], e0.verts[1]]
-        while True:
-            last = ring[-1]
-            nxt_e = next((e for e in remaining if last in e.verts), None)
-            if nxt_e is None:
-                break
-            remaining.discard(nxt_e)
-            ring.append(nxt_e.other_vert(last))
-        if len(ring) > 1 and ring[0] == ring[-1]:
-            ring = ring[:-1]
-        if len(ring) >= 3:
-            rings.append(ring)
-
-    for ring in rings:
-        n = len(ring)
-        cx = sum(v.co.x for v in ring) / n
-        cy = sum(v.co.y for v in ring) / n
-        cz = sum(v.co.z for v in ring) / n
-        center = bm.verts.new((cx, cy, cz))
-        for i in range(n):
-            a, b = ring[i], ring[(i + 1) % n]
-            try:
-                bm.faces.new((center, a, b))
-            except ValueError:
-                pass  # degenerate/duplicate face -- skip
-
-    bm.to_mesh(obj.data)
-    bm.free()
-    obj.data.update()
-    recalculateNormals(obj)
-
-
-def build_map_shell(map_obj, tolerance, wall=2.0, bottom_wall=1.0):
-    """Build a snug, open-top shell from the map's own real bottom+side
-    geometry, instead of reconstructing/approximating the shape.
-
-    Selects the bottom face and grows the selection once (bottom + every
-    directly-touching face = the side walls, since the bottom is a single
-    dissolved N-gon touching every side face -- the same thing pressing
-    Ctrl+Numpad+ once in the viewport would select), discards the top
-    (terrain) cap, then grows that shell outward in X/Y only for the
-    tolerance gap and wall thickness. Because the shell comes from the
-    map's actual mesh, the wall's top edge follows the real terrain exactly
-    -- not sampled, interpolated, or threshold-detected, so it can't drift
-    off the true height the way the previous normal-angle-based approaches
-    did on steep terrain.
-    """
-    cx, cy = map_obj.location.x, map_obj.location.y
-
-    # Fully process one shell (extract -> offset -> push -> cap) before
-    # starting the next -- interleaving the same step across both objects
-    # (all extracts, then all offsets, ...) has been observed to leave the
-    # second object's edit-mode boundary selection empty in background mode.
-    outer_obj = _extract_bottom_and_sides(map_obj, "_ShellOuter")
-    _offset_shell_xy(outer_obj, tolerance + wall, cx, cy)
-    _push_bottom_face(outer_obj, tolerance + bottom_wall)
-    _cap_boundary(outer_obj)
-
-    inner_obj = _extract_bottom_and_sides(map_obj, "_ShellInner")
-    _offset_shell_xy(inner_obj, tolerance, cx, cy)
-    _push_bottom_face(inner_obj, tolerance)
-    _stretch_up_from_bottom(inner_obj, 1.5)  # grow past outer's own rim height, so it cuts the top fully open
-    _cap_boundary(inner_obj)
-
-    boolean_operation(outer_obj, inner_obj, 'DIFFERENCE')
-    bpy.data.objects.remove(inner_obj, do_unlink=True)
-
-    if not outer_obj.data.polygons:
-        print("[build_map_shell] empty after hollowing -- skipping")
-        bpy.data.objects.remove(outer_obj, do_unlink=True)
-        return None
-
-    recalculateNormals(outer_obj)
-    outer_obj.name = map_obj.name + "_Shell"
-    return outer_obj
-
-
 def single_color_mode_mesh_remesh(original, map, tolerance = None):
 
     #Original = Element usually
@@ -2476,7 +2365,7 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
             v.select = True
         else:
             v.select = False
-            v.co.z = min(lowestVert, v.co.z)
+            lowestVert = min(lowestVert, v.co.z)
 
 
     if flatBottom == False: #Extrudes terrain shape down 1mm
@@ -2562,8 +2451,33 @@ def merge_active_with_map(map_obj, active_obj):
 
     elif active_obj.type == "CURVE":
         if not bpy.context.scene.tp3d.singleColorMode:
-            merge_with_map(map_obj, active_obj, True, False)
+            # merge_with_map's CURVE branch builds `duplicate` as a straight
+            # mapobject.copy() (map_obj.copy() inherits whatever transform
+            # map_obj currently has -- identity/world-origin for a freshly cut
+            # puzzle piece that hasn't had its own origin fixed up yet) and
+            # returns it without ever touching its origin. Re-home it to the
+            # 3D cursor here, same convention single_color_mode_curve's own
+            # per-piece decal already uses below (and which the puzzle
+            # generator's trail-merge loop primes with this piece's own
+            # location before calling in here) -- otherwise this decal is
+            # left sitting at world (0,0,0) forever.
+            duplicate = merge_with_map(map_obj, active_obj, True, False)
             active_obj.hide_set(True)
+            if duplicate is not None:
+                # intersect_trail_with_existing_box (called from inside
+                # merge_with_map) silently deletes `duplicate` itself when no
+                # trail vertex actually lands inside its box -- a real case
+                # here, since the caller's overlap check is a coarser 2D bbox
+                # test. merge_with_map still returns that now-dangling
+                # reference either way, so `duplicate is not None` alone
+                # doesn't mean the object is still alive.
+                try:
+                    from .scene import (
+                        set_origin_to_3d_cursor,  # deferred to avoid circular import at load time
+                    )
+                    set_origin_to_3d_cursor(duplicate)
+                except ReferenceError:
+                    pass
         else:
             dup = active_obj.copy()
             dup.data = active_obj.data.copy()
