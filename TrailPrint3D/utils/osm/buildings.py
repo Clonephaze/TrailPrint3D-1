@@ -7,13 +7,13 @@ import numpy as np  # type: ignore
 from mathutils import Vector  # type: ignore
 from mathutils.bvhtree import BVHTree  # type: ignore
 
-from ...constants import constants as const
-from ...progress import progress as _progress
+from ... import constants as const
+from ... import progress as _progress
+from .. import geometry2d as g2d
 from ..geometry2d import _earcut_triangulate
-from ..geometry2d import geometry2d as g2d
 from ..mesh_ops import recalculateNormals
 from ..scene import remove_objects
-from .fetch_utils import fetch_osm_data
+from .fetch_solo import fetch_osm_data
 
 
 def _build_terrain_height_sampler(

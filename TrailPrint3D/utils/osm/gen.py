@@ -2,7 +2,7 @@ from collections import deque
 
 from mathutils import Vector
 
-from ...progress import progress as _progress
+from ... import progress as _progress
 
 
 def extract_multipolygon_bodies(elements, nodes):

@@ -6,8 +6,8 @@ import time
 
 import bpy  # type: ignore
 
-from ...constants import constants as const
-from ...progress import progress as _progress
+from ... import constants as const
+from ... import progress as _progress
 from ..geo import convert_to_blender_coordinates_batch
 from .fetch_utils import _overpass_request
 
