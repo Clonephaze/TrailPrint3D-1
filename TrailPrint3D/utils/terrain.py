@@ -1657,8 +1657,6 @@ def createOcean(prefetched_coastline, scaleHor, tile):
     scaleHor             : float  horizontal scale factor
     tile                 : bpy.types.Object  the map mesh (used for location)
     """
-    from .osm import fetch_coastline_ways  # deferred to avoid circular import at load time
-    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
     from .mesh_ops import projection, recalculateNormals, merge_with_map  # deferred to avoid circular import at load time
     from .. import constants as _const  # deferred to avoid circular import at load time
     from .mesh_ops import (  # deferred to avoid circular import at load time
