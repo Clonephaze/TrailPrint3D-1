@@ -91,8 +91,8 @@ def test_overpass_request_success_first_try():
 
     data = {"elements": [{"type": "node", "id": 1}]}
     resp = _make_response(200, data)
-    with patch("TrailPrint3D.utils.osm.requests.post", return_value=resp) as mp, \
-         patch("TrailPrint3D.utils.osm.time.sleep"):
+    with patch("TrailPrint3D.utils.osm.fetch_utils.requests.post", return_value=resp) as mp, \
+         patch("TrailPrint3D.utils.osm.fetch_utils.time.sleep"):
         result = _overpass_request("query", "https://example.com", max_retries=3)
 
     assert result == data, f"Expected data dict, got {result!r}"
@@ -107,8 +107,8 @@ def test_overpass_request_retries_then_succeeds():
     data = {"elements": []}
     fail = _make_response(429)
     ok   = _make_response(200, data)
-    with patch("TrailPrint3D.utils.osm.requests.post", side_effect=[fail, fail, ok]), \
-         patch("TrailPrint3D.utils.osm.time.sleep"):
+    with patch("TrailPrint3D.utils.osm.fetch_utils.requests.post", side_effect=[fail, fail, ok]), \
+         patch("TrailPrint3D.utils.osm.fetch_utils.time.sleep"):
         result = _overpass_request("query", "https://example.com", max_retries=5)
 
     assert result == data, f"Expected data after retry, got {result!r}"
@@ -120,8 +120,8 @@ def test_overpass_request_exhausted_returns_none():
     from TrailPrint3D.utils.osm.fetch_utils import _overpass_request
 
     fail = _make_response(500)
-    with patch("TrailPrint3D.utils.osm.requests.post", return_value=fail), \
-         patch("TrailPrint3D.utils.osm.time.sleep"):
+    with patch("TrailPrint3D.utils.osm.fetch_utils.requests.post", return_value=fail), \
+         patch("TrailPrint3D.utils.osm.fetch_utils.time.sleep"):
         result = _overpass_request("query", "https://example.com", max_retries=3)
 
     assert result is None, f"Expected None after exhausted retries, got {result!r}"
@@ -135,9 +135,9 @@ def test_overpass_request_timeout_triggers_retry():
     from TrailPrint3D.utils.osm.fetch_utils import _overpass_request
 
     ok = _make_response(200, {"elements": []})
-    with patch("TrailPrint3D.utils.osm.requests.post",
+    with patch("TrailPrint3D.utils.osm.fetch_utils.requests.post",
                side_effect=[_requests.exceptions.Timeout, ok]), \
-         patch("TrailPrint3D.utils.osm.time.sleep"):
+         patch("TrailPrint3D.utils.osm.fetch_utils.time.sleep"):
         result = _overpass_request("query", "https://example.com", max_retries=3)
 
     assert result is not None, "Expected success after one Timeout, got None"
@@ -151,8 +151,8 @@ def test_overpass_request_log_callback_called_on_error():
     messages = []
     fail = _make_response(503)
     ok   = _make_response(200, {"elements": []})
-    with patch("TrailPrint3D.utils.osm.requests.post", side_effect=[fail, ok]), \
-         patch("TrailPrint3D.utils.osm.time.sleep"):
+    with patch("TrailPrint3D.utils.osm.fetch_utils.requests.post", side_effect=[fail, ok]), \
+         patch("TrailPrint3D.utils.osm.fetch_utils.time.sleep"):
         _overpass_request("query", "https://example.com",
                           max_retries=3, log_callback=messages.append)
 
@@ -167,9 +167,9 @@ def test_overpass_request_get_method():
 
     data = {"elements": []}
     resp = _make_response(200, data)
-    with patch("TrailPrint3D.utils.osm.requests.get", return_value=resp) as mg, \
-         patch("TrailPrint3D.utils.osm.requests.post") as mp, \
-         patch("TrailPrint3D.utils.osm.time.sleep"):
+    with patch("TrailPrint3D.utils.osm.fetch_utils.requests.get", return_value=resp) as mg, \
+         patch("TrailPrint3D.utils.osm.fetch_utils.requests.post") as mp, \
+         patch("TrailPrint3D.utils.osm.fetch_utils.time.sleep"):
         result = _overpass_request("query", "https://example.com",
                                    method="GET", max_retries=1)
 
@@ -195,7 +195,7 @@ def test_fetch_tiles_parallel_all_tiles_fetched():
         captured.append(bbox)
         return ({"elements": []}, True)
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_data", _mock_fetch):
+    with patch("TrailPrint3D.utils.osm.fetch_solo.fetch_osm_data", _mock_fetch):
         sem = threading.Semaphore(2)
         result = _fetch_tiles_parallel(tasks, "WATER", sem)
 
@@ -218,7 +218,7 @@ def test_fetch_tiles_parallel_failed_tile_excluded():
             return ({"elements": []}, False)
         return None  # simulate failure
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_data", _mock_fetch):
+    with patch("TrailPrint3D.utils.osm.fetch_solo.fetch_osm_data", _mock_fetch):
         sem = threading.Semaphore(2)
         result = _fetch_tiles_parallel([good, bad], "WATER", sem)
 
@@ -236,7 +236,7 @@ def test_fetch_tiles_parallel_result_carries_cache_flag():
     def _mock_fetch(b, kind, return_cache_status=False, settings=None):
         return ({"elements": []}, True)   # from_cache = True
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_data", _mock_fetch):
+    with patch("TrailPrint3D.utils.osm.fetch_solo.fetch_osm_data", _mock_fetch):
         result = _fetch_tiles_parallel([bbox], "WATER", __import__("threading").Semaphore(1))
 
     _data, from_cache = result[bbox]
@@ -255,7 +255,7 @@ def test_fetch_tiles_parallel_respects_semaphore():
     def _mock_fetch(bbox, kind, return_cache_status=False, settings=None):
         return ({"elements": []}, False)
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_data", _mock_fetch):
+    with patch("TrailPrint3D.utils.osm.fetch_solo.fetch_osm_data", _mock_fetch):
         sem = threading.Semaphore(1)   # strictest rate limit
         result = _fetch_tiles_parallel(tasks, "FOREST", sem)
 
@@ -286,7 +286,7 @@ def test_fetch_tiles_parallel_actually_concurrent():
         barrier.wait()   # blocks until CONCURRENCY_TARGET threads are all here
         return ({"elements": []}, False)
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_data", _mock_fetch):
+    with patch("TrailPrint3D.utils.osm.fetch_solo.fetch_osm_data", _mock_fetch):
         sem = threading.Semaphore(CONCURRENCY_TARGET + 1)  # not the bottleneck
         result = _fetch_tiles_parallel(tasks, "WATER", sem, max_workers=CONCURRENCY_TARGET + 1)
 
@@ -324,7 +324,7 @@ def test_fetch_tiles_parallel_semaphore_caps_concurrency():
             active[0] -= 1
         return ({"elements": []}, False)
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_data", _mock_fetch):
+    with patch("TrailPrint3D.utils.osm.fetch_solo.fetch_osm_data", _mock_fetch):
         sem = threading.Semaphore(SEM_LIMIT)
         result = _fetch_tiles_parallel(tasks, "WATER", sem, max_workers=SEM_LIMIT + 2)
 
@@ -674,7 +674,7 @@ def test_fetch_all_kinds_fetches_every_kind():
     def _mock(b, ks, settings=None, semaphore=None, tile_progress=None):
         return {k: ({"elements": []}, True) for k in ks}
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_combined", _mock):
+    with patch("TrailPrint3D.utils.osm.fetch_group.fetch_osm_combined", _mock):
         result = _fetch_all_kinds_parallel(kind_task_pairs, threading.Semaphore(4))
 
     for k in kinds:
@@ -695,7 +695,7 @@ def test_fetch_all_kinds_failed_kind_excluded():
         # Return WATER but silently drop FOREST (simulate no matching elements)
         return {k: ({"elements": []}, False) for k in ks if k == "WATER"}
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_combined", _mock):
+    with patch("TrailPrint3D.utils.osm.fetch_group.fetch_osm_combined", _mock):
         result = _fetch_all_kinds_parallel(
             [("WATER", [bbox]), ("FOREST", [bbox])],
             threading.Semaphore(4),
@@ -722,7 +722,7 @@ def test_fetch_all_kinds_actually_concurrent():
         barrier.wait()   # all N_TILES threads must arrive here simultaneously
         return {k: ({"elements": []}, False) for k in kinds}
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_combined", _mock):
+    with patch("TrailPrint3D.utils.osm.fetch_group.fetch_osm_combined", _mock):
         result = _fetch_all_kinds_parallel(
             kind_task_pairs,
             threading.Semaphore(N_TILES),   # semaphore not the bottleneck
@@ -761,7 +761,7 @@ def test_fetch_all_kinds_semaphore_caps_concurrency():
             active[0] -= 1
         return {k: ({"elements": []}, False) for k in kinds}
 
-    with patch("TrailPrint3D.utils.osm.fetch_osm_combined", _mock):
+    with patch("TrailPrint3D.utils.osm.fetch_group.fetch_osm_combined", _mock):
         result = _fetch_all_kinds_parallel(
             kind_task_pairs,
             threading.Semaphore(SEM_LIMIT),

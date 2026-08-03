@@ -148,7 +148,7 @@ def fetch_coastline_ways(prefetched_tiles, scaleHor):
     """
     import math as _math
 
-    from .. import constants as _const  # type: ignore
+    from ... import constants as _const  # type: ignore
 
     def _ll_to_bl(lat, lon):
         """Inline Mercator → Blender XY, elevation fixed at 0."""
