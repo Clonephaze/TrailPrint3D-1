@@ -1063,6 +1063,10 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         roads_obj.select_set(True)
         bpy.context.view_layer.objects.active = roads_obj
         bpy.ops.object.mode_set(mode='EDIT')
+        # select_non_manifold's poll() requires vertex or edge select mode --
+        # fails silently as a Report: Error if mode was left on face-select
+        # (e.g. by a prior operator) instead of raising an exception.
+        bpy.context.tool_settings.mesh_select_mode = (True, False, False)
         bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.mesh.select_non_manifold(
             extend=False, use_wire=False, use_boundary=True,
