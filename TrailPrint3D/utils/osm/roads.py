@@ -373,18 +373,6 @@ def _triangulated_terrain_faces(map_obj: bpy.types.Object) -> list:
     return tris
 
 
-def _bary_z(tri: tuple, x: float, y: float) -> float:
-    """Interpolate Z at (x, y) inside a flat 3-D triangle via barycentric coords."""
-    (x0, y0, z0), (x1, y1, z1), (x2, y2, z2) = tri
-    d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
-    if abs(d) < 1e-12:
-        return (z0 + z1 + z2) / 3.0
-    w0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / d
-    w1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / d
-    w2 = 1.0 - w0 - w1
-    return w0 * z0 + w1 * z1 + w2 * z2
-
-
 def _clip_terrain_grid_to_polygon(
     terrain_tris: list,
     polygon,

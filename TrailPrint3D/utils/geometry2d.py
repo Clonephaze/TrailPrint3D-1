@@ -523,6 +523,17 @@ def _earcut_triangulate(exterior_xy, holes_xy):
     return verts2d, tris
 
 
+def bary_z(tri: tuple, x: float, y: float) -> float:
+    """Barycentric Z interpolation at (x, y) inside a 3-D world-space triangle."""
+    (x0, y0, z0), (x1, y1, z1), (x2, y2, z2) = tri
+    d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+    if abs(d) < 1e-12:
+        return (z0 + z1 + z2) / 3.0
+    w0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / d
+    w1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / d
+    return w0 * z0 + w1 * z1 + (1.0 - w0 - w1) * z2
+
+
 def polygon_to_mesh(name, polygon):
     """Convert a Shapely Polygon to a flat Blender mesh object at z=0.
 
