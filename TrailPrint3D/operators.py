@@ -1923,7 +1923,7 @@ class TP3D_OT_remake_buildings(bpy.types.Operator):
 
     def execute(self, context):
         from .utils.metadata import writeMetadata
-        from .utils.osm import create_buildings
+        from .utils.osm.buildings import create_buildings
 
         tp3d = context.scene.tp3d
         map_obj = tp3d.currentMap
@@ -1962,11 +1962,11 @@ class TP3D_OT_remake_roads(bpy.types.Operator):
         tp3d = context.scene.tp3d
         m = tp3d.currentMap
         return (m is not None and m.name in bpy.data.objects
-                and any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive]))
+                and any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive]))
 
     def execute(self, context):
         from .utils.metadata import writeMetadata
-        from .utils.osm import create_roads
+        from .utils.osm.roads import create_roads
 
         tp3d = context.scene.tp3d
         map_obj = tp3d.currentMap
@@ -2228,23 +2228,14 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
         # The puzzle cutter only knows how to cut terrain_obj itself apart --
         # elements not painted directly onto it ("Separate objects" /
-        # "Single-Color mode", and Buildings/Roads regardless of mode) are
-        # built as their own standalone objects and never get sliced along
-        # the jigsaw lines, leaving them spanning every piece uncut. Rather
-        # than ship that broken result, force compatible settings up front
-        # and tell the user via the warnings overlay.
+        # "Single-Color mode") are built as their own standalone objects and
+        # never get sliced along the jigsaw lines. Roads and Buildings are
+        # handled separately: cut_into_puzzle_pieces re-clips their generated
+        # geometry per piece after terrain cutting.
         if props.elementMode != 'PAINT':
             props.elementMode = 'PAINT'
             _progress.WarningsOverlay.add_warning(
                 "Puzzles only support the \"Paint on Map\" element mode — switched automatically.", "warn"
-            )
-        if props.el_bActive or props.el_sBigActive or props.el_sMedActive or props.el_sSmallActive:
-            props.el_bActive = False
-            props.el_sBigActive = False
-            props.el_sMedActive = False
-            props.el_sSmallActive = False
-            _progress.WarningsOverlay.add_warning(
-                "Buildings and Roads aren't supported in puzzles — disabled automatically.", "warn"
             )
         if props.singleColorMode:
             # Single-Color Mode builds each trail decal as its own standalone
@@ -2396,21 +2387,32 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # own re-derived one, not a real need to dig into the bottom.
         utils.createTerrainFromSelected(manage_overlay=False, skip_bottom_recess=True)
 
-        # Create and elevation-snap each trail BEFORE cutting the puzzle apart
-        # -- raycasting after the cut left any point whose XY falls in the
-        # tiny tolerance gap between two adjacent pieces with no mesh under it
-        # at all (nothing in the whole scene to hit there), which silently
-        # moved that point to whatever fallback position RaycastCurveToAnyMesh's
-        # miss-handling produced instead of the terrain's actual surface.
-        # Snapping against `blank` while it's still one continuous tile (no
-        # internal gaps yet) guarantees every point finds a hit.
+        # roads_obj was used as a boolean cutter during generation; delete it
+        # now — per-piece road geometry is rebuilt from the polygon cache below.
+        roads_obj = bpy.data.objects.get(f"{puzzle_name}_ROADS")
+        if roads_obj is not None:
+            bpy.data.objects.remove(roads_obj, do_unlink=True)
+        from .utils import generation as _gen_utils
+        roads_data = getattr(_gen_utils, '_puzzle_roads_data', None)
+
+        # buildings_obj was only needed as an intermediate whole-map mesh;
+        # per-piece building geometry is rebuilt from the footprint cache below.
+        buildings_obj = bpy.data.objects.get(f"{puzzle_name}_BUILDINGS")
+        if buildings_obj is not None:
+            bpy.data.objects.remove(buildings_obj, do_unlink=True)
+        from .utils.osm import buildings as _bld_utils
+        buildings_data = getattr(_bld_utils, '_puzzle_buildings_data', None)
+
+        # Snap trails against the continuous tile before cutting — avoids raycasting misses in the inter-piece gaps.
         trails = []
         if gpx_paths:
             overlay.update(0.6, "Generating trails…", f"{len(gpx_paths)} trail(s)…")
             trails = _generate_trails(context, gpx_paths, overlay, 0.6, 0.75)
 
         overlay.update(0.75, "Cutting puzzle pieces…", f"{len(pieces)} piece(s)…")
-        piece_objs, piece_seam_polys = utils.cut_into_puzzle_pieces(blank, pieces, tolerance)
+        piece_objs, piece_seam_polys = utils.cut_into_puzzle_pieces(
+            blank, pieces, tolerance, roads_data=roads_data, buildings_data=buildings_data
+        )
 
         if trails:
             # The actual per-piece decal is still built AFTER the cut, though
@@ -2425,14 +2427,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             overlay.update(0.85, "Merging trails into pieces…", f"{len(trails)} trail(s)…")
             for trail_obj in trails:
                 for piece_obj in piece_objs:
-                    if utils.is_bbox_overlapping(trail_obj, piece_obj):
-                        # Both the Single Color Mode decal (single_color_mode_curve)
-                        # and the regular-mode decal (merge_with_map's CURVE branch)
-                        # home their origin to whatever the 3D cursor is currently at
-                        # -- left untouched here on purpose, so every trail decal ends
-                        # up sharing the SAME point as the pieces themselves below:
-                        # wherever the user actually parked the cursor before running
-                        # the generator, not a computed per-piece position.
+                    if utils.osm.gen.is_bbox_overlapping(trail_obj, piece_obj):
                         utils.merge_active_with_map(piece_obj, trail_obj)
             # merge_active_with_map only hides each original whole trail (hide_set(True))
             # rather than removing it -- fine for the regular single-tile flow where that

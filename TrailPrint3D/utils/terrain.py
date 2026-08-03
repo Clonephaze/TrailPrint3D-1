@@ -42,7 +42,7 @@ def _fetch_tiles_parallel(tasks, kind, semaphore, settings=None, max_workers=4):
     threads.  All mesh-building still happens on the main thread in
     coloring_main().
     """
-    from .osm import fetch_osm_data  # deferred to avoid circular import
+    from .osm.fetch_solo import fetch_osm_data  # deferred to avoid circular import
 
     results = {}
     lock = threading.Lock()
@@ -96,7 +96,7 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
     dict[kind_str -> dict[bbox -> (data_dict, from_cache_bool)]]
     Kinds with no successful tiles are present as empty dicts.
     """
-    from .osm import fetch_osm_combined  # deferred to avoid circular import
+    from .osm.fetch_group import fetch_osm_combined  # deferred to avoid circular import
 
     # Regroup: (kind, [bboxes]) → {bbox: [kinds]} → {bbox: [kinds]}
     tile_kinds: dict = {}
@@ -156,10 +156,10 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     from .metadata import (
         writeMetadata,  # deferred to avoid circular import at load time
     )
-    from .osm import (  # deferred to avoid circular import at load time
+    from .osm.fetch_solo import fetch_osm_data
+    from .osm.gen import (  # deferred to avoid circular import at load time
         build_osm_nodes,
         extract_multipolygon_bodies,
-        fetch_osm_data,
     )
     from .scene import (
         show_message_box,  # deferred to avoid circular import at load time
@@ -1657,15 +1657,13 @@ def createOcean(prefetched_coastline, scaleHor, tile):
     scaleHor             : float  horizontal scale factor
     tile                 : bpy.types.Object  the map mesh (used for location)
     """
-    from .osm import fetch_coastline_ways  # deferred to avoid circular import at load time
-    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
     from .mesh_ops import projection, recalculateNormals, merge_with_map  # deferred to avoid circular import at load time
     from .. import constants as _const  # deferred to avoid circular import at load time
     from .mesh_ops import (  # deferred to avoid circular import at load time
         projection,
         recalculateNormals,
     )
-    from .osm import (
+    from .osm.gen import (
         fetch_coastline_ways,  # deferred to avoid circular import at load time
     )
     from .scene import (

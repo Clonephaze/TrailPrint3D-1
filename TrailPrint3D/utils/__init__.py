@@ -44,7 +44,6 @@ from .geometry2d import *
 from .io_gpx import *
 from .mesh_ops import *
 from .metadata import *
-from .osm import *
 from .presets import *
 from .primitives import *
 from .scene import *

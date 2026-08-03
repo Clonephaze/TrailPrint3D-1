@@ -37,6 +37,7 @@ _make_valid_v2: Any = None
 unary_union: Any = None
 polygonize: Any = None
 
+
 def _load_shapely():
     """Attempt to import Shapely and populate module-level globals.
 
@@ -113,6 +114,7 @@ _EARCUT_IMPORT_ERROR: Exception | None = None
 try:
     import mapbox_earcut as _earcut  # type: ignore
     import numpy as _np  # type: ignore
+
     _HAS_EARCUT = True
 except ImportError as _ee:
     _EARCUT_IMPORT_ERROR = _ee
@@ -164,7 +166,8 @@ def _require_shapely():
 # Core geometry helpers
 # ---------------------------------------------------------------------------
 
-def validate(geom):
+
+def validate(geom, method="structure", keep_collapsed=False):
     """Repair a Shapely geometry using make_valid(method='structure').
 
     'structure' treats outer rings as area and inner rings as holes, merges
@@ -178,7 +181,7 @@ def validate(geom):
     if geom.is_valid:
         return geom
     if _SHAPELY_MAJOR >= 2:
-        return _make_valid_v2(geom, method="structure", keep_collapsed=False)
+        return _make_valid_v2(geom, method=method, keep_collapsed=keep_collapsed)
     return _make_valid_compat(geom)
 
 
@@ -247,9 +250,15 @@ def line_to_ribbon(coords_xy, half_width, cap_style="round", join_style="round")
     return validate(buf)
 
 
-def polylines_to_ribbon(coords_list, half_width, cap_style="round",
-                        join_style="round", quad_segs=2, simplify_tol=None,
-                        precision=None):
+def polylines_to_ribbon(
+    coords_list,
+    half_width,
+    cap_style="round",
+    join_style="round",
+    quad_segs=2,
+    simplify_tol=None,
+    precision=None,
+):
     """Buffer many polylines into one merged ribbon polygon.
 
     coords_list -- iterable of polylines, each an iterable of (x, y) tuples
@@ -296,8 +305,9 @@ def polylines_to_ribbon(coords_list, half_width, cap_style="round",
         # Snap input vertices to a grid; this is the single biggest buffer
         # speed-up for dense networks (collapses near-coincident street nodes).
         merged = _shapely.set_precision(merged, precision)
-    buf = merged.buffer(half_width, quad_segs=quad_segs,
-                        cap_style=cap_style, join_style=join_style)
+    buf = merged.buffer(
+        half_width, quad_segs=quad_segs, cap_style=cap_style, join_style=join_style
+    )
     if buf.is_empty:
         return None
     if precision:
@@ -311,15 +321,21 @@ def map_footprint_polygon(obj):
     """Return the 2D (x, y) outline of a mesh object as a Shapely Polygon.
 
     Collects the mesh's boundary edges (edges with a single linked face),
-    polygonizes them, and returns the largest resulting polygon -- the map
-    outline.  Works for any map shape (hexagon, circle, square, ...).  Used to
-    clip OSM elements (buildings / roads) to the map shape in 2D, which is far
-    more robust than a 3D boolean against non-manifold element meshes.
+    polygonizes them, and unions every large-enough resulting polygon into
+    the map outline (small artifact loops -- e.g. a magnet-hole cutout --
+    are filtered out via an area threshold relative to the biggest piece
+    found).  Works for any map shape (hexagon, circle, square, ...), AND for
+    a mesh made of several disjoint islands -- e.g. a pre-cut multi-tile
+    puzzle blank, where each tile is its own separate boundary loop and ALL
+    of them are real map area, not just the single largest one.  Used to
+    clip OSM elements (buildings / roads) to the map shape in 2D, which is
+    far more robust than a 3D boolean against non-manifold element meshes.
 
-    Returns a validated Polygon, or None if no closed boundary can be built.
+    Returns a validated Polygon/MultiPolygon, or None if no closed boundary
+    can be built.
     """
     _require_shapely()
-    if obj is None or obj.type != 'MESH':
+    if obj is None or obj.type != "MESH":
         return None
     bm = bmesh.new()
     bm.from_mesh(obj.data)
@@ -361,11 +377,20 @@ def map_footprint_polygon(obj):
     polys = list(polygonize(merged))
     if not polys:
         return None
-    biggest = max(polys, key=lambda p: p.area)
-    return validate(biggest)
+    # Union every polygon big enough to be real map area, not just the
+    # single biggest one -- a mesh with several disjoint islands (e.g. a
+    # pre-cut multi-tile puzzle blank) polygonizes into one boundary loop
+    # per island, and every one of them is genuine map area that OSM
+    # elements (roads/buildings) must still be clipped to. Small artifact
+    # loops (magnet-hole cutouts, etc.) are filtered relative to the
+    # largest piece found.
+    max_area = max(p.area for p in polys)
+    keep = [p for p in polys if p.area >= max_area * 0.01]
+    footprint = unary_union(keep)
+    return validate(footprint)
 
 
-def footprint_with_holes(obj, simplify_tol=None, down_only=False):
+def footprint_with_holes(obj, simplify_tol=None, down_only=False, method="structure", keep_collapsed=False):
     """Return the true 2D footprint of a mesh as a Shapely Polygon/MultiPolygon.
 
     Projects faces to the (x, y) plane and unions them.  Because the union is
@@ -381,7 +406,7 @@ def footprint_with_holes(obj, simplify_tol=None, down_only=False):
     Returns a validated Polygon / MultiPolygon (holes preserved), or None.
     """
     _require_shapely()
-    if obj is None or obj.type != 'MESH':
+    if obj is None or obj.type != "MESH":
         return None
     bm = bmesh.new()
     bm.from_mesh(obj.data)
@@ -402,7 +427,7 @@ def footprint_with_holes(obj, simplify_tol=None, down_only=False):
             print(f"[TrailPrint3D] geometry2d: skipping degenerate face ring: {_exc!r}")
             continue
         if not p.is_valid:
-            p = validate(p)
+            p = validate(p, method=method, keep_collapsed=keep_collapsed)
         if p is not None and not p.is_empty and p.area > 0:
             polys.append(p)
     bm.free()
@@ -441,6 +466,7 @@ def xy_ring_to_polygon(coords_xy):
 # ---------------------------------------------------------------------------
 # Blender mesh creation
 # ---------------------------------------------------------------------------
+
 
 def _ring_coords_3d(ring):
     """Convert a Shapely LinearRing to a list of (x, y, 0.0) Blender coords.
@@ -491,7 +517,7 @@ def _earcut_triangulate(exterior_xy, holes_xy):
         return None
     if idx is None or len(idx) < 3:
         return None
-    tris = [tuple(int(i) for i in idx[t:t + 3]) for t in range(0, len(idx) - 2, 3)]
+    tris = [tuple(int(i) for i in idx[t : t + 3]) for t in range(0, len(idx) - 2, 3)]
     if not tris:
         return None
     return verts2d, tris
@@ -550,6 +576,7 @@ def polygon_to_mesh(name, polygon):
             # Fallback: mathutils tessellation (earcut missing). Less robust --
             # may produce non-manifold caps for complex holed polygons.
             from mathutils.geometry import tessellate_polygon  # type: ignore
+
             loops = [outer] + holes
             veclists = [[Vector(p) for p in loop] for loop in loops]
             all_coords = []
@@ -610,6 +637,7 @@ def polygon_to_mesh(name, polygon):
 # ---------------------------------------------------------------------------
 # Debug visualization
 # ---------------------------------------------------------------------------
+
 
 def _iter_all_rings(geom):
     """Yield every ring as a list of (x, y) tuples from any Shapely geometry.
@@ -680,3 +708,184 @@ def debug_dump(name, geom_or_list, collection_name="TP3D_Debug", z=0.0):
     debug_collection(collection_name).objects.link(obj)
     return obj
 
+
+def debug_dump_polygon_arrays(
+    name, poly_arrays, collection_name="TP3D_Debug", z=0.0, color=(1.0, 0.0, 0.0, 1.0)
+):
+    """DEBUG: Dump polygon arrays (numpy arrays or list of (x,y) tuples) as wireframes.
+
+    This is specifically for the format returned by _buffer_tiers_to_polygons().
+    poly_arrays: list of numpy arrays or list of (x,y) coordinate lists
+    z: height to place the debug geometry
+    color: RGBA color for the wireframe (default red)
+    """
+    if not bpy.app.debug:
+        return None
+    _require_shapely()
+
+    verts = []
+    edges = []
+
+    for poly_arr in poly_arrays:
+        # Handle both numpy arrays and list/tuple formats
+        if hasattr(poly_arr, "shape"):  # numpy array
+            coords = [
+                (float(poly_arr[i][0]), float(poly_arr[i][1]))
+                for i in range(len(poly_arr))
+            ]
+        else:  # list/tuple
+            coords = [(float(x), float(y)) for x, y in poly_arr]
+
+        if len(coords) < 3:
+            continue
+
+        start = len(verts)
+        verts.extend((x, y, z) for x, y in coords)
+        # Close the polygon (connect last to first)
+        for i in range(len(coords)):
+            edges.append((start + i, start + ((i + 1) % len(coords))))
+
+    if not verts:
+        return None
+
+    mesh = bpy.data.meshes.new(name)
+    obj = bpy.data.objects.new(name, mesh)
+    mesh.from_pydata(verts, edges, [])
+    mesh.update()
+
+    # Add a material with the specified color
+    mat = bpy.data.materials.new(name=f"{name}_mat")
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    # Clear default nodes
+    for node in nodes:
+        nodes.remove(node)
+    # Add emission node for visibility
+    emission = nodes.new(type="ShaderNodeEmission")
+    emission.inputs["Color"].default_value = color
+    emission.inputs["Strength"].default_value = 1.0
+    output = nodes.new(type="ShaderNodeOutputMaterial")
+    mat.node_tree.links.new(emission.outputs["Emission"], output.inputs["Surface"])
+    obj.data.materials.append(mat)
+
+    debug_collection(collection_name).objects.link(obj)
+    return obj
+
+
+def debug_dump_polylines(
+    name, polylines, collection_name="TP3D_Debug", z=0.0, color=(0.0, 1.0, 0.0, 1.0)
+):
+    """DEBUG: Dump polylines as wireframe lines.
+
+    polylines: list of polyline lists, each polyline is a list of (x,y) coordinates
+    z: height to place the debug geometry
+    color: RGBA color for the wireframe (default green)
+    """
+    if not bpy.app.debug:
+        return None
+    _require_shapely()
+
+    verts = []
+    edges = []
+
+    for polyline in polylines:
+        if len(polyline) < 2:
+            continue
+
+        start = len(verts)
+        # Convert to (x, y, z)
+        verts.extend((float(x), float(y), z) for x, y in polyline)
+        # Connect consecutive points
+        for i in range(len(polyline) - 1):
+            edges.append((start + i, start + i + 1))
+
+    if not verts:
+        return None
+
+    mesh = bpy.data.meshes.new(name)
+    obj = bpy.data.objects.new(name, mesh)
+    mesh.from_pydata(verts, edges, [])
+    mesh.update()
+
+    # Add a material with the specified color
+    mat = bpy.data.materials.new(name=f"{name}_mat")
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    for node in nodes:
+        nodes.remove(node)
+    emission = nodes.new(type="ShaderNodeEmission")
+    emission.inputs["Color"].default_value = color
+    emission.inputs["Strength"].default_value = 1.0
+    output = nodes.new(type="ShaderNodeOutputMaterial")
+    mat.node_tree.links.new(emission.outputs["Emission"], output.inputs["Surface"])
+    obj.data.materials.append(mat)
+
+    debug_collection(collection_name).objects.link(obj)
+    return obj
+
+
+def debug_dump_mesh_footprint(
+    name, obj, collection_name="TP3D_Debug", z=0.0, color=(0.0, 0.0, 1.0, 1.0)
+):
+    """DEBUG: Dump a Blender mesh's footprint as a wireframe polygon.
+
+    obj: Blender mesh object
+    z: height to place the debug geometry
+    color: RGBA color for the wireframe (default blue)
+    """
+    if not bpy.app.debug or obj is None:
+        return None
+    _require_shapely()
+
+    # Get the footprint as a Shapely polygon
+    footprint = footprint_with_holes(obj, simplify_tol=0.1)
+    if footprint is None or footprint.is_empty:
+        return None
+
+    # Convert to wireframe
+    verts = []
+    edges = []
+
+    def add_ring(ring_coords):
+        coords = list(ring_coords)
+        if len(coords) < 3:
+            return
+        start = len(verts)
+        verts.extend((float(x), float(y), z) for x, y in coords)
+        for i in range(len(coords)):
+            edges.append((start + i, start + ((i + 1) % len(coords))))
+
+    if isinstance(footprint, Polygon):
+        add_ring(footprint.exterior.coords)
+        for interior in footprint.interiors:
+            add_ring(interior.coords)
+    elif isinstance(footprint, (MultiPolygon, GeometryCollection)):
+        for part in footprint.geoms:
+            if isinstance(part, Polygon):
+                add_ring(part.exterior.coords)
+                for interior in part.interiors:
+                    add_ring(interior.coords)
+
+    if not verts:
+        return None
+
+    mesh = bpy.data.meshes.new(name)
+    debug_obj = bpy.data.objects.new(name, mesh)
+    mesh.from_pydata(verts, edges, [])
+    mesh.update()
+
+    # Add a material with the specified color
+    mat = bpy.data.materials.new(name=f"{name}_mat")
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    for node in nodes:
+        nodes.remove(node)
+    emission = nodes.new(type="ShaderNodeEmission")
+    emission.inputs["Color"].default_value = color
+    emission.inputs["Strength"].default_value = 1.0
+    output = nodes.new(type="ShaderNodeOutputMaterial")
+    mat.node_tree.links.new(emission.outputs["Emission"], output.inputs["Surface"])
+    debug_obj.data.materials.append(mat)
+
+    debug_collection(collection_name).objects.link(debug_obj)
+    return debug_obj

@@ -23,6 +23,33 @@ def applyModifier(obj, modifier):
         bpy.data.meshes.remove(old_mesh)
 
 
+def dilate_copy(obj, distance, name_suffix="_dilated"):
+    """Return a new object -- a copy of ``obj`` pushed outward along vertex
+    normals by ``distance``. Used as a slightly-oversized throwaway cutter so
+    a boolean subtraction leaves clearance instead of an exact-fit recess
+    (e.g. roads' cutout tolerance). Returns ``obj`` itself if distance <= 0.
+    """
+    if distance <= 0:
+        return obj
+    dup = obj.copy()
+    dup.data = obj.data.copy()
+    dup.name = obj.name + name_suffix
+    if obj.users_collection:
+        for coll in obj.users_collection:
+            coll.objects.link(dup)
+    else:
+        bpy.context.collection.objects.link(dup)
+    bm = bmesh.new()
+    bm.from_mesh(dup.data)
+    bm.normal_update()
+    for v in bm.verts:
+        v.co += v.normal * distance
+    bm.to_mesh(dup.data)
+    bm.free()
+    dup.data.update()
+    return dup
+
+
 def recalculateNormals(obj, ins = False):
     '''
     OLD WAY THAT DIDNT WORK FOR COMPLETELY FLIPPED VOLUMES
@@ -94,6 +121,7 @@ def selectBottomFacesByZ(obj, tolerance=0.01):
     for v in bm.verts:
         v.select = abs(v.co.z - bottom_z) <= tolerance
     bmesh.update_edit_mesh(obj.data)
+
 
 
 def getBottomFacesArea(obj):
@@ -290,6 +318,23 @@ def delete_selected_verts(obj):
 
     # Update the mesh and viewport
     bmesh.update_edit_mesh(me)
+
+
+def is_mesh_manifold(obj):
+    """Return True if every vertex and edge of obj's mesh is manifold.
+
+    Cheap watertightness check used to decide whether the fast MANIFOLD
+    boolean solver is safe to use, or whether the slower but non-manifold-
+    tolerant EXACT solver is needed instead. MANIFOLD silently no-ops (only
+    a console warning, no exception) when fed non-manifold input, so this
+    check must run BEFORE the boolean, not after.
+    """
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    manifold = (all(v.is_manifold for v in bm.verts)
+                and all(e.is_manifold for e in bm.edges))
+    bm.free()
+    return manifold
 
 
 def boolean_operation(obj_a, obj_b, operation='DIFFERENCE', solver='MANIFOLD'):
@@ -1270,7 +1315,7 @@ def _bevel_bottom_edges(obj, bevel_width):
     bpy.ops.object.mode_set(mode='OBJECT')
 
 
-def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
+def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=None, buildings_data=None):
     """Cut a single finished map tile into separate jigsaw puzzle piece objects.
 
     `terrain_obj` -- a normal, already-generated (and trail-merged, if
@@ -1290,6 +1335,13 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
     Applied as a uniform inward `buffer()` on every piece polygon, which
     gives every shared edge -- straight or curved tab/blank alike -- the same
     gap without any jigsaw-specific tolerance math.
+
+    `roads_data` / `buildings_data` -- caches produced by the puzzle blank's
+    own generation pass (see `_puzzle_roads_data` in generation.py and
+    `_puzzle_buildings_data` in osm/buildings.py). Both elements are built as
+    standalone whole-map objects that this function never slices directly;
+    instead their footprints are re-clipped to each piece's own polygon and
+    joined onto that piece here.
 
     Reuses the exact same flat-prism-then-INTERSECT technique already proven
     for `single_color_mode_curve`: `_extrude_flat_polygon` for a clean
@@ -1399,6 +1451,47 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3):
             continue
 
         _bevel_bottom_edges(piece_obj, bevel_width)
+
+        if roads_data is not None:
+            from .osm.roads import roads_geometry_for_polygon  # deferred to avoid circular import
+            road_polygon, terrain_tris, el_sHeight = roads_data
+            clipped = road_polygon.intersection(poly)
+            if not clipped.is_empty:
+                road_verts, road_faces = roads_geometry_for_polygon(clipped, terrain_tris, el_sHeight)
+                if road_verts:
+                    road_mesh = bpy.data.meshes.new(f"_road_{row}_{col}")
+                    road_mesh.from_pydata(road_verts, [], road_faces)
+                    road_mesh.update()
+                    road_mesh.validate(verbose=False)
+                    black_mat = bpy.data.materials.get("BLACK")
+                    if black_mat:
+                        road_mesh.materials.append(black_mat)
+                    road_piece = bpy.data.objects.new(road_mesh.name, road_mesh)
+                    bpy.context.collection.objects.link(road_piece)
+                    bpy.ops.object.select_all(action='DESELECT')
+                    road_piece.select_set(True)
+                    piece_obj.select_set(True)
+                    bpy.context.view_layer.objects.active = piece_obj
+                    bpy.ops.object.join()
+
+        if buildings_data is not None:
+            from .osm.buildings import buildings_geometry_for_polygon  # deferred to avoid circular import
+            b_verts, b_faces = buildings_geometry_for_polygon(poly, buildings_data)
+            if b_verts:
+                b_mesh = bpy.data.meshes.new(f"_buildings_{row}_{col}")
+                b_mesh.from_pydata(b_verts, [], b_faces)
+                b_mesh.update()
+                b_mesh.validate(verbose=False)
+                buildings_mat = bpy.data.materials.get("BUILDINGS")
+                if buildings_mat:
+                    b_mesh.materials.append(buildings_mat)
+                b_piece = bpy.data.objects.new(b_mesh.name, b_mesh)
+                bpy.context.collection.objects.link(b_piece)
+                bpy.ops.object.select_all(action='DESELECT')
+                b_piece.select_set(True)
+                piece_obj.select_set(True)
+                bpy.context.view_layer.objects.active = piece_obj
+                bpy.ops.object.join()
 
         for k, v in terrain_metadata.items():
             piece_obj[k] = v
@@ -1703,6 +1796,14 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
 
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
 
+    def _dbg_manifold(mesh, label):
+        bm_d = bmesh.new()
+        bm_d.from_mesh(mesh)
+        nm_e = sum(1 for e in bm_d.edges if not e.is_manifold)
+        nm_v = sum(1 for v in bm_d.verts if not v.is_manifold)
+        print(f"[TP3D trail] {label}: verts={len(bm_d.verts)} faces={len(bm_d.faces)} non-manifold edges={nm_e} verts={nm_v}")
+        bm_d.free()
+
     lowest_z = None
 
     if crv.type == "CURVE":
@@ -1733,8 +1834,12 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
             bpy.data.objects.remove(crv, do_unlink=True)
             return None
 
+        print(f"[TP3D trail] '{crv.name}': {len(coords_list)} spline(s), pts per spline={[len(s) for s in coords_list]}, lowest_z={lowest_z:.4f}")
+        print(f"[TP3D trail] pathThickness={pathThickness} tol={tol} trailCutDepth={trailCutDepth}")
         ribbon = g2d.polylines_to_ribbon(coords_list, pathThickness / 2, quad_segs=4)
         thick_ribbon = g2d.polylines_to_ribbon(coords_list, pathThickness / 2 + tol, quad_segs=4)
+        print(f"[TP3D trail] ribbon: {ribbon.geom_type if ribbon else None} area={(ribbon.area if ribbon else 0):.4f} valid={ribbon.is_valid if ribbon else False}")
+        print(f"[TP3D trail] thick_ribbon: {thick_ribbon.geom_type if thick_ribbon else None} area={(thick_ribbon.area if thick_ribbon else 0):.4f} valid={thick_ribbon.is_valid if thick_ribbon else False}")
 
     elif crv.type == "MESH":
         ribbon = g2d.footprint_with_holes(crv)
@@ -1754,6 +1859,10 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
 
     bottom_z = lowest_z - trailCutDepth
     top_z = bottom_z + 100.0  # tall enough to clear any terrain
+    trail_height = bpy.context.scene.tp3d.singleColorModeHeight
+    # crv_thick must reach the map's own floor so it cuts full-depth road slabs.
+    map_floor_z = min((map.matrix_world @ Vector(c)).z for c in map.bound_box) - 1.0
+    thick_bottom_z = min(bottom_z, map_floor_z)
 
     verts, faces = [], []
     for poly in g2d.iter_polygons(ribbon):
@@ -1771,7 +1880,10 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     t_verts, t_faces = [], []
     if thick_ribbon is not None and not thick_ribbon.is_empty:
         for poly in g2d.iter_polygons(thick_ribbon):
-            _extrude_flat_polygon(g2d, poly, bottom_z, top_z, t_verts, t_faces)
+            _extrude_flat_polygon(g2d, poly, thick_bottom_z, top_z, t_verts, t_faces)
+
+    print(f"[TP3D trail] earcut prism: {len(verts)} verts, {len(faces)} faces  bottom_z={bottom_z:.3f}")
+    print(f"[TP3D trail] thick earcut prism: {len(t_verts)} verts, {len(t_faces)} faces  thick_bottom_z={thick_bottom_z:.3f} map_floor_z={map_floor_z:.3f}")
 
     # Convert crv to MESH in place (preserves object identity -- other code
     # holds references to this exact object for later material/metadata
@@ -1788,21 +1900,31 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     old_mesh = crv.data
     crv.data = new_mesh
     bpy.data.meshes.remove(old_mesh)
-    # verts/faces above are in WORLD space. crv may still carry a
-    # non-identity transform from before conversion, which would otherwise
-    # re-apply on top and shift the mesh.
     crv.matrix_world = Matrix.Identity(4)
+    _dbg_manifold(crv.data, "prism after _clean_solid_mesh (pre-INTERSECT)")
 
-    # Make the visible trail strip follow the terrain: INTERSECT against the
-    # real map clips the tall prism down to (terrain top surface) above,
-    # (bottom_z, flat) below -- exact, no sampling approximation, and bounded
-    # by the map's true edges with no artificial wall.
-    remeshClearing(crv, 0.2, 0, map)
     boolean_operation(crv, projectionObj, 'INTERSECT')
+    _dbg_manifold(crv.data, "trail strip after INTERSECT")
 
     if len(crv.data.vertices) == 0:
         bpy.data.objects.remove(crv, do_unlink=True)
         return None
+
+    # Raise the top surface above terrain by translating every vertex that is
+    # not on the flat bottom face.  Extrude-region on a partial selection
+    # creates non-manifold edges at the top/side-wall boundary; vertex
+    # translation never changes topology.
+    if trail_height > 0:
+        _bm = bmesh.new()
+        _bm.from_mesh(crv.data)
+        _bottom_threshold = bottom_z + 1e-3
+        for _v in _bm.verts:
+            if _v.co.z > _bottom_threshold:
+                _v.co.z += trail_height
+        _bm.to_mesh(crv.data)
+        _bm.free()
+        crv.data.update()
+        _dbg_manifold(crv.data, "trail strip after height translation")
 
     # crv.matrix_world was reset to identity above (verts/faces are already
     # in world space), which left its origin sitting at world (0,0,0)
@@ -1824,13 +1946,13 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         thick_mesh.from_pydata(t_verts, [], t_faces)
         thick_mesh.update()
         _clean_solid_mesh(thick_mesh)
+        _dbg_manifold(thick_mesh, "crv_thick after _clean_solid_mesh (pre-DIFFERENCE)")
         crv_thick = bpy.data.objects.new(f"{crv.name}_thick", thick_mesh)
         bpy.context.collection.objects.link(crv_thick)
         set_origin_to_3d_cursor(crv_thick)
         bpy.ops.object.select_all(action='DESELECT')
         crv_thick.select_set(True)
         bpy.context.view_layer.objects.active = crv_thick
-        remeshClearing(crv_thick, 0.2, 0, map)
         #boolean_operation(map, crv_thick, 'DIFFERENCE', solver='EXACT')
         boolean_operation(map, crv_thick, 'DIFFERENCE')
 
@@ -1848,8 +1970,8 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
                 debug_coll.objects.link(crv_thick)
             else:
                 bpy.data.objects.remove(crv_thick, do_unlink=True)
-        return (crv, None)
-    return (crv, crv_thick)
+        return (crv, None, thick_ribbon)
+    return (crv, crv_thick, thick_ribbon)
 
 
 def single_color_mode_mesh_wireframe(original, map, tolerance = None):

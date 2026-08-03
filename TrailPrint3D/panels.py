@@ -194,7 +194,14 @@ class TP3D_PT_generate(bpy.types.Panel):
             col = box.column(align=True)
             col.prop(props, "scaleElevation")
             col.prop(props, "pathThickness")
-            col.prop(props, "singleColorMode")
+            _elem_scm = props.elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH")
+            scm_row = col.row()
+            scm_row.enabled = not _elem_scm
+            scm_row.prop(props, "singleColorMode")
+            if _elem_scm:
+                col.label(text=_("Auto-enabled with SCM Elements"), icon='LOCKED')
+            if props.singleColorMode or _elem_scm:
+                col.prop(props, "singleColorModeHeight")
 
             # Scale
             box = layout.box()
@@ -342,17 +349,23 @@ class TP3D_PT_advanced(bpy.types.Panel):
             sub = box.box()
             row = sub.row()
             row.prop(props, "show_roads", icon="TRIA_DOWN" if props.show_roads else "TRIA_RIGHT", emboss=False, text=_("Roads"))
-            _any_road = props.el_sBigActive or props.el_sMedActive or props.el_sSmallActive
+            _any_road = (props.el_sBigActive or props.el_sMedActive or props.el_sSmallActive
+                         or props.el_sServiceActive or props.el_sFootwaysActive)
             row.label(text="", icon='CHECKBOX_HLT' if _any_road else 'CHECKBOX_DEHLT')
             if props.show_roads:
                 col = sub.column(align=True)
                 col.prop(props, "el_sBigActive", icon='CHECKBOX_HLT' if props.el_sBigActive else 'CHECKBOX_DEHLT')
                 col.prop(props, "el_sMedActive", icon='CHECKBOX_HLT' if props.el_sMedActive else 'CHECKBOX_DEHLT')
                 col.prop(props, "el_sSmallActive", icon='CHECKBOX_HLT' if props.el_sSmallActive else 'CHECKBOX_DEHLT')
+                col.prop(props, "el_sServiceActive", icon='CHECKBOX_HLT' if props.el_sServiceActive else 'CHECKBOX_DEHLT')
+                col.prop(props, "el_sFootwaysActive", icon='CHECKBOX_HLT' if props.el_sFootwaysActive else 'CHECKBOX_DEHLT')
                 row = sub.row(align=True)
                 row.prop(props, "el_sMultiplier")
                 row.prop(props, "el_sHeight")
-                #sub.operator("tp3d.remake_roads", icon='FILE_REFRESH')
+                if props.elementMode != "PAINT":
+                    sub.prop(props, "el_sCutTolerance")
+                if props.el_sServiceActive:
+                    sub.prop(props, "el_sExcludeAlleys", icon='CHECKBOX_HLT' if props.el_sExcludeAlleys else 'CHECKBOX_DEHLT')
 
         # --- PIN ---
         layout.prop(props, "show_pin", icon="TRIA_DOWN" if props.show_pin else "TRIA_RIGHT", emboss=False)

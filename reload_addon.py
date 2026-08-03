@@ -29,8 +29,26 @@ importlib.reload(TrailPrint3D.utils.text_objects)
 importlib.reload(TrailPrint3D.utils.metadata)
 importlib.reload(TrailPrint3D.utils.presets)
 importlib.reload(TrailPrint3D.utils.elevation)
-importlib.reload(TrailPrint3D.utils.osm)
 importlib.reload(TrailPrint3D.utils.geometry2d)
+
+# osm sub-package: its submodules are only pulled in via deferred (function-
+# scope) imports, so reloading TrailPrint3D.utils.osm alone (its empty
+# __init__.py) does NOT refresh them -- each must be imported and reloaded
+# explicitly, in dependency order.
+import TrailPrint3D.utils.osm.fetch_utils
+import TrailPrint3D.utils.osm.fetch_solo
+import TrailPrint3D.utils.osm.fetch_group
+import TrailPrint3D.utils.osm.gen
+import TrailPrint3D.utils.osm.roads
+import TrailPrint3D.utils.osm.buildings
+importlib.reload(TrailPrint3D.utils.osm.fetch_utils)
+importlib.reload(TrailPrint3D.utils.osm.fetch_solo)
+importlib.reload(TrailPrint3D.utils.osm.fetch_group)
+importlib.reload(TrailPrint3D.utils.osm.gen)
+importlib.reload(TrailPrint3D.utils.osm.roads)
+importlib.reload(TrailPrint3D.utils.osm.buildings)
+importlib.reload(TrailPrint3D.utils.osm)
+
 importlib.reload(TrailPrint3D.utils.terrain)
 importlib.reload(TrailPrint3D.utils.generation)
 
