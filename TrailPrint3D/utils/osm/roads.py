@@ -404,15 +404,26 @@ def _clip_terrain_grid_to_polygon(
     """
     from shapely.geometry import Polygon as ShPolygon
     from shapely.prepared import prep
-    from shapely.strtree import STRtree
 
     if polygon is None or polygon.is_empty:
         return [], []
+
+    # Cheap bounding-box pre-filter: only construct ShPolygon for triangles
+    # whose AABB overlaps the road polygon bbox.  For a road covering ~5% of
+    # the terrain this eliminates ~95% of ShPolygon constructions vs. the old
+    # STRtree approach (which built ShPolygon for every tri unconditionally).
+    pbounds = polygon.bounds          # (minx, miny, maxx, maxy)
+    px0, py0, px1, py1 = pbounds
+    prepared = prep(polygon)
 
     tri_polys = []
     tri_data = []
     for tri in terrain_tris:
         (x0, y0, _z0), (x1, y1, _z1), (x2, y2, _z2) = tri
+        if max(x0, x1, x2) < px0 or min(x0, x1, x2) > px1:
+            continue
+        if max(y0, y1, y2) < py0 or min(y0, y1, y2) > py1:
+            continue
         tp = ShPolygon(((x0, y0), (x1, y1), (x2, y2)))
         if tp.is_empty or not tp.is_valid or tp.area <= 1e-12:
             continue
@@ -421,10 +432,6 @@ def _clip_terrain_grid_to_polygon(
 
     if not tri_polys:
         return [], []
-
-    tree = STRtree(tri_polys)
-    prepared = prep(polygon)
-    cand_idx = tree.query(polygon)
 
     out_verts: list[tuple[float, float, float]] = []
     out_tris: list[tuple[int, int, int]] = []
@@ -439,7 +446,7 @@ def _clip_terrain_grid_to_polygon(
             vert_cache[key] = idx
         return idx
 
-    for idx in cand_idx:
+    for idx in range(len(tri_polys)):
         tp = tri_polys[idx]
         tri = tri_data[idx]
 

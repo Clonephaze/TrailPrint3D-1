@@ -784,8 +784,10 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     TERRAIN_PRIORITY_ORDER = ['water', 'forest', 'scree', 'city', 'greenspace', 'farmland', 'glacier', 'ocean']
  
 
+    _effective_scm_trail = props['singleColorMode'] or props['elementMode'] in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH")
     thickerCurves = []
-    if props['singleColorMode'] and curveObjs:
+    trail_thick_ribbons = []
+    if _effective_scm_trail and curveObjs:
         dpt = 1
         dup = obj.copy()
         dup.data = obj.data.copy()
@@ -796,9 +798,12 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         survivingCurveObjs = []
         for tcrv in curveObjs:
             result = single_color_mode_curve(tcrv, obj, True, dpt, dup)
-            if result is not None and result[1] is not None:
-                survivingCurveObjs.append(result[0])
-                thickerCurves.append(result[1])
+            if result is not None:
+                if result[1] is not None:
+                    survivingCurveObjs.append(result[0])
+                    thickerCurves.append(result[1])
+                if result[2] is not None and not result[2].is_empty:
+                    trail_thick_ribbons.append(result[2])
         remove_objects(dup)
         for tcrv in thickerCurves:
             bpy.ops.object.select_all(action='DESELECT')
@@ -810,6 +815,34 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             for j in range(i + 1, len(survivingCurveObjs)):
                 recalculateNormals(survivingCurveObjs[j])
                 boolean_operation(survivingCurveObjs[j], thickerCurves[i])
+
+    else:
+        # PAINT mode: original _Trail curve objects are still in the scene; derive
+        # their 2D ribbon footprints to subtract from roads_polygon before finalize_roads.
+        from . import geometry2d as _g2d_trail
+        _tol = bpy.context.scene.tp3d.tolerance
+        _pt  = bpy.context.scene.tp3d.pathThickness
+        def _tile_extents(o):
+            cs = [o.matrix_world @ Vector(c) for c in o.bound_box]
+            return min(c.x for c in cs), max(c.x for c in cs), min(c.y for c in cs), max(c.y for c in cs)
+        tx0, tx1, ty0, ty1 = _tile_extents(obj)
+        for _ob in bpy.context.view_layer.objects:
+            if '_Trail' not in _ob.name or _ob.type != 'CURVE':
+                continue
+            cx0, cx1, cy0, cy1 = _tile_extents(_ob)
+            if cx0 > tx1 or cx1 < tx0 or cy0 > ty1 or cy1 < ty0:
+                continue
+            _mw = _ob.matrix_world
+            _coords = []
+            for _sp in _ob.data.splines:
+                _pts = _sp.points if len(_sp.points) > 0 else _sp.bezier_points
+                if len(_pts) >= 2:
+                    _coords.append([(_mw @ Vector((_p.co.x, _p.co.y, _p.co.z)))[:2] for _p in _pts])
+            if not _coords:
+                continue
+            _r = _g2d_trail.polylines_to_ribbon(_coords, _pt / 2 + _tol, quad_segs=4)
+            if _r and not _r.is_empty:
+                trail_thick_ribbons.append(_r)
 
     if props['elementMode'] == "SEPARATE" and False:
         for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
@@ -832,7 +865,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             bpy.ops.object.mode_set(mode='OBJECT')
 
 
-            if props['singleColorMode']:
+            if _effective_scm_trail:
                 for tcrv in curveObjs:
                     boolean_operation(elem_obj, tcrv)
 
@@ -980,39 +1013,21 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         if _cutter_tmp is not None:
             remove_objects(_cutter_tmp)
 
-    # Subtract the trail groove from buildings and roads so the trail cutout
-    # isn't blocked by 3D elements regardless of element mode. roads/buildings
-    # meshes can carry a small residual non-manifold defect (see osm.py's
-    # create_roads notes) that the default MANIFOLD solver would silently
-    # no-op on -- check before each boolean and fall back to EXACT, same
-    # pattern used for the terrain-clip boolean inside create_roads. This is
-    # the true last boolean in the pipeline (after it, only cleanup remains).
+    # Subtract the trail groove from buildings so it isn't blocked by 3D geometry.
+    # Roads are handled separately AFTER finalize_roads (which rebuilds roads.data
+    # from terrain cache -- any cut made here would be overwritten).
     if thickerCurves:
-        for key in ('buildings', 'roads'):
-            elem_obj = terrain.get(key)
-            if not elem_obj:
-                continue
+        elem_obj = terrain.get('buildings')
+        if elem_obj is not None:
             _ov = _progress.ProgressOverlay.get()
             if _ov.active:
-                _ov.update(message=f"Subtracting trail from {key.capitalize()}…")
+                _ov.update(message="Subtracting trail from Buildings…")
             for tcrv in thickerCurves:
-                # Check BOTH operands -- MANIFOLD silently no-ops if EITHER
-                # side is non-manifold, not just the element being modified.
                 solver = 'MANIFOLD' if (is_mesh_manifold(elem_obj) and is_mesh_manifold(tcrv)) else 'EXACT'
                 boolean_operation(elem_obj, tcrv, solver=solver)
 
-    if thickerCurves:
-        if bpy.app.debug:
-            obj_size = props.get('size', 100)
-            for tcrv in thickerCurves:
-                tcrv.location.x += obj_size
-        else:
-            remove_objects(thickerCurves)
-
     # Rebuild the road top surface from the terrain-grid cache captured before
     # any of the cuts above, so it shares the exact terrain/element resolution.
-    # Runs last, and only now, so the boolean cuts above used the cheap coarse
-    # cutter mesh instead of this much heavier rebuild.
     roads_obj = terrain.get('roads')
     if roads_obj is not None:
         _ov = _progress.ProgressOverlay.get()
@@ -1023,14 +1038,52 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         full_depth = props['elementMode'] != 'PAINT'
         mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
         bottom_z = min(v.z for v in mc) - 1.0
+        # Subtract the trail 2D footprint from roads_polygon before finalize_roads
+        # builds the mesh -- avoids a post-build 3D boolean on a non-manifold mesh.
+        _roads_poly = terrain.get('roads_polygon')
+        if trail_thick_ribbons and _roads_poly is not None:
+            from shapely.ops import unary_union as _unary_union
+            _trail_union = _unary_union(trail_thick_ribbons)
+            _roads_poly = _roads_poly.difference(_trail_union)
+            print(f"[TP3D roads] subtracted {len(trail_thick_ribbons)} trail ribbon(s) from roads_polygon in 2D")
         finalize_roads(
             roads_obj,
             terrain.get('_terrain_tris_cache'),
-            terrain.get('roads_polygon'),
+            _roads_poly,
             el_sHeight,
             full_depth,
             bottom_z,
         )
+
+        # Repair non-manifold boundary edges left by the terrain-grid clip and
+        # trail subtraction: select boundaries → limited dissolve → merge by
+        # distance → fill holes.  The four remaining "multiple face" issues are
+        # structural and ignored here.
+        bpy.ops.object.select_all(action='DESELECT')
+        roads_obj.select_set(True)
+        bpy.context.view_layer.objects.active = roads_obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.mesh.select_non_manifold(
+            extend=False, use_wire=False, use_boundary=True,
+            use_multi_face=False, use_non_contiguous=False, use_verts=False,
+        )
+        bpy.ops.mesh.dissolve_limited(angle_limit=0.0872665)  # 5°
+        bpy.ops.mesh.remove_doubles(threshold=0.001)
+        bpy.ops.mesh.select_non_manifold(
+            extend=False, use_wire=False, use_boundary=True,
+            use_multi_face=False, use_non_contiguous=False, use_verts=False,
+        )
+        bpy.ops.mesh.fill_holes(sides=0)
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+    if thickerCurves:
+        if bpy.app.debug:
+            obj_size = props.get('size', 100)
+            for tcrv in thickerCurves:
+                tcrv.location.x += obj_size
+        else:
+            remove_objects(thickerCurves)
 
 
 def _rg_assign_materials(obj, curveObjs, textobj, plateobj, props, shellobj=None):

@@ -1770,6 +1770,14 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
 
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
 
+    def _dbg_manifold(mesh, label):
+        bm_d = bmesh.new()
+        bm_d.from_mesh(mesh)
+        nm_e = sum(1 for e in bm_d.edges if not e.is_manifold)
+        nm_v = sum(1 for v in bm_d.verts if not v.is_manifold)
+        print(f"[TP3D trail] {label}: verts={len(bm_d.verts)} faces={len(bm_d.faces)} non-manifold edges={nm_e} verts={nm_v}")
+        bm_d.free()
+
     lowest_z = None
 
     if crv.type == "CURVE":
@@ -1800,8 +1808,12 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
             bpy.data.objects.remove(crv, do_unlink=True)
             return None
 
+        print(f"[TP3D trail] '{crv.name}': {len(coords_list)} spline(s), pts per spline={[len(s) for s in coords_list]}, lowest_z={lowest_z:.4f}")
+        print(f"[TP3D trail] pathThickness={pathThickness} tol={tol} trailCutDepth={trailCutDepth}")
         ribbon = g2d.polylines_to_ribbon(coords_list, pathThickness / 2, quad_segs=4)
         thick_ribbon = g2d.polylines_to_ribbon(coords_list, pathThickness / 2 + tol, quad_segs=4)
+        print(f"[TP3D trail] ribbon: {ribbon.geom_type if ribbon else None} area={(ribbon.area if ribbon else 0):.4f} valid={ribbon.is_valid if ribbon else False}")
+        print(f"[TP3D trail] thick_ribbon: {thick_ribbon.geom_type if thick_ribbon else None} area={(thick_ribbon.area if thick_ribbon else 0):.4f} valid={thick_ribbon.is_valid if thick_ribbon else False}")
 
     elif crv.type == "MESH":
         ribbon = g2d.footprint_with_holes(crv)
@@ -1822,6 +1834,9 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     bottom_z = lowest_z - trailCutDepth
     top_z = bottom_z + 100.0  # tall enough to clear any terrain
     trail_height = bpy.context.scene.tp3d.singleColorModeHeight
+    # crv_thick must reach the map's own floor so it cuts full-depth road slabs.
+    map_floor_z = min((map.matrix_world @ Vector(c)).z for c in map.bound_box) - 1.0
+    thick_bottom_z = min(bottom_z, map_floor_z)
 
     verts, faces = [], []
     for poly in g2d.iter_polygons(ribbon):
@@ -1839,7 +1854,10 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     t_verts, t_faces = [], []
     if thick_ribbon is not None and not thick_ribbon.is_empty:
         for poly in g2d.iter_polygons(thick_ribbon):
-            _extrude_flat_polygon(g2d, poly, bottom_z, top_z, t_verts, t_faces)
+            _extrude_flat_polygon(g2d, poly, thick_bottom_z, top_z, t_verts, t_faces)
+
+    print(f"[TP3D trail] earcut prism: {len(verts)} verts, {len(faces)} faces  bottom_z={bottom_z:.3f}")
+    print(f"[TP3D trail] thick earcut prism: {len(t_verts)} verts, {len(t_faces)} faces  thick_bottom_z={thick_bottom_z:.3f} map_floor_z={map_floor_z:.3f}")
 
     # Convert crv to MESH in place (preserves object identity -- other code
     # holds references to this exact object for later material/metadata
@@ -1856,40 +1874,31 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     old_mesh = crv.data
     crv.data = new_mesh
     bpy.data.meshes.remove(old_mesh)
-    # verts/faces above are in WORLD space. crv may still carry a
-    # non-identity transform from before conversion, which would otherwise
-    # re-apply on top and shift the mesh.
     crv.matrix_world = Matrix.Identity(4)
+    _dbg_manifold(crv.data, "prism after _clean_solid_mesh (pre-INTERSECT)")
 
-    # Make the visible trail strip follow the terrain: INTERSECT against the
-    # real map clips the tall prism down to (terrain top surface) above,
-    # (bottom_z, flat) below -- exact, no sampling approximation, and bounded
-    # by the map's true edges with no artificial wall.
-    remeshClearing(crv, 0.2, 0, map)
     boolean_operation(crv, projectionObj, 'INTERSECT')
+    _dbg_manifold(crv.data, "trail strip after INTERSECT")
 
     if len(crv.data.vertices) == 0:
         bpy.data.objects.remove(crv, do_unlink=True)
         return None
 
-    # Extrude top-facing faces upward so the strip rises above terrain by
-    # trail_height rather than being flush with the terrain surface.
+    # Raise the top surface above terrain by translating every vertex that is
+    # not on the flat bottom face.  Extrude-region on a partial selection
+    # creates non-manifold edges at the top/side-wall boundary; vertex
+    # translation never changes topology.
     if trail_height > 0:
-        bpy.ops.object.select_all(action='DESELECT')
-        crv.select_set(True)
-        bpy.context.view_layer.objects.active = crv
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='DESELECT')
-        bpy.ops.mesh.select_mode(type='FACE')
-        _bm = bmesh.from_edit_mesh(crv.data)
-        _bm.normal_update()
-        for _f in _bm.faces:
-            _f.select = _f.normal.z > 0.5
-        bmesh.update_edit_mesh(crv.data)
-        bpy.ops.mesh.extrude_region_move(
-            TRANSFORM_OT_translate={"value": (0, 0, trail_height)}
-        )
-        bpy.ops.object.mode_set(mode='OBJECT')
+        _bm = bmesh.new()
+        _bm.from_mesh(crv.data)
+        _bottom_threshold = bottom_z + 1e-3
+        for _v in _bm.verts:
+            if _v.co.z > _bottom_threshold:
+                _v.co.z += trail_height
+        _bm.to_mesh(crv.data)
+        _bm.free()
+        crv.data.update()
+        _dbg_manifold(crv.data, "trail strip after height translation")
 
     # crv.matrix_world was reset to identity above (verts/faces are already
     # in world space), which left its origin sitting at world (0,0,0)
@@ -1911,13 +1920,13 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         thick_mesh.from_pydata(t_verts, [], t_faces)
         thick_mesh.update()
         _clean_solid_mesh(thick_mesh)
+        _dbg_manifold(thick_mesh, "crv_thick after _clean_solid_mesh (pre-DIFFERENCE)")
         crv_thick = bpy.data.objects.new(f"{crv.name}_thick", thick_mesh)
         bpy.context.collection.objects.link(crv_thick)
         set_origin_to_3d_cursor(crv_thick)
         bpy.ops.object.select_all(action='DESELECT')
         crv_thick.select_set(True)
         bpy.context.view_layer.objects.active = crv_thick
-        remeshClearing(crv_thick, 0.05, 0, map)
         #boolean_operation(map, crv_thick, 'DIFFERENCE', solver='EXACT')
         boolean_operation(map, crv_thick, 'DIFFERENCE')
 
@@ -1935,8 +1944,8 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
                 debug_coll.objects.link(crv_thick)
             else:
                 bpy.data.objects.remove(crv_thick, do_unlink=True)
-        return (crv, None)
-    return (crv, crv_thick)
+        return (crv, None, thick_ribbon)
+    return (crv, crv_thick, thick_ribbon)
 
 
 def single_color_mode_mesh_wireframe(original, map, tolerance = None):
