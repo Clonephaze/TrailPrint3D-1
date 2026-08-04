@@ -4,6 +4,12 @@ This is a **Blender 5.1+ Python addon** using the Blender Extensions platform. A
 
 ---
 
+## Terminology
+
+When the user says **"generators"**, they usually mean the HTML configurator pages as a group — `puzzleGenerator.html`, `premium/puzzleGenerator_pe.html`, `premium/multitile_configurator.html` — the browser-based picker UIs served by `picker_server.py`. Default to that reading unless the surrounding request is clearly about the Blender-side mesh-generation pipeline instead (`utils/generation.py`, `runGeneration()`).
+
+---
+
 ## Project Layout
 
 ```
