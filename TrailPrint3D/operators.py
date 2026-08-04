@@ -2299,13 +2299,19 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # fixing sScaleHor afterward) is what put the tile in the wrong place.
         #
         # The drawn rectangle (bbox) is always used exactly as drawn -- the
-        # picker's Length/Width only confine which sub-area of it the jigsaw
-        # GRID covers (baked into each piece's normalized points client-side),
-        # they don't affect the actual generated tile's size/scale at all.
+        # picker's Length/Width confine which sub-area of it the jigsaw GRID
+        # covers (baked into each piece's normalized points client-side) AND
+        # set the real-world scale below, via the same larger-of-the-two-axes
+        # "cover fit" the picker's own computePuzzleGeometry uses -- NOT the
+        # Blender sidebar's Object Size, which is unrelated to what the user
+        # actually typed into the picker page.
         nx1, ny1, _ = convert_to_neutral_coordinates(south, west, 0, 0)
         nx2, ny2, _ = convert_to_neutral_coordinates(north, east, 0, 0)
         neutral_extent = max(abs(nx2 - nx1), abs(ny2 - ny1))
-        fixed_scale = props.objSize / neutral_extent if neutral_extent > 0 else 1.0
+        length_mm = float(data.get('length') or 0)
+        width_mm = float(data.get('width') or 0)
+        target_mm = max(length_mm, width_mm) if length_mm > 0 and width_mm > 0 else props.objSize
+        fixed_scale = target_mm / neutral_extent if neutral_extent > 0 else 1.0
         bpy.context.scene.tp3d["sScaleHor"] = fixed_scale
 
         x1, y1, _ = utils.convert_to_blender_coordinates(south, west, 0, 0)

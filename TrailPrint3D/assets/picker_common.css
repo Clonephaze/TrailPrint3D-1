@@ -1,0 +1,68 @@
+/* Shared TrailPrint3D picker "look" -- reused by every 2D-map picker page
+   (puzzleGenerator.html, premium/puzzleGenerator_pe.html,
+   premium/multitile_configurator.html) via __COMMON_CSS__ in picker_server.py.
+   Page-specific rules stay in each page's own <style> block, and can
+   override anything here since this block is always emitted first. */
+* { box-sizing: border-box; }
+/* Each page's own Draw button clicks the toolbar's rectangle tool
+   programmatically -- the toolbar's own icon is redundant, hide it but
+   keep it functional (a synthetic .click() on it still fires while hidden). */
+.leaflet-draw { display: none !important; }
+body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #eee; margin: 0; overflow: hidden; display: flex; height: 100vh; }
+#sidebar { width: 200px; background: #222; border-right: 1px solid #444; padding: 20px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
+#map { flex: 1; position: relative; }
+#legend { position: absolute; bottom: 10px; right: 10px; z-index: 1000; background: rgba(26,26,26,0.85);
+    border: 1px solid #444; border-radius: 4px; padding: 8px 10px; font-size: 11px; color: #eee;
+    display: flex; flex-direction: column; gap: 5px; pointer-events: none; }
+#coordSearch { position: absolute; top: 10px; right: 10px; z-index: 1000;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+#coordSearchToggle { width: 32px; height: 32px; padding: 0; display: flex; align-items: center;
+    justify-content: center; background: rgba(26,26,26,0.85); color: #eee; border: 1px solid #444;
+    border-radius: 4px; cursor: pointer; }
+#coordSearchToggle:hover { background: #444; border-color: #007bff; }
+#coordSearchToggle.active { background: #007bff; border-color: #007bff; }
+#coordSearchBody { display: none; flex-direction: column; gap: 8px; width: 190px;
+    background: rgba(26,26,26,0.85); border: 1px solid #444; border-radius: 4px;
+    padding: 8px 10px; font-size: 11px; color: #aaa; }
+#coordSearchBody.open { display: flex; }
+#coordSearchBody .coord-row { display: flex; gap: 4px; }
+#coordSearchBody .coord-sep { text-align: center; color: #666; font-size: 10px; }
+#coordSearchBody input[type=text] { flex: 1; min-width: 0; background: #2a2a2a; color: #eee;
+    border: 1px solid #444; border-radius: 4px; padding: 4px 6px; font-size: 12px; }
+#coordSearchBody button { padding: 4px 8px; font-size: 12px; background: #333; color: #eee;
+    border: 1px solid #444; border-radius: 4px; cursor: pointer; font-weight: bold; flex-shrink: 0; }
+#coordSearchBody button:hover { background: #444; border-color: #007bff; }
+.leaflet-control-layers { background: rgba(26,26,26,0.9) !important; border: 1px solid #444 !important;
+    color: #eee !important; }
+.leaflet-control-layers-toggle { filter: invert(1) brightness(1.5); }
+.leaflet-control-layers-expanded { padding: 8px 10px !important; font-size: 12px; }
+.leaflet-control-layers-selector { accent-color: #007bff; }
+.leaflet-control-layers-separator { border-top: 1px solid #444 !important; }
+.legend-row { display: flex; align-items: center; gap: 6px; }
+.legend-swatch { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+.legend-swatch.line { width: 16px; height: 0; border-top: 2.5px dashed; background: none; border-radius: 0; }
+.shape-btn { padding: 12px 20px; background: #333; color: #eee; border: 2px solid #444; border-radius: 4px; cursor: pointer; font-weight: bold; transition: all 0.2s; }
+.shape-btn:hover { background: #444; border-color: #007bff; }
+#drawActions { position: absolute; top: 80px; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 6px;
+    background: rgba(26,26,26,0.85); border: 1px solid #444; border-radius: 4px; padding: 6px; }
+#drawActions .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
+.btn-send { padding: 12px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: auto; }
+.btn-send:disabled { background: #444; cursor: not-allowed; }
+#status { padding: 10px; background: #2a2a2a; border-radius: 4px; font-size: 12px; text-align: center; }
+.sidebar-divider { width: 100%; border: none; border-top: 1px solid #444; margin: 0; }
+#advancedSection { border: 1px solid #444; border-radius: 4px; }
+#advancedSection summary { padding: 8px 10px; font-size: 12px; font-weight: bold; color: #ccc;
+    cursor: pointer; list-style: none; }
+#advancedSection summary::-webkit-details-marker { display: none; }
+#advancedSection summary::before { content: '▶'; display: inline-block; margin-right: 6px; font-size: 9px;
+    transition: transform 0.15s; }
+#advancedSection[open] summary::before { transform: rotate(90deg); }
+.field-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: #aaa; }
+.field-row input[type=number] { width: 64px; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px 6px; }
+#gpxList details { border: 1px solid #444; border-radius: 4px; }
+#gpxList summary { padding: 5px 8px; cursor: pointer; list-style: none; color: #ccc; }
+#gpxList summary::-webkit-details-marker { display: none; }
+#gpxList summary::before { content: '▶'; display: inline-block; margin-right: 6px; font-size: 9px;
+    transition: transform 0.15s; }
+#gpxList details[open] summary::before { transform: rotate(90deg); }
+#gpxList .gpx-list-body { padding: 0 8px 6px; }

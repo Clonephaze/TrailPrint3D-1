@@ -18,6 +18,17 @@ from typing import cast
 
 _HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'multitile_configurator.html'
 
+# Markup shared by every picker page (puzzleGenerator.html,
+# premium/puzzleGenerator_pe.html, premium/multitile_configurator.html) --
+# the CSS "look" and the base-map/go-to-location JS boilerplate are
+# byte-identical across all three, so they live here once and get inlined
+# into each page's own <style>/<script> block at serve time, the same way
+# __PORT__ already gets substituted below.
+_ASSETS_DIR = pathlib.Path(__file__).parent / 'assets'
+_COMMON_CSS_PATH = _ASSETS_DIR / 'picker_common.css'
+_MAP_INIT_JS_PATH = _ASSETS_DIR / 'map_init.js'
+_LOCATION_PANEL_JS_PATH = _ASSETS_DIR / 'location_panel.js'
+
 
 _PREFERRED_PORT = 27373
 _active_server: HTTPServer | None = None
@@ -239,6 +250,9 @@ class _Handler(BaseHTTPRequestHandler):
             self.html_path.read_text(encoding='utf-8')
             .replace('__PORT__', str(cast(tuple[str, int], self.server.server_address)[1]))
             .replace('__OBJSIZE__', str(self.obj_size))
+            .replace('__COMMON_CSS__', _COMMON_CSS_PATH.read_text(encoding='utf-8'))
+            .replace('__MAP_INIT_JS__', _MAP_INIT_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__LOCATION_PANEL_JS__', _LOCATION_PANEL_JS_PATH.read_text(encoding='utf-8'))
             .encode('utf-8')
         )
         self.send_response(200)
