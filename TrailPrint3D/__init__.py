@@ -28,6 +28,7 @@ classes = [
     panels.TP3D_PT_advanced,
     panels.TP3D_PT_shapes,
     panels.TP3D_OT_show_custom_props_popup,
+    panels.TP3D_MT_generators_menu,
     operators.TP3D_OT_run_generation,
     operators.TP3D_OT_shapely_status,
     operators.TP3D_OT_earcut_status,
@@ -150,6 +151,9 @@ def register():
             if cls:
                 bpy.utils.register_class(cls)
 
+    panels.remove_tp3d_viewport_menu()
+    bpy.types.VIEW3D_MT_editor_menus.append(panels.draw_tp3d_viewport_menu)
+
     bpy.app.handlers.load_post.append(startup_function)
 
     # Populate special collections immediately so the UI isn't empty after a
@@ -178,6 +182,8 @@ def _load_collections_deferred():
 
 def unregister():
     bpy.app.translations.unregister(const.ADDON_NAME)
+
+    panels.remove_tp3d_viewport_menu()
 
     if temp.PREMIUMVERSION:
         import sys

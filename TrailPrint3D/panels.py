@@ -715,6 +715,47 @@ class TP3D_OT_show_custom_props_popup(bpy.types.Operator):
         return context.window_manager.invoke_props_dialog(self, width=width)
 
 
+class TP3D_MT_generators_menu(bpy.types.Menu):
+    """Quick-access list of TrailPrint3D's generators, appended into the
+    3D viewport header next to View/Select/Add/Object -- the N-panel tab
+    covers the same operators with their full settings, this is just a
+    faster way to launch one without opening the sidebar."""
+    bl_idname = "TP3D_MT_generators_menu"
+    bl_label = "TrailPrint3D"
+
+    def draw(self, context):
+        layout = self.layout
+        if temp.PREMIUMVERSION:
+            layout.operator("tp3d.map_picker", text=_("Multi Tile Configurator"), icon='WORLD')
+        else:
+            layout.operator("tp3d.terrain_dummy", text=_("Multi Tile Configurator"), icon='LOCKED')
+        layout.operator("tp3d.puzzle_configurator", text=_("Puzzle Generator"), icon='MOD_BOOLEAN')
+
+
+def draw_tp3d_viewport_menu(self, context):
+    self.layout.menu(TP3D_MT_generators_menu.bl_idname)
+
+
+def remove_tp3d_viewport_menu():
+    """Scrubs every draw_tp3d_viewport_menu entry from the 3D viewport
+    header, not just one matching the current module's function object.
+
+    A plain .append()/.remove() pair (matched by object identity) is only
+    safe if unregister() always runs on the same module instance that
+    called register() -- true for Blender's own F8 "Reload Scripts", but
+    dev-refresh workflows that re-run register() without a prior clean
+    unregister() (or that reload this module, which mints a new function
+    object even though it has the same name) leave the OLD entry stuck,
+    silently piling up one duplicate button per refresh with no error.
+    Matching by name across draw_menus's actual live list catches those
+    stale entries regardless of which module instance created them.
+    """
+    draw_funcs = bpy.types.VIEW3D_MT_editor_menus._dyn_ui_initialize()
+    for f in list(draw_funcs):
+        if getattr(f, '__name__', None) == 'draw_tp3d_viewport_menu':
+            draw_funcs.remove(f)
+
+
 
 
 
