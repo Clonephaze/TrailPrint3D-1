@@ -516,8 +516,14 @@ _ICON_MAP = {
     'city':       'prog_cityBoundaries.svg',
 }
 
-def _process_svg(content):
-    """Strip boilerplate and recolor all fills/strokes to white."""
+def _process_svg(content, color='white'):
+    """Strip boilerplate and recolor all fills/strokes to *color*.
+
+    *color* can be any valid SVG paint value, e.g. 'white' (this module's
+    own standalone progress card) or 'currentColor' (picker_server.py's
+    element-status strip, which then controls the actual shade via CSS
+    `color:` on a wrapping element -- green/gray per enabled state).
+    """
     content = re.sub(r'<\?xml[^>]*\?>', '', content)
     content = re.sub(r'<!DOCTYPE[^>]*>', '', content)
     content = re.sub(r'<!--.*?-->', '', content, flags=re.DOTALL)
@@ -525,20 +531,20 @@ def _process_svg(content):
     content = re.sub(r'(<svg\b[^>]*?)\s+width="[^"]*"', r'\1', content)
     content = re.sub(r'(<svg\b[^>]*?)\s+height="[^"]*"', r'\1', content)
     # Recolor: presentation attributes and inline CSS
-    content = re.sub(r'fill="#[0-9a-fA-F]{3,6}"', 'fill="white"', content)
-    content = re.sub(r'stroke="#[0-9a-fA-F]{3,6}"', 'stroke="white"', content)
-    content = re.sub(r'fill:\s*#[0-9a-fA-F]{3,6}', 'fill:white', content)
-    content = re.sub(r'stroke:\s*#[0-9a-fA-F]{3,6}', 'stroke:white', content)
+    content = re.sub(r'fill="#[0-9a-fA-F]{3,6}"', f'fill="{color}"', content)
+    content = re.sub(r'stroke="#[0-9a-fA-F]{3,6}"', f'stroke="{color}"', content)
+    content = re.sub(r'fill:\s*#[0-9a-fA-F]{3,6}', f'fill:{color}', content)
+    content = re.sub(r'stroke:\s*#[0-9a-fA-F]{3,6}', f'stroke:{color}', content)
     return content.strip()
 
-def _load_icons():
+def _load_icons(color='white'):
     here = pathlib.Path(__file__).parent / 'assets'
     icons = {}
     for key, fname in _ICON_MAP.items():
         p = here / fname
         if p.exists():
             try:
-                icons[key] = _process_svg(p.read_text(encoding='utf-8'))
+                icons[key] = _process_svg(p.read_text(encoding='utf-8'), color=color)
             except (OSError, UnicodeDecodeError):
                 pass
     return icons

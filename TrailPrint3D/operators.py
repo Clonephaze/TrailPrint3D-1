@@ -2153,6 +2153,14 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
 
+        from . import picker_server as mp
+        for key in mp.drain_pending_toggles():
+            utils.apply_element_toggle(context.scene.tp3d, key)
+        for key, value in mp.drain_pending_settings():
+            utils.apply_setting_update(context.scene.tp3d, key, value)
+        for key, value in mp.drain_pending_advanced_settings():
+            utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
+
         rp = pathlib.Path(self._result_path)
         if not (rp.exists() and rp.stat().st_size > 0):
             return {'PASS_THROUGH'}
@@ -2198,6 +2206,9 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             existing_trails=_collect_existing_trails(),
             obj_size=context.scene.tp3d.objSize,
             html_path=html_path,
+            element_states=utils.build_element_toggle_states(context.scene.tp3d),
+            settings_state=utils.build_settings_row_state(context.scene.tp3d),
+            advanced_settings=utils.build_advanced_settings_state(context.scene.tp3d),
         )
 
         wm = context.window_manager

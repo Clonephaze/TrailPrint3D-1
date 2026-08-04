@@ -107,32 +107,32 @@
             <input type="range" id="resolutionSlider" min="1" max="10" step="1" value="4" title="Terrain mesh resolution" style="width: 100%; accent-color: #007bff;">
         </div>
         <hr class="sidebar-divider">
-        <details id="advancedSection">
-            <summary>Advanced</summary>
-            <div class="advanced-body">
-                <div class="field-row">
-                    <label for="toleranceInput">Tolerance (mm)</label>
-                    <input type="number" id="toleranceInput" min="0" max="2" step="0.05" value="0.3">
-                </div>
-                <div class="field-row">
-                    <label for="tabSizeInput">Tab Size</label>
-                    <input type="number" id="tabSizeInput" min="10" max="30" step="0.1" value="20">
-                </div>
-                <div class="field-row">
-                    <label for="jitterInput">Jitter</label>
-                    <input type="number" id="jitterInput" min="0" max="13" step="0.1" value="4">
-                </div>
-                <div class="field-row">
-                    <label for="puzzleSeedInput">Seed</label>
-                    <input type="number" id="puzzleSeedInput" step="1" placeholder="random">
-                </div>
-                <div class="field-row" id="puzzleCornerRadiusRow">
-                    <label for="puzzleCornerRadiusInput">Corner Radius</label>
-                    <input type="number" id="puzzleCornerRadiusInput" min="0" max="30" step="1.0" value="4">
-                </div>
+        <!-- Moved into the Settings popup's "Puzzle" tab at page load (see
+             settings_modal.js's tp3dBuildPuzzleTab) -- kept here, hidden, so
+             those existing input elements still exist in the DOM for it to
+             relocate (same ids, so saveState/restoreState/regeneratePuzzle's
+             own listeners below keep working unchanged regardless of where
+             they end up living). Tolerance (mm) used to be here too; it was
+             dropped rather than moved, so the puzzle-cut tolerance sent on
+             Send just falls back to _apply_puzzle_result's own 0.3 default. -->
+        <div id="puzzleTabFieldsSource" style="display:none;">
+            <div class="field-row">
+                <label for="tabSizeInput">Tab Size</label>
+                <input type="number" id="tabSizeInput" min="10" max="30" step="0.1" value="20">
             </div>
-        </details>
-        <hr class="sidebar-divider">
+            <div class="field-row">
+                <label for="jitterInput">Jitter</label>
+                <input type="number" id="jitterInput" min="0" max="13" step="0.1" value="4">
+            </div>
+            <div class="field-row">
+                <label for="puzzleSeedInput">Seed</label>
+                <input type="number" id="puzzleSeedInput" step="1" placeholder="random">
+            </div>
+            <div class="field-row" id="puzzleCornerRadiusRow">
+                <label for="puzzleCornerRadiusInput">Corner Radius</label>
+                <input type="number" id="puzzleCornerRadiusInput" min="0" max="30" step="1.0" value="4">
+            </div>
+        </div>
         <div style="display: flex; flex-direction: column; gap: 10px;">
             <div class="field-row">
                 <label for="holderEnabled">Generate Holder</label>
@@ -148,6 +148,8 @@
         </div>
         <button id="send" class="btn-send" disabled>Send to Blender</button>
     </div>
+    <div id="mapColumn">
+    <div id="elementStatus"></div>
     <div id="map">
         <div id="coordSearch">
             <button id="coordSearchToggle" title="Go to location">
@@ -180,6 +182,7 @@
             <div class="legend-row"><span class="legend-swatch line" style="border-color:red;"></span>Imported GPX</div>
             <div class="legend-row"><span class="legend-swatch line" style="border-color:#000;"></span>Holder outline</div>
         </div>
+    </div>
     </div>
 
     <div id="plateSettingsModal">
@@ -226,6 +229,13 @@
 
     <script>
         var PORT = __PORT__;
+        var TP3D_IS_PUZZLE_PAGE = true; // read by settings_modal.js to decide whether to add its "Puzzle" tab
+        __ELEMENT_ICONS_JS__
+        __ELEMENT_STATES_JS__
+        __ELEMENT_STATUS_JS__
+        __SETTINGS_STATE_JS__
+        __ADVANCED_SETTINGS_STATE_JS__
+        __SETTINGS_MODAL_JS__
         __MAP_INIT_JS__
 
         var drawnItems = new L.FeatureGroup();
@@ -356,12 +366,12 @@
                 body: JSON.stringify({
                     lat: c.lat, lng: c.lng, zoom: map.getZoom(),
                     baseLayer: activeBaseLayerName,
+                    settingsTab: TP3D_SETTINGS_TAB,
                     length: document.getElementById('lengthInput').value,
                     width: document.getElementById('widthInput').value,
                     rows: document.getElementById('rowsInput').value,
                     cols: document.getElementById('colsInput').value,
                     resolution: document.getElementById('resolutionSlider').value,
-                    tolerance: document.getElementById('toleranceInput').value,
                     tabSize: document.getElementById('tabSizeInput').value,
                     jitter: document.getElementById('jitterInput').value,
                     puzzleSeed: document.getElementById('puzzleSeedInput').value,
@@ -386,6 +396,7 @@
                 .then(function(s) {
                     console.log('[TP3D picker] /get_state returned:', s);
                     if (!s) return;
+                    if (s.settingsTab) tp3dActivateSettingsTab(s.settingsTab);
                     if (s.baseLayer && baseLayers[s.baseLayer] && s.baseLayer !== activeBaseLayerName) {
                         map.removeLayer(baseLayers[activeBaseLayerName]);
                         baseLayers[s.baseLayer].addTo(map);
@@ -399,7 +410,6 @@
                         document.getElementById('resolutionSlider').value = s.resolution;
                         document.getElementById('resolutionValue').textContent = s.resolution;
                     }
-                    if (s.tolerance != null) document.getElementById('toleranceInput').value = s.tolerance;
                     if (s.tabSize != null) document.getElementById('tabSizeInput').value = s.tabSize;
                     if (s.jitter != null) document.getElementById('jitterInput').value = s.jitter;
                     if (s.puzzleSeed != null) document.getElementById('puzzleSeedInput').value = s.puzzleSeed;
@@ -1039,8 +1049,6 @@
             document.getElementById('resolutionValue').textContent = this.value;
             saveState();
         });
-        document.getElementById('toleranceInput').addEventListener('input', saveState);
-
         document.getElementById('holderEnabled').addEventListener('change', function() {
             updateHolderVisibility();
             updateHolderOutline();
@@ -1097,7 +1105,6 @@
                 rows: parseInt(document.getElementById('rowsInput').value) || 1,
                 cols: parseInt(document.getElementById('colsInput').value) || 1,
                 resolution: parseInt(document.getElementById('resolutionSlider').value) || 4,
-                tolerance: parseFloat(document.getElementById('toleranceInput').value) || 0,
                 puzzleSeed: document.getElementById('puzzleSeedInput').value || '',
                 puzzleCornerRadius: parseFloat(document.getElementById('puzzleCornerRadiusInput').value) || 0,
                 gpx_paths: gpxPaths,

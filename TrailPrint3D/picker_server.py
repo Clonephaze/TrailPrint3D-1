@@ -7,6 +7,7 @@
 
 import json
 import pathlib
+import queue
 import shutil
 import socket
 import subprocess as sp
@@ -15,6 +16,63 @@ import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import cast
+
+# Element-status chip clicks (POST /toggle_element, see the picker pages'
+# element_status.js) land on this HTTP server's own background thread --
+# same process as Blender, but not the main thread, so bpy scene data can't
+# be touched directly here. Queued instead and drained by the calling
+# operator's modal() on Blender's own main-thread timer tick (see
+# drain_pending_toggles / utils.apply_element_toggle), the same pattern
+# already used for /confirm's result_path. Reset per start_picker() call so
+# a previous session's leftover requests can't bleed into a new one.
+_pending_toggles: 'queue.Queue[str]' = queue.Queue()
+
+# Same idea as _pending_toggles, for the Settings popup's Map-tab field
+# edits (POST /update_setting, see settings_modal.js) -- carries (key,
+# value) pairs instead of bare keys, drained via drain_pending_settings /
+# utils.apply_setting_update.
+_pending_settings: 'queue.Queue[tuple]' = queue.Queue()
+
+# Same idea again, for the Settings popup's Elements-tab field edits (POST
+# /update_advanced_setting, see settings_modal.js) -- kept as its
+# own queue/route rather than reusing _pending_settings so the two whitelists
+# (utils._SETTINGS_ROW_FIELDS vs utils._ADVANCED_SETTINGS_FIELDS) stay fully
+# independent on the applying side too.
+_pending_advanced_settings: 'queue.Queue[tuple]' = queue.Queue()
+
+
+def drain_pending_toggles() -> list:
+    """Pop every element-toggle key queued since the last call, in order."""
+    keys = []
+    while True:
+        try:
+            keys.append(_pending_toggles.get_nowait())
+        except queue.Empty:
+            break
+    return keys
+
+
+def drain_pending_settings() -> list:
+    """Pop every (key, value) settings-row update queued since the last call."""
+    updates = []
+    while True:
+        try:
+            updates.append(_pending_settings.get_nowait())
+        except queue.Empty:
+            break
+    return updates
+
+
+def drain_pending_advanced_settings() -> list:
+    """Pop every (key, value) Advanced Settings popup update queued since the last call."""
+    updates = []
+    while True:
+        try:
+            updates.append(_pending_advanced_settings.get_nowait())
+        except queue.Empty:
+            break
+    return updates
+
 
 _HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'multitile_configurator.html'
 
@@ -28,6 +86,25 @@ _ASSETS_DIR = pathlib.Path(__file__).parent / 'assets'
 _COMMON_CSS_PATH = _ASSETS_DIR / 'picker_common.css'
 _MAP_INIT_JS_PATH = _ASSETS_DIR / 'map_init.js'
 _LOCATION_PANEL_JS_PATH = _ASSETS_DIR / 'location_panel.js'
+_ELEMENT_STATUS_JS_PATH = _ASSETS_DIR / 'element_status.js'
+_SETTINGS_MODAL_JS_PATH = _ASSETS_DIR / 'settings_modal.js'
+
+_element_icons_js_cache: str | None = None
+
+
+def _element_icons_js() -> str:
+    """`var ELEMENT_ICONS = {...};` -- the 10 progress-bar element icons
+    (see progress_win._ICON_MAP), recolored to `currentColor` so the
+    element-status strip's CSS controls the actual green/gray shade per
+    enabled state. Built once and cached: the SVG files themselves don't
+    change while Blender is running.
+    """
+    global _element_icons_js_cache
+    if _element_icons_js_cache is None:
+        from . import progress_win
+        icons = progress_win._load_icons(color='currentColor')
+        _element_icons_js_cache = 'var ELEMENT_ICONS = ' + json.dumps(icons) + ';'
+    return _element_icons_js_cache
 
 
 _PREFERRED_PORT = 27373
@@ -177,6 +254,9 @@ class _Handler(BaseHTTPRequestHandler):
     result_path: str = ''
     existing_maps_json: bytes = b'[]'
     existing_trails_json: bytes = b'[]'
+    element_states_json: bytes = b'{}'
+    settings_state_json: bytes = b'{}'
+    advanced_settings_json: bytes = b'{}'
     obj_size: float = 100.0
     html_path: pathlib.Path = _HTML_PATH
     state_path: pathlib.Path = _STATE_PATH
@@ -253,6 +333,12 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__COMMON_CSS__', _COMMON_CSS_PATH.read_text(encoding='utf-8'))
             .replace('__MAP_INIT_JS__', _MAP_INIT_JS_PATH.read_text(encoding='utf-8'))
             .replace('__LOCATION_PANEL_JS__', _LOCATION_PANEL_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__ELEMENT_ICONS_JS__', _element_icons_js())
+            .replace('__ELEMENT_STATES_JS__', 'var ELEMENT_STATES = ' + self.element_states_json.decode('utf-8') + ';')
+            .replace('__ELEMENT_STATUS_JS__', _ELEMENT_STATUS_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__SETTINGS_STATE_JS__', 'var SETTINGS_STATE = ' + self.settings_state_json.decode('utf-8') + ';')
+            .replace('__ADVANCED_SETTINGS_STATE_JS__', 'var ADVANCED_SETTINGS_STATE = ' + self.advanced_settings_json.decode('utf-8') + ';')
+            .replace('__SETTINGS_MODAL_JS__', _SETTINGS_MODAL_JS_PATH.read_text(encoding='utf-8'))
             .encode('utf-8')
         )
         self.send_response(200)
@@ -269,6 +355,57 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        if self.path == '/toggle_element':
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            try:
+                key = json.loads(body).get('key')
+            except (json.JSONDecodeError, AttributeError):
+                key = None
+            if key:
+                _pending_toggles.put(key)
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', '2')
+            self.end_headers()
+            self.wfile.write(b'ok')
+            return
+        if self.path == '/update_setting':
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            try:
+                data = json.loads(body)
+                key = data.get('key')
+                value = data.get('value')
+            except (json.JSONDecodeError, AttributeError):
+                key = None
+                value = None
+            if key is not None:
+                _pending_settings.put((key, value))
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', '2')
+            self.end_headers()
+            self.wfile.write(b'ok')
+            return
+        if self.path == '/update_advanced_setting':
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            try:
+                data = json.loads(body)
+                key = data.get('key')
+                value = data.get('value')
+            except (json.JSONDecodeError, AttributeError):
+                key = None
+                value = None
+            if key is not None:
+                _pending_advanced_settings.put((key, value))
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', '2')
+            self.end_headers()
+            self.wfile.write(b'ok')
+            return
         if self.path == '/save_state':
             length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(length)
@@ -326,7 +463,9 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def start_picker(result_path: str, existing_maps: list | None = None, existing_trails: list | None = None,
-                  obj_size: float = 100.0, html_path: 'pathlib.Path | str | None' = None) -> HTTPServer:
+                  obj_size: float = 100.0, html_path: 'pathlib.Path | str | None' = None,
+                  element_states: dict | None = None, settings_state: dict | None = None,
+                  advanced_settings: dict | None = None) -> HTTPServer:
     """Start the HTTP server, open the page in the browser, and return the server.
 
     The server writes confirmed coordinate JSON to *result_path* on POST /confirm,
@@ -347,6 +486,31 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     scene; served on GET /get_existing_trails so the page can draw them for
     reference instead of re-importing/re-sending them as new GPX trails.
 
+    *element_states*, if given, is a dict like utils.build_element_toggle_states()'s
+    return value -- which of the 10 progress-bar element categories (water,
+    forest, roads, ...) are currently toggled on in the scene. Inlined into
+    the page as ELEMENT_STATES so it can render the enabled/disabled icon
+    strip above the map. A snapshot taken when the picker opens; it does not
+    live-update if the caller changes a toggle while the picker stays open.
+    Each chip is also clickable -- see _pending_toggles/drain_pending_toggles
+    above for how that reaches Blender's actual scene properties.
+
+    *settings_state*, if given, is a dict like utils.build_settings_row_state()'s
+    return value -- current values for the Settings popup's Map tab
+    (Elevation Scale, Path Thickness, ...), reached via the gear icon next
+    to the element-status strip. Inlined into the page as SETTINGS_STATE.
+    Editing a field there POSTs to /update_setting, queued in
+    _pending_settings and drained via drain_pending_settings/
+    utils.apply_setting_update the same way chip clicks are.
+
+    *advanced_settings*, if given, is a dict like utils.build_advanced_settings_state()'s
+    return value -- current values for the Settings popup's Elements tab,
+    covering the individual sub-checkboxes and per-category thresholds the
+    element-status row only summarizes. Inlined into the page as
+    ADVANCED_SETTINGS_STATE. Editing a field there POSTs to
+    /update_advanced_setting, queued in _pending_advanced_settings and
+    drained via drain_pending_advanced_settings/utils.apply_advanced_setting_update.
+
     *html_path*, if given, serves that HTML file instead of multitile_configurator.html
     (e.g. puzzleGenerator.html) -- the rest of this server (GPX upload, state
     save/restore, existing-maps/trails reference data, /confirm) is schema-
@@ -354,13 +518,16 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     a path keyed off the served HTML file's name so two different picker
     pages never clobber each other's saved view/selection.
     """
-    global _active_server
+    global _active_server, _pending_toggles, _pending_settings, _pending_advanced_settings
     if _active_server is not None:
         try:
             _active_server.shutdown()
         except OSError as e:
             print(f"[TP3D picker] Failed to shut down previous server: {e}")
         _active_server = None
+    _pending_toggles = queue.Queue()
+    _pending_settings = queue.Queue()
+    _pending_advanced_settings = queue.Queue()
 
     html_path = pathlib.Path(html_path) if html_path else _HTML_PATH
     # Keep the original state filename for multitile_configurator.html itself (exact
@@ -378,6 +545,9 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     _Handler.result_path = result_path
     _Handler.existing_maps_json = json.dumps(existing_maps or []).encode('utf-8')
     _Handler.existing_trails_json = json.dumps(existing_trails or []).encode('utf-8')
+    _Handler.element_states_json = json.dumps(element_states or {}).encode('utf-8')
+    _Handler.settings_state_json = json.dumps(settings_state or {}).encode('utf-8')
+    _Handler.advanced_settings_json = json.dumps(advanced_settings or {}).encode('utf-8')
     _Handler.obj_size = obj_size or 100.0
     _Handler.html_path = html_path
     _Handler.state_path = state_path
