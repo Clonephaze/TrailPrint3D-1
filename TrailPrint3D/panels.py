@@ -359,6 +359,10 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 col.prop(props, "el_sSmallActive", icon='CHECKBOX_HLT' if props.el_sSmallActive else 'CHECKBOX_DEHLT')
                 col.prop(props, "el_sServiceActive", icon='CHECKBOX_HLT' if props.el_sServiceActive else 'CHECKBOX_DEHLT')
                 col.prop(props, "el_sFootwaysActive", icon='CHECKBOX_HLT' if props.el_sFootwaysActive else 'CHECKBOX_DEHLT')
+                if props.elementMode == "PAINT" and _any_road and props.el_sHeight == 0:
+                    row = sub.row()
+                    row.alert = True
+                    row.label(text=_("Road Height must be > 0 in Paint mode"), icon='ERROR')
                 row = sub.row(align=True)
                 row.prop(props, "el_sMultiplier")
                 row.prop(props, "el_sHeight")
