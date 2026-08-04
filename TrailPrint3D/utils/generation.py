@@ -95,6 +95,14 @@ def _rg_validate_inputs(flags):
     # --- Input validation ---
     from ..addon_preferences import get_prefs
     _ot_api_key = get_prefs().openTopographyApiKey
+
+    if elementMode == "PAINT" and el_sActive and tp3d.el_sHeight == 0:
+        show_message_box(
+            "Road Height is 0 in Paint mode — this produces degenerate geometry. "
+            "Set Road Height above 0 or disable roads."
+        )
+        return None
+
     if api == "OPENTOPOGRAPHY" and not _ot_api_key:
         print("No OPENTOPOGRAPHY API key entered")
         show_message_box(
