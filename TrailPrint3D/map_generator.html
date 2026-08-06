@@ -24,6 +24,9 @@
         #drawModeToggle .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
         .edge-handle { width: 10px; height: 10px; background: #fff; border: 2px solid #007bff; border-radius: 2px;
             box-shadow: 0 0 2px rgba(0,0,0,0.6); cursor: move; }
+        .move-handle { width: 22px; height: 22px; background: #007bff; border: 2px solid #fff; border-radius: 50%;
+            box-shadow: 0 0 3px rgba(0,0,0,0.6); cursor: move; display: flex; align-items: center; justify-content: center; }
+        .move-handle svg { pointer-events: none; }
     </style>
 </head>
 <body>
@@ -122,6 +125,8 @@
         map.addLayer(shapePreview);
         var editHandles = new L.FeatureGroup();
         map.addLayer(editHandles);
+        var moveHandleLayer = new L.FeatureGroup(); // single center "move" handle, kept separate from
+        map.addLayer(moveHandleLayer);              // editHandles so clearing corner/edge handles doesn't drop it
         var gpxLayer = new L.FeatureGroup();
         map.addLayer(gpxLayer);
         var existingMapsLayer = new L.FeatureGroup();
@@ -225,6 +230,7 @@
                             bindLiveEdit(rect);
                         }
                         bindCornerDrag(rect);
+                        bindMoveHandle();
                         renderShapePreview();
                     }
                     updateSendState();
@@ -397,6 +403,7 @@
             layer.on('edit', function() {
                 var b = layer.getBounds();
                 coords = { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest(), type: currentShape };
+                syncMoveHandlePosition();
                 renderShapePreview();
                 saveState();
             });
@@ -486,7 +493,65 @@
         function syncShapeAfterEdgeChange() {
             if (rectLayer) rectLayer.setBounds([[coords.south, coords.west], [coords.north, coords.east]]);
             if (syncCenterHandles) syncCenterHandles();
+            syncMoveHandlePosition();
             renderShapePreview();
+        }
+
+        // Repositions the move handle onto the shape's current center without
+        // recreating it -- called after any resize (corner drag, edge-handle
+        // drag, leaflet-draw's own editing) so it doesn't drift off-center.
+        // bindMoveHandle() itself only runs when the shape is (re)created.
+        function syncMoveHandlePosition() {
+            if (!coords) return;
+            moveHandleLayer.eachLayer(function(m) { m.setLatLng(boundsCenter(coords)); });
+        }
+
+        function moveHandleIcon() {
+            return L.divIcon({
+                className: 'move-handle', iconSize: [22, 22], iconAnchor: [11, 11],
+                html: '<svg viewBox="0 0 20 20" width="14" height="14" fill="#fff"><path d="M10 1l-3 3h2v4H5V6l-3 3 3 3v-2h4v4H7l3 3 3-3h-2v-4h4v2l3-3-3-3v2h-4V4h2z"/></svg>'
+            });
+        }
+
+        // A single draggable marker at the shape's center that translates the
+        // whole rectangle (and shapeCenter, in 'center' mode) without resizing
+        // it -- unlike bindCornerDrag, which always resizes from the nearest
+        // corner no matter where on the shape you grab it. In 'corner' mode,
+        // leaflet-draw's own corner-handle editing is disabled for the drag's
+        // duration and re-enabled after, same reasoning as bindCornerDrag: its
+        // markers only reposition themselves via their own drag handlers, so
+        // they'd otherwise go stale while this moves the layer's bounds
+        // directly.
+        function bindMoveHandle() {
+            moveHandleLayer.clearLayers();
+            if (!coords) return;
+            var wasCornerEditing = false;
+            var dragStart = null, startCoords = null, startCenter = null;
+            var marker = L.marker(boundsCenter(coords), { draggable: true, icon: moveHandleIcon() });
+            marker.on('dragstart', function(e) {
+                wasCornerEditing = drawMode === 'corner' && rectLayer.editing && rectLayer.editing.enabled();
+                if (wasCornerEditing) rectLayer.editing.disable();
+                dragStart = e.target.getLatLng();
+                startCoords = { north: coords.north, south: coords.south, east: coords.east, west: coords.west };
+                startCenter = shapeCenter ? { lat: shapeCenter.lat, lng: shapeCenter.lng } : null;
+            });
+            marker.on('drag', function(e) {
+                var cur = e.target.getLatLng();
+                var dLat = cur.lat - dragStart.lat, dLng = cur.lng - dragStart.lng;
+                coords.north = startCoords.north + dLat;
+                coords.south = startCoords.south + dLat;
+                coords.east = startCoords.east + dLng;
+                coords.west = startCoords.west + dLng;
+                if (startCenter) shapeCenter = { lat: startCenter.lat + dLat, lng: startCenter.lng + dLng };
+                rectLayer.setBounds([[coords.south, coords.west], [coords.north, coords.east]]);
+                if (syncCenterHandles) syncCenterHandles();
+                renderShapePreview();
+            });
+            marker.on('dragend', function() {
+                if (wasCornerEditing) bindLiveEdit(rectLayer);
+                saveState();
+            });
+            moveHandleLayer.addLayer(marker);
         }
 
         // Lets the user grab the rectangle's own border (not just a handle
@@ -570,6 +635,7 @@
             var rect = previewDrawnRect(coords);
             bindCornerDrag(rect);
             bindCenterEdit();
+            bindMoveHandle();
             renderShapePreview();
             updateSendState();
             updateStatus();
@@ -636,6 +702,7 @@
                     bindLiveEdit(rectLayer);
                 }
                 bindCornerDrag(rectLayer);
+                bindMoveHandle();
             }
             saveState();
         }
@@ -767,6 +834,7 @@
             drawnItems.clearLayers();
             shapePreview.clearLayers();
             editHandles.clearLayers();
+            moveHandleLayer.clearLayers();
             syncCenterHandles = null;
             rectLayer = null;
             coords = null;
@@ -798,6 +866,27 @@
             }).addTo(shapePreview);
         }
 
+        // leaflet-draw's own corner/move-marker dragging (enabled via
+        // bindLiveEdit -> layer.editing.enable(), active in 'corner' draw
+        // mode) only fires the layer's 'edit' event once, on release -- so
+        // without this, the preview shape and move handle would sit frozen
+        // for the whole drag and only jump into place at mouseup, unlike
+        // this page's OWN handle-drag code (bindCornerDrag, bindCenterEdit's
+        // edge handles, bindMoveHandle) which all update every tick. These
+        // draw:editresize/draw:editmove map events are what leaflet-draw
+        // fires continuously during that same drag, so hook those instead
+        // for the live preview -- 'edit' still does the final coords commit
+        // and saveState() on release via bindLiveEdit.
+        function liveSyncFromLayer(e) {
+            if (e.layer !== rectLayer) return;
+            var b = e.layer.getBounds();
+            coords = { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest(), type: currentShape };
+            syncMoveHandlePosition();
+            renderShapePreview();
+        }
+        map.on(L.Draw.Event.EDITRESIZE, liveSyncFromLayer);
+        map.on(L.Draw.Event.EDITMOVE, liveSyncFromLayer);
+
         map.on(L.Draw.Event.CREATED, function(e) {
             var layer = e.layer;
             drawnItems.clearLayers();
@@ -812,6 +901,7 @@
             rectLayer = layer;
             bindLiveEdit(layer);
             bindCornerDrag(layer);
+            bindMoveHandle();
             renderShapePreview();
             saveState();
         });
@@ -824,6 +914,7 @@
                 // so the rectangle stays directly editable without re-clicking Edit.
                 layer.editing.enable();
             });
+            syncMoveHandlePosition();
             renderShapePreview();
             saveState();
         });

@@ -55,6 +55,15 @@
         #plateSettingsCloseBtn { background: none; border: none; color: #aaa; font-size: 18px; line-height: 1;
             cursor: pointer; padding: 2px 6px; }
         #plateSettingsCloseBtn:hover { color: #fff; }
+        .shape-btn.active { background: #007bff; border-color: #007bff; }
+        #drawModeToggle { position: absolute; top: 170px; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 6px;
+            background: rgba(26,26,26,0.85); border: 1px solid #444; border-radius: 4px; padding: 6px; }
+        #drawModeToggle .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
+        .edge-handle { width: 10px; height: 10px; background: #fff; border: 2px solid #007bff; border-radius: 2px;
+            box-shadow: 0 0 2px rgba(0,0,0,0.6); cursor: move; }
+        .move-handle { width: 22px; height: 22px; background: #007bff; border: 2px solid #fff; border-radius: 50%;
+            box-shadow: 0 0 3px rgba(0,0,0,0.6); cursor: move; display: flex; align-items: center; justify-content: center; }
+        .move-handle svg { pointer-events: none; }
     </style>
 </head>
 <body>
@@ -176,6 +185,14 @@
                 <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M6 2a1 1 0 00-1 1v1H2v2h1v11a2 2 0 002 2h10a2 2 0 002-2V6h1V4h-3V3a1 1 0 00-1-1H6zM5 6h10v11H5V6zm3 2v7h2V8H8zm4 0v7h2V8h-2z"/></svg>
             </button>
         </div>
+        <div id="drawModeToggle">
+            <button class="shape-btn icon-btn draw-mode-btn active" data-mode="corner" title="Draw edge to edge">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16 L4 4 L16 4"/><rect x="2.5" y="14.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="14.5" y="2.5" width="3" height="3" fill="currentColor" stroke="none"/></svg>
+            </button>
+            <button class="shape-btn icon-btn draw-mode-btn" data-mode="center" title="Draw from a center point">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="12" height="12"/><circle cx="10" cy="10" r="1.5" fill="currentColor" stroke="none"/><line x1="10" y1="1" x2="10" y2="3.5"/><line x1="10" y1="16.5" x2="10" y2="19"/><line x1="1" y1="10" x2="3.5" y2="10"/><line x1="16.5" y1="10" x2="19" y2="10"/></svg>
+            </button>
+        </div>
         <div id="legend">
             <div class="legend-row"><span class="legend-swatch" style="background:#E97826;"></span>Drawn area</div>
             <div class="legend-row"><span class="legend-swatch" style="background:#007bff;"></span>Puzzle piece</div>
@@ -246,8 +263,15 @@
         map.addLayer(gpxLayer);
         var holderLayer = new L.FeatureGroup();
         map.addLayer(holderLayer);
+        var editHandles = new L.FeatureGroup();
+        map.addLayer(editHandles);
+        var moveHandleLayer = new L.FeatureGroup(); // single center "move" handle, kept separate from
+        map.addLayer(moveHandleLayer);              // editHandles so clearing corner/edge handles doesn't drop it
 
         var coords = null;       // drawn rectangle bounds, exactly as drawn -- never resized
+        var rectLayer = null;    // the single drawn/edited L.Rectangle, if any
+        var drawMode = 'corner'; // 'corner' | 'center' -- how the drawn area is drawn/edited
+        var shapeCenter = null;  // {lat, lng} -- fixed center for 'center' mode edits; unused in 'corner' mode
         var pieces = [];         // current jigsaw pieces: [{row, col, points: [[x,y],...]}, ...]
         var gpxPaths = [];
         var gpxNames = [];
@@ -377,6 +401,8 @@
                     puzzleSeed: document.getElementById('puzzleSeedInput').value,
                     puzzleCornerRadius: document.getElementById('puzzleCornerRadiusInput').value,
                     coords: coords,
+                    drawMode: drawMode,
+                    shapeCenter: shapeCenter,
                     gpxPaths: gpxPaths,
                     gpxNames: gpxNames,
                     holderEnabled: document.getElementById('holderEnabled').checked,
@@ -414,6 +440,12 @@
                     if (s.jitter != null) document.getElementById('jitterInput').value = s.jitter;
                     if (s.puzzleSeed != null) document.getElementById('puzzleSeedInput').value = s.puzzleSeed;
                     if (s.puzzleCornerRadius != null) document.getElementById('puzzleCornerRadiusInput').value = s.puzzleCornerRadius;
+                    if (s.drawMode) {
+                        drawMode = s.drawMode;
+                        document.querySelectorAll('.draw-mode-btn').forEach(function(b) {
+                            b.classList.toggle('active', b.getAttribute('data-mode') === s.drawMode);
+                        });
+                    }
                     if (s.holderEnabled != null) document.getElementById('holderEnabled').checked = s.holderEnabled;
                     if (s.holderText != null) document.getElementById('holderTextInput').value = s.holderText;
                     if (s.holderWallWidth != null) document.getElementById('holderWallWidthInput').value = s.holderWallWidth;
@@ -449,7 +481,15 @@
                             color: '#E97826', weight: 3, opacity: 1, fill: true, fillOpacity: 0.15
                         });
                         drawnItems.addLayer(rect);
-                        bindLiveEdit(rect);
+                        rectLayer = rect;
+                        if (drawMode === 'center' && s.shapeCenter) {
+                            shapeCenter = s.shapeCenter;
+                            bindCenterEdit();
+                        } else {
+                            bindLiveEdit(rect);
+                        }
+                        bindCornerDrag(rect);
+                        bindMoveHandle();
                         regeneratePuzzle();
                     }
                     updateStatus();
@@ -912,14 +952,322 @@
             // rectangle itself is always used exactly as drawn -- Length/
             // Width only affect which sub-area of it the puzzle grid covers
             // (see computePuzzleGeometry), never the rectangle.
+            rectLayer = layer;
+            layer.off('edit');
             layer.editing.enable();
             layer.on('edit', function() {
                 var b = layer.getBounds();
                 coords = { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() };
+                syncMoveHandlePosition();
                 regeneratePuzzle();
                 saveState();
             });
         }
+
+        // Repositions the move handle onto the shape's current center without
+        // recreating it -- called after any resize (corner drag, edge-handle
+        // drag, leaflet-draw's own editing) so it doesn't drift off-center.
+        // bindMoveHandle() itself only runs when the shape is (re)created.
+        function syncMoveHandlePosition() {
+            if (!coords) return;
+            moveHandleLayer.eachLayer(function(m) { m.setLatLng(boundsCenter(coords)); });
+        }
+
+        function moveHandleIcon() {
+            return L.divIcon({
+                className: 'move-handle', iconSize: [22, 22], iconAnchor: [11, 11],
+                html: '<svg viewBox="0 0 20 20" width="14" height="14" fill="#fff"><path d="M10 1l-3 3h2v4H5V6l-3 3 3 3v-2h4v4H7l3 3 3-3h-2v-4h4v2l3-3-3-3v2h-4V4h2z"/></svg>'
+            });
+        }
+
+        // A single draggable marker at the shape's center that translates the
+        // whole rectangle (and shapeCenter, in 'center' mode) without resizing
+        // it -- unlike bindCornerDrag, which always resizes from the nearest
+        // corner no matter where on the shape you grab it. In 'corner' mode,
+        // leaflet-draw's own corner-handle editing is disabled for the drag's
+        // duration and re-enabled after, same reasoning as bindCornerDrag: its
+        // markers only reposition themselves via their own drag handlers, so
+        // they'd otherwise go stale while this moves the layer's bounds
+        // directly.
+        function bindMoveHandle() {
+            moveHandleLayer.clearLayers();
+            if (!coords) return;
+            var wasCornerEditing = false;
+            var dragStart = null, startCoords = null, startCenter = null;
+            var marker = L.marker(boundsCenter(coords), { draggable: true, icon: moveHandleIcon() });
+            marker.on('dragstart', function(e) {
+                wasCornerEditing = drawMode === 'corner' && rectLayer.editing && rectLayer.editing.enabled();
+                if (wasCornerEditing) rectLayer.editing.disable();
+                dragStart = e.target.getLatLng();
+                startCoords = { north: coords.north, south: coords.south, east: coords.east, west: coords.west };
+                startCenter = shapeCenter ? { lat: shapeCenter.lat, lng: shapeCenter.lng } : null;
+            });
+            marker.on('drag', function(e) {
+                var cur = e.target.getLatLng();
+                var dLat = cur.lat - dragStart.lat, dLng = cur.lng - dragStart.lng;
+                coords.north = startCoords.north + dLat;
+                coords.south = startCoords.south + dLat;
+                coords.east = startCoords.east + dLng;
+                coords.west = startCoords.west + dLng;
+                if (startCenter) shapeCenter = { lat: startCenter.lat + dLat, lng: startCenter.lng + dLng };
+                rectLayer.setBounds([[coords.south, coords.west], [coords.north, coords.east]]);
+                if (syncCenterHandles) syncCenterHandles();
+                regeneratePuzzle();
+            });
+            marker.on('dragend', function() {
+                if (wasCornerEditing) bindLiveEdit(rectLayer);
+                saveState();
+            });
+            moveHandleLayer.addLayer(marker);
+        }
+
+        function boundsCenter(b) {
+            return { lat: (b.north + b.south) / 2, lng: (b.east + b.west) / 2 };
+        }
+
+        function previewDrawnRect(bounds) {
+            drawnItems.clearLayers();
+            var rect = L.rectangle([[bounds.south, bounds.west], [bounds.north, bounds.east]], {
+                color: '#E97826', weight: 3, opacity: 1, fill: true, fillOpacity: 0.15
+            });
+            drawnItems.addLayer(rect);
+            rectLayer = rect;
+            return rect;
+        }
+
+        // Picks whichever of the rectangle's 4 corners is visually closest (in
+        // screen pixels, so it works the same at any zoom level/latitude) to
+        // a click -- lets the user grab the border itself to resize, not
+        // just the small handle markers.
+        function nearestCorner(latlng, b) {
+            var p = map.latLngToLayerPoint(latlng);
+            var corners = {
+                NE: map.latLngToLayerPoint([b.north, b.east]),
+                NW: map.latLngToLayerPoint([b.north, b.west]),
+                SE: map.latLngToLayerPoint([b.south, b.east]),
+                SW: map.latLngToLayerPoint([b.south, b.west])
+            };
+            var best = 'NE', bestDist = Infinity;
+            Object.keys(corners).forEach(function(k) {
+                var dx = p.x - corners[k].x, dy = p.y - corners[k].y;
+                var d = dx * dx + dy * dy;
+                if (d < bestDist) { bestDist = d; best = k; }
+            });
+            return best;
+        }
+
+        // Applies a dragged edge's new lat/lng, mirroring the opposite edge
+        // around shapeCenter in 'center' mode (so the center never moves) or
+        // leaving it fixed in 'corner' mode -- the same rule applyCornerDrag
+        // (each axis independently) and bindCenterEdit's handle markers use.
+        // Clamped so an edge can never get dragged past its own opposite (or,
+        // in 'center' mode, past the center point itself), which would
+        // otherwise invert the box.
+        var MIN_DEG = 1e-6;
+        function applyEdgeDrag(edge, value) {
+            if (drawMode === 'center' && shapeCenter) {
+                if (edge === 'north') {
+                    coords.north = Math.max(value, shapeCenter.lat + MIN_DEG);
+                    coords.south = 2 * shapeCenter.lat - coords.north;
+                } else if (edge === 'south') {
+                    coords.south = Math.min(value, shapeCenter.lat - MIN_DEG);
+                    coords.north = 2 * shapeCenter.lat - coords.south;
+                } else if (edge === 'east') {
+                    coords.east = Math.max(value, shapeCenter.lng + MIN_DEG);
+                    coords.west = 2 * shapeCenter.lng - coords.east;
+                } else {
+                    coords.west = Math.min(value, shapeCenter.lng - MIN_DEG);
+                    coords.east = 2 * shapeCenter.lng - coords.west;
+                }
+            } else if (edge === 'north') {
+                coords.north = Math.max(value, coords.south + MIN_DEG);
+            } else if (edge === 'south') {
+                coords.south = Math.min(value, coords.north - MIN_DEG);
+            } else if (edge === 'east') {
+                coords.east = Math.max(value, coords.west + MIN_DEG);
+            } else {
+                coords.west = Math.min(value, coords.east - MIN_DEG);
+            }
+        }
+
+        // A corner drag moves both of its axes at once -- e.g. dragging the
+        // NE corner sets north from the new lat AND east from the new lng,
+        // each going through applyEdgeDrag above so 'center' mode still
+        // mirrors both the opposite lat edge and the opposite lng edge
+        // around shapeCenter.
+        function applyCornerDrag(corner, latlng) {
+            applyEdgeDrag(corner[0] === 'N' ? 'north' : 'south', latlng.lat);
+            applyEdgeDrag(corner[1] === 'E' ? 'east' : 'west', latlng.lng);
+        }
+
+        // Set by bindCenterEdit() while its handle markers exist, so a
+        // border-drag (bindCornerDrag below) can keep them in sync too
+        // without needing to know anything about them directly.
+        var syncCenterHandles = null;
+
+        function syncShapeAfterEdgeChange() {
+            if (rectLayer) rectLayer.setBounds([[coords.south, coords.west], [coords.north, coords.east]]);
+            if (syncCenterHandles) syncCenterHandles();
+            syncMoveHandlePosition();
+            regeneratePuzzle();
+        }
+
+        // Lets the user grab the rectangle's own border (not just a handle
+        // marker) to resize it by whichever corner is nearest -- works in
+        // both draw modes, mirroring in 'center' mode via applyCornerDrag
+        // above. In 'corner' mode, leaflet-draw's own corner-handle editing
+        // is disabled for the duration of the drag and cleanly re-enabled
+        // after (which re-reads the layer's bounds fresh) rather than left
+        // running alongside this -- leaflet-draw only repositions its corner
+        // markers from their OWN drag handlers, so this layer's bounds
+        // changing externally would otherwise leave them silently out of
+        // sync with the shape.
+        function bindCornerDrag(layer) {
+            layer.off('mousedown', layer._tp3dCornerDown);
+            layer._tp3dCornerDown = function(e) {
+                L.DomEvent.stopPropagation(e);
+                var wasCornerEditing = drawMode === 'corner' && layer.editing && layer.editing.enabled();
+                if (wasCornerEditing) layer.editing.disable();
+                var corner = nearestCorner(e.latlng, coords);
+                map.dragging.disable();
+                function onMove(e2) {
+                    applyCornerDrag(corner, e2.latlng);
+                    syncShapeAfterEdgeChange();
+                }
+                function onUp() {
+                    map.off('mousemove', onMove);
+                    map.off('mouseup', onUp);
+                    map.dragging.enable();
+                    if (wasCornerEditing) bindLiveEdit(layer);
+                    saveState();
+                }
+                map.on('mousemove', onMove);
+                map.on('mouseup', onUp);
+            };
+            layer.on('mousedown', layer._tp3dCornerDown);
+        }
+
+        // 'Center' draw mode: click sets the center point, dragging outward
+        // grows the box symmetrically around it (mirrors bindCenterEdit's own
+        // "opposite edge moves too" editing behavior for the initial draw).
+        // Bypasses leaflet-draw's own rectangle tool entirely -- that tool is
+        // inherently corner-to-corner, with no supported way to redefine it
+        // as center-out.
+        function startCenterDraw() {
+            map.dragging.disable();
+            map.getContainer().style.cursor = 'crosshair';
+            map.once('mousedown', function(e) {
+                var center = e.latlng;
+                function onMove(e2) {
+                    var dLat = Math.abs(e2.latlng.lat - center.lat);
+                    var dLng = Math.abs(e2.latlng.lng - center.lng);
+                    previewDrawnRect({
+                        north: center.lat + dLat, south: center.lat - dLat,
+                        east: center.lng + dLng, west: center.lng - dLng
+                    });
+                }
+                function onUp(e3) {
+                    map.off('mousemove', onMove);
+                    map.off('mouseup', onUp);
+                    map.dragging.enable();
+                    map.getContainer().style.cursor = '';
+                    var dLat = Math.abs(e3.latlng.lat - center.lat);
+                    var dLng = Math.abs(e3.latlng.lng - center.lng);
+                    finalizeCenterShape({
+                        north: center.lat + dLat, south: center.lat - dLat,
+                        east: center.lng + dLng, west: center.lng - dLng
+                    }, center);
+                }
+                map.on('mousemove', onMove);
+                map.on('mouseup', onUp);
+            });
+        }
+
+        function finalizeCenterShape(bounds, center) {
+            if (bounds.north === bounds.south || bounds.east === bounds.west) {
+                drawnItems.clearLayers();
+                return; // Zero-size click-without-dragging -- nothing to keep.
+            }
+            coords = { north: bounds.north, south: bounds.south, east: bounds.east, west: bounds.west };
+            shapeCenter = { lat: center.lat, lng: center.lng };
+            var rect = previewDrawnRect(coords);
+            bindCornerDrag(rect);
+            bindCenterEdit();
+            bindMoveHandle();
+            regeneratePuzzle();
+            saveState();
+        }
+
+        // Custom edit handles for 'center' mode -- NE/NW/SE/SW corner markers
+        // that, when dragged, move both of that corner's edges AND mirror
+        // both opposite edges the same distance the other way so shapeCenter
+        // never moves. Deliberately not leaflet-draw's own L.Edit.Rectangle
+        // corner handles (used in 'corner' mode via bindLiveEdit) -- those
+        // are hardcoded to keep the OPPOSITE corner fixed, the opposite of
+        // what 'center' mode needs, and aren't designed to be reprogrammed
+        // to mirror instead.
+        function bindCenterEdit() {
+            editHandles.clearLayers();
+            syncCenterHandles = null;
+            if (!coords || !shapeCenter) return;
+
+            function handleIcon() {
+                return L.divIcon({ className: 'edge-handle', iconSize: [10, 10], iconAnchor: [5, 5] });
+            }
+
+            var neHandle = L.marker([coords.north, coords.east], { draggable: true, icon: handleIcon() });
+            var nwHandle = L.marker([coords.north, coords.west], { draggable: true, icon: handleIcon() });
+            var seHandle = L.marker([coords.south, coords.east], { draggable: true, icon: handleIcon() });
+            var swHandle = L.marker([coords.south, coords.west], { draggable: true, icon: handleIcon() });
+
+            syncCenterHandles = function() {
+                neHandle.setLatLng([coords.north, coords.east]);
+                nwHandle.setLatLng([coords.north, coords.west]);
+                seHandle.setLatLng([coords.south, coords.east]);
+                swHandle.setLatLng([coords.south, coords.west]);
+            };
+
+            neHandle.on('drag', function(e) { applyCornerDrag('NE', e.target.getLatLng()); syncShapeAfterEdgeChange(); });
+            nwHandle.on('drag', function(e) { applyCornerDrag('NW', e.target.getLatLng()); syncShapeAfterEdgeChange(); });
+            seHandle.on('drag', function(e) { applyCornerDrag('SE', e.target.getLatLng()); syncShapeAfterEdgeChange(); });
+            swHandle.on('drag', function(e) { applyCornerDrag('SW', e.target.getLatLng()); syncShapeAfterEdgeChange(); });
+            [neHandle, nwHandle, seHandle, swHandle].forEach(function(h) {
+                h.on('dragend', saveState);
+                editHandles.addLayer(h);
+            });
+        }
+
+        // Switching modes applies immediately to whatever's currently drawn,
+        // not just the next draw action -- corner-to-center adopts the
+        // current bounding box's own center as the new fixed shapeCenter;
+        // center-to-corner just drops back to leaflet-draw's own handles.
+        function setDrawMode(mode) {
+            drawMode = mode;
+            document.querySelectorAll('.draw-mode-btn').forEach(function(b) {
+                b.classList.toggle('active', b.getAttribute('data-mode') === mode);
+            });
+            if (coords && rectLayer) {
+                if (mode === 'center') {
+                    shapeCenter = boundsCenter(coords);
+                    if (rectLayer.editing) rectLayer.editing.disable();
+                    bindCenterEdit();
+                } else {
+                    editHandles.clearLayers();
+                    syncCenterHandles = null;
+                    shapeCenter = null;
+                    bindLiveEdit(rectLayer);
+                }
+                bindCornerDrag(rectLayer);
+                bindMoveHandle();
+            }
+            saveState();
+        }
+
+        document.querySelectorAll('.draw-mode-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                setDrawMode(this.getAttribute('data-mode'));
+            });
+        });
 
         function makeDrawControl() {
             return new L.Control.Draw({
@@ -1016,6 +1364,10 @@
         });
 
         document.getElementById('drawBtn').addEventListener('click', function() {
+            if (drawMode === 'center') {
+                startCenterDraw();
+                return;
+            }
             map.removeControl(drawControl);
             drawControl = makeDrawControl();
             map.addControl(drawControl);
@@ -1029,7 +1381,12 @@
             drawnItems.clearLayers();
             puzzleLayer.clearLayers();
             holderLayer.clearLayers();
+            editHandles.clearLayers();
+            moveHandleLayer.clearLayers();
+            syncCenterHandles = null;
+            rectLayer = null;
             coords = null;
+            shapeCenter = null;
             pieces = [];
             updateStatus();
             updateSendState();
@@ -1068,15 +1425,40 @@
             if (e.target === this) closePlateSettings();
         });
 
+        // leaflet-draw's own corner/move-marker dragging (enabled via
+        // bindLiveEdit -> layer.editing.enable(), active in 'corner' draw
+        // mode) only fires the layer's 'edit' event once, on release -- so
+        // without this, the puzzle grid would sit frozen for the whole drag
+        // and only jump into place at mouseup, unlike this page's OWN
+        // handle-drag code (bindCornerDrag, bindCenterEdit's edge handles)
+        // which all update every tick. draw:editresize/draw:editmove are
+        // what leaflet-draw fires continuously during that same drag, so
+        // hook those instead for the live regenerate -- 'edit' still does
+        // the final coords commit and saveState() on release.
+        function liveSyncFromLayer(e) {
+            if (e.layer !== rectLayer) return;
+            var b = e.layer.getBounds();
+            coords = { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() };
+            syncMoveHandlePosition();
+            regeneratePuzzle();
+        }
+        map.on(L.Draw.Event.EDITRESIZE, liveSyncFromLayer);
+        map.on(L.Draw.Event.EDITMOVE, liveSyncFromLayer);
+
         map.on(L.Draw.Event.CREATED, function(e) {
             var layer = e.layer;
             drawnItems.clearLayers();
             puzzleLayer.clearLayers();
+            editHandles.clearLayers();
+            syncCenterHandles = null;
+            shapeCenter = null;
             var b = layer.getBounds();
             coords = { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() };
             layer.setStyle({ color: '#E97826', weight: 3, opacity: 1, fill: true, fillOpacity: 0.15 });
             drawnItems.addLayer(layer);
             bindLiveEdit(layer);
+            bindCornerDrag(layer);
+            bindMoveHandle();
             regeneratePuzzle();
             saveState();
         });
@@ -1087,6 +1469,7 @@
                 coords = { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() };
                 layer.editing.enable();
             });
+            syncMoveHandlePosition();
             regeneratePuzzle();
             saveState();
         });
