@@ -743,7 +743,9 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                 # finalize_roads() (called later, after roads is used as the
                 # cheap boolean cutter) needs the original height data under
                 # the road footprint, which a cut would otherwise destroy.
+                from .mesh_ops import recalculateNormals as _rg_recalc_normals
                 from .osm.roads import _triangulated_terrain_faces
+                _rg_recalc_normals(obj)
                 terrain['roads_polygon'] = roads_polygon
                 terrain['_terrain_tris_cache'] = _triangulated_terrain_faces(obj)
                 global _puzzle_roads_data
