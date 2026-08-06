@@ -1,6 +1,6 @@
 /* Shared TrailPrint3D picker "look" -- reused by every 2D-map picker page
    (puzzleGenerator.html, premium/puzzleGenerator_pe.html,
-   premium/multitile_configurator.html) via __COMMON_CSS__ in picker_server.py.
+   premium/multitile_generator.html) via __COMMON_CSS__ in picker_server.py.
    Page-specific rules stay in each page's own <style> block, and can
    override anything here since this block is always emitted first. */
 * { box-sizing: border-box; }

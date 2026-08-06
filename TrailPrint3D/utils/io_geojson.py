@@ -184,7 +184,7 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
 
     *scale_hor*, if given, is used verbatim instead of deriving one from this
     polygon's own bounding box -- for a batch of several boundaries meant to
-    keep their true relative geographic position (multitile_configurator's
+    keep their true relative geographic position (multitile_generator's
     GeoJSON batch, premium/operators_pe.py's TP3D_OT_map_picker), the caller
     computes ONE shared scale from the combined bbox of every boundary in the
     batch and passes it to each build_tile_from_polygon() call, rather than
@@ -332,8 +332,8 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
     tile["Shape"] = "CUSTOM"
     tile["objSize"] = maxer * scale_hor
 
-    # Reference outline for the multi-tile configurator's existing-maps layer
-    # (operators._collect_existing_maps / premium/multitile_configurator.html)
+    # Reference outline for the multi-tile generator's existing-maps layer
+    # (operators._collect_existing_maps / premium/multitile_generator.html)
     # -- a CUSTOM tile has no regular hexagon/rectangle shape to reconstruct
     # from just its bounding box, so store the actual boundary (reprojected
     # back to lat/lon) it can draw instead. Each part is wrapped in its own

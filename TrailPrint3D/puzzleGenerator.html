@@ -336,7 +336,7 @@
         function updateGpxList() {
             // The free puzzle generator only ever holds one trail at a time
             // (see the gpxInput 'change' handler, which replaces rather than
-            // adds) -- unlike multitile_configurator.html/puzzleGenerator_pe.html,
+            // adds) -- unlike multitile_generator.html/puzzleGenerator_pe.html,
             // there's no multi-file "N trails imported" summary to render.
             var listEl = document.getElementById('gpxList');
             var clearBtn = document.getElementById('clearGpx');
@@ -351,7 +351,7 @@
         }
 
         function saveState() {
-            // Unlike multitile_configurator.html, gpxPaths/gpxNames ARE persisted here --
+            // Unlike multitile_generator.html, gpxPaths/gpxNames ARE persisted here --
             // the puzzle page caches the selected trails across reopens
             // instead of treating GPX import as session-only. The server
             // still has the uploaded temp files on disk at gpxPaths[i], so
@@ -971,7 +971,7 @@
                 gpxLayer.clearLayers();
             }
             // Wait for every file in this batch to finish, then fit to
-            // gpxLayer's combined bounds exactly once (see multitile_configurator.html
+            // gpxLayer's combined bounds exactly once (see multitile_generator.html
             // for why per-file fitBounds is wrong with multiple files).
             var pending = files.length;
             files.forEach(function(file) {

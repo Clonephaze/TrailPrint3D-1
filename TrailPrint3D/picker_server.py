@@ -74,10 +74,10 @@ def drain_pending_advanced_settings() -> list:
     return updates
 
 
-_HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'multitile_configurator.html'
+_HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'multitile_generator.html'
 
 # Markup shared by every picker page (puzzleGenerator.html,
-# premium/puzzleGenerator_pe.html, premium/multitile_configurator.html) --
+# premium/puzzleGenerator_pe.html, premium/multitile_generator.html) --
 # the CSS "look" and the base-map/go-to-location JS boilerplate are
 # byte-identical across all three, so they live here once and get inlined
 # into each page's own <style>/<script> block at serve time, the same way
@@ -511,7 +511,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     /update_advanced_setting, queued in _pending_advanced_settings and
     drained via drain_pending_advanced_settings/utils.apply_advanced_setting_update.
 
-    *html_path*, if given, serves that HTML file instead of multitile_configurator.html
+    *html_path*, if given, serves that HTML file instead of multitile_generator.html
     (e.g. puzzleGenerator.html) -- the rest of this server (GPX upload, state
     save/restore, existing-maps/trails reference data, /confirm) is schema-
     agnostic, so other picker pages can reuse it as-is. State is persisted to
@@ -530,7 +530,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     _pending_advanced_settings = queue.Queue()
 
     html_path = pathlib.Path(html_path) if html_path else _HTML_PATH
-    # Keep the original state filename for multitile_configurator.html itself (exact
+    # Keep the original state filename for multitile_generator.html itself (exact
     # backward compatibility); other pages get their own, keyed by filename,
     # so two different picker pages never clobber each other's saved state.
     state_path = (

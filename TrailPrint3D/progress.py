@@ -523,7 +523,7 @@ class WarningsOverlay:
         icon: "warn" (yellow !), "error" (red ✗), "ok" (green ✓)
 
         Duplicate (message, icon) pairs are collapsed to one entry --
-        generating several tiles in one batch (multitile configurator)
+        generating several tiles in one batch (multitile generator)
         otherwise repeats the same warning once per tile.
         """
         entry = (message, icon)

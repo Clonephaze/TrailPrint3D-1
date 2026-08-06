@@ -2529,6 +2529,259 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class TP3D_OT_map_generator(bpy.types.Operator):
+    bl_idname = "tp3d.map_generator"
+    bl_label = "Map Generator"
+    bl_description = (
+        "Open an interactive map — draw a rectangle, square, circle, or octagon area, "
+        "then Send to Blender to generate a single map tile"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    _timer = None
+    _result_path: str = ""
+    _server = None
+
+    _TYPE_MAP = {
+        'rectangle': 'SQUARE',
+        'square':    'SQUARE',
+        'circle':    'CIRCLE',
+        'octagon':   'OCTAGON',
+    }
+
+    def modal(self, context, event):
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        from . import picker_server as mp
+        for key in mp.drain_pending_toggles():
+            utils.apply_element_toggle(context.scene.tp3d, key)
+        for key, value in mp.drain_pending_settings():
+            utils.apply_setting_update(context.scene.tp3d, key, value)
+        for key, value in mp.drain_pending_advanced_settings():
+            utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
+
+        rp = pathlib.Path(self._result_path)
+        if not (rp.exists() and rp.stat().st_size > 0):
+            return {'PASS_THROUGH'}
+
+        try:
+            data = json.loads(rp.read_text(encoding='utf-8'))
+            self._apply_result(context, data)
+        except Exception as exc:  # noqa: BLE001 - Wide exception catch for map result application
+            import traceback
+            traceback.print_exc()
+            self.report({'ERROR'}, f"Map generator: {exc}")
+        finally:
+            try:
+                rp.unlink()
+            except OSError:
+                pass
+            self._cleanup(context)
+
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        import tempfile
+
+        from . import picker_server as mp
+
+        self._result_path = str(
+            pathlib.Path(tempfile.gettempdir()) / 'trailprint_mapgenerator.json'
+        )
+        rp = pathlib.Path(self._result_path)
+        if rp.exists():
+            rp.unlink()
+
+        html_path = pathlib.Path(__file__).parent / 'map_generator.html'
+        self._server = mp.start_picker(
+            self._result_path,
+            existing_maps=_collect_existing_maps(),
+            existing_trails=_collect_existing_trails(),
+            obj_size=context.scene.tp3d.objSize,
+            html_path=html_path,
+            element_states=utils.build_element_toggle_states(context.scene.tp3d),
+            settings_state=utils.build_settings_row_state(context.scene.tp3d),
+            advanced_settings=utils.build_advanced_settings_state(context.scene.tp3d),
+        )
+
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        self.report({'INFO'}, "Map generator open — draw a shape then click Send to Blender")
+        return {'RUNNING_MODAL'}
+
+    def _apply_result(self, context, data):
+        """Build a single rectangle/circle/octagon map tile from the picker's
+        drawn area, optionally merging in any imported GPX trail(s).
+
+        Deliberately mirrors TP3D_OT_puzzle_configurator's single-tile
+        approach (create blank, fetch elevation, createTerrainFromSelected)
+        rather than the Premium multitile picker's grid/tile-spacing/extend
+        logic -- this picker only ever produces exactly one fresh tile.
+        """
+        props = context.scene.tp3d
+        overlay = _progress.ProgressOverlay.get()
+        overlay.start()
+        _progress.WarningsOverlay.clear()
+        start_time = time.time()
+
+        bounds = data.get('bounds')
+        gpx_paths = data.get('gpx_paths', [])
+
+        if not bounds and not gpx_paths:
+            self.report({'WARNING'}, "Nothing to generate — draw a shape first")
+            overlay.finish()
+            return
+
+        if not bounds and gpx_paths:
+            # Trail-only: no area was drawn — just add the trail(s) using
+            # whatever map setup (scale, position) is already active in the
+            # scene, same as the sidebar's "Generate Just Trail" button.
+            _generate_trails(context, gpx_paths, overlay, 0.1, 0.95)
+            if props.singleColorMode:
+                _progress.WarningsOverlay.add_warning("Single Color Mode is not applied automatically due to performance reasons.", "warn")
+                _progress.WarningsOverlay.add_warning("Use 'Merge with Map' to apply it manually.", "warn")
+            bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
+            overlay.finish()
+            _progress.WarningsOverlay.get().show()
+            self.report({'INFO'}, f"Generated {len(gpx_paths)} trail(s)")
+            return
+
+        shape_name = data.get('type', 'rectangle')
+        props.shape = self._TYPE_MAP.get(shape_name, 'SQUARE')
+
+        if data.get('resolution') is not None:
+            # Mirrors the scene's own "Resolution" sidebar property so the
+            # picker's own Resolution slider actually controls the generated
+            # terrain instead of silently falling back to whatever was last
+            # set in the sidebar.
+            props.num_subdivisions = max(1, min(10, int(data['resolution'])))
+        if data.get('objSize') is not None:
+            _picked_size = max(5, min(10000, int(data['objSize'])))
+            props.objSize = _picked_size
+            # This picker only has one Size field (every tile is objSize x
+            # objSize) -- keep the sidebar's separate Height property
+            # (rectangleHeight, used by Shape=Square elsewhere e.g. Create
+            # Blank) in sync too, mirroring the Multi Tile Generator picker.
+            props.rectangleHeight = _picked_size
+
+        south, north = bounds['south'], bounds['north']
+        west, east = bounds['west'], bounds['east']
+
+        overlay.update(0.02, "Creating base tile…", "Building terrain…")
+        # sScaleHor must be set BEFORE the convert_to_blender_coordinates
+        # calls below, since that function reads it -- derive the scale from
+        # the unscaled convert_to_neutral_coordinates extent first, then set
+        # sScaleHor, and only then compute actual placement.
+        nx1, ny1, _ = utils.convert_to_neutral_coordinates(south, west, 0, 0)
+        nx2, ny2, _ = utils.convert_to_neutral_coordinates(north, east, 0, 0)
+        neutral_extent = max(abs(nx2 - nx1), abs(ny2 - ny1))
+        fixed_scale = props.objSize / neutral_extent if neutral_extent > 0 else 1.0
+        bpy.context.scene.tp3d["sScaleHor"] = fixed_scale
+
+        x1, y1, _ = utils.convert_to_blender_coordinates(south, west, 0, 0)
+        x2, y2, _ = utils.convert_to_blender_coordinates(north, east, 0, 0)
+        tile_w, tile_h = abs(x2 - x1), abs(y2 - y1)
+        center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+        diameter = max(tile_w, tile_h)
+
+        if shape_name == 'circle':
+            blank = utils.create_circle(diameter / 2, props.num_subdivisions)
+            blank["Shape"] = "CIRCLE"
+        elif shape_name == 'octagon':
+            blank = utils.create_octagon(diameter / 2, props.num_subdivisions)
+            blank["Shape"] = "OCTAGON"
+        elif shape_name == 'square':
+            # Unlike 'rectangle' below, width and height are forced equal here
+            # -- the picker already squares the drawn area for every shape but
+            # Rectangle (see map_generator.html's effectiveBounds), this just
+            # doesn't additionally trust that to already be exact.
+            blank = utils.create_rectangle(diameter, diameter, props.num_subdivisions)
+            blank["Shape"] = "SQUARE"
+        else:
+            blank = utils.create_rectangle(tile_w, tile_h, props.num_subdivisions)
+            blank["Shape"] = "SQUARE"
+        blank["objSize"] = diameter
+        blank["objType"] = "MAP"
+        blank["edge_south"], blank["edge_north"] = south, north
+        blank["edge_west"], blank["edge_east"] = west, east
+        blank.location = (center_x, center_y, 0)
+
+        bpy.context.view_layer.objects.active = blank
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+        overlay.update(0.06, "Fetching Elevation", "Querying elevation API…")
+        overlay.set_fetch_progress('elevation', 0.0)
+
+        def _elev_progress(pct):
+            t = pct / 100.0
+            overlay.update(0.06 + t * (0.30 - 0.06), "Fetching Elevation", f"{pct}% complete…",
+                           sub_percent=t, sub_label="Elevation tiles")
+            overlay.set_fetch_progress('elevation', t)
+
+        preview_elevations, preview_diff = utils.get_tile_elevation(blank, progress_cb=_elev_progress)
+        overlay.sub_percent = None
+
+        if props.fixedElevationScale:
+            auto_scale = 10 / (preview_diff / 1000) if preview_diff > 0 else 10
+        else:
+            auto_scale = fixed_scale
+        props.sAutoScale = auto_scale
+
+        overlay.update(0.32, "Analyzing terrain…", "Calculating elevation range…")
+        lowest_z = 1000
+        highest_z = 0
+        obj_matrix = blank.matrix_world
+        for i, vert in enumerate(blank.data.vertices):
+            world_co = obj_matrix @ vert.co
+            vert_lat, _ = utils.convert_to_geo(world_co.x, world_co.y)
+            merc = 1 / math.cos(math.radians(vert_lat))
+            val = preview_elevations[i] / 1000 * props.scaleElevation * auto_scale * merc
+            lowest_z = min(lowest_z, val)
+            highest_z = max(highest_z, val)
+        props.sAdditionalExtrusion = lowest_z
+
+        overlay.add_completed_step(f"Preview elevation — z {lowest_z:.1f}-{highest_z:.1f}")
+
+        bpy.ops.object.select_all(action='DESELECT')
+        blank.select_set(True)
+        bpy.context.view_layer.objects.active = blank
+        # skip_bottom_recess: this blank is always a fresh single tile with
+        # additionalExtrusion locked to its OWN lowest point (set just
+        # above), not an older neighbor's -- there's no seam to protect.
+        utils.createTerrainFromSelected(manage_overlay=False, skip_bottom_recess=True)
+
+        if gpx_paths:
+            trails = _generate_trails(context, gpx_paths, overlay, 0.95, 0.99)
+            for trail_obj in trails:
+                if utils.osm.gen.is_bbox_overlapping(trail_obj, blank):
+                    utils.merge_active_with_map(blank, trail_obj)
+            if not bpy.app.debug:
+                utils.remove_objects(trails)
+
+        try:
+            utils.zoom_camera_to_selected(blank)
+        except (ReferenceError, AttributeError):
+            pass
+
+        bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
+        overlay.finish()
+        _progress.WarningsOverlay.get().show()
+        self.report({'INFO'}, "Generated 1 tile")
+
+    def _cleanup(self, context):
+        wm = context.window_manager
+        if self._timer:
+            wm.event_timer_remove(self._timer)
+            self._timer = None
+        if self._server:
+            threading.Thread(target=self._server.shutdown, daemon=True).start()
+            self._server = None
+
+    def execute(self, context):
+        return {'FINISHED'}
+
+
 class TP3D_OT_special_collection(bpy.types.Operator):
     bl_idname = "tp3d.special_collection"
     bl_label = "Update"

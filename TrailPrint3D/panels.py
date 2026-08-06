@@ -149,9 +149,10 @@ class TP3D_PT_generate(bpy.types.Panel):
                 col.separator(factor=1.0)
                 if temp.PREMIUMVERSION:
                     #pass
-                    col.operator("tp3d.map_picker", text=_("Multi Tile Configurator"), icon='WORLD')
+                    col.operator("tp3d.map_picker", text=_("Multi Tile Generator"), icon='WORLD')
                 else:
-                    col.operator("tp3d.terrain_dummy", text=_("Multi Tile Configurator"), icon='WORLD')
+                    col.operator("tp3d.terrain_dummy", text=_("Multi Tile Generator"), icon='WORLD')
+                col.operator("tp3d.map_generator", text=_("Map Generator"), icon='MESH_CIRCLE')
             else:
                 # Files
                 box = layout.box()
@@ -726,9 +727,10 @@ class TP3D_MT_generators_menu(bpy.types.Menu):
     def draw(self, context):
         layout = self.layout
         if temp.PREMIUMVERSION:
-            layout.operator("tp3d.map_picker", text=_("Multi Tile Configurator"), icon='WORLD')
+            layout.operator("tp3d.map_picker", text=_("Multi Tile Generator"), icon='WORLD')
         else:
-            layout.operator("tp3d.terrain_dummy", text=_("Multi Tile Configurator"), icon='LOCKED')
+            layout.operator("tp3d.terrain_dummy", text=_("Multi Tile Generator"), icon='LOCKED')
+        layout.operator("tp3d.map_generator", text=_("Map Generator"), icon='MESH_CIRCLE')
         layout.operator("tp3d.puzzle_configurator", text=_("Puzzle Generator"), icon='MOD_BOOLEAN')
 
 

@@ -1,0 +1,871 @@
+<!--
+  Copyright (C) 2026 EmGi.
+
+  You are free to modify it under the terms of the GNU General Public
+  License as published by the Free Software Foundation.
+-->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TrailPrint3D Map Generator</title>
+    <meta name="referrer" content="no-referrer">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <style>__COMMON_CSS__</style>
+    <style>
+        .shape-btn.active { background: #007bff; border-color: #007bff; }
+        #shapeToggle { position: absolute; top: 170px; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 6px;
+            background: rgba(26,26,26,0.85); border: 1px solid #444; border-radius: 4px; padding: 6px; }
+        #shapeToggle .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
+        #drawModeToggle { position: absolute; top: 338px; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 6px;
+            background: rgba(26,26,26,0.85); border: 1px solid #444; border-radius: 4px; padding: 6px; }
+        #drawModeToggle .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
+        .edge-handle { width: 10px; height: 10px; background: #fff; border: 2px solid #007bff; border-radius: 2px;
+            box-shadow: 0 0 2px rgba(0,0,0,0.6); cursor: move; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <div style="font-weight: bold; font-size: 14px; margin-bottom: 10px;">TrailPrint3D</div>
+        <div>
+            <div style="font-size: 12px; margin-bottom: 4px; color: #aaa;">Resolution: <span id="resolutionValue" style="color: #fff; font-weight: bold;">4</span></div>
+            <input type="range" id="resolutionSlider" min="1" max="10" step="1" value="4" style="width: 100%; accent-color: #007bff;">
+        </div>
+        <div class="field-row">
+            <label for="objSizeInput">Size (mm)</label>
+            <input type="number" id="objSizeInput" min="5" max="10000" step="1" value="100" title="Object Size">
+        </div>
+        <hr class="sidebar-divider">
+        <input type="file" id="gpxInput" accept=".gpx" multiple style="display: none;">
+        <button id="importGpx" style="padding: 12px 20px; background: #2a8a2a; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Import GPX</button>
+        <div id="gpxList" style="display:none; font-size:11px; color:#aaa; line-height:1.8;"></div>
+        <button id="clearGpx" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear GPX</button>
+        <hr class="sidebar-divider">
+        <div id="status">Draw a shape to begin.</div>
+        <button id="send" class="btn-send" disabled>Send to Blender</button>
+    </div>
+    <div id="mapColumn">
+    <div id="elementStatus"></div>
+    <div id="map">
+        <div id="coordSearch">
+            <button id="coordSearchToggle" title="Go to location">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M10 1a6 6 0 00-6 6c0 4.5 6 12 6 12s6-7.5 6-12a6 6 0 00-6-6zm0 8.5A2.5 2.5 0 1110 4.5a2.5 2.5 0 010 5z"/></svg>
+            </button>
+            <div id="coordSearchBody">
+                <div class="coord-row">
+                    <input type="text" id="citySearchInput" placeholder="City name">
+                    <button id="citySearchBtn" title="Search city">🔍</button>
+                </div>
+                <div class="coord-sep">or lat / lon</div>
+                <div class="coord-row">
+                    <input type="text" id="latInput" placeholder="Lat">
+                    <input type="text" id="lonInput" placeholder="Lon">
+                    <button id="coordSearchBtn" title="Go to these coordinates">Go</button>
+                </div>
+            </div>
+        </div>
+        <div id="drawActions">
+            <button id="drawBtn" class="shape-btn icon-btn" title="Draw">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-9.193 9.193-3.535.707.707-3.535 9.193-9.193z"/></svg>
+            </button>
+            <button id="deleteBtn" class="shape-btn icon-btn" title="Delete">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M6 2a1 1 0 00-1 1v1H2v2h1v11a2 2 0 002 2h10a2 2 0 002-2V6h1V4h-3V3a1 1 0 00-1-1H6zM5 6h10v11H5V6zm3 2v7h2V8H8zm4 0v7h2V8h-2z"/></svg>
+            </button>
+        </div>
+        <div id="shapeToggle">
+            <button class="shape-btn icon-btn active" data-shape="rectangle" title="Rectangle">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="16" height="10"/></svg>
+            </button>
+            <button class="shape-btn icon-btn" data-shape="square" title="Square (keeps aspect ratio 1:1)">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="10" height="10"/></svg>
+            </button>
+            <button class="shape-btn icon-btn" data-shape="circle" title="Circle (keeps aspect ratio 1:1)">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="7"/></svg>
+            </button>
+            <button class="shape-btn icon-btn" data-shape="octagon" title="Octagon (keeps aspect ratio 1:1)">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="17,12.9 12.9,17 7.1,17 3,12.9 3,7.1 7.1,3 12.9,3 17,7.1"/></svg>
+            </button>
+        </div>
+        <div id="drawModeToggle">
+            <button class="shape-btn icon-btn draw-mode-btn active" data-mode="corner" title="Draw edge to edge">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16 L4 4 L16 4"/><rect x="2.5" y="14.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="14.5" y="2.5" width="3" height="3" fill="currentColor" stroke="none"/></svg>
+            </button>
+            <button class="shape-btn icon-btn draw-mode-btn" data-mode="center" title="Draw from a center point">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="12" height="12"/><circle cx="10" cy="10" r="1.5" fill="currentColor" stroke="none"/><line x1="10" y1="1" x2="10" y2="3.5"/><line x1="10" y1="16.5" x2="10" y2="19"/><line x1="1" y1="10" x2="3.5" y2="10"/><line x1="16.5" y1="10" x2="19" y2="10"/></svg>
+            </button>
+        </div>
+        <div id="legend">
+            <div class="legend-row"><span class="legend-swatch" style="background:#E97826;"></span>Drawn area</div>
+            <div class="legend-row"><span class="legend-swatch" style="background:#9b59b6;"></span>Existing map</div>
+            <div class="legend-row"><span class="legend-swatch line" style="border-color:#9b59b6;"></span>Existing trail</div>
+            <div class="legend-row"><span class="legend-swatch line" style="border-color:red;"></span>Imported GPX</div>
+        </div>
+    </div>
+    </div>
+
+    <script>
+        var PORT = __PORT__;
+        var OBJ_SIZE = __OBJSIZE__;
+        __ELEMENT_ICONS_JS__
+        __ELEMENT_STATES_JS__
+        __ELEMENT_STATUS_JS__
+        __SETTINGS_STATE_JS__
+        __ADVANCED_SETTINGS_STATE_JS__
+        __SETTINGS_MODAL_JS__
+        __MAP_INIT_JS__
+
+        var drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+        var shapePreview = new L.FeatureGroup();
+        map.addLayer(shapePreview);
+        var editHandles = new L.FeatureGroup();
+        map.addLayer(editHandles);
+        var gpxLayer = new L.FeatureGroup();
+        map.addLayer(gpxLayer);
+        var existingMapsLayer = new L.FeatureGroup();
+        map.addLayer(existingMapsLayer);
+        var existingTrailsLayer = new L.FeatureGroup();
+        map.addLayer(existingTrailsLayer);
+
+        var currentShape = 'rectangle';
+        var drawMode = 'corner'; // 'corner' | 'center' -- how the drawn area is drawn/edited
+        var coords = null;
+        var shapeCenter = null; // {lat, lng} -- fixed center for 'center' mode edits; unused in 'corner' mode
+        var rectLayer = null; // the single L.Rectangle currently in drawnItems, if any
+        var gpxPaths = [];
+        var gpxNames = [];
+        var existingMaps = [];
+
+        __LOCATION_PANEL_JS__
+
+        function updateGpxList() {
+            var listEl = document.getElementById('gpxList');
+            var clearBtn = document.getElementById('clearGpx');
+            if (gpxNames.length === 0) {
+                listEl.style.display = 'none'; clearBtn.style.display = 'none'; return;
+            }
+            listEl.style.display = 'block';
+            clearBtn.style.display = 'block';
+            var items = gpxNames.map(function(n) { return '<div>+ ' + n + '</div>'; }).join('');
+            if (gpxNames.length > 1) {
+                listEl.innerHTML = '<details><summary>' + gpxNames.length + ' trails imported</summary>'
+                    + '<div class="gpx-list-body">' + items + '</div></details>';
+            } else {
+                listEl.innerHTML = items;
+            }
+        }
+
+        function saveState() {
+            // gpxPaths/gpxNames are intentionally NOT persisted here — a GPX
+            // import is session-only. Persisting it meant every time the picker
+            // was reopened to make another tile, the previously-sent trail came
+            // back too and got bundled (and regenerated/duplicated) again.
+            var c = map.getCenter();
+            fetch('http://127.0.0.1:' + PORT + '/save_state', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    lat: c.lat, lng: c.lng, zoom: map.getZoom(),
+                    baseLayer: activeBaseLayerName,
+                    settingsTab: TP3D_SETTINGS_TAB,
+                    shape: currentShape,
+                    drawMode: drawMode,
+                    shapeCenter: shapeCenter,
+                    resolution: document.getElementById('resolutionSlider').value,
+                    objSize: document.getElementById('objSizeInput').value,
+                    coords: coords
+                })
+            }).catch(function() {});
+        }
+
+        function restoreState() {
+            fetch('http://127.0.0.1:' + PORT + '/get_state', { cache: 'no-store' })
+                .then(function(r) { return r.json(); })
+                .then(function(s) {
+                    console.log('[TP3D picker] /get_state returned:', s);
+                    if (!s) return;
+                    if (s.settingsTab) tp3dActivateSettingsTab(s.settingsTab);
+                    if (s.lat != null) map.setView([s.lat, s.lng], s.zoom);
+                    if (s.baseLayer && baseLayers[s.baseLayer] && s.baseLayer !== activeBaseLayerName) {
+                        map.removeLayer(baseLayers[activeBaseLayerName]);
+                        baseLayers[s.baseLayer].addTo(map);
+                        activeBaseLayerName = s.baseLayer;
+                    }
+                    if (s.shape) {
+                        currentShape = s.shape;
+                        document.querySelectorAll('.shape-btn[data-shape]').forEach(function(b) {
+                            b.classList.toggle('active', b.getAttribute('data-shape') === s.shape);
+                        });
+                    }
+                    if (s.drawMode) {
+                        drawMode = s.drawMode;
+                        document.querySelectorAll('.draw-mode-btn').forEach(function(b) {
+                            b.classList.toggle('active', b.getAttribute('data-mode') === s.drawMode);
+                        });
+                    }
+                    if (s.resolution != null) {
+                        document.getElementById('resolutionSlider').value = s.resolution;
+                        document.getElementById('resolutionValue').textContent = s.resolution;
+                    }
+                    if (s.objSize != null) document.getElementById('objSizeInput').value = s.objSize;
+                    if (s.coords) {
+                        coords = s.coords;
+                        var rect = L.rectangle([[coords.south, coords.west], [coords.north, coords.east]], {
+                            color: '#E97826', weight: currentShape === 'rectangle' ? 3 : 2, opacity: 1,
+                            fill: currentShape === 'rectangle', fillOpacity: 0.3
+                        });
+                        drawnItems.addLayer(rect);
+                        rectLayer = rect;
+                        if (drawMode === 'center' && s.shapeCenter) {
+                            shapeCenter = s.shapeCenter;
+                            bindCenterEdit();
+                        } else {
+                            bindLiveEdit(rect);
+                        }
+                        bindCornerDrag(rect);
+                        renderShapePreview();
+                    }
+                    updateSendState();
+                    updateStatus();
+                })
+                .catch(function() { updateSendState(); updateStatus(); });
+        }
+
+        function loadExistingMaps() {
+            fetch('http://127.0.0.1:' + PORT + '/get_existing_maps', { cache: 'no-store' })
+                .then(function(r) { return r.json(); })
+                .then(function(list) {
+                    existingMaps = list || [];
+                    existingMapsLayer.clearLayers();
+                    existingMaps.forEach(function(m) {
+                        var layer = makeShapeLayer(m.bounds, m.shape, {
+                            color: '#9b59b6', weight: 2.5, opacity: 0.95, dashArray: '6 4',
+                            fill: true, fillOpacity: 0.15, fillColor: '#9b59b6'
+                        }, m.polygon);
+                        if (m.name) layer.bindTooltip(m.name, { sticky: true });
+                        existingMapsLayer.addLayer(layer);
+                    });
+                })
+                .catch(function() {});
+        }
+
+        function loadExistingTrails() {
+            // Read-only reference layer — trails already generated in Blender
+            // are shown so the user can see they're already there instead of
+            // re-importing/re-sending the same GPX every time a new tile is made.
+            fetch('http://127.0.0.1:' + PORT + '/get_existing_trails', { cache: 'no-store' })
+                .then(function(r) { return r.json(); })
+                .then(function(list) {
+                    existingTrailsLayer.clearLayers();
+                    (list || []).forEach(function(t) {
+                        if (!t.points || t.points.length < 2) return;
+                        var layer = L.polyline(t.points, {
+                            color: '#9b59b6', weight: 2.5, opacity: 0.85, dashArray: '6 4'
+                        });
+                        if (t.name) layer.bindTooltip(t.name, { sticky: true });
+                        existingTrailsLayer.addLayer(layer);
+                    });
+                })
+                .catch(function() {});
+        }
+
+        // Generic N-sided regular polygon inscribed in a lat/lng bounding box
+        // (R_lat/R_lng let a non-square box still produce a shape that fills
+        // it, same "ellipse inscribed in bbox" approach for every shape).
+        function regularPolygonPoints(centerLat, centerLng, R_lat, R_lng, sides, startAngleDeg) {
+            var pts = [];
+            var start = (startAngleDeg || 0) * Math.PI / 180;
+            for (var i = 0; i < sides; i++) {
+                var angle = start + i * (2 * Math.PI / sides);
+                pts.push([centerLat + R_lat * Math.sin(angle), centerLng + R_lng * Math.cos(angle)]);
+            }
+            return pts;
+        }
+
+        // A size x size square with its 4 corners beveled at 45 degrees --
+        // mirrors utils/primitives.py's create_octagon exactly (see its
+        // docstring for why: 8 points equally spaced by angle around an
+        // ellipse, like regularPolygonPoints above, only reaches ~92% of the
+        // bounding box and reads as a low-poly circle rather than an
+        // octagon; this construction instead puts 4 of its 8 edges exactly
+        // on the box's own sides). R_lat/R_lng bevel independently so a
+        // non-square bounding box still produces a consistent shape.
+        function beveledSquarePoints(centerLat, centerLng, R_lat, R_lng) {
+            var tLat = R_lat * (Math.SQRT2 - 1);
+            var tLng = R_lng * (Math.SQRT2 - 1);
+            return [
+                [centerLat + tLat, centerLng + R_lng], [centerLat + R_lat, centerLng + tLng],
+                [centerLat + R_lat, centerLng - tLng], [centerLat + tLat, centerLng - R_lng],
+                [centerLat - tLat, centerLng - R_lng], [centerLat - R_lat, centerLng - tLng],
+                [centerLat - R_lat, centerLng + tLng], [centerLat - tLat, centerLng + R_lng]
+            ];
+        }
+
+        function makeShapeLayer(bounds, shape, style, polygon) {
+            // CUSTOM (e.g. GeoJSON-boundary) tiles have no regular shape to
+            // reconstruct from just their bounding box -- draw the actual
+            // outline the backend stored instead. `polygon` is one entry per
+            // disjoint part (mainland + islands), each a single-ring [[lat,
+            // lng], ...] array, so Leaflet renders every part as its own
+            // shape rather than treating extra rings as holes.
+            if (shape === 'custom' && polygon && polygon.length) {
+                return L.polygon(polygon, style);
+            }
+            var centerLat = (bounds.north + bounds.south) / 2;
+            var centerLng = (bounds.east + bounds.west) / 2;
+            var R_lat = (bounds.north - bounds.south) / 2;
+            var R_lng = (bounds.east - bounds.west) / 2;
+            // Hexagon isn't one of this page's own shape choices, but existing
+            // maps generated elsewhere (e.g. the Multi Tile Generator) can still
+            // be hexagons -- keep rendering it correctly for reference display.
+            if (shape === 'hexagon') {
+                return L.polygon(regularPolygonPoints(centerLat, centerLng, R_lat, R_lng, 6, 0), style);
+            }
+            if (shape === 'octagon') {
+                return L.polygon(beveledSquarePoints(centerLat, centerLng, R_lat, R_lng), style);
+            }
+            if (shape === 'circle') {
+                return L.polygon(regularPolygonPoints(centerLat, centerLng, R_lat, R_lng, 48, 0), style);
+            }
+            return L.rectangle([[bounds.south, bounds.west], [bounds.north, bounds.east]], style);
+        }
+
+        function boundsCenter(b) {
+            return { lat: (b.north + b.south) / 2, lng: (b.east + b.west) / 2 };
+        }
+
+        // Every shape but Rectangle keeps a 1:1 aspect ratio -- the backend
+        // only ever builds a true regular circle/octagon/square from a single
+        // size (utils.create_circle/create_octagon/create_rectangle(size,size)),
+        // so a stretched drawn box would just get silently resized server-side
+        // anyway. Squaring it here instead makes the picker's own preview (and
+        // whatever's actually sent) match that up front. Uses an equirectangular
+        // meters-per-degree approximation -- good enough for this UI preview,
+        // since the backend re-derives the real scale itself from the sent
+        // bounds via convert_to_neutral_coordinates.
+        function squareBoundsFromRect(b) {
+            var midLat = (b.north + b.south) / 2;
+            var metersPerDegLat = 111320;
+            var metersPerDegLng = 111320 * Math.cos(midLat * Math.PI / 180);
+            var latSpanM = (b.north - b.south) * metersPerDegLat;
+            var lngSpanM = (b.east - b.west) * metersPerDegLng;
+            var sideM = Math.min(latSpanM, lngSpanM);
+            var halfLatDeg = (sideM / metersPerDegLat) / 2;
+            var halfLngDeg = metersPerDegLng > 0 ? (sideM / metersPerDegLng) / 2 : 0;
+            var centerLat = midLat, centerLng = (b.east + b.west) / 2;
+            return {
+                north: centerLat + halfLatDeg, south: centerLat - halfLatDeg,
+                east: centerLng + halfLngDeg, west: centerLng - halfLngDeg, type: b.type
+            };
+        }
+
+        // The bounds actually used for the preview shape and the /confirm
+        // payload -- Rectangle uses exactly what was drawn; every other
+        // shape gets squared first so what you see is what gets generated.
+        function effectiveBounds(b) {
+            return currentShape === 'rectangle' ? b : squareBoundsFromRect(b);
+        }
+
+        function updateSendState() {
+            var ready = !!coords || gpxPaths.length > 0;
+            document.getElementById('send').disabled = !ready;
+        }
+
+        function updateStatus() {
+            var nGpx = gpxPaths.length;
+            var extraSuffix = nGpx ? (' + ' + nGpx + ' trail(s)') : '';
+            if (coords) {
+                document.getElementById('status').textContent = 'Area ready' + extraSuffix + '.';
+            } else if (nGpx) {
+                document.getElementById('status').textContent = nGpx + ' trail(s) ready to send.';
+            } else {
+                document.getElementById('status').textContent = 'Draw a shape to begin.';
+            }
+        }
+
+        function bindLiveEdit(layer) {
+            // Show the rectangle's drag handles immediately instead of requiring
+            // the toolbar's "Edit layers" button first, and recompute the
+            // shape preview live as the user drags a corner handle — leaflet-draw
+            // fires 'edit' on the layer continuously during a drag, not just on save.
+            // off() first so re-enabling (e.g. after an edge-drag below, or
+            // switching back from 'center' mode) can't stack duplicate listeners.
+            layer.off('edit');
+            layer.editing.enable();
+            layer.on('edit', function() {
+                var b = layer.getBounds();
+                coords = { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest(), type: currentShape };
+                renderShapePreview();
+                saveState();
+            });
+        }
+
+        function previewDrawnRect(bounds) {
+            drawnItems.clearLayers();
+            var rect = L.rectangle([[bounds.south, bounds.west], [bounds.north, bounds.east]], {
+                color: '#E97826', weight: currentShape === 'rectangle' ? 3 : 2, opacity: 1,
+                fill: currentShape === 'rectangle', fillOpacity: 0.3
+            });
+            drawnItems.addLayer(rect);
+            rectLayer = rect;
+            return rect;
+        }
+
+        // Picks whichever of the shape's 4 corners is visually closest (in
+        // screen pixels, so it works the same at any zoom level/latitude) to
+        // a click -- lets the user grab the border itself to resize, not
+        // just the small handle markers.
+        function nearestCorner(latlng, b) {
+            var p = map.latLngToLayerPoint(latlng);
+            var corners = {
+                NE: map.latLngToLayerPoint([b.north, b.east]),
+                NW: map.latLngToLayerPoint([b.north, b.west]),
+                SE: map.latLngToLayerPoint([b.south, b.east]),
+                SW: map.latLngToLayerPoint([b.south, b.west])
+            };
+            var best = 'NE', bestDist = Infinity;
+            Object.keys(corners).forEach(function(k) {
+                var dx = p.x - corners[k].x, dy = p.y - corners[k].y;
+                var d = dx * dx + dy * dy;
+                if (d < bestDist) { bestDist = d; best = k; }
+            });
+            return best;
+        }
+
+        // Applies a dragged edge's new lat/lng, mirroring the opposite edge
+        // around shapeCenter in 'center' mode (so the center never moves) or
+        // leaving it fixed in 'corner' mode -- the same rule applyCornerDrag
+        // (each axis independently) and bindCenterEdit's handle markers use.
+        // Clamped so an edge can never get dragged past its own opposite (or,
+        // in 'center' mode, past the center point itself), which would
+        // otherwise invert the box.
+        var MIN_DEG = 1e-6;
+        function applyEdgeDrag(edge, value) {
+            if (drawMode === 'center' && shapeCenter) {
+                if (edge === 'north') {
+                    coords.north = Math.max(value, shapeCenter.lat + MIN_DEG);
+                    coords.south = 2 * shapeCenter.lat - coords.north;
+                } else if (edge === 'south') {
+                    coords.south = Math.min(value, shapeCenter.lat - MIN_DEG);
+                    coords.north = 2 * shapeCenter.lat - coords.south;
+                } else if (edge === 'east') {
+                    coords.east = Math.max(value, shapeCenter.lng + MIN_DEG);
+                    coords.west = 2 * shapeCenter.lng - coords.east;
+                } else {
+                    coords.west = Math.min(value, shapeCenter.lng - MIN_DEG);
+                    coords.east = 2 * shapeCenter.lng - coords.west;
+                }
+            } else if (edge === 'north') {
+                coords.north = Math.max(value, coords.south + MIN_DEG);
+            } else if (edge === 'south') {
+                coords.south = Math.min(value, coords.north - MIN_DEG);
+            } else if (edge === 'east') {
+                coords.east = Math.max(value, coords.west + MIN_DEG);
+            } else {
+                coords.west = Math.min(value, coords.east - MIN_DEG);
+            }
+        }
+
+        // A corner drag moves both of its axes at once -- e.g. dragging the
+        // NE corner sets north from the new lat AND east from the new lng,
+        // each going through applyEdgeDrag above so 'center' mode still
+        // mirrors both the opposite lat edge and the opposite lng edge
+        // around shapeCenter.
+        function applyCornerDrag(corner, latlng) {
+            applyEdgeDrag(corner[0] === 'N' ? 'north' : 'south', latlng.lat);
+            applyEdgeDrag(corner[1] === 'E' ? 'east' : 'west', latlng.lng);
+        }
+
+        // Set by bindCenterEdit() while its handle markers exist, so a
+        // border-drag (bindCornerDrag below) can keep them in sync too
+        // without needing to know anything about them directly.
+        var syncCenterHandles = null;
+
+        function syncShapeAfterEdgeChange() {
+            if (rectLayer) rectLayer.setBounds([[coords.south, coords.west], [coords.north, coords.east]]);
+            if (syncCenterHandles) syncCenterHandles();
+            renderShapePreview();
+        }
+
+        // Lets the user grab the rectangle's own border (not just a handle
+        // marker) to resize it by whichever corner is nearest -- works in
+        // both draw modes, mirroring in 'center' mode via applyCornerDrag
+        // above. In 'corner' mode, leaflet-draw's own corner-handle editing
+        // is disabled for the duration of the drag and cleanly re-enabled
+        // after (which re-reads the layer's bounds fresh) rather than left
+        // running alongside this -- leaflet-draw only repositions its corner
+        // markers from their OWN drag handlers, so this layer's bounds
+        // changing externally would otherwise leave them silently out of
+        // sync with the shape.
+        function bindCornerDrag(layer) {
+            layer.off('mousedown', layer._tp3dCornerDown);
+            layer._tp3dCornerDown = function(e) {
+                L.DomEvent.stopPropagation(e);
+                var wasCornerEditing = drawMode === 'corner' && layer.editing && layer.editing.enabled();
+                if (wasCornerEditing) layer.editing.disable();
+                var corner = nearestCorner(e.latlng, coords);
+                map.dragging.disable();
+                function onMove(e2) {
+                    applyCornerDrag(corner, e2.latlng);
+                    syncShapeAfterEdgeChange();
+                }
+                function onUp() {
+                    map.off('mousemove', onMove);
+                    map.off('mouseup', onUp);
+                    map.dragging.enable();
+                    if (wasCornerEditing) bindLiveEdit(layer);
+                    saveState();
+                }
+                map.on('mousemove', onMove);
+                map.on('mouseup', onUp);
+            };
+            layer.on('mousedown', layer._tp3dCornerDown);
+        }
+
+        // 'Center' draw mode: click sets the center point, dragging outward
+        // grows the box symmetrically around it (mirrors bindCenterEdit's own
+        // "opposite edge moves too" editing behavior for the initial draw).
+        // Bypasses leaflet-draw's own rectangle tool entirely -- that tool is
+        // inherently corner-to-corner, with no supported way to redefine it
+        // as center-out.
+        function startCenterDraw() {
+            map.dragging.disable();
+            map.getContainer().style.cursor = 'crosshair';
+            map.once('mousedown', function(e) {
+                var center = e.latlng;
+                function onMove(e2) {
+                    var dLat = Math.abs(e2.latlng.lat - center.lat);
+                    var dLng = Math.abs(e2.latlng.lng - center.lng);
+                    previewDrawnRect({
+                        north: center.lat + dLat, south: center.lat - dLat,
+                        east: center.lng + dLng, west: center.lng - dLng
+                    });
+                }
+                function onUp(e3) {
+                    map.off('mousemove', onMove);
+                    map.off('mouseup', onUp);
+                    map.dragging.enable();
+                    map.getContainer().style.cursor = '';
+                    var dLat = Math.abs(e3.latlng.lat - center.lat);
+                    var dLng = Math.abs(e3.latlng.lng - center.lng);
+                    finalizeCenterShape({
+                        north: center.lat + dLat, south: center.lat - dLat,
+                        east: center.lng + dLng, west: center.lng - dLng
+                    }, center);
+                }
+                map.on('mousemove', onMove);
+                map.on('mouseup', onUp);
+            });
+        }
+
+        function finalizeCenterShape(bounds, center) {
+            if (bounds.north === bounds.south || bounds.east === bounds.west) {
+                drawnItems.clearLayers();
+                return; // Zero-size click-without-dragging -- nothing to keep.
+            }
+            coords = { north: bounds.north, south: bounds.south, east: bounds.east, west: bounds.west, type: currentShape };
+            shapeCenter = { lat: center.lat, lng: center.lng };
+            var rect = previewDrawnRect(coords);
+            bindCornerDrag(rect);
+            bindCenterEdit();
+            renderShapePreview();
+            updateSendState();
+            updateStatus();
+            saveState();
+        }
+
+        // Custom edit handles for 'center' mode -- NE/NW/SE/SW corner markers
+        // that, when dragged, move both of that corner's edges AND mirror
+        // both opposite edges the same distance the other way so shapeCenter
+        // never moves. Deliberately not leaflet-draw's own L.Edit.Rectangle
+        // corner handles (used in 'corner' mode via bindLiveEdit) -- those
+        // are hardcoded to keep the OPPOSITE corner fixed, the opposite of
+        // what 'center' mode needs, and aren't designed to be reprogrammed
+        // to mirror instead.
+        function bindCenterEdit() {
+            editHandles.clearLayers();
+            syncCenterHandles = null;
+            if (!coords || !shapeCenter) return;
+
+            function handleIcon() {
+                return L.divIcon({ className: 'edge-handle', iconSize: [10, 10], iconAnchor: [5, 5] });
+            }
+
+            var neHandle = L.marker([coords.north, coords.east], { draggable: true, icon: handleIcon() });
+            var nwHandle = L.marker([coords.north, coords.west], { draggable: true, icon: handleIcon() });
+            var seHandle = L.marker([coords.south, coords.east], { draggable: true, icon: handleIcon() });
+            var swHandle = L.marker([coords.south, coords.west], { draggable: true, icon: handleIcon() });
+
+            syncCenterHandles = function() {
+                neHandle.setLatLng([coords.north, coords.east]);
+                nwHandle.setLatLng([coords.north, coords.west]);
+                seHandle.setLatLng([coords.south, coords.east]);
+                swHandle.setLatLng([coords.south, coords.west]);
+            };
+
+            neHandle.on('drag', function(e) { applyCornerDrag('NE', e.target.getLatLng()); syncShapeAfterEdgeChange(); });
+            nwHandle.on('drag', function(e) { applyCornerDrag('NW', e.target.getLatLng()); syncShapeAfterEdgeChange(); });
+            seHandle.on('drag', function(e) { applyCornerDrag('SE', e.target.getLatLng()); syncShapeAfterEdgeChange(); });
+            swHandle.on('drag', function(e) { applyCornerDrag('SW', e.target.getLatLng()); syncShapeAfterEdgeChange(); });
+            [neHandle, nwHandle, seHandle, swHandle].forEach(function(h) {
+                h.on('dragend', saveState);
+                editHandles.addLayer(h);
+            });
+        }
+
+        // Switching modes applies immediately to whatever's currently drawn,
+        // not just the next draw action -- corner-to-center adopts the
+        // current bounding box's own center as the new fixed shapeCenter;
+        // center-to-corner just drops back to leaflet-draw's own handles.
+        function setDrawMode(mode) {
+            drawMode = mode;
+            document.querySelectorAll('.draw-mode-btn').forEach(function(b) {
+                b.classList.toggle('active', b.getAttribute('data-mode') === mode);
+            });
+            if (coords && rectLayer) {
+                if (mode === 'center') {
+                    shapeCenter = boundsCenter(coords);
+                    if (rectLayer.editing) rectLayer.editing.disable();
+                    bindCenterEdit();
+                } else {
+                    editHandles.clearLayers();
+                    syncCenterHandles = null;
+                    shapeCenter = null;
+                    bindLiveEdit(rectLayer);
+                }
+                bindCornerDrag(rectLayer);
+            }
+            saveState();
+        }
+
+        function makeDrawControl() {
+            return new L.Control.Draw({
+                draw: { polyline: false, polygon: false, circle: false, marker: false, circlemarker: false, rectangle: true },
+                // No edit toolbar — the rectangle is already always draggable via
+                // bindLiveEdit(), and drawing a new one clears the old via
+                // drawnItems.clearLayers(), so the separate Edit/Delete buttons
+                // would just be redundant UI.
+                edit: false
+            });
+        }
+        var drawControl = makeDrawControl();
+        map.addControl(drawControl);
+        map.on('moveend', saveState);
+
+        document.getElementById('importGpx').addEventListener('click', function() {
+            document.getElementById('gpxInput').click();
+        });
+
+        document.getElementById('gpxInput').addEventListener('change', function(e) {
+            var files = Array.from(e.target.files);
+            this.value = '';
+            if (!files.length) return;
+            // Each file is parsed asynchronously (FileReader.onload), so
+            // wait for every file in this batch to finish, then fit to
+            // gpxLayer's combined bounds (which also includes any GPX
+            // imported in an earlier batch) exactly once.
+            var pending = files.length;
+            files.forEach(function(file) {
+                var reader = new FileReader();
+                reader.onload = function(event) {
+                    try {
+                        var gpxDoc = new DOMParser().parseFromString(event.target.result, 'text/xml');
+                        if (gpxDoc.getElementsByTagName('parsererror').length) { alert('Error parsing ' + file.name); return; }
+                        var trkSegs = gpxDoc.getElementsByTagName('trkseg');
+                        for (var s = 0; s < trkSegs.length; s++) {
+                            var trkpts = trkSegs[s].getElementsByTagName('trkpt');
+                            if (trkpts.length < 2) continue;
+                            var pts = [];
+                            for (var i = 0; i < trkpts.length; i++) {
+                                pts.push([
+                                    parseFloat(trkpts[i].getAttribute('lat')),
+                                    parseFloat(trkpts[i].getAttribute('lon'))
+                                ]);
+                            }
+                            gpxLayer.addLayer(L.polyline(pts, { color: 'red', weight: 3, opacity: 0.7 }));
+                        }
+                        fetch('http://127.0.0.1:' + PORT + '/upload_gpx', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/gpx+xml', 'X-Filename': file.name },
+                            body: event.target.result
+                        })
+                        .then(function(r) { return r.json(); })
+                        .then(function(res) {
+                            gpxPaths.push(res.path);
+                            gpxNames.push(file.name);
+                            updateGpxList();
+                            updateSendState();
+                            updateStatus();
+                            saveState();
+                        })
+                        .catch(function() { alert('Could not save GPX to temp file.'); });
+                    } catch (err) { alert('Error importing GPX: ' + err.message); }
+                    finally {
+                        pending--;
+                        if (pending === 0 && gpxLayer.getBounds().isValid()) {
+                            map.fitBounds(gpxLayer.getBounds(), { padding: [50, 50] });
+                        }
+                    }
+                };
+                reader.readAsText(file);
+            });
+        });
+
+        document.getElementById('clearGpx').addEventListener('click', function() {
+            gpxPaths = []; gpxNames = [];
+            gpxLayer.clearLayers();
+            updateGpxList();
+            saveState();
+            updateSendState();
+            updateStatus();
+        });
+
+        document.querySelectorAll('.shape-btn[data-shape]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                // Just changes which shape the already-drawn area gets
+                // interpreted as — does NOT start a new draw action (use the
+                // Draw button for that).
+                currentShape = this.getAttribute('data-shape');
+                document.querySelectorAll('.shape-btn[data-shape]').forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+                if (coords) {
+                    coords.type = currentShape;
+                    drawnItems.eachLayer(function(layer) {
+                        layer.setStyle({ weight: currentShape === 'rectangle' ? 3 : 2, fill: currentShape === 'rectangle' });
+                    });
+                    renderShapePreview();
+                } else {
+                    updateStatus();
+                }
+                saveState();
+            });
+        });
+
+        document.querySelectorAll('.draw-mode-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                setDrawMode(this.getAttribute('data-mode'));
+            });
+        });
+
+        document.getElementById('drawBtn').addEventListener('click', function() {
+            if (drawMode === 'center') {
+                startCenterDraw();
+                return;
+            }
+            map.removeControl(drawControl);
+            drawControl = makeDrawControl();
+            map.addControl(drawControl);
+            setTimeout(function() {
+                var rb = document.querySelector('.leaflet-draw-draw-rectangle');
+                if (rb) rb.click();
+            }, 50);
+        });
+
+        document.getElementById('deleteBtn').addEventListener('click', function() {
+            drawnItems.clearLayers();
+            shapePreview.clearLayers();
+            editHandles.clearLayers();
+            syncCenterHandles = null;
+            rectLayer = null;
+            coords = null;
+            shapeCenter = null;
+            updateStatus();
+            updateSendState();
+            saveState();
+        });
+
+        document.getElementById('resolutionSlider').addEventListener('input', function() {
+            document.getElementById('resolutionValue').textContent = this.value;
+            saveState();
+        });
+
+        document.getElementById('objSizeInput').addEventListener('input', function() {
+            saveState();
+        });
+
+        // Rectangle IS the raw drawn/edited layer (drawnItems), so it needs no
+        // separate preview -- every other shape gets its true (aspect-locked)
+        // inscribed shape drawn on top instead, the same way the drawn
+        // rectangle handle itself stays visible (dashed, unfilled) underneath
+        // it for dragging/resizing.
+        function renderShapePreview() {
+            shapePreview.clearLayers();
+            if (!coords || currentShape === 'rectangle') return;
+            makeShapeLayer(effectiveBounds(coords), currentShape, {
+                color: '#007bff', weight: 1.5, opacity: 0.9, fill: true, fillOpacity: 0.12
+            }).addTo(shapePreview);
+        }
+
+        map.on(L.Draw.Event.CREATED, function(e) {
+            var layer = e.layer;
+            drawnItems.clearLayers();
+            editHandles.clearLayers();
+            syncCenterHandles = null;
+            shapeCenter = null;
+            var b = layer.getBounds();
+            coords = { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest(), type: currentShape };
+            layer.setStyle({ color: '#E97826', weight: currentShape === 'rectangle' ? 3 : 2, opacity: 1,
+                             fill: currentShape === 'rectangle', fillOpacity: 0.3 });
+            drawnItems.addLayer(layer);
+            rectLayer = layer;
+            bindLiveEdit(layer);
+            bindCornerDrag(layer);
+            renderShapePreview();
+            saveState();
+        });
+
+        map.on(L.Draw.Event.EDITED, function(e) {
+            e.layers.eachLayer(function(layer) {
+                var b = layer.getBounds();
+                coords = { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest(), type: currentShape };
+                // The toolbar's Save hides the drag handles again — restore them
+                // so the rectangle stays directly editable without re-clicking Edit.
+                layer.editing.enable();
+            });
+            renderShapePreview();
+            saveState();
+        });
+
+        document.getElementById('send').onclick = function() {
+            if (!coords && gpxPaths.length === 0) return;
+
+            var payload = {
+                gpx_paths: gpxPaths,
+                resolution: parseInt(document.getElementById('resolutionSlider').value) || 4,
+                objSize: parseFloat(document.getElementById('objSizeInput').value) || 100
+            };
+
+            if (coords) {
+                var eb = effectiveBounds(coords);
+                payload.bounds = { north: eb.north, south: eb.south, east: eb.east, west: eb.west };
+                payload.center = boundsCenter(eb);
+                payload.type = currentShape;
+            }
+
+            document.getElementById('send').disabled = true;
+            document.getElementById('status').textContent = 'Sending to Blender...';
+            fetch('http://127.0.0.1:' + PORT + '/confirm', {
+                method: 'POST',
+                mode: 'cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(function() { window.close(); })
+            .catch(function() {
+                alert('Could not connect to Blender. Ensure the addon is running.');
+                updateSendState();
+                updateStatus();
+            });
+        };
+
+        // Default Size to the scene's current Object Size (restoreState below
+        // overrides this if a previously-saved value exists).
+        document.getElementById('objSizeInput').value = OBJ_SIZE;
+        restoreState();
+        loadExistingMaps();
+        loadExistingTrails();
+    </script>
+</body>
+</html>

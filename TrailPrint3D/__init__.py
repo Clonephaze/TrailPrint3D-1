@@ -68,6 +68,7 @@ classes = [
     operators.TP3D_OT_remake_buildings,
     operators.TP3D_OT_remake_roads,
     operators.TP3D_OT_puzzle_configurator,
+    operators.TP3D_OT_map_generator,
     operators.TP3D_OT_special_collection,
     operators.TP3D_OT_append_collection,
     operators.TP3D_OT_append_collection_blank,

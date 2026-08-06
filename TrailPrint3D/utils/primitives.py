@@ -446,19 +446,29 @@ def create_ellipse(radius, num_subdivisions = 1, name = "Ellipse", aspect_ratio 
 
 def create_octagon(size, num_subdivisions = 1, name = "Octagon"):
 
-    """Creates a hexagon at (0,0,0), subdivides it, and rotates it by 90 degrees."""
+    """Creates a size x size square with its 4 corners beveled at 45 degrees
+    at (0,0,0), subdivides it, and rotates it by 90 degrees.
+
+    Deliberately NOT 8 points equally spaced by angle around a circle (that
+    construction's bounding box is only cos(22.5 deg) ~= 92% of the diameter,
+    so it visibly floats inside a size x size tile instead of filling it, and
+    reads as a low-poly circle rather than an octagon). Cutting a bevel of
+    length `size - t` off each corner of the square instead makes 4 of its 8
+    edges lie exactly on the square's own sides -- t is solved so all 8 edges
+    come out equal length (a REGULAR octagon): the flat edge is 2*t long, the
+    diagonal bevel edge is (size - t)*sqrt(2) long, and setting those equal
+    gives t = size * (sqrt(2) - 1).
+    """
     _t_start = time.time()
-    verts = []
-    faces = []
-    for i in range(8):
-        angle = math.radians(45 * i + 22.5)
-        x = size * math.cos(angle)
-        y = size * math.sin(angle)
-        verts.append((x, y, 0))
+    t = size * (math.sqrt(2) - 1)
+    verts = [
+        (size, t, 0), (t, size, 0), (-t, size, 0), (-size, t, 0),
+        (-size, -t, 0), (-t, -size, 0), (t, -size, 0), (size, -t, 0),
+    ]
     verts.append((0, 0, 0))  # Center vertex
     faces = [[i, (i + 1) % 8, 8] for i in range(8)]
-    mesh = bpy.data.meshes.new("Hexagon")
-    obj = bpy.data.objects.new("Hexagon", mesh)
+    mesh = bpy.data.meshes.new("Octagon")
+    obj = bpy.data.objects.new("Octagon", mesh)
     bpy.context.collection.objects.link(obj)
     _t = time.time()
     mesh.from_pydata(verts, [], faces)

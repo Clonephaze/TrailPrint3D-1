@@ -6,7 +6,7 @@ This is a **Blender 5.1+ Python addon** using the Blender Extensions platform. A
 
 ## Terminology
 
-When the user says **"generators"**, they usually mean the HTML configurator pages as a group — `puzzleGenerator.html`, `premium/puzzleGenerator_pe.html`, `premium/multitile_configurator.html` — the browser-based picker UIs served by `picker_server.py`. Default to that reading unless the surrounding request is clearly about the Blender-side mesh-generation pipeline instead (`utils/generation.py`, `runGeneration()`).
+When the user says **"generators"**, they usually mean the HTML configurator pages as a group — `puzzleGenerator.html`, `premium/puzzleGenerator_pe.html`, `premium/multitile_generator.html` — the browser-based picker UIs served by `picker_server.py`. Default to that reading unless the surrounding request is clearly about the Blender-side mesh-generation pipeline instead (`utils/generation.py`, `runGeneration()`).
 
 ---
 
@@ -55,7 +55,7 @@ premium/                       - Premium-only source, absent from the free build
   __init__.py
   operators_pe.py               - premium bpy.types.Operator subclasses
   utils_pe.py                   - premium-only utility functions
-  multitile_configurator.html   - premium multi-tile map configurator (browser UI)
+  multitile_generator.html      - premium multi-tile map generator (browser UI)
   puzzleGenerator_pe.html       - premium Puzzle Configurator (hex/radial piece shapes, multi-GPX)
   assets/                       - premium-only .blend asset libraries (puzzles.blend)
 
