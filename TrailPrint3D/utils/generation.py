@@ -835,7 +835,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             return min(c.x for c in cs), max(c.x for c in cs), min(c.y for c in cs), max(c.y for c in cs)
         tx0, tx1, ty0, ty1 = _tile_extents(obj)
         for _ob in bpy.context.view_layer.objects:
-            if '_Trail' not in _ob.name or _ob.type != 'CURVE':
+            if _ob is None or '_Trail' not in _ob.name or _ob.type != 'CURVE':
                 continue
             cx0, cx1, cy0, cy1 = _tile_extents(_ob)
             if cx0 > tx1 or cx1 < tx0 or cy0 > ty1 or cy1 < ty0:
