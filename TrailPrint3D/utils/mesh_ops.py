@@ -1860,9 +1860,10 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     bottom_z = lowest_z - trailCutDepth
     top_z = bottom_z + 100.0  # tall enough to clear any terrain
     trail_height = bpy.context.scene.tp3d.singleColorModeHeight
-    # crv_thick must reach the map's own floor so it cuts full-depth road slabs.
-    map_floor_z = min((map.matrix_world @ Vector(c)).z for c in map.bound_box) - 1.0
-    thick_bottom_z = min(bottom_z, map_floor_z)
+    # The trail groove cuts to trailCutDepth below the surface, matching other
+    # SCM elements. Roads are excluded from the trail footprint in 2D before
+    # finalize_roads builds them, so no need to reach the map floor here.
+    thick_bottom_z = bottom_z
 
     verts, faces = [], []
     for poly in g2d.iter_polygons(ribbon):
@@ -1883,7 +1884,7 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
             _extrude_flat_polygon(g2d, poly, thick_bottom_z, top_z, t_verts, t_faces)
 
     print(f"[TP3D trail] earcut prism: {len(verts)} verts, {len(faces)} faces  bottom_z={bottom_z:.3f}")
-    print(f"[TP3D trail] thick earcut prism: {len(t_verts)} verts, {len(t_faces)} faces  thick_bottom_z={thick_bottom_z:.3f} map_floor_z={map_floor_z:.3f}")
+    print(f"[TP3D trail] thick earcut prism: {len(t_verts)} verts, {len(t_faces)} faces  thick_bottom_z={thick_bottom_z:.3f}")
 
     # Convert crv to MESH in place (preserves object identity -- other code
     # holds references to this exact object for later material/metadata
