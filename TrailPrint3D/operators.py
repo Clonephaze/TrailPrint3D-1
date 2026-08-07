@@ -2490,15 +2490,6 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
                 holder_obj.name = f"{puzzle_name}_Holder"
 
         try:
-            # Leaves the 3D cursor exactly where the user put it -- every piece
-            # (and every trail decal merged into one above) ends up sharing that
-            # same point as its origin, matching normal Blender "Set Origin ->
-            # Origin to 3D Cursor" behaviour for a multi-object selection.
-            utils.set_origin_to_3d_cursor_objects(piece_objs)
-        except (ReferenceError, AttributeError, IndexError):
-            pass
-
-        try:
             utils.zoom_camera_to_objects(piece_objs + ([holder_obj] if holder_obj is not None else []))
         except (ReferenceError, AttributeError, IndexError):
             pass

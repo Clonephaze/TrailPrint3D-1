@@ -1237,6 +1237,69 @@ def _ensure_outward_normals(obj):
     mesh.update()
 
 
+def _ensure_outward_normals_per_island(obj):
+    """Like _ensure_outward_normals, but judges and (if needed) flips each
+    loose/disconnected island of obj's mesh independently, using that
+    island's OWN lowest face(s) as the down-facing reference.
+
+    A puzzle piece assembled by cut_into_puzzle_pieces can carry several
+    unconnected shells at different heights -- the terrain slab, plus a
+    raised road mesh and/or building meshes bpy.ops.object.join()ed on top --
+    joining never welds them into one manifold. _ensure_outward_normals only
+    ever samples the OBJECT's overall lowest point, which is always the
+    terrain slab, so a raised shell that came out inverted on its own is
+    invisible to that check -- and even if it weren't, that function reverses
+    every face in the object uniformly, which would just as happily flip an
+    already-correct slab along with a genuinely bad shell. Each island needs
+    its own judgment and its own flip.
+    """
+    recalculateNormals(obj)
+
+    mesh = obj.data
+    if not mesh.polygons:
+        return
+
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    bm.faces.ensure_lookup_table()
+    bm.normal_update()
+
+    visited = [False] * len(bm.faces)
+    islands = []
+    for seed in bm.faces:
+        if visited[seed.index]:
+            continue
+        island = []
+        stack = [seed]
+        visited[seed.index] = True
+        while stack:
+            f = stack.pop()
+            island.append(f)
+            for e in f.edges:
+                for nf in e.link_faces:
+                    if not visited[nf.index]:
+                        visited[nf.index] = True
+                        stack.append(nf)
+        islands.append(island)
+
+    for island in islands:
+        verts = {v for f in island for v in f.verts}
+        min_z = min(v.co.z for v in verts)
+        max_z = max(v.co.z for v in verts)
+        z_tol = max(1e-3, (max_z - min_z) * 0.01)
+        bottom_normals_z = [
+            f.normal.z for f in island
+            if all(abs(v.co.z - min_z) < z_tol for v in f.verts)
+        ]
+        if not bottom_normals_z or sum(bottom_normals_z) / len(bottom_normals_z) < 0:
+            continue  # already facing down (or no clear bottom) -- leave this island alone
+        bmesh.ops.reverse_faces(bm, faces=island)
+
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+
+
 def _bevel_bottom_edges(obj, bevel_width):
     """Chamfer the rim where the bottom face meets the side walls.
 
@@ -1361,6 +1424,7 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
     extracted.
     """
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
+    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
 
     mc = [terrain_obj.matrix_world @ Vector(c) for c in terrain_obj.bound_box]
     x_min = min(v.x for v in mc); x_max = max(v.x for v in mc)
@@ -1450,6 +1514,18 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
             bpy.data.objects.remove(piece_obj, do_unlink=True)
             continue
 
+        # piece_obj was created via bpy.data.objects.new() with an identity
+        # transform, so its mesh still carries the raw WORLD-space
+        # coordinates verts/faces were built from above -- origin sitting at
+        # world (0,0,0), potentially far from the piece's actual location.
+        # _bevel_bottom_edges' clamp_overlap leans on edge-length precision
+        # to keep the bevel from self-intersecting on the tab/blank curve, so
+        # re-home the origin to the 3D cursor now, before beveling, rather
+        # than after the whole cut like the caller used to -- the bevel
+        # itself needs to run on small, origin-local coordinates instead of
+        # whatever large offset the piece happens to sit at in the scene.
+        set_origin_to_3d_cursor(piece_obj)
+
         _bevel_bottom_edges(piece_obj, bevel_width)
 
         if roads_data is not None:
@@ -1492,6 +1568,14 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
                 piece_obj.select_set(True)
                 bpy.context.view_layer.objects.active = piece_obj
                 bpy.ops.object.join()
+
+        # Road/building meshes just joined above are their own unconnected
+        # shells sitting at a different height than the terrain slab --
+        # _bevel_bottom_edges' own _ensure_outward_normals call (earlier,
+        # right after the terrain INTERSECT) only ever validates the slab
+        # itself, so re-check per island now that every shell this piece will
+        # ever have is actually present.
+        _ensure_outward_normals_per_island(piece_obj)
 
         for k, v in terrain_metadata.items():
             piece_obj[k] = v
