@@ -1147,16 +1147,56 @@
             layer.on('mousedown', layer._tp3dCornerDown);
         }
 
+        // Tracks whether a draw tool is currently armed -- i.e. the Draw
+        // button was clicked and the map is waiting for the user to place a
+        // shape, but nothing has been finalized yet. Needed so switching the
+        // corner/center mode mid-arm can cancel the OLD mode's still-active
+        // handler and re-arm the NEW one -- otherwise the stale handler (e.g.
+        // leaflet-draw's corner-to-corner rectangle tool) silently completes
+        // in the wrong mode on the next click/drag, ignoring the mode switch.
+        var drawArmed = false;
+        var cancelCenterDraw = null; // set while armCenterDraw's mousedown listener is pending
+
+        function armDraw() {
+            disarmDraw();
+            drawArmed = true;
+            if (drawMode === 'center') {
+                armCenterDraw();
+            } else {
+                map.removeControl(drawControl);
+                drawControl = makeDrawControl();
+                map.addControl(drawControl);
+                setTimeout(function() {
+                    var rb = document.querySelector('.leaflet-draw-draw-rectangle');
+                    if (rb) rb.click();
+                }, 50);
+            }
+        }
+
+        function disarmDraw() {
+            if (!drawArmed) return;
+            drawArmed = false;
+            if (cancelCenterDraw) {
+                cancelCenterDraw();
+                cancelCenterDraw = null;
+            }
+            var handler = drawControl._toolbars && drawControl._toolbars.draw &&
+                drawControl._toolbars.draw._modes.rectangle && drawControl._toolbars.draw._modes.rectangle.handler;
+            if (handler && handler.enabled()) handler.disable();
+        }
+
         // 'Center' draw mode: click sets the center point, dragging outward
         // grows the box symmetrically around it (mirrors bindCenterEdit's own
         // "opposite edge moves too" editing behavior for the initial draw).
         // Bypasses leaflet-draw's own rectangle tool entirely -- that tool is
         // inherently corner-to-corner, with no supported way to redefine it
         // as center-out.
-        function startCenterDraw() {
+        function armCenterDraw() {
             map.dragging.disable();
             map.getContainer().style.cursor = 'crosshair';
-            map.once('mousedown', function(e) {
+            function onFirstMouseDown(e) {
+                cancelCenterDraw = null;
+                drawArmed = false;
                 var center = e.latlng;
                 function onMove(e2) {
                     var dLat = Math.abs(e2.latlng.lat - center.lat);
@@ -1180,7 +1220,13 @@
                 }
                 map.on('mousemove', onMove);
                 map.on('mouseup', onUp);
-            });
+            }
+            map.once('mousedown', onFirstMouseDown);
+            cancelCenterDraw = function() {
+                map.off('mousedown', onFirstMouseDown);
+                map.dragging.enable();
+                map.getContainer().style.cursor = '';
+            };
         }
 
         function finalizeCenterShape(bounds, center) {
@@ -1242,11 +1288,18 @@
         // current bounding box's own center as the new fixed shapeCenter;
         // center-to-corner just drops back to leaflet-draw's own handles.
         function setDrawMode(mode) {
+            var wasArmed = drawArmed;
             drawMode = mode;
             document.querySelectorAll('.draw-mode-btn').forEach(function(b) {
                 b.classList.toggle('active', b.getAttribute('data-mode') === mode);
             });
-            if (coords && rectLayer) {
+            if (wasArmed) {
+                // Draw button was already clicked and the map is still waiting
+                // for the user to place a shape -- re-arm with the newly
+                // selected mode instead of leaving the old mode's handler
+                // active underneath.
+                armDraw();
+            } else if (coords && rectLayer) {
                 if (mode === 'center') {
                     shapeCenter = boundsCenter(coords);
                     if (rectLayer.editing) rectLayer.editing.disable();
@@ -1364,17 +1417,7 @@
         });
 
         document.getElementById('drawBtn').addEventListener('click', function() {
-            if (drawMode === 'center') {
-                startCenterDraw();
-                return;
-            }
-            map.removeControl(drawControl);
-            drawControl = makeDrawControl();
-            map.addControl(drawControl);
-            setTimeout(function() {
-                var rb = document.querySelector('.leaflet-draw-draw-rectangle');
-                if (rb) rb.click();
-            }, 50);
+            armDraw();
         });
 
         document.getElementById('deleteBtn').addEventListener('click', function() {
@@ -1446,6 +1489,7 @@
         map.on(L.Draw.Event.EDITMOVE, liveSyncFromLayer);
 
         map.on(L.Draw.Event.CREATED, function(e) {
+            drawArmed = false;
             var layer = e.layer;
             drawnItems.clearLayers();
             puzzleLayer.clearLayers();
