@@ -245,3 +245,10 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
     transition: transform 0.15s; }
 #gpxList details[open] summary::before { transform: rotate(90deg); }
 #gpxList .gpx-list-body { padding: 0 8px 6px; }
+#gpxList .gpx-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+#gpxList .gpx-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; cursor: pointer; }
+#gpxList .gpx-item-name:hover { color: #4da3ff; text-decoration: underline; }
+#gpxList .gpx-remove-btn { width: 16px; height: 16px; flex-shrink: 0; display: flex; align-items: center;
+    justify-content: center; background: rgba(255,255,255,0.06); border: 1px solid #555; border-radius: 50%;
+    color: #ccc; font-size: 11px; font-weight: bold; line-height: 1; padding: 0; cursor: pointer; transition: all 0.15s; }
+#gpxList .gpx-remove-btn:hover { background: #e74c3c; border-color: #e74c3c; color: #fff; }

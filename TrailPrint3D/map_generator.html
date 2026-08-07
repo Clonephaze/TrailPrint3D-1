@@ -41,7 +41,7 @@
             <input type="number" id="objSizeInput" min="5" max="10000" step="1" value="100" title="Object Size">
         </div>
         <hr class="sidebar-divider">
-        <input type="file" id="gpxInput" accept=".gpx" multiple style="display: none;">
+        <input type="file" id="gpxInput" accept=".gpx" style="display: none;">
         <button id="importGpx" style="padding: 12px 20px; background: #2a8a2a; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Import GPX</button>
         <div id="gpxList" style="display:none; font-size:11px; color:#aaa; line-height:1.8;"></div>
         <button id="clearGpx" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear GPX</button>
@@ -146,6 +146,10 @@
         __LOCATION_PANEL_JS__
 
         function updateGpxList() {
+            // The free map generator only ever holds one trail at a time
+            // (see the gpxInput 'change' handler, which replaces rather than
+            // adds) -- unlike premium/map_generator_pe.html, there's no
+            // multi-file "N trails imported" summary to render.
             var listEl = document.getElementById('gpxList');
             var clearBtn = document.getElementById('clearGpx');
             if (gpxNames.length === 0) {
@@ -153,14 +157,16 @@
             }
             listEl.style.display = 'block';
             clearBtn.style.display = 'block';
-            var items = gpxNames.map(function(n) { return '<div>+ ' + n + '</div>'; }).join('');
-            if (gpxNames.length > 1) {
-                listEl.innerHTML = '<details><summary>' + gpxNames.length + ' trails imported</summary>'
-                    + '<div class="gpx-list-body">' + items + '</div></details>';
-            } else {
-                listEl.innerHTML = items;
-            }
+            listEl.innerHTML = '<div class="gpx-item-name" title="' + gpxNames[0] + '">+ ' + gpxNames[0] + '</div>'
+                + '<div style="color:#888; font-style:italic; margin-top:2px;">'
+                + 'Upload Multiple GPX files with the Premium Version</div>';
         }
+
+        document.getElementById('gpxList').addEventListener('click', function(e) {
+            if (e.target.closest('.gpx-item-name') && gpxLayer.getBounds().isValid()) {
+                map.fitBounds(gpxLayer.getBounds(), { padding: [50, 50] });
+            }
+        });
 
         function saveState() {
             // gpxPaths/gpxNames are intentionally NOT persisted here — a GPX
@@ -779,13 +785,20 @@
         });
 
         document.getElementById('gpxInput').addEventListener('change', function(e) {
-            var files = Array.from(e.target.files);
+            // The free map generator only supports a single imported trail
+            // (multi-trail import is a Premium feature -- see
+            // premium/map_generator_pe.html) -- only the first selected file
+            // is used, and it replaces whatever was previously imported
+            // rather than adding to it.
+            var files = Array.from(e.target.files).slice(0, 1);
             this.value = '';
             if (!files.length) return;
-            // Each file is parsed asynchronously (FileReader.onload), so
-            // wait for every file in this batch to finish, then fit to
-            // gpxLayer's combined bounds (which also includes any GPX
-            // imported in an earlier batch) exactly once.
+            if (gpxPaths.length > 0) {
+                gpxPaths = []; gpxNames = [];
+                gpxLayer.clearLayers();
+            }
+            // Wait for every file in this batch to finish, then fit to
+            // gpxLayer's combined bounds exactly once.
             var pending = files.length;
             files.forEach(function(file) {
                 var reader = new FileReader();
@@ -947,6 +960,8 @@
             bindCornerDrag(layer);
             bindMoveHandle();
             renderShapePreview();
+            updateSendState();
+            updateStatus();
             saveState();
         });
 

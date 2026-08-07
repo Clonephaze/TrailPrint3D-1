@@ -2585,6 +2585,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         import tempfile
 
         from . import picker_server as mp
+        from . import temp
 
         self._result_path = str(
             pathlib.Path(tempfile.gettempdir()) / 'trailprint_mapgenerator.json'
@@ -2593,7 +2594,10 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         if rp.exists():
             rp.unlink()
 
-        html_path = pathlib.Path(__file__).parent / 'map_generator.html'
+        # Multi-GPX import is a Premium feature -- the free page's own input
+        # element is capped to a single file (see map_generator.html).
+        html_filename = 'premium/map_generator_pe.html' if temp.PREMIUMVERSION else 'map_generator.html'
+        html_path = pathlib.Path(__file__).parent / html_filename
         self._server = mp.start_picker(
             self._result_path,
             existing_maps=_collect_existing_maps(),
