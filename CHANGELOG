@@ -1,5 +1,17 @@
-Version 3.21
+Version 3.3
 Upcoming
+
+Added: Single Tile Map Generator
+Added: Quick Toggle of elements inside the Generator pages
+Added: Settings menu inside the Element pages
+Added: Building and Road compatibility for Puzzles (By Clonephaze)
+Added: Single Color mode compatibility for Roads (By Clonephaze)
+Added: Trail Height can be Configured in Single Color mode (By Clonephaze)
+Fixed: Clicking a draw-mode toggle button no longer also starts drawing behind it, and switching mode after clicking Draw (before placing the shape) now actually uses the new mode
+Fixed: Puzzle Generator ignoring the configured Map Size
+-----------------------------
+Version 3.2.1
+03.08.2026
 
 Fixed: Dovetail Cutouts doing nothing due to an inverted condition from a previous refactor
 -----------------------------
