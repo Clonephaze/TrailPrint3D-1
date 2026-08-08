@@ -1,3 +1,4 @@
+import collections as _collections
 import math
 import threading
 import time
@@ -12,6 +13,9 @@ from .. import progress as _progress
 _COLORING_EMPTY = object()
 _COLORING_PAINTED = object()
 _COLORING_FILTERED = object()
+# Returned by coloring_main() when elementMode == CREATE_TEXTURE.
+# Carries the Shapely polygon so callers can rasterize it without building Blender geometry.
+_ColoringTextureResult = _collections.namedtuple("_ColoringTextureResult", ["kind", "polygon"])
 
 # Material name override for kinds whose material name differs from the kind string.
 KIND_MATERIAL_OVERRIDE = {
@@ -440,17 +444,14 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
         _progress.WarningsOverlay.add_warning(f"All {kind.capitalize()} objects were filtered out due to their size", "warn")
         return _COLORING_FILTERED
 
-    # Smooth the raw OSM boundary (unsimplified GPS-traced nodes are jagged,
-    # which is fine for the flat PAINT overlay but leaves an unprintable,
-    # ragged edge on a SEPARATE/SINGLECOLORMODE extruded solid). Reuses
-    # toleranceElements -- already scened as "Tolerance of the Elements
-    # (Water, Forest)" -- rather than adding a second, redundant setting.
-    tolerance_elements = bpy.context.scene.tp3d.toleranceElements
-    if tolerance_elements > 0:
-        _simplified = final_geom.simplify(tolerance_elements, preserve_topology=True)
-        _simplified = _g2d.validate(_simplified)
-        if _simplified is not None and not _simplified.is_empty:
-            final_geom = _simplified
+    if elementMode == "CREATE_TEXTURE":
+        return _ColoringTextureResult(kind=kind, polygon=final_geom)
+
+    # Smooth raw OSM GPS-traced nodes so extruded solids have clean edges.
+    _simplified = final_geom.simplify(0.4, preserve_topology=True)
+    _simplified = _g2d.validate(_simplified)
+    if _simplified is not None and not _simplified.is_empty:
+        final_geom = _simplified
 
     _t_mesh = time.time()
     result_meshes = []
@@ -1728,7 +1729,10 @@ def createOcean(prefetched_coastline, scaleHor, tile):
 
     elementMode = bpy.context.scene.tp3d.elementMode
 
-    if elementMode == "PAINT":
+    if elementMode == "CREATE_TEXTURE":
+        bpy.data.objects.remove(ocean_obj, do_unlink=True)
+        return None
+    elif elementMode == "PAINT":
         projection("paint", tile, ocean_obj)
         return None
     elif elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
