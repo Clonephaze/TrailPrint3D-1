@@ -18,6 +18,28 @@ from . import constants as const
 from . import temp, utils
 
 
+def _slicer_profile_items(self, context):
+    items = [("NONE", "Built-in defaults",
+              "Use the built-in Bambu A1 template. "
+              "Add your own profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced")]
+    try:
+        import importlib
+        from .threemf_discovery import get_threemf_api
+        _api = get_threemf_api()
+        if _api is None:
+            return items
+        # Use the resolved api module's package to avoid bl_ext prefix mismatch.
+        sp = importlib.import_module(".slicer_profiles", package=_api.__package__)
+        for p in sp.list_profiles():
+            detail = p.machine or p.vendor
+            items.append((p.name, p.name,
+                          f"{detail} (from {p.source_file}). "
+                          "Add more profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced"))
+    except Exception:
+        pass
+    return items
+
+
 def shape_callback(self,context):
     #print(f"Shape: {self.shape}")
     #if self.shape == "HEXAGON INNER TEXT" or self.shape == "HEXAGON OUTER TEXT" or self.shape =="OCTAGON OUTER TEXT" or self.shape == "HEXAGON FRONT TEXT":
@@ -530,6 +552,11 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     show_export: BoolProperty(name=_("Export"), default=True) # type: ignore
     disable_auto_export: BoolProperty(name=_("Disable Auto Export"), default=False, description=_("Don't automatically export files after generation")) # type: ignore
     disable_3mf_export: BoolProperty(name=_("Disable 3MF Export"), default=False, description=_("Don't use 3MF format even if the addon is installed")) # type: ignore
+    slicer_profile_name: EnumProperty(  # type: ignore
+        name=_("Slicer Profile"),
+        items=_slicer_profile_items,
+        description=_("Printer/filament profile embedded in the 3MF export. Add profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced"),
+    )
 
     show_stats: BoolProperty(name= _("Additional Info"), default=False) # type: ignore
     show_coloring: BoolProperty(name= _("Elements"), default=False) # type: ignore

@@ -206,25 +206,35 @@ def export_selected_to_3mf():
         _progress.WarningsOverlay.add_warning("3MF Addon not installed", "error")
         return
 
+    # Select the export roots so the operator can use use_selection=True.
+    bpy.ops.object.select_all(action='DESELECT')
+    for root in export_roots:
+        if root and root.name in bpy.data.objects:
+            root.select_set(True)
+            bpy.context.view_layer.objects.active = root
+
     try:
-        result = _3mf_api.export_3mf(
+        tp3d = bpy.context.scene.tp3d
+        result = bpy.ops.export_mesh.threemf(
             filepath=full_path,
-            objects=export_roots,
+            use_selection=True,
             use_mesh_modifiers=True,
             global_scale=0.001,
             coordinate_precision=4,
             thumbnail_mode="NONE" if bpy.app.background else "CUSTOM",
+            thumbnail_image="__CUSTOM_PATH__" if not bpy.app.background else "NONE",
+            thumbnail_image_path=thumbnail_path if not bpy.app.background else "",
             thumbnail_resolution=256,
-            thumbnail_image=thumbnail_path if not bpy.app.background else "",
             use_orca_format="AUTO",
+            slicer_profile=tp3d.slicer_profile_name,
         )
-        if result.status == "FINISHED":
+        if 'FINISHED' in result:
             print(f"Successfully exported to: {full_path}")
             _progress.WarningsOverlay.add_warning("Exported as 3mf", "ok")
         else:
-            print("Export Error:\n" + "\n".join(result.warnings))
+            print(f"Export Error: operator returned {result}")
             _progress.WarningsOverlay.add_warning("Exporting as 3mf Failed", "error")
-    except Exception as e:  # noqa: BLE001 - Wide catch is purposeful, incase of a crash from the api itself
+    except Exception as e:  # noqa: BLE001 - Wide catch is purposeful, incase of a crash from the operator itself
         print(f"Export Error: {e}")
         _progress.WarningsOverlay.add_warning("Exporting as 3mf Failed", "error")
 

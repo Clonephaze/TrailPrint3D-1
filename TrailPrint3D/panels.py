@@ -251,6 +251,8 @@ class TP3D_PT_advanced(bpy.types.Panel):
             box.prop(props, "disable_auto_export")
             if temp.has3mf:
                 box.prop(props, "disable_3mf_export")
+                if not props.disable_3mf_export:
+                    box.prop(props, "slicer_profile_name")
 
         # --- MAP ---
         layout.prop(props, "show_map", icon="TRIA_DOWN" if props.show_map else "TRIA_RIGHT", emboss=False)
