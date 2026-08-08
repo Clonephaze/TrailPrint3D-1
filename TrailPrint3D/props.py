@@ -451,12 +451,23 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name="Element handling",
         items=[
             ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
+            ('CREATE_TEXTURE', _("Create Texture"), _("Rasterize OSM elements into a UV texture for multi-filament 3MF export")),
             ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
             #('SINGLECOLORMODE', _("SingleColor (Alternative)"), "Use this SingleColorMode if the other one causes problems"),
             ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')"))
         ],
         default='PAINT'
     )# type: ignore
+    tex_include_roads: BoolProperty(  # type: ignore
+        name=_("Roads in texture"),
+        default=True,
+        description=_("Rasterize the road footprint into the paint texture (terrain under roads coloured black)")
+    )
+    tex_include_trail: BoolProperty(  # type: ignore
+        name=_("Trail in texture"),
+        default=True,
+        description=_("Rasterize the trail footprint into the paint texture (terrain under trail coloured red)")
+    )
     elementModeInset: FloatProperty(name=_("Clip Inset"), default=2.0, min=0.0, description=_("Thickness of solid frame for SCM-elements"))# type: ignore
 
 
