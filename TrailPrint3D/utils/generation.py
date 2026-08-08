@@ -2526,6 +2526,20 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
         print(f"curveObjs: {curveObjs} ")
         _rg_apply_single_color_mode(zobj, curveObjs, terrain, props)
 
+        # CREATE_TEXTURE: rasterise OSM polygons into a UV paint texture.
+        # _rg_build_terrain_elements already populated terrain['_osm_polygons']
+        # and discarded the road mesh; we just need to bake the texture here.
+        if props['elementMode'] == "CREATE_TEXTURE":
+            from .texture import setup_paint_texture
+            overlay.update(base_pct + step * 0.89, "Texture", f"{tile_label} — rasterising OSM texture…")
+            setup_paint_texture(zobj, terrain.get('_osm_polygons', {}))
+            # Trail curves are encoded in the texture; 3D objects not needed.
+            if curveObjs and not props['singleColorMode']:
+                for _tcrv in list(curveObjs):
+                    if _tcrv and _tcrv.name in bpy.data.objects:
+                        bpy.data.objects.remove(_tcrv, do_unlink=True)
+                curveObjs.clear()
+
         # Finalize tile
         overlay.update(base_pct + step * 0.93, "Finalizing", f"{tile_label} — writing metadata…")
         writeMetadata(zobj)

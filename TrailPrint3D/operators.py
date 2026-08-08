@@ -2243,10 +2243,10 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # never get sliced along the jigsaw lines. Roads and Buildings are
         # handled separately: cut_into_puzzle_pieces re-clips their generated
         # geometry per piece after terrain cutting.
-        if props.elementMode != 'PAINT':
+        if props.elementMode not in ('PAINT', 'CREATE_TEXTURE'):
             props.elementMode = 'PAINT'
             _progress.WarningsOverlay.add_warning(
-                "Puzzles only support the \"Paint on Map\" element mode — switched automatically.", "warn"
+                "Puzzles only support \"Paint on Map\" or \"Create Texture\" element mode — switched automatically.", "warn"
             )
         if props.singleColorMode:
             # Single-Color Mode builds each trail decal as its own standalone
@@ -2410,7 +2410,9 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         if roads_obj is not None:
             bpy.data.objects.remove(roads_obj, do_unlink=True)
         from .utils import generation as _gen_utils
-        roads_data = getattr(_gen_utils, '_puzzle_roads_data', None)
+        # In CREATE_TEXTURE mode roads/trail are baked into the UV texture; skip 3D rebuilds.
+        _texture_mode = props.elementMode == 'CREATE_TEXTURE'
+        roads_data = None if _texture_mode else getattr(_gen_utils, '_puzzle_roads_data', None)
 
         # buildings_obj was only needed as an intermediate whole-map mesh;
         # per-piece building geometry is rebuilt from the footprint cache below.
@@ -2422,7 +2424,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
         # Snap trails against the continuous tile before cutting — avoids raycasting misses in the inter-piece gaps.
         trails = []
-        if gpx_paths:
+        if gpx_paths and not _texture_mode:
             overlay.update(0.6, "Generating trails…", f"{len(gpx_paths)} trail(s)…")
             trails = _generate_trails(context, gpx_paths, overlay, 0.6, 0.75)
 

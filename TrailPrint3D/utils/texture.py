@@ -374,3 +374,109 @@ def tag_solid_color_for_paint_export(obj, srgb, palette):
     mesh["3mf_paint_default_extruder"] = 1
     mesh["3mf_paint_extruder_colors"]  = str(palette)
 
+
+def crop_paint_texture_to_piece(piece_obj, source_image):
+    """Crop the shared terrain paint image down to this piece's UV footprint.
+
+    For a 6×6 puzzle this turns 36 full 2K textures into 36 ~340px crops,
+    cutting per-piece segmentation work by ~36×.
+    """
+    mesh = piece_obj.data
+    uv_layer = mesh.uv_layers.get(UV_LAYER_NAME)
+    if uv_layer is None:
+        return
+
+    W, H = source_image.size
+
+    # Identify top-face loops (face normal z ≥ 0.5).
+    n_polys = len(mesh.polygons)
+    loop_totals = np.empty(n_polys, dtype=np.int32)
+    mesh.polygons.foreach_get("loop_total", loop_totals)
+    normals_flat = np.empty(n_polys * 3, dtype=np.float32)
+    mesh.polygons.foreach_get("normal", normals_flat)
+    face_nz = normals_flat.reshape(-1, 3)[:, 2]
+    loop_face_idx = np.repeat(np.arange(n_polys, dtype=np.int32), loop_totals)
+    top_loop_mask = face_nz[loop_face_idx] >= 0.5
+
+    uv_flat = np.empty(len(mesh.loops) * 2, dtype=np.float32)
+    uv_layer.data.foreach_get("uv", uv_flat)
+    uv_u = uv_flat[0::2]
+    uv_v = uv_flat[1::2]
+
+    if not top_loop_mask.any():
+        return
+
+    u_min = float(uv_u[top_loop_mask].min())
+    u_max = float(uv_u[top_loop_mask].max())
+    v_min = float(uv_v[top_loop_mask].min())
+    v_max = float(uv_v[top_loop_mask].max())
+
+    # 2-pixel border so edge triangles don't land on exact pixel boundaries.
+    u_min = max(0.0, u_min - 2.0 / W)
+    u_max = min(1.0, u_max + 2.0 / W)
+    v_min = max(0.0, v_min - 2.0 / H)
+    v_max = min(1.0, v_max + 2.0 / H)
+
+    px_x0 = int(u_min * W)
+    px_x1 = min(W, int(u_max * W) + 1)
+    py_y0 = int(v_min * H)
+    py_y1 = min(H, int(v_max * H) + 1)
+    crop_w = max(4, px_x1 - px_x0)
+    crop_h = max(4, py_y1 - py_y0)
+
+    src_px = np.empty(W * H * 4, dtype=np.float32)
+    source_image.pixels.foreach_get(src_px)
+    crop_arr = np.ascontiguousarray(
+        src_px.reshape(H, W, 4)[py_y0:py_y0 + crop_h, px_x0:px_x0 + crop_w]
+    )
+
+    # Re-paint the base-colour anchor block at (0,0)–(4,4) in the crop.
+    base_f = (_BASE_SRGB[0] / 255.0, _BASE_SRGB[1] / 255.0, _BASE_SRGB[2] / 255.0, 1.0)
+    crop_arr[0:4, 0:4] = base_f
+
+    img_name = str(mesh.name) + "_MMU_Paint"
+    if img_name in bpy.data.images:
+        bpy.data.images.remove(bpy.data.images[img_name])
+    new_img = bpy.data.images.new(img_name, width=crop_w, height=crop_h, alpha=True)
+    new_img.colorspace_settings.name = 'sRGB'
+    new_img.pixels.foreach_set(crop_arr.ravel())
+    new_img.pack()
+
+    # Remap top-face UVs into the new [0, 1] crop space.
+    u_range = (u_max - u_min) or 1.0
+    v_range = (v_max - v_min) or 1.0
+    new_u = uv_u.copy()
+    new_v = uv_v.copy()
+    new_u[top_loop_mask] = (uv_u[top_loop_mask] - u_min) / u_range
+    new_v[top_loop_mask] = (uv_v[top_loop_mask] - v_min) / v_range
+
+    # Pin non-top (side/bottom) loops to the anchor pixel in the cropped space.
+    new_u[~top_loop_mask] = 2.0 / crop_w
+    new_v[~top_loop_mask] = 2.0 / crop_h
+
+    new_uv_flat = np.empty(len(mesh.loops) * 2, dtype=np.float32)
+    new_uv_flat[0::2] = new_u
+    new_uv_flat[1::2] = new_v
+    uv_layer.data.foreach_set("uv", new_uv_flat)
+    mesh.update()
+
+    mat_name = img_name
+    if mat_name in bpy.data.materials:
+        bpy.data.materials.remove(bpy.data.materials[mat_name])
+    mat = bpy.data.materials.new(name=mat_name)
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
+    tex_node = nodes.new(type="ShaderNodeTexImage")
+    tex_node.image = new_img
+    tex_node.location = (-300, 0)
+    bsdf = nodes.new(type="ShaderNodeBsdfPrincipled")
+    bsdf.location = (0, 0)
+    out_node = nodes.new(type="ShaderNodeOutputMaterial")
+    out_node.location = (300, 0)
+    links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
+    links.new(bsdf.outputs["BSDF"], out_node.inputs["Surface"])
+    mesh.materials.clear()
+    mesh.materials.append(mat)
+
