@@ -216,6 +216,7 @@ def export_selected_to_3mf():
             thumbnail_mode="NONE" if bpy.app.background else "CUSTOM",
             thumbnail_resolution=256,
             thumbnail_image=thumbnail_path if not bpy.app.background else "",
+            use_orca_format="AUTO",
         )
         if result.status == "FINISHED":
             print(f"Successfully exported to: {full_path}")
