@@ -14,6 +14,7 @@ from .. import constants as const
 from .. import progress as _progress
 from . import geometry2d as g2d
 from .elevation import compute_and_store_tile_bounds
+from .terrain import _ColoringTextureResult
 
 # Set after each road-enabled generation; read by the puzzle flow to clip road
 # geometry per piece without re-running the road pipeline.
@@ -623,6 +624,7 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
             _ov.set_fetch_ready('water')
 
     terrain = {}
+    terrain['_osm_polygons'] = {}  # populated only in CREATE_TEXTURE mode
     _water_result = None  # raw coloring_main() result for 'water' -- replayed below if ocean finds nothing
     for key, flag_attr, max_size, phase, msg in COLORING_ELEMENTS:
         terrain[key] = None
@@ -640,6 +642,10 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                     _ov.set_fetch_filtered(key)
                 elif _result is _COLORING_PAINTED:
                     terrain[key] = None          # object was deleted after painting
+                    _ov.set_fetch_done(key, success=True)
+                elif isinstance(_result, _ColoringTextureResult):
+                    terrain['_osm_polygons'][_result.kind] = _result.polygon
+                    terrain[key] = None
                     _ov.set_fetch_done(key, success=True)
                 elif _result is None:
                     terrain[key] = None
@@ -735,7 +741,7 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
             # the SCM trail groove insert, so it can be printed/assembled
             # separately instead of being a sliver with nothing to sit on.
             result = create_roads(obj, tp3d.el_sHeight, scaleHor, map_km,
-                                   full_depth=(tp3d.elementMode != "PAINT"))
+                                   full_depth=(tp3d.elementMode not in ("PAINT", "CREATE_TEXTURE")))
             if result is not None:
                 roads, roads_polygon = result
                 # Cache the terrain's own triangulated grid + the road footprint
@@ -750,12 +756,19 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                 terrain['_terrain_tris_cache'] = _triangulated_terrain_faces(obj)
                 global _puzzle_roads_data
                 _puzzle_roads_data = (roads_polygon, terrain['_terrain_tris_cache'], tp3d.el_sHeight)
-                set_origin_to_3d_cursor(roads)
-                roads.data.materials.clear()
-                roads.data.materials.append(bpy.data.materials.get("BLACK"))
-                terrain['roads'] = roads
-                roads.name = obj.name + "_" + "ROADS"
-                writeMetadata(roads, type="ROADS")
+                if tp3d.elementMode == "CREATE_TEXTURE" and roads_polygon is not None and tp3d.tex_include_roads:
+                    terrain['_osm_polygons']['ROADS'] = roads_polygon
+                if tp3d.elementMode == "CREATE_TEXTURE":
+                    # Only the polygon is needed; discard the extruded road mesh.
+                    bpy.data.objects.remove(roads, do_unlink=True)
+                    roads = None
+                if roads is not None:
+                    set_origin_to_3d_cursor(roads)
+                    roads.data.materials.clear()
+                    roads.data.materials.append(bpy.data.materials.get("BLACK"))
+                    terrain['roads'] = roads
+                    roads.name = obj.name + "_" + "ROADS"
+                    writeMetadata(roads, type="ROADS")
                 _ov.set_fetch_done('roads', success=True)
             else:
                 print("INFO: No road data returned, skipping road processing.")
@@ -853,6 +866,13 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             _r = _g2d_trail.polylines_to_ribbon(_coords, _pt / 2 + _tol, quad_segs=4)
             if _r and not _r.is_empty:
                 trail_thick_ribbons.append(_r)
+
+    # In CREATE_TEXTURE mode, store trail ribbon union for texture rasterisation.
+    if (props['elementMode'] == "CREATE_TEXTURE"
+            and bpy.context.scene.tp3d.tex_include_trail
+            and trail_thick_ribbons):
+        from shapely.ops import unary_union as _trail_union_op
+        terrain['_osm_polygons']['TRAIL'] = _trail_union_op(trail_thick_ribbons)
 
     if props['elementMode'] == "SEPARATE" and False:
         for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
@@ -1045,7 +1065,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             _ov.update(message="Roads: adding terrain detail…")
         from .osm.roads import finalize_roads  # deferred — only needed here
         el_sHeight = bpy.context.scene.tp3d.el_sHeight
-        full_depth = props['elementMode'] != 'PAINT'
+        full_depth = props['elementMode'] not in ('PAINT', 'CREATE_TEXTURE')
         mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
         bottom_z = min(v.z for v in mc) - 1.0
         # Subtract the trail 2D footprint from roads_polygon before finalize_roads
@@ -1175,7 +1195,7 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
 
     if is_3mf_extension_installed() and not getattr(tp3d_props, 'disable_3mf_export', False):
         print("Exporting to 3mf")
-        if curveObjs:
+        if curveObjs and props.get('elementMode') != "CREATE_TEXTURE":
             for tcrv in curveObjs:
                 try:
                     if tcrv and tcrv.name in bpy.data.objects:
@@ -1186,9 +1206,9 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
 
         if elements and (props.get('elementMode') == "SEPARATE" or "SINGLECOLORMODE" in props.get('elementMode')):
             for elem_obj in elements.values():
-                if elem_obj and elem_obj.name in bpy.data.objects:
+                if elem_obj and isinstance(elem_obj, bpy.types.Object) and elem_obj.name in bpy.data.objects:
                     elem_obj.select_set(True)
-        elif elements and props.get('elementMode') == "PAINT":
+        elif elements and props.get('elementMode') in ("PAINT", "CREATE_TEXTURE"):
             for key in ("roads", "buildings"):
                 elem_obj = elements.get(key)
                 if elem_obj and elem_obj.name in bpy.data.objects:
@@ -1206,14 +1226,14 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
         export_selected_to_3mf()
     else:
         print("exporting as STL/OBJ")
-        if curveObjs:
+        if curveObjs and props.get('elementMode') != "CREATE_TEXTURE":
             for tcrv in curveObjs:
                 export_to_STL(tcrv, exportformat)
         export_to_STL(obj, exportformat)
 
         if elements and (props.get('elementMode') == "SEPARATE" or "SINGLECOLORMODE" in props.get('elementMode')):
             for elem_obj in elements.values():
-                if elem_obj and elem_obj.name in bpy.data.objects:
+                if elem_obj and isinstance(elem_obj, bpy.types.Object) and elem_obj.name in bpy.data.objects:
                     export_to_STL(elem_obj, exportformat)
 
         if shape in {"HEXAGON INNER TEXT", "HEXAGON OUTER TEXT", "OCTAGON OUTER TEXT", "HEXAGON FRONT TEXT", "CIRCLE OUTER TEXT"} and textobj:
@@ -1596,7 +1616,13 @@ def runGeneration(type, locked_scale=None):
     # mesh; STL cannot store material data at all, so PAINT-mode maps must be
     # exported as OBJ to keep the colors. Mirrors the equivalent computation in
     # terrain.coloring_main().
-    exportformat = "OBJ" if props['elementMode'] == "PAINT" else "STL"
+    # CREATE_TEXTURE: 3MF is the primary export; STL serves as no-addon fallback.
+    if props['elementMode'] == "PAINT":
+        exportformat = "OBJ"
+    elif props['elementMode'] == "CREATE_TEXTURE":
+        exportformat = "STL"  # fallback only; 3MF addon handles the real export
+    else:
+        exportformat = "STL"
 
     overlay.add_completed_step("Inputs validated")
 
@@ -2024,6 +2050,22 @@ def runGeneration(type, locked_scale=None):
     overlay.update(0.95, "Coloring", "Applying single-color mode…") 
     _rg_apply_single_color_mode(obj, curveObjs, elements, props)
 
+    # --- Phase 15b: CREATE_TEXTURE — rasterise OSM polygons into UV texture ---
+    if props.get('elementMode') == "CREATE_TEXTURE":
+        from .texture import setup_paint_texture
+        overlay.update(0.96, "Texture", "Rasterising OSM texture…")
+        _mmu_palette = setup_paint_texture(obj, elements.get('_osm_polygons', {}))
+        elements['_mmu_palette'] = _mmu_palette
+        # When SCM trail is on, curveObjs hold the converted trail-strip meshes
+        # (single_color_mode_curve converts in-place); keep them as 3D geometry.
+        # Without SCM trail they're raw GPX curve objects only needed for texture
+        # rasterization, so remove them now.
+        if curveObjs and not props.get('singleColorMode'):
+            for tcrv in list(curveObjs):
+                if tcrv and tcrv.name in bpy.data.objects:
+                    bpy.data.objects.remove(tcrv, do_unlink=True)
+            curveObjs.clear()
+
     _lo = bpy.context.scene.tp3d.lowestZ
     _hi = bpy.context.scene.tp3d.highestZ
     overlay.add_completed_step(f"Terrain applied  —  z {_lo:.1f} to {_hi:.1f}")
@@ -2038,6 +2080,16 @@ def runGeneration(type, locked_scale=None):
     # --- Phases 16-18: Assign materials, export, and finalize ---
     overlay.update(0.97, "Finalizing", "Exporting files...")
     _rg_assign_materials(obj, curveObjs, textobj, plateobj, props, shellobj)
+
+    # --- Phase 15c: Tag companion objects with solid-colour paint textures ---
+    # Without this the Orca exporter sees no paint data on these objects and
+    # the slicer defaults them to extruder 1 regardless of material colour.
+    if props.get('elementMode') == "CREATE_TEXTURE":
+        _mmu_palette = elements.get('_mmu_palette')
+        if _mmu_palette:
+            from .texture import tag_solid_color_for_paint_export, _WHITE_SRGB, _ROADS_SRGB
+            for _cobj, _ccol in [(textobj, _WHITE_SRGB), (plateobj, _ROADS_SRGB), (shellobj, _ROADS_SRGB)]:
+                tag_solid_color_for_paint_export(_cobj, _ccol, _mmu_palette)
     _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_time, exportformat, elements, shellobj)
     # Script duration
     end_time = time.time()
