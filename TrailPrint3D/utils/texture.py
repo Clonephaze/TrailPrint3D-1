@@ -16,8 +16,8 @@ Coordinate conventions
   UV convention and the layout expected by the 3MF addon's segmentation reader.
 """
 
+import bpy
 import numpy as np
-import bpy  # type: ignore
 
 # ── Palette definition ────────────────────────────────────────────────────────
 # Each colour is expressed as sRGB uint8 (R, G, B).  These values are used
@@ -66,7 +66,7 @@ UV_LAYER_NAME = "MMU_Paint"
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _srgb_to_hex(r8, g8, b8):
-    return "#%02X%02X%02X" % (int(r8), int(g8), int(b8))
+    return f"#{int(r8):02X}{int(g8):02X}{int(b8):02X}"
 
 
 def _build_palette(present_kinds):
@@ -82,11 +82,9 @@ def _build_palette(present_kinds):
     for kind in _RASTER_ORDER:
         if kind not in present_kinds:
             continue
-        if kind == "OCEAN":
-            # Merge ocean into the WATER slot if water is also present
-            if water_idx is not None:
-                kind_to_index["OCEAN"] = water_idx
-                continue
+        if kind == "OCEAN" and water_idx is not None:
+            kind_to_index["OCEAN"] = water_idx
+            continue
         srgb = _KIND_TO_SRGB[kind]
         palette[idx] = _srgb_to_hex(*srgb)
         kind_to_index[kind] = idx
