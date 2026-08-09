@@ -252,7 +252,9 @@ def setup_paint_texture(terrain_obj, polygons_by_kind, resolution=2048):
     face_normals_flat = np.empty(n_polys * 3, dtype=np.float32)
     mesh.polygons.foreach_get("normal", face_normals_flat)
     face_nz = face_normals_flat.reshape(-1, 3)[:, 2]
-    non_top = face_nz[loop_face] < 0.5
+    # Structural side faces (nz≈0) and bottom (nz=-1) only — steep terrain
+    # faces have nz>0 even at extreme angles, so 0.1 safely excludes them.
+    non_top = face_nz[loop_face] < 0.1
     uv_u[non_top] = _ANCHOR_U
     uv_v[non_top] = _ANCHOR_V
 
@@ -396,7 +398,7 @@ def crop_paint_texture_to_piece(piece_obj, source_image):
     mesh.polygons.foreach_get("normal", normals_flat)
     face_nz = normals_flat.reshape(-1, 3)[:, 2]
     loop_face_idx = np.repeat(np.arange(n_polys, dtype=np.int32), loop_totals)
-    top_loop_mask = face_nz[loop_face_idx] >= 0.5
+    top_loop_mask = face_nz[loop_face_idx] >= 0.1
 
     uv_flat = np.empty(len(mesh.loops) * 2, dtype=np.float32)
     uv_layer.data.foreach_get("uv", uv_flat)

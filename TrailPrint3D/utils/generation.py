@@ -758,10 +758,11 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                 _puzzle_roads_data = (roads_polygon, terrain['_terrain_tris_cache'], tp3d.el_sHeight)
                 if tp3d.elementMode == "CREATE_TEXTURE" and roads_polygon is not None and tp3d.tex_include_roads:
                     terrain['_osm_polygons']['ROADS'] = roads_polygon
-                if tp3d.elementMode == "CREATE_TEXTURE":
-                    # Only the polygon is needed; discard the extruded road mesh.
+                if tp3d.elementMode == "CREATE_TEXTURE" and tp3d.tex_include_roads:
+                    # tex_include_roads on — polygon stored above; discard the mesh.
                     bpy.data.objects.remove(roads, do_unlink=True)
                     roads = None
+                # tex_include_roads off — fall through so roads is stored as a PAINT-style overlay
                 if roads is not None:
                     set_origin_to_3d_cursor(roads)
                     roads.data.materials.clear()
@@ -1195,7 +1196,7 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
 
     if is_3mf_extension_installed() and not getattr(tp3d_props, 'disable_3mf_export', False):
         print("Exporting to 3mf")
-        if curveObjs and props.get('elementMode') != "CREATE_TEXTURE":
+        if curveObjs and (props.get('elementMode') != "CREATE_TEXTURE" or not tp3d_props.tex_include_trail):
             for tcrv in curveObjs:
                 try:
                     if tcrv and tcrv.name in bpy.data.objects:
@@ -1226,7 +1227,7 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
         export_selected_to_3mf()
     else:
         print("exporting as STL/OBJ")
-        if curveObjs and props.get('elementMode') != "CREATE_TEXTURE":
+        if curveObjs and (props.get('elementMode') != "CREATE_TEXTURE" or not tp3d_props.tex_include_trail):
             for tcrv in curveObjs:
                 export_to_STL(tcrv, exportformat)
         export_to_STL(obj, exportformat)
@@ -2058,9 +2059,9 @@ def runGeneration(type, locked_scale=None):
         elements['_mmu_palette'] = _mmu_palette
         # When SCM trail is on, curveObjs hold the converted trail-strip meshes
         # (single_color_mode_curve converts in-place); keep them as 3D geometry.
-        # Without SCM trail they're raw GPX curve objects only needed for texture
-        # rasterization, so remove them now.
-        if curveObjs and not props.get('singleColorMode'):
+        # When tex_include_trail is off, keep curveObjs as PAINT-style overlay objects.
+        _tex_trail = bpy.context.scene.tp3d.tex_include_trail
+        if curveObjs and not props.get('singleColorMode') and _tex_trail:
             for tcrv in list(curveObjs):
                 if tcrv and tcrv.name in bpy.data.objects:
                     bpy.data.objects.remove(tcrv, do_unlink=True)
