@@ -198,6 +198,27 @@ def repair_invalid_shape(scene):
         tp3d.shape = "HEXAGON"
 
 
+# Module-level lists keep items alive so Blender's enum cache never holds dangling pointers.
+_ELEMENT_MODE_ITEMS_BASE = [
+    ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
+    ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
+    # ('SINGLECOLORMODE', _("SingleColor (Alternative)"), "Use this SingleColorMode if the other one causes problems"),
+    ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')")),
+]
+_ELEMENT_MODE_ITEMS_WITH_TEXTURE = [
+    ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
+    ('CREATE_TEXTURE', _("Create Texture"), _("Rasterize OSM elements into a UV texture for multi-filament 3MF export")),
+    ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
+    # ('SINGLECOLORMODE', _("SingleColor (Alternative)"), "Use this SingleColorMode if the other one causes problems"),
+    ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')")),
+]
+
+
+def _element_mode_items(self, context):
+    from . import temp
+    return _ELEMENT_MODE_ITEMS_WITH_TEXTURE if temp.has3mf else _ELEMENT_MODE_ITEMS_BASE
+
+
 # Define a Property Group to store variables
 class TP3D_PG_properties(bpy.types.PropertyGroup):
     file_path: StringProperty(
@@ -471,14 +492,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
 
     elementMode: EnumProperty(
         name="Element handling",
-        items=[
-            ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
-            ('CREATE_TEXTURE', _("Create Texture"), _("Rasterize OSM elements into a UV texture for multi-filament 3MF export")),
-            ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
-            #('SINGLECOLORMODE', _("SingleColor (Alternative)"), "Use this SingleColorMode if the other one causes problems"),
-            ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')"))
-        ],
-        default='PAINT'
+        items=_element_mode_items,
+        default=0
     )# type: ignore
     tex_include_roads: BoolProperty(  # type: ignore
         name=_("Roads in texture"),

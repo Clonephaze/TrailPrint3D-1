@@ -30,6 +30,14 @@ class TP3D_OT_run_generation(bpy.types.Operator):
     bl_description = "Generate the Path and the Map with current Settings"
 
     def execute(self, context):
+        if context.scene.tp3d.elementMode == 'CREATE_TEXTURE':
+            from .threemf_discovery import is_threemf_available, has_threemf_capability
+            if not is_threemf_available():
+                self.report({'ERROR'}, "Create Texture mode requires the 3MF Import/Export addon. Please install it.")
+                return {'CANCELLED'}
+            if not has_threemf_capability("slicer_profile"):
+                self.report({'ERROR'}, "Create Texture mode requires a newer version of the 3MF addon. Please update it.")
+                return {'CANCELLED'}
         utils.runGeneration(0)
         
         return {'FINISHED'}
