@@ -72,15 +72,19 @@ def _build_terrain_height_sampler(
     return sample
 
 
-def _append_building(poly, z_offset, sample_z, b_verts, b_faces):
-    # poly: shapely Polygon (single, possibly with holes). Builds a manifold
-    # prism with a flat floor at the lowest terrain point under the footprint
-    # and a flat roof at the highest terrain point + height.
+# ---------------------------------------------------------------------------
+# Small shared helpers used by every roof-shape builder below.
+# ---------------------------------------------------------------------------
+
+
+def _poly_rings(poly):
+    """Return (ext, holes) as plain coordinate-tuple lists, closing points
+    stripped. Returns (None, None) if the exterior is degenerate."""
     ext = list(poly.exterior.coords)
     if len(ext) > 1 and ext[0] == ext[-1]:
         ext = ext[:-1]
     if len(ext) < 3:
-        return
+        return None, None
     holes = []
     for interior in poly.interiors:
         ring = list(interior.coords)
@@ -88,29 +92,23 @@ def _append_building(poly, z_offset, sample_z, b_verts, b_faces):
             ring = ring[:-1]
         if len(ring) >= 3:
             holes.append(ring)
-    ec = _earcut_triangulate(ext, holes)
-    if ec is None:
-        return
-    verts2d, cap_tris = ec
-    # Vectorized terrain-height lookup for every footprint vertex at once.
-    _vx = [v[0] for v in verts2d]
-    _vy = [v[1] for v in verts2d]
-    zs = sample_z(_vx, _vy)
-    z_min = float(zs.min())
-    z_top = float(zs.max()) + z_offset
+    return ext, holes
+
+
+def _extrude_prism(ext, holes, verts2d, cap_tris, z_bottom, z_top, b_verts, b_faces):
+    """Shared plain prism: flat floor cap at z_bottom, flat roof cap at
+    z_top, walls around the exterior ring and each hole. This is the flat-roof
+    building body, and is reused per-tier for the stadium terrace treatment.
+    """
     n2 = len(verts2d)
     base = len(b_verts)
     for vx, vy in verts2d:
-        b_verts.append((vx, vy, z_min))
+        b_verts.append((vx, vy, z_bottom))
     for vx, vy in verts2d:
         b_verts.append((vx, vy, z_top))
     for ia, ib, ic in cap_tris:
         b_faces.append([base + ic, base + ib, base + ia])  # floor (down)
-        b_faces.append(
-            [base + n2 + ia, base + n2 + ib, base + n2 + ic]
-        )  # roof (up)
-    # Walls around the exterior ring and each hole. Ring ranges follow
-    # earcut's vertex order (exterior first, then holes).
+        b_faces.append([base + n2 + ia, base + n2 + ib, base + n2 + ic])  # roof (up)
     start = 0
     for ring in [ext] + holes:
         rn = len(ring)
@@ -123,6 +121,394 @@ def _append_building(poly, z_offset, sample_z, b_verts, b_faces):
         start += rn
 
 
+def _add_height_field_roof(
+    ext, holes, verts2d, cap_tris, z_floor, heights, b_verts, b_faces
+):
+    """Shared by skillion/gabled/hipped: identical topology to a flat prism,
+    but each roof vertex gets its own z from *heights* (parallel to verts2d)
+    instead of one constant z_top. The earcut cap triangles simply become
+    non-planar, which renders fine as a faceted sloped/ridged roof."""
+    n2 = len(verts2d)
+    base = len(b_verts)
+    for vx, vy in verts2d:
+        b_verts.append((vx, vy, z_floor))
+    for (vx, vy), z in zip(verts2d, heights):
+        b_verts.append((vx, vy, z))
+    for ia, ib, ic in cap_tris:
+        b_faces.append([base + ic, base + ib, base + ia])
+        b_faces.append([base + n2 + ia, base + n2 + ib, base + n2 + ic])
+    start = 0
+    for ring in [ext] + holes:
+        rn = len(ring)
+        for i in range(rn):
+            a = base + start + i
+            b = base + start + (i + 1) % rn
+            c = base + n2 + start + (i + 1) % rn
+            d = base + n2 + start + i
+            b_faces.append([a, b, c, d])
+        start += rn
+
+
+def _skillion_heights(verts2d, z_eave, roof_height, roof_angle_deg, direction_deg):
+    """Single sloped plane. direction_deg is a compass bearing (0=north,
+    matching this codebase's +y-is-north convention) for the downslope
+    direction; roof_height wins if given, else it's derived from roof_angle
+    (default 20 deg) times the footprint's span along that direction."""
+    ang = math.radians(direction_deg if direction_deg is not None else 0.0)
+    dx, dy = math.sin(ang), math.cos(ang)
+    proj = [vx * dx + vy * dy for vx, vy in verts2d]
+    p_min, p_max = min(proj), max(proj)
+    span = max(p_max - p_min, 1e-6)
+    if roof_height is None:
+        pitch = math.radians(roof_angle_deg if roof_angle_deg is not None else 20.0)
+        roof_height = span * math.tan(pitch)
+    return [z_eave + roof_height * (p - p_min) / span for p in proj]
+
+
+def _fitted_rect_axes(poly):
+    """Fit the footprint's minimum-rotated-rectangle and return its centroid,
+    long-axis unit vector, and half-extents -- the local frame a gabled/hipped
+    roof is built in. Returns None if the footprint is too irregular (coverage
+    of the fitted rectangle too low) for a ridge roof to look right; the
+    caller should fall back to a flat cap in that case."""
+    try:
+        rect = poly.minimum_rotated_rectangle
+    except AttributeError:
+        from shapely import oriented_envelope
+
+        rect = oriented_envelope(poly)
+    if rect is None or rect.is_empty or rect.area <= 0:
+        return None
+    coverage = poly.area / rect.area
+    coords = list(rect.exterior.coords)[:4]
+    if len(coords) < 4:
+        return None
+    cx = sum(c[0] for c in coords) / 4.0
+    cy = sum(c[1] for c in coords) / 4.0
+    e0 = Vector((coords[1][0] - coords[0][0], coords[1][1] - coords[0][1], 0))
+    e1 = Vector((coords[2][0] - coords[1][0], coords[2][1] - coords[1][1], 0))
+    along, cross = (e0, e1) if e0.length >= e1.length else (e1, e0)
+    if along.length < 1e-6:
+        return None
+    along_n = along.normalized()
+    return {
+        "cx": cx,
+        "cy": cy,
+        "along": (along_n.x, along_n.y),
+        "half_long": along.length / 2.0,
+        "half_short": max(cross.length / 2.0, 1e-6),
+        "coverage": coverage,
+    }
+
+
+def _ridge_heights(verts2d, axes, z_eave, roof_height, roof_angle_deg, hip):
+    """Analytic height field for a ridge roof over a rectangle-ish footprint:
+    'gabled' depends only on distance to the long axis (constant along the
+    ridge, so the short ends naturally come out as vertical gable triangles);
+    'hipped' takes the min of both axis tents, sloping on all four sides."""
+    cx, cy = axes["cx"], axes["cy"]
+    ax, ay = axes["along"]
+    cxv, cyv = -ay, ax
+    half_long, half_short = axes["half_long"], axes["half_short"]
+    if roof_height is None:
+        pitch = math.radians(roof_angle_deg if roof_angle_deg is not None else 30.0)
+        roof_height = half_short * math.tan(pitch)
+    heights = []
+    for vx, vy in verts2d:
+        dx, dy = vx - cx, vy - cy
+        along_d = dx * ax + dy * ay
+        cross_d = dx * cxv + dy * cyv
+        t = max(0.0, 1.0 - abs(cross_d) / half_short)
+        if hip:
+            t_long = max(0.0, 1.0 - abs(along_d) / half_long)
+            t = min(t, t_long)
+        heights.append(z_eave + roof_height * t)
+    return heights
+
+
+def _add_dome_roof(
+    ext, holes, verts2d, cap_tris, z_floor, z_eave, roof_height, style, b_verts, b_faces
+):
+    """Vertical walls up to z_eave, then a curved cap revolved around the
+    footprint centroid instead of a flat roof: 'dome' tapers smoothly
+    (hemisphere-like), 'onion' bulges outward before narrowing to a point.
+    Vertices are scaled toward the centroid ring-by-ring, which holds up well
+    for roughly convex footprints and degrades gracefully (slight overlap) on
+    very concave ones -- acceptable for a roof silhouette."""
+    n2 = len(verts2d)
+    base = len(b_verts)
+    for vx, vy in verts2d:
+        b_verts.append((vx, vy, z_floor))
+    for ia, ib, ic in cap_tris:
+        b_faces.append([base + ic, base + ib, base + ia])  # floor
+    eave_base = len(b_verts)
+    for vx, vy in verts2d:
+        b_verts.append((vx, vy, z_eave))
+    start = 0
+    for ring in [ext] + holes:
+        rn = len(ring)
+        for i in range(rn):
+            a = base + start + i
+            b = base + start + (i + 1) % rn
+            c = eave_base + start + (i + 1) % rn
+            d = eave_base + start + i
+            b_faces.append([a, b, c, d])
+        start += rn
+
+    cx = sum(v[0] for v in verts2d) / n2
+    cy = sum(v[1] for v in verts2d) / n2
+
+    if style == "onion":
+        # Skip t=0 -- that ring is identical to the eave ring already added above.
+        profile = [(0.28, 1.18), (0.5, 1.0), (0.72, 0.45), (0.88, 0.16)]
+    else:  # dome / hemisphere-like
+        profile = [(t, math.cos(t * math.pi / 2.0)) for t in (0.25, 0.5, 0.75)]
+
+    prev_base = eave_base
+    for t, r in profile:
+        z = z_eave + roof_height * t
+        ring_base = len(b_verts)
+        for vx, vy in verts2d:
+            b_verts.append((cx + (vx - cx) * r, cy + (vy - cy) * r, z))
+        start = 0
+        for ring in [ext] + holes:
+            rn = len(ring)
+            for i in range(rn):
+                a = prev_base + start + i
+                b = prev_base + start + (i + 1) % rn
+                c = ring_base + start + (i + 1) % rn
+                d = ring_base + start + i
+                b_faces.append([a, b, c, d])
+            start += rn
+        prev_base = ring_base
+
+    apex_idx = len(b_verts)
+    b_verts.append((cx, cy, z_eave + roof_height))
+    start = 0
+    for ring in [ext] + holes:
+        rn = len(ring)
+        for i in range(rn):
+            a = prev_base + start + i
+            b = prev_base + start + (i + 1) % rn
+            b_faces.append([a, b, apex_idx])
+        start += rn
+
+
+def _add_stadium_bowl(
+    poly, z_floor, z_eave, roof_height, roof_shape, b_verts, b_faces, n_tiers=4
+):
+    """Bowl-shaped stadium: the outermost tier is at full eave height and each
+    inward tier steps down, giving a recessed-seating silhouette rather than a
+    flat-topped block. Returns False if the footprint is too small/thin to inset
+    at all (caller falls back to a plain prism)."""
+    total_rise = max(z_eave - z_floor, 0.1)
+    minx, miny, maxx, maxy = poly.bounds
+    span = max(maxx - minx, maxy - miny)
+    if span <= 0:
+        return False
+    step_inset = span * 0.12
+
+    # Pre-build all inset rings so we know how many tiers actually fit.
+    rings = [poly]
+    current = poly
+    for _ in range(n_tiers):
+        candidate = g2d.validate(current.buffer(-step_inset))
+        if (
+            candidate is None
+            or candidate.is_empty
+            or candidate.geom_type != "Polygon"
+            or candidate.area < current.area * 0.05
+        ):
+            break
+        rings.append(candidate)
+        current = candidate
+
+    if len(rings) < 2:
+        return False
+
+    n_actual = len(rings) - 1
+    actual_tier_rise = total_rise / n_actual
+
+    # Each annulus: outer = rings[i], inner = rings[i+1].
+    # Top height DECREASES inward — bowl, not ziggurat.
+    for i in range(n_actual):
+        z_top = z_eave - i * actual_tier_rise
+        ext_o, holes_o = _poly_rings(rings[i])
+        ext_i, _ = _poly_rings(rings[i + 1])
+        if ext_o is None or ext_i is None:
+            return i > 0
+        annulus_holes = (holes_o or []) + [ext_i]
+        ec = _earcut_triangulate(ext_o, annulus_holes)
+        if ec is None:
+            return i > 0
+        verts2d_a, cap_tris_a = ec
+        _extrude_prism(
+            ext_o, annulus_holes, verts2d_a, cap_tris_a, z_floor, z_top, b_verts, b_faces
+        )
+
+    # Innermost area (the open playing field): thin floor slab.
+    ext_c, holes_c = _poly_rings(rings[-1])
+    if ext_c is not None:
+        ec = _earcut_triangulate(ext_c, holes_c)
+        if ec is not None:
+            verts2d_c, cap_tris_c = ec
+            _extrude_prism(
+                ext_c, holes_c, verts2d_c, cap_tris_c,
+                z_floor, z_floor + actual_tier_rise * 0.1,
+                b_verts, b_faces,
+            )
+
+    return True
+
+
+def _append_building(
+    poly,
+    z_offset,
+    sample_z,
+    b_verts,
+    b_faces,
+    roof_shape=None,
+    roof_height=None,
+    roof_angle=None,
+    roof_direction=None,
+    z_min_offset=0.0,
+    building_type=None,
+):
+    """Append one manifold building volume to b_verts/b_faces.
+
+    poly: shapely Polygon (single, possibly with holes) footprint.
+    z_offset: eave height above the local terrain max, already scaled to
+        print units (see create_buildings).
+    z_min_offset: floor height above the local terrain min, already scaled to
+        print units -- 0 for a normal ground-level building, >0 for a
+        building:part that starts partway up (e.g. a tower over a podium).
+    roof_shape / roof_height / roof_angle / roof_direction: OSM roof:* tag
+        values, already unit-converted by the caller where relevant.
+    building_type: OSM building=* value, used only to detect stadiums/
+        grandstands for the tiered-terrace treatment.
+    """
+    ext, holes = _poly_rings(poly)
+    if ext is None:
+        return
+    ec = _earcut_triangulate(ext, holes)
+    if ec is None:
+        return
+    verts2d, cap_tris = ec
+    _vx = [v[0] for v in verts2d]
+    _vy = [v[1] for v in verts2d]
+    zs = sample_z(_vx, _vy)
+    z_floor = float(zs.min()) + z_min_offset
+    z_eave = float(zs.max()) + z_offset
+
+    rs = (roof_shape or "flat").strip().lower()
+    bt = (building_type or "").strip().lower()
+    rh_default = (
+        roof_height if roof_height is not None else max(z_eave - z_floor, 0.1) * 0.5
+    )
+
+    if bt in ("stadium", "grandstand") and _add_stadium_bowl(poly, z_floor, z_eave, rh_default, rs, b_verts, b_faces):
+        return
+    # _add_stadium_bowl returned False (footprint too small/thin to inset) -- fall through to normal building.
+
+    if rs in ("dome", "onion"):
+        _add_dome_roof(
+            ext,
+            holes,
+            verts2d,
+            cap_tris,
+            z_floor,
+            z_eave,
+            rh_default,
+            rs,
+            b_verts,
+            b_faces,
+        )
+        return
+
+    if rs == "tomb_pyramid":
+        # Ground-to-apex with no vertical walls — tomb=pyramid only.
+        n2 = len(verts2d)
+        base = len(b_verts)
+        cx = poly.centroid.x
+        cy = poly.centroid.y
+        apex_idx = base + n2
+        for vx, vy in verts2d:
+            b_verts.append((vx, vy, z_floor))
+        b_verts.append((cx, cy, z_eave))
+        for ia, ib, ic in cap_tris:
+            b_faces.append([base + ic, base + ib, base + ia])  # floor
+        start = 0
+        for ring in [ext] + holes:
+            rn = len(ring)
+            for i in range(rn):
+                a = base + start + i
+                b = base + start + (i + 1) % rn
+                b_faces.append([a, b, apex_idx])
+            start += rn
+        return
+
+    if rs == "pyramidal":
+        # Vertical walls up to eave, then a pyramidal cap — a tower with a pointed roof.
+        n2 = len(verts2d)
+        base = len(b_verts)
+        cx = poly.centroid.x
+        cy = poly.centroid.y
+        for vx, vy in verts2d:
+            b_verts.append((vx, vy, z_floor))
+        eave_base = len(b_verts)
+        for vx, vy in verts2d:
+            b_verts.append((vx, vy, z_eave))
+        for ia, ib, ic in cap_tris:
+            b_faces.append([base + ic, base + ib, base + ia])  # floor
+        start = 0
+        for ring in [ext] + holes:
+            rn = len(ring)
+            for i in range(rn):
+                a = base + start + i
+                b = base + start + (i + 1) % rn
+                c = eave_base + start + (i + 1) % rn
+                d = eave_base + start + i
+                b_faces.append([a, b, c, d])  # vertical wall
+            start += rn
+        apex_idx = len(b_verts)
+        b_verts.append((cx, cy, z_eave + rh_default))
+        start = 0
+        for ring in [ext] + holes:
+            rn = len(ring)
+            for i in range(rn):
+                a = eave_base + start + i
+                b = eave_base + start + (i + 1) % rn
+                b_faces.append([a, b, apex_idx])  # pyramidal cap
+            start += rn
+        return
+
+    if rs == "skillion":
+        heights = _skillion_heights(
+            verts2d, z_eave, roof_height, roof_angle, roof_direction
+        )
+        _add_height_field_roof(
+            ext, holes, verts2d, cap_tris, z_floor, heights, b_verts, b_faces
+        )
+        return
+
+    if rs in ("gabled", "hipped", "hip", "half-hipped", "gambrel"):
+        axes = _fitted_rect_axes(poly)
+        if axes is not None and axes["coverage"] >= 0.75:
+            hip = rs in ("hipped", "hip", "half-hipped")
+            heights = _ridge_heights(
+                verts2d, axes, z_eave, roof_height, roof_angle, hip
+            )
+            _add_height_field_roof(
+                ext, holes, verts2d, cap_tris, z_floor, heights, b_verts, b_faces
+            )
+            return
+        # footprint isn't rectangular enough for a clean ridge -- fall through
+        # to a flat cap below rather than producing a distorted roof.
+
+    # Flat roof: also the fallback for any roof shape not modeled above.
+    _extrude_prism(ext, holes, verts2d, cap_tris, z_floor, z_eave, b_verts, b_faces)
+
+
 def buildings_geometry_for_polygon(piece_polygon, buildings_data):
     """Return (verts, faces) for every building footprint clipped to *piece_polygon*.
 
@@ -133,12 +519,24 @@ def buildings_geometry_for_polygon(piece_polygon, buildings_data):
     """
     footprints, sample_z = buildings_data
     b_verts, b_faces = [], []
-    for poly, z_offset in footprints:
-        clipped = g2d.validate(poly.intersection(piece_polygon))
+    for fp in footprints:
+        clipped = g2d.validate(fp["poly"].intersection(piece_polygon))
         if clipped is None or clipped.is_empty:
             continue
         for part in g2d.iter_polygons(clipped):
-            _append_building(part, z_offset, sample_z, b_verts, b_faces)
+            _append_building(
+                part,
+                fp["z_offset"],
+                sample_z,
+                b_verts,
+                b_faces,
+                roof_shape=fp["roof_shape"],
+                roof_height=fp["roof_height"],
+                roof_angle=fp["roof_angle"],
+                roof_direction=fp["roof_direction"],
+                z_min_offset=fp["z_min_offset"],
+                building_type=fp["building_type"],
+            )
     if not b_verts:
         return None, None
     return b_verts, b_faces
@@ -206,10 +604,10 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
     # into one mesh at the very end.
     b_verts = []
     b_faces = []
-    # Every (footprint, z_offset) pair that fed the mesh above, cached into
+    # Every footprint entry that fed the mesh above, cached into
     # _puzzle_buildings_data at the end of this function -- the puzzle flow
     # re-clips these per piece since the mesh itself is never cut along the
-    # jigsaw seams.
+    # jigsaw seams. Each entry is a dict; see the fields appended below.
     _puzzle_footprints = []
     b_height_mult = bpy.context.scene.tp3d.el_bHeightMultiplier
 
@@ -327,6 +725,16 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
 
                 _t0 = time.time()
                 _tile_total = max(1, len(data["elements"]))
+
+                # First pass: parse every element in this tile into a footprint
+                # entry (poly + tags) without building geometry yet. Elements
+                # tagged building:part=* are rendered individually instead of
+                # the building outline they sit inside (see the containment
+                # pass below). This depends on fetch_osm_data's Overpass query
+                # actually requesting building:part ways -- if it doesn't, no
+                # entry will ever have is_part=True and behavior is identical
+                # to before: every element renders as a stand-alone building.
+                tile_entries = []
                 for i, element in enumerate(data["elements"]):
                     if _ov.active and i % max(1, _tile_total // 20) == 0:
                         _elem_frac = ((_cntr - 1) + i / _tile_total) / _maxcntr
@@ -353,6 +761,10 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
                     else:
                         continue
 
+                    is_part = "building:part" in tags
+                    if not is_part and "building" not in tags:
+                        continue
+
                     # build 2D footprint coords from cached node_xy
                     footprint = []
                     for nid in node_ids:
@@ -366,8 +778,44 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
                     levels = safe_float_height(tags.get("building:levels", 0))
                     if levels != 0:
                         height = levels * 2.7
+                    min_height = safe_float_height(
+                        tags.get("min_height") or tags.get("building:min_height") or 0
+                    )
+
+                    roof_shape = (
+                        "tomb_pyramid"
+                        if tags.get("tomb") == "pyramid"
+                        else tags.get("roof:shape")
+                    )
+                    roof_height_tag = tags.get("roof:height")
+                    if roof_height_tag is not None:
+                        roof_height = (
+                            safe_float_height(roof_height_tag)
+                            * 0.002
+                            * scaleHor
+                            * b_height_mult
+                        )
+                    else:
+                        # Clamp at 25 m so a skyscraper tagged pyramidal doesn't
+                        # get a cap hundreds of metres tall.
+                        roof_height = (
+                            min(height * 0.3, 25.0) * 0.002 * scaleHor * b_height_mult
+                        )
+                    roof_angle = None
+                    if tags.get("roof:angle") is not None:
+                        try:
+                            roof_angle = float(tags["roof:angle"])
+                        except (ValueError, TypeError):
+                            roof_angle = None
+                    roof_direction = None
+                    if tags.get("roof:direction") is not None:
+                        try:
+                            roof_direction = float(tags["roof:direction"])
+                        except (ValueError, TypeError):
+                            roof_direction = None
 
                     z_offset = height * 0.002 * scaleHor * b_height_mult
+                    z_min_offset = min_height * 0.002 * scaleHor * b_height_mult
 
                     # Validate the footprint and clip it to the map shape in 2D.
                     # validate() repairs self-touching OSM outlines; the clip keeps
@@ -380,17 +828,73 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
                     if poly is None or poly.is_empty:
                         continue
 
-                    # Each (clipped) polygon part becomes its own manifold prism.
-                    for part in g2d.iter_polygons(poly, min_area=min_area):
-                        _puzzle_footprints.append((part, z_offset))
-                        _append_building(part, z_offset, _sample_z, b_verts, b_faces)
+                    tile_entries.append(
+                        {
+                            "poly": poly,
+                            "is_part": is_part,
+                            "z_offset": z_offset,
+                            "z_min_offset": z_min_offset,
+                            "roof_shape": roof_shape,
+                            "roof_height": roof_height,
+                            "roof_angle": roof_angle,
+                            "roof_direction": roof_direction,
+                            "building_type": tags.get("building"),
+                        }
+                    )
 
-                _t_geom += time.time() - _t0
+                # Second pass: a base building outline that a building:part
+                # sits inside is skipped in favor of rendering its parts
+                # individually (otherwise you'd get a solid block AND the
+                # detailed parts overlapping it). A building with no parts
+                # (the common case today) renders exactly as before.
+                parts = [e for e in tile_entries if e["is_part"]]
+                bases = [e for e in tile_entries if not e["is_part"]]
+                if parts:
+                    for b in bases:
+                        b["has_parts"] = any(
+                            b["poly"].contains(p["poly"].representative_point())
+                            for p in parts
+                        )
+                else:
+                    for b in bases:
+                        b["has_parts"] = False
+                render_entries = parts + [b for b in bases if not b["has_parts"]]
 
                 if _ov.active:
                     _ov.update(
                         message=f"Buildings: tile {_cntr}/{_maxcntr} — creating {n_buildings} buildings…"
                     )
+
+                # Each (clipped) polygon part becomes its own manifold volume.
+                for entry in render_entries:
+                    for part in g2d.iter_polygons(entry["poly"], min_area=min_area):
+                        _puzzle_footprints.append(
+                            {
+                                "poly": part,
+                                "z_offset": entry["z_offset"],
+                                "z_min_offset": entry["z_min_offset"],
+                                "roof_shape": entry["roof_shape"],
+                                "roof_height": entry["roof_height"],
+                                "roof_angle": entry["roof_angle"],
+                                "roof_direction": entry["roof_direction"],
+                                "building_type": entry["building_type"],
+                            }
+                        )
+                        _append_building(
+                            part,
+                            entry["z_offset"],
+                            _sample_z,
+                            b_verts,
+                            b_faces,
+                            roof_shape=entry["roof_shape"],
+                            roof_height=entry["roof_height"],
+                            roof_angle=entry["roof_angle"],
+                            roof_direction=entry["roof_direction"],
+                            z_min_offset=entry["z_min_offset"],
+                            building_type=entry["building_type"],
+                        )
+
+                _t_geom += time.time() - _t0
 
     print(
         f"[TP3D buildings] fetch={_t_fetch:.1f}s  convert={_t_convert:.1f}s  "

@@ -180,7 +180,10 @@ def _build_union_query(south, west, north, east, kinds, settings=None):
         filters.append('way["natural"="coastline"]')
 
     if "BUILDINGS" in kinds:
-        filters.append('nwr["building"]')
+        filters += [
+            'nwr["building"]', 
+            'nwr["building:part"]',
+        ]
 
     if "STREETS" in kinds:
         all_big = {"primary", "motorway", "primary_link", "motorway_link"}
