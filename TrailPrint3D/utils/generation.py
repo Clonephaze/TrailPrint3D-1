@@ -1224,7 +1224,7 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
         if shellobj:
             shellobj.select_set(True)
 
-        export_selected_to_3mf()
+        export_selected_to_3mf(is_auto=True)
     else:
         print("exporting as STL/OBJ")
         if curveObjs and (props.get('elementMode') != "CREATE_TEXTURE" or not tp3d_props.tex_include_trail):

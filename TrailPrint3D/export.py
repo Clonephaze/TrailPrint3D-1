@@ -92,7 +92,7 @@ def export_selected_to_STL(force="STL"):
     active_obj = bpy.context.active_object
 
 
-def export_selected_to_3mf():
+def export_selected_to_3mf(is_auto: bool = False):
     from .utils import show_message_box
 
     exportPath = bpy.context.scene.tp3d.get('export_path', "")
@@ -206,35 +206,37 @@ def export_selected_to_3mf():
         _progress.WarningsOverlay.add_warning("3MF Addon not installed", "error")
         return
 
-    # Select the export roots so the operator can use use_selection=True.
-    bpy.ops.object.select_all(action='DESELECT')
-    for root in export_roots:
-        if root and root.name in bpy.data.objects:
-            root.select_set(True)
-            bpy.context.view_layer.objects.active = root
-
     try:
         tp3d = bpy.context.scene.tp3d
-        result = bpy.ops.export_mesh.threemf(
+
+        _on_progress = None
+        if is_auto:
+            # Feed 3MF export progress (0–100) into the TP3D overlay's 0.97–1.0 tail.
+            _overlay = _progress.ProgressOverlay.get()
+            def _on_progress(percent: int, message: str) -> None:
+                _overlay.update(0.97 + (percent / 100.0) * 0.03, "3MF Export", message)
+
+        result = _3mf_api.export_3mf(
             filepath=full_path,
-            use_selection=True,
+            objects=export_roots,
             use_mesh_modifiers=True,
             global_scale=0.001,
             coordinate_precision=4,
             thumbnail_mode="NONE" if bpy.app.background else "CUSTOM",
-            thumbnail_image="__CUSTOM_PATH__" if not bpy.app.background else "NONE",
-            thumbnail_image_path=thumbnail_path if not bpy.app.background else "",
+            thumbnail_image=thumbnail_path if not bpy.app.background else "",
             thumbnail_resolution=256,
             use_orca_format="AUTO",
             slicer_profile=tp3d.slicer_profile_name,
+            progress_mode="NONE" if is_auto else "AUTO",
+            on_progress=_on_progress,
         )
-        if 'FINISHED' in result:
+        if result.status == "FINISHED":
             print(f"Successfully exported to: {full_path}")
             _progress.WarningsOverlay.add_warning("Exported as 3mf", "ok")
         else:
-            print(f"Export Error: operator returned {result}")
+            print("Export Error:\n" + "\n".join(result.warnings))
             _progress.WarningsOverlay.add_warning("Exporting as 3mf Failed", "error")
-    except Exception as e:  # noqa: BLE001 - Wide catch is purposeful, incase of a crash from the operator itself
+    except Exception as e:  # noqa: BLE001 - Wide catch is purposeful, incase of a crash from the api itself
         print(f"Export Error: {e}")
         _progress.WarningsOverlay.add_warning("Exporting as 3mf Failed", "error")
 
