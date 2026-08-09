@@ -209,6 +209,8 @@ def export_selected_to_3mf(is_auto: bool = False):
     try:
         tp3d = bpy.context.scene.tp3d
 
+        _is_texture_mode = tp3d.elementMode == 'CREATE_TEXTURE'
+
         _on_progress = None
         if is_auto:
             # Feed 3MF export progress (0–100) into the TP3D overlay's 0.97–1.0 tail.
@@ -225,7 +227,7 @@ def export_selected_to_3mf(is_auto: bool = False):
             thumbnail_mode="NONE" if bpy.app.background else "CUSTOM",
             thumbnail_image=thumbnail_path if not bpy.app.background else "",
             thumbnail_resolution=256,
-            use_orca_format="AUTO",
+            use_orca_format="PAINT" if _is_texture_mode else "AUTO",
             slicer_profile=tp3d.slicer_profile_name,
             progress_mode="NONE" if is_auto else "AUTO",
             on_progress=_on_progress,
