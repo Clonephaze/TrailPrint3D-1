@@ -422,9 +422,12 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
 
     # ── Shapely: union all → subtract negatives → area-filter → ONE mesh ────────────
     _t_shapely = time.time()
+    _smooth_r = bpy.context.scene.tp3d.col_osmSmoothing
     merged_pos = _g2d.union(pos_geoms)
     merged_neg = _g2d.union(neg_geoms)
     final_geom = _g2d.subtract(merged_pos, merged_neg)
+    if _smooth_r > 0:
+        final_geom = _g2d.smooth_polygon_numpy(final_geom, alpha=_smooth_r)
     print(f"  [coloring_main] Shapely union+subtract ({kind}): {time.time()-_t_shapely:.3f}s  pos={len(pos_geoms)}  neg={len(neg_geoms)}")
 
     # DEBUG: dump the exact Shapely geometry at each stage as stacked wireframes so
@@ -448,7 +451,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
         return _ColoringTextureResult(kind=kind, polygon=final_geom)
 
     # Smooth raw OSM GPS-traced nodes so extruded solids have clean edges.
-    _simplified = final_geom.simplify(0.4, preserve_topology=True)
+    _simplified = final_geom.simplify(0.075, preserve_topology=True)
     _simplified = _g2d.validate(_simplified)
     if _simplified is not None and not _simplified.is_empty:
         final_geom = _simplified

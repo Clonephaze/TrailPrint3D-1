@@ -228,6 +228,63 @@ def subtract(geom, neg_geom):
     return geom.difference(neg_geom)
 
 
+def smooth_polygon_numpy(geom, alpha=0.5):
+    """Smooth a Shapely Polygon or MultiPolygon by blending toward a moving-average target.
+
+    alpha=0.0 returns the original unchanged; alpha=1.0 returns fully smoothed.
+    Using a blend rather than a raw convolution means small alpha values produce
+    genuinely subtle changes regardless of vertex density.
+    """
+    import numpy as np
+    _require_shapely()
+
+    WINDOW = 7
+    pad = WINDOW // 2
+    kernel = np.ones(WINDOW) / WINDOW
+
+    def _blend_ring(coords):
+        pts = list(coords)
+        if pts and pts[0] == pts[-1]:
+            pts = pts[:-1]
+        if len(pts) < 3:
+            return pts + [pts[0]] if pts else pts
+        x = np.array([p[0] for p in pts])
+        y = np.array([p[1] for p in pts])
+        xs = np.convolve(np.pad(x, pad, mode='wrap'), kernel, mode='valid')
+        ys = np.convolve(np.pad(y, pad, mode='wrap'), kernel, mode='valid')
+        xb = x + alpha * (xs - x)
+        yb = y + alpha * (ys - y)
+        return list(zip(xb.tolist(), yb.tolist())) + [(float(xb[0]), float(yb[0]))]
+
+    def _smooth_polygon(poly):
+        ext = _blend_ring(poly.exterior.coords)
+        holes = [_blend_ring(ir.coords) for ir in poly.interiors]
+        try:
+            result = Polygon(ext, holes)
+            return validate(result) if not result.is_valid else result
+        except Exception as _exc:  # noqa: BLE001
+            print(f"[TrailPrint3D] geometry2d: smoothing produced an invalid polygon, keeping original: {_exc!r}")
+            return poly
+
+    if geom is None or geom.is_empty:
+        return geom
+    if geom.geom_type == 'Polygon':
+        return _smooth_polygon(geom)
+    if geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
+        # Rebuild directly -- parts are non-overlapping so unary_union re-noding is wasted work.
+        # iter_polygons() flattens both the input and each smoothed part, so a
+        # validate() call that promotes a smoothed Polygon into a mixed
+        # GeometryCollection (e.g. Polygon + sliver LineString) can't leak a
+        # non-Polygon into the MultiPolygon() constructor below.
+        flat = []
+        for part in iter_polygons(geom):
+            flat.extend(iter_polygons(_smooth_polygon(part)))
+        if not flat:
+            return geom
+        return flat[0] if len(flat) == 1 else MultiPolygon(flat)
+    return geom
+
+
 def line_to_ribbon(coords_xy, half_width, cap_style="round", join_style="round"):
     """Buffer a polyline into a flat ribbon polygon.
 

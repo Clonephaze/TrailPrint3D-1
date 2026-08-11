@@ -281,6 +281,7 @@ class TP3D_PT_advanced(bpy.types.Panel):
             box = layout.box()
             box.label(text=_("Terrain Elements"), icon='TEXTURE')
             box.prop(props, "elementMode")
+            box.prop(props, "col_osmSmoothing")
             # if "SINGLECOLORMODE" in props.elementMode:
             #     box.prop(props, "elementModeInset")
 
