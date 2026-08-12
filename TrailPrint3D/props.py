@@ -506,7 +506,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         description=_("Rasterize the trail footprint into the paint texture (terrain under trail coloured red)")
     )
     elementModeInset: FloatProperty(name=_("Clip Inset"), default=2.0, min=0.0, description=_("Thickness of solid frame for SCM-elements"))# type: ignore
-    col_osmSmoothing: FloatProperty(name=_("Smoothing"), default=0.0, min=0.0, max=1.0, subtype='FACTOR', description=_("Rounds sharp OSM polygon edges. 0 = off, 0.5 = slight, 1.0 = heavy"))# type: ignore
+    col_osmSmoothing: FloatProperty(name=_("Smoothing"), default=0.0, min=0.0, max=1.0, subtype='FACTOR', description=_("Rounds element polygons, ignores water. 0 = off, 0.5 = slight, 1.0 = heavy"))# type: ignore
 
 
     col_wArea: FloatProperty(name= _("Water Threshold"), default = 1, description = _("Lakes smaller than the threshold won't be included")) # type: ignore

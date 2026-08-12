@@ -228,54 +228,69 @@ def subtract(geom, neg_geom):
     return geom.difference(neg_geom)
 
 
-def smooth_polygon_numpy(geom, alpha=0.5):
-    """Smooth a Shapely Polygon or MultiPolygon by blending toward a moving-average target.
+def smooth_polygon_taubin(geom, outline=None, pin_tolerance=1e-3, **taubin_kwargs):
+    """Smooth a Shapely Polygon or MultiPolygon using Taubin smoothing
+    (shapelysmooth), preserving vertex count/order so outline-touching
+    vertices can be pinned back to their exact original position afterward.
 
-    alpha=0.0 returns the original unchanged; alpha=1.0 returns fully smoothed.
-    Using a blend rather than a raw convolution means small alpha values produce
-    genuinely subtle changes regardless of vertex density.
+    taubin_kwargs -- passed straight through to shapelysmooth.taubin_smooth
+    (factor, mu, steps). Omitted here to use the library's own defaults;
+    tune once you've seen real output.
+
+    outline, if given, is a Shapely geometry (or its boundary) representing
+    a shared boundary that other element shapes may touch. Any vertex lying
+    on that boundary (within pin_tolerance) is restored to its exact
+    original coordinate after smoothing, so touching elements stay stitched
+    together at that edge.
     """
-    import numpy as np
+    from shapelysmooth import taubin_smooth
+
     _require_shapely()
 
-    WINDOW = 7
-    pad = WINDOW // 2
-    kernel = np.ones(WINDOW) / WINDOW
+    pin_geom = (
+        outline.boundary
+        if outline is not None and hasattr(outline, "boundary")
+        else outline
+    )
 
-    def _blend_ring(coords):
+    def _is_pinned(px, py):
+        if pin_geom is None:
+            return False
+        return pin_geom.distance(Point(px, py)) <= pin_tolerance
+
+    def _smooth_ring(coords):
+        # Keep the ring CLOSED (first == last) when handing it to
+        # taubin_smooth -- that's how it distinguishes a closed ring from
+        # an open polyline. Stripping the closing point here would make it
+        # treat the seam as two endpoints instead of interior nodes.
         pts = list(coords)
-        if pts and pts[0] == pts[-1]:
-            pts = pts[:-1]
-        if len(pts) < 3:
-            return pts + [pts[0]] if pts else pts
-        x = np.array([p[0] for p in pts])
-        y = np.array([p[1] for p in pts])
-        xs = np.convolve(np.pad(x, pad, mode='wrap'), kernel, mode='valid')
-        ys = np.convolve(np.pad(y, pad, mode='wrap'), kernel, mode='valid')
-        xb = x + alpha * (xs - x)
-        yb = y + alpha * (ys - y)
-        return list(zip(xb.tolist(), yb.tolist())) + [(float(xb[0]), float(yb[0]))]
+        if len(pts) < 4:  # 3 real points + closing duplicate
+            return pts
+
+        pinned_mask = [_is_pinned(px, py) for px, py in pts]
+        smoothed = taubin_smooth(pts, **taubin_kwargs)
+
+        result = [pts[i] if pinned_mask[i] else smoothed[i] for i in range(len(pts))]
+        result[-1] = result[0]  # guard against float drift breaking closure
+        return result
 
     def _smooth_polygon(poly):
-        ext = _blend_ring(poly.exterior.coords)
-        holes = [_blend_ring(ir.coords) for ir in poly.interiors]
+        ext = _smooth_ring(list(poly.exterior.coords))
+        holes = [_smooth_ring(list(ir.coords)) for ir in poly.interiors]
         try:
             result = Polygon(ext, holes)
             return validate(result) if not result.is_valid else result
         except Exception as _exc:  # noqa: BLE001
-            print(f"[TrailPrint3D] geometry2d: smoothing produced an invalid polygon, keeping original: {_exc!r}")
+            print(
+                f"[TrailPrint3D] geometry2d: smoothing produced an invalid polygon, keeping original: {_exc!r}"
+            )
             return poly
 
     if geom is None or geom.is_empty:
         return geom
-    if geom.geom_type == 'Polygon':
+    if geom.geom_type == "Polygon":
         return _smooth_polygon(geom)
-    if geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
-        # Rebuild directly -- parts are non-overlapping so unary_union re-noding is wasted work.
-        # iter_polygons() flattens both the input and each smoothed part, so a
-        # validate() call that promotes a smoothed Polygon into a mixed
-        # GeometryCollection (e.g. Polygon + sliver LineString) can't leak a
-        # non-Polygon into the MultiPolygon() constructor below.
+    if geom.geom_type in ("MultiPolygon", "GeometryCollection"):
         flat = []
         for part in iter_polygons(geom):
             flat.extend(iter_polygons(_smooth_polygon(part)))
@@ -447,7 +462,9 @@ def map_footprint_polygon(obj):
     return validate(footprint)
 
 
-def footprint_with_holes(obj, simplify_tol=None, down_only=False, method="structure", keep_collapsed=False):
+def footprint_with_holes(
+    obj, simplify_tol=None, down_only=False, method="structure", keep_collapsed=False
+):
     """Return the true 2D footprint of a mesh as a Shapely Polygon/MultiPolygon.
 
     Projects faces to the (x, y) plane and unions them.  Because the union is
