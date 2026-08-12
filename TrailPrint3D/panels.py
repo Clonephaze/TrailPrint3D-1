@@ -727,11 +727,11 @@ class TP3D_MT_generators_menu(bpy.types.Menu):
 
     def draw(self, context):
         layout = self.layout
+        layout.operator("tp3d.map_generator", text=_("Map Generator"), icon='MESH_CIRCLE')
         if temp.PREMIUMVERSION:
             layout.operator("tp3d.map_picker", text=_("Multi Tile Generator"), icon='WORLD')
         else:
             layout.operator("tp3d.terrain_dummy", text=_("Multi Tile Generator"), icon='LOCKED')
-        layout.operator("tp3d.map_generator", text=_("Map Generator"), icon='MESH_CIRCLE')
         layout.operator("tp3d.puzzle_configurator", text=_("Puzzle Generator"), icon='MOD_BOOLEAN')
 
 
