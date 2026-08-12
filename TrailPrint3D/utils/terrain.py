@@ -609,6 +609,26 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     bm.free()
     merged_object.location.z -= 1
 
+    # recalc_face_normals can leave faces pointing inward on non-manifold shapes;
+    # the MANIFOLD solver silently no-ops when normals are wrong, so fix them now.
+    bm = bmesh.new()
+    bm.from_mesh(merged_object.data)
+    bm.normal_update()
+    if bm.verts:
+        _nf_min_z = min(v.co.z for v in bm.verts)
+        _nf_max_z = max(v.co.z for v in bm.verts)
+        _nf_mid_z = (_nf_min_z + _nf_max_z) * 0.5
+        _nf_wrong = [
+            f for f in bm.faces
+            if (f.calc_center_median().z < _nf_mid_z and f.normal.dot(DOWN) < 0)
+            or (f.calc_center_median().z >= _nf_mid_z and f.normal.dot(UP) < 0)
+        ]
+        if _nf_wrong:
+            print(f"  [normal-fix] ({kind}) flipping {len(_nf_wrong)} faces before boolean")
+            bmesh.ops.reverse_faces(bm, faces=_nf_wrong)
+    bm.to_mesh(merged_object.data)
+    bm.free()
+
     _t_bool = time.time()
 
     # ── Pre-boolean manifold diagnostics ────────────────────────────────────
