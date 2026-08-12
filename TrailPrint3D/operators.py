@@ -2017,6 +2017,8 @@ def _collect_existing_maps():
     for obj in bpy.context.scene.objects:
         if obj.get("Object type") != "MAP" and obj.get("objType") != "MAP":
             continue
+        if "PuzzleRow" in obj or "PuzzleCol" in obj:
+            continue
 
         if obj.get("Shape") == "CUSTOM":
             shape = "custom"
