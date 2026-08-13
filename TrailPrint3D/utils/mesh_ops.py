@@ -2381,20 +2381,34 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     else:
         PRISM_HEIGHT = 30.0
 
-    # _extrude_flat_polygon orients each polygon (CCW exterior) before earcut,
-    # so winding is deterministic regardless of what .buffer() returns.
-    verts, faces = [], []
+    # orient(sign=1.0) guarantees CCW exterior before earcut, so all cap faces
+    # come out +Z. We can then unconditionally flip to -Z instead of relying on
+    # recalc_face_normals flood-fill, which picks the wrong direction on complex
+    # concave shapes (the root cause of the smoothing+expansion normals bug).
+    caps = []
     for poly in _g2d.iter_polygons(fp):
-        _extrude_flat_polygon(_g2d, poly, bottom_z, bottom_z + PRISM_HEIGHT, verts, faces)
-    if not verts:
-        print("[single_color_mode_mesh_remesh] no cutter geometry -- skipping")
+        cap = _g2d.polygon_to_mesh("_cutter_cap", _g2d.orient(poly, sign=1.0))
+        if cap is not None:
+            caps.append(cap)
+    if not caps:
+        print("[single_color_mode_mesh_remesh] no cap geometry -- skipping")
         return None
-    mesh = bpy.data.meshes.new(f"{original.name}_cutter")
-    mesh.from_pydata(verts, [], faces)
-    mesh.update()
-    _clean_solid_mesh(mesh)
-    obj = bpy.data.objects.new(mesh.name, mesh)
-    bpy.context.collection.objects.link(obj)
+    obj = caps[0] if len(caps) == 1 else merge_objects(caps)
+    if obj is None:
+        return None
+
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    for v in bm.verts:
+        v.co.z = bottom_z
+    # orient+earcut guarantees all faces point +Z; flip unconditionally to -Z.
+    bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
+    ret = bmesh.ops.extrude_face_region(bm, geom=bm.faces[:])
+    ext_verts = [g for g in ret["geom"] if isinstance(g, bmesh.types.BMVert)]
+    bmesh.ops.translate(bm, verts=ext_verts, vec=Vector((0, 0, PRISM_HEIGHT)))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(obj.data)
+    bm.free()
     obj.name = f"{original.name}_cutter"
 
     # Boolean subtract from map
