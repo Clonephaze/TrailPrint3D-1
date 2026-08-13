@@ -2381,35 +2381,20 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     else:
         PRISM_HEIGHT = 30.0
 
-    # Earcut a flat cap (holes preserved) for every polygon part, then merge.
-    caps = []
+    # _extrude_flat_polygon orients each polygon (CCW exterior) before earcut,
+    # so winding is deterministic regardless of what .buffer() returns.
+    verts, faces = [], []
     for poly in _g2d.iter_polygons(fp):
-        cap = _g2d.polygon_to_mesh("_cutter_cap", poly)
-        if cap is not None:
-            caps.append(cap)
-    if not caps:
-        print("[single_color_mode_mesh_remesh] no cap geometry -- skipping")
+        _extrude_flat_polygon(_g2d, poly, bottom_z, bottom_z + PRISM_HEIGHT, verts, faces)
+    if not verts:
+        print("[single_color_mode_mesh_remesh] no cutter geometry -- skipping")
         return None
-    obj = caps[0] if len(caps) == 1 else merge_objects(caps)
-    if obj is None:
-        return None
-
-    # Drop the caps to the recess floor, orient them downward, and extrude up
-    # into a watertight manifold prism (holes become clean tunnels through it).
-    bm = bmesh.new()
-    bm.from_mesh(obj.data)
-    for v in bm.verts:
-        v.co.z = bottom_z
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
-    up_faces = [f for f in bm.faces if f.normal.z > 0]
-    if up_faces:
-        bmesh.ops.reverse_faces(bm, faces=up_faces)
-    ret = bmesh.ops.extrude_face_region(bm, geom=bm.faces[:])
-    ext_verts = [g for g in ret["geom"] if isinstance(g, bmesh.types.BMVert)]
-    bmesh.ops.translate(bm, verts=ext_verts, vec=Vector((0, 0, PRISM_HEIGHT)))
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
-    bm.to_mesh(obj.data)
-    bm.free()
+    mesh = bpy.data.meshes.new(f"{original.name}_cutter")
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+    _clean_solid_mesh(mesh)
+    obj = bpy.data.objects.new(mesh.name, mesh)
+    bpy.context.collection.objects.link(obj)
     obj.name = f"{original.name}_cutter"
 
     # Boolean subtract from map
