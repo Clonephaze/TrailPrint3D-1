@@ -16,7 +16,6 @@ from typing import Any
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
-from mathutils import Vector  # type: ignore
 
 # These values are overwritten by _load_shapely() on success.
 _HAS_SHAPELY: bool = False
@@ -34,7 +33,7 @@ orient: Any = None
 prep: Any = None
 _make_valid_compat: Any = None
 _make_valid_v2: Any = None
-unary_union: Any = None
+union_all: Any = None
 polygonize: Any = None
 
 
@@ -47,10 +46,11 @@ def _load_shapely():
     global _HAS_SHAPELY, _SHAPELY_MAJOR, _SHAPELY_IMPORT_ERROR, _shapely
     global Polygon, MultiPolygon, LineString, MultiLineString, GeometryCollection
     global Point, box, orient, prep
-    global _make_valid_compat, _make_valid_v2, unary_union, polygonize
+    global _make_valid_compat, _make_valid_v2, union_all, polygonize
     try:
         import shapely as _shapely_mod
         from shapely import make_valid as _mv2
+        from shapely import union_all as _uu
         from shapely.geometry import (
             GeometryCollection as _GC,
         )
@@ -74,7 +74,6 @@ def _load_shapely():
         )
         from shapely.geometry.polygon import orient as _orient
         from shapely.ops import polygonize as _pg
-        from shapely.ops import unary_union as _uu
         from shapely.prepared import prep as _prep
         from shapely.validation import make_valid as _mvc
 
@@ -89,7 +88,7 @@ def _load_shapely():
         prep = _prep
         _make_valid_compat = _mvc
         _make_valid_v2 = _mv2
-        unary_union = _uu
+        union_all = _uu
         polygonize = _pg
         _shapely = _shapely_mod
         _HAS_SHAPELY = True
@@ -198,7 +197,7 @@ def union(geoms):
     valid = [g for g in geoms if g is not None and not g.is_empty]
     if not valid:
         return None
-    result = unary_union(valid)
+    result = union_all(valid)
     return result if not result.is_empty else None
 
 
@@ -255,7 +254,7 @@ def polylines_to_ribbon(
     Buffering a MultiLineString already merges overlapping road areas into a
     single clean polygon, so there is no need to node/union the centrelines
     first -- a buffer is a Minkowski dilation of the underlying point set, and
-    `unary_union(lines).buffer(w)` yields the identical region as
+    `union_all(lines).buffer(w)` yields the identical region as
     `MultiLineString(lines).buffer(w)`.  Skipping that union avoids noding the
     entire network (computing every intersection), which for a dense city of
     ~200k nodes is by far the most expensive step.
@@ -360,7 +359,7 @@ def map_footprint_polygon(obj):
     bm.free()
     if not segs:
         return None
-    merged = unary_union(segs)
+    merged = union_all(segs)
     polys = list(polygonize(merged))
     if not polys:
         return None
@@ -373,7 +372,7 @@ def map_footprint_polygon(obj):
     # largest piece found.
     max_area = max(p.area for p in polys)
     keep = [p for p in polys if p.area >= max_area * 0.01]
-    footprint = unary_union(keep)
+    footprint = union_all(keep)
     return validate(footprint)
 
 
@@ -420,7 +419,7 @@ def footprint_with_holes(obj, simplify_tol=None, down_only=False, method="struct
     bm.free()
     if not polys:
         return None
-    merged = unary_union(polys)
+    merged = union_all(polys)
     if merged.is_empty:
         return None
     if simplify_tol:
