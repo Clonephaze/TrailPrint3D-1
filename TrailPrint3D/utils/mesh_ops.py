@@ -1156,7 +1156,7 @@ def _extrude_flat_polygon(g2d_mod, polygon, bottom_z, top_z, verts, faces):
     # and every normal ends up flipped, which silently breaks the boolean
     # against the map. Normalize it explicitly rather than assume.
     g2d_mod._require_shapely()
-    polygon = g2d_mod.orient(polygon, sign=1.0)
+    polygon = g2d_mod.orient(polygon, exterior_cw=False)
 
     ext = list(polygon.exterior.coords)
     if len(ext) > 1 and ext[0] == ext[-1]:

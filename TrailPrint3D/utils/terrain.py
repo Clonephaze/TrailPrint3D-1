@@ -448,7 +448,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
         return _ColoringTextureResult(kind=kind, polygon=final_geom)
 
     # Smooth raw OSM GPS-traced nodes so extruded solids have clean edges.
-    _simplified = final_geom.simplify(0.4, preserve_topology=True)
+    _simplified = final_geom.simplify(0.075, preserve_topology=True)
     _simplified = _g2d.validate(_simplified)
     if _simplified is not None and not _simplified.is_empty:
         final_geom = _simplified
