@@ -51,6 +51,7 @@ def _load_shapely():
     try:
         import shapely as _shapely_mod
         from shapely import make_valid as _mv2
+        from shapely import orient_polygons as _orient
         from shapely.geometry import (
             GeometryCollection as _GC,
         )
@@ -72,7 +73,6 @@ def _load_shapely():
         from shapely.geometry import (
             box as _box,
         )
-        from shapely.geometry.polygon import orient as _orient
         from shapely.ops import polygonize as _pg
         from shapely.ops import unary_union as _uu
         from shapely.prepared import prep as _prep
@@ -630,6 +630,7 @@ def polygon_to_mesh(name, polygon):
                 return None
             bm.to_mesh(mesh)
             bm.free()
+            orient(mesh, exterior_cw=False)
 
     return tobj
 
