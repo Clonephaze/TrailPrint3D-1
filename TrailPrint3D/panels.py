@@ -75,11 +75,6 @@ class TP3D_PT_generate(bpy.types.Panel):
             row = layout.row()
             row.alert = True
             row.operator("tp3d.shapely_status", text=_("Shapely failed to load"), icon='ERROR')
-        if not _g2d._HAS_EARCUT:
-            row = layout.row()
-            row.alert = True
-            row.operator("tp3d.earcut_status", text=_("Earcut failed to load"), icon='ERROR')
-
         # --- Generate button ---
         col = layout.column()
         col.scale_y = 1.4

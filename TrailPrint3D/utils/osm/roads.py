@@ -8,7 +8,6 @@ import bpy  # type: ignore
 import numpy as np  # type: ignore
 from mathutils import Vector  # type: ignore
 from shapely import make_valid
-from shapely.geometry.polygon import orient
 
 from ... import progress as _progress
 from .. import geometry2d as g2d
@@ -260,7 +259,7 @@ def _buffer_tiers_to_polygons(
     n_skipped = 0
 
     for part in g2d.iter_polygons(road_union):
-        part = orient(part, sign=1.0)  # exterior CCW, holes CW
+        part = g2d.orient(part, exterior_cw=False)  # exterior CCW, holes CW
         ext = list(part.exterior.coords)[:-1]
         if len(ext) < 3:
             continue
@@ -269,8 +268,7 @@ def _buffer_tiers_to_polygons(
             list(ring.coords)[:-1] for ring in part.interiors if len(ring.coords) >= 4
         ]
 
-        # earcut handles holed polygons correctly; tessellate_polygon inverts fill
-        ec = g2d._earcut_triangulate(ext, holes)
+        ec = g2d._cdt_triangulate(part, ext, holes)
         if ec is None:
             n_skipped += 1
             continue
@@ -465,14 +463,14 @@ def _clip_terrain_grid_to_polygon(
             continue
 
         for part in g2d.iter_polygons(inter):
-            part = orient(part, sign=1.0)  # exterior CCW, holes CW -- matches terrain winding
+            part = g2d.orient(part, exterior_cw=False)  # exterior CCW, holes CW -- matches terrain winding
             ext = list(part.exterior.coords)[:-1]
             if len(ext) < 3:
                 continue
             holes = [
                 list(ring.coords)[:-1] for ring in part.interiors if len(ring.coords) >= 4
             ]
-            ec = g2d._earcut_triangulate(ext, holes)
+            ec = g2d._cdt_triangulate(part, ext, holes)
             if ec is None:
                 continue
             verts2d_part, tris_part = ec

@@ -12,7 +12,6 @@ from mathutils import Vector  # type: ignore
 from .. import addon_preferences
 from .. import constants as const
 from .. import progress as _progress
-from . import geometry2d as g2d
 from .elevation import compute_and_store_tile_bounds
 from .terrain import _ColoringTextureResult
 
@@ -996,17 +995,16 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         if cut_tolerance > 0:
             _road_poly = terrain.get('roads_polygon')
             if _road_poly is not None and not _road_poly.is_empty:
-                from .osm.roads import _build_extruded_mesh
                 from . import geometry2d as _g2d
-                from shapely.geometry.polygon import orient as _orient
+                from .osm.roads import _build_extruded_mesh
                 _buffered = _road_poly.buffer(cut_tolerance, join_style='mitre')
                 if _buffered and not _buffered.is_empty:
                     _all_v2d, _all_tris = [], []
                     for _part in _g2d.iter_polygons(_buffered):
-                        _part = _orient(_part, sign=1.0)
+                        _part = _g2d.orient(_part)
                         _ext = list(_part.exterior.coords)[:-1]
                         _holes = [list(r.coords)[:-1] for r in _part.interiors if len(r.coords) >= 4]
-                        _ec = _g2d._earcut_triangulate(_ext, _holes)
+                        _ec = _g2d._cdt_triangulate(_part, _ext, _holes)
                         if _ec:
                             _v2, _t2 = _ec
                             _base = len(_all_v2d)
@@ -1575,7 +1573,9 @@ def runGeneration(type, locked_scale=None):
         splitCurves,
     )
     try:
-        from ..premium.utils_pe import build_map_shell  # Premium-only: Shell shape extra
+        from ..premium.utils_pe import (
+            build_map_shell,  # Premium-only: Shell shape extra
+        )
     except ImportError:
         def build_map_shell(*_args, **_kwargs):
             return None
@@ -2088,7 +2088,11 @@ def runGeneration(type, locked_scale=None):
     if props.get('elementMode') == "CREATE_TEXTURE":
         _mmu_palette = elements.get('_mmu_palette')
         if _mmu_palette:
-            from .texture import tag_solid_color_for_paint_export, _WHITE_SRGB, _ROADS_SRGB
+            from .texture import (
+                _ROADS_SRGB,
+                _WHITE_SRGB,
+                tag_solid_color_for_paint_export,
+            )
             for _cobj, _ccol in [(textobj, _WHITE_SRGB), (plateobj, _ROADS_SRGB), (shellobj, _ROADS_SRGB)]:
                 tag_solid_color_for_paint_export(_cobj, _ccol, _mmu_palette)
     _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_time, exportformat, elements, shellobj)

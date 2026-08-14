@@ -51,7 +51,6 @@ def _load_shapely():
     try:
         import shapely as _shapely_mod
         from shapely import make_valid as _mv2
-        from shapely import orient_polygons as _orient
         from shapely.geometry import (
             GeometryCollection as _GC,
         )
@@ -73,6 +72,7 @@ def _load_shapely():
         from shapely.geometry import (
             box as _box,
         )
+        from shapely.geometry.polygon import orient as _orient
         from shapely.ops import polygonize as _pg
         from shapely.ops import unary_union as _uu
         from shapely.prepared import prep as _prep
@@ -106,19 +106,6 @@ def _load_shapely():
 _load_shapely()
 if not _HAS_SHAPELY:
     print(f"[TrailPrint3D] Shapely import failed: {_SHAPELY_IMPORT_ERROR!r}")
-
-_np = None
-_earcut = None
-_HAS_EARCUT = False
-_EARCUT_IMPORT_ERROR: Exception | None = None
-try:
-    import mapbox_earcut as _earcut  # type: ignore
-    import numpy as _np  # type: ignore
-
-    _HAS_EARCUT = True
-except ImportError as _ee:
-    _EARCUT_IMPORT_ERROR = _ee
-    print(f"[TrailPrint3D] mapbox_earcut import failed: {_ee!r}")
 
 _SHAPELY_ERR = (
     "TrailPrint3D requires Shapely 2.x. "
@@ -479,60 +466,59 @@ def _ring_coords_3d(ring):
     return [(x, y, 0.0) for x, y in coords]
 
 
-def _earcut_triangulate(exterior_xy, holes_xy):
-    """Triangulate a polygon-with-holes using mapbox_earcut.
+def _cdt_triangulate(polygon, exterior_xy, holes_xy):
+    """Triangulate using shapely.constrained_delaunay_triangles (GEOS 3.11+).
 
-    exterior_xy -- list of (x, y) for the outer ring (no closing duplicate)
-    holes_xy    -- list of lists of (x, y), one per hole (no closing dup)
+    Ring boundary vertices are pre-registered in the shared vertex array in
+    their original order so _extrude_flat_polygon's wall quads keep working.
+    CDT Steiner points (if any) are appended after the ring vertices.
 
-    Returns (verts2d, tris) where:
-      verts2d -- list of (x, y) tuples, the SHARED vertex array (outer ring
-                 first, then each hole appended in order)
-      tris    -- list of (i, j, k) index triples into verts2d
-
-    The triangulation references every vertex by index with NO duplication, so
-    the resulting 2D surface is manifold (interior edges shared by exactly two
-    triangles, ring edges by one).  Returns None on failure / degenerate input.
-
-    earcut is a modified ear-slicing algorithm that handles holes, concavity,
-    twisted polygons and self-intersections robustly -- the same engine trimesh
-    uses for Shapely -> mesh conversion.  Unlike mathutils.tessellate_polygon it
-    does not emit overlapping triangles or duplicate vertices for complex rings.
+    Returns (verts2d, tris) compatible with _earcut_triangulate, or None.
     """
-    if not _HAS_EARCUT:
-        return None
-    verts2d = list(exterior_xy)
-    ring_ends = [len(verts2d)]
-    for hole in holes_xy:
-        verts2d.extend(hole)
-        ring_ends.append(len(verts2d))
-    if len(verts2d) < 3:
-        return None
-    arr = _np.array(verts2d, dtype=_np.float64).reshape(-1, 2)
-    rings = _np.array(ring_ends, dtype=_np.uint32)
+    _require_shapely()
     try:
-        idx = _earcut.triangulate_float64(arr, rings)
-    except Exception as _exc:  # noqa: BLE001
-        print(f"[TrailPrint3D] geometry2d: earcut triangulation failed: {_exc!r}")
+        tris_geom = _shapely.constrained_delaunay_triangles(polygon)
+    except Exception:  # noqa: BLE001 — AttributeError on old GEOS, others on degenerate input
         return None
-    if idx is None or len(idx) < 3:
+    if tris_geom is None or tris_geom.is_empty:
         return None
-    tris = [tuple(int(i) for i in idx[t : t + 3]) for t in range(0, len(idx) - 2, 3)]
-    if not tris:
-        return None
-    return verts2d, tris
+
+    verts2d = []
+    vert_map = {}
+
+    def _get(x, y):
+        k = (round(x, 8), round(y, 8))
+        if k not in vert_map:
+            vert_map[k] = len(verts2d)
+            verts2d.append((x, y))
+        return vert_map[k]
+
+    # Register ring vertices first, in order, so wall index ranges are stable.
+    for x, y in exterior_xy:
+        _get(x, y)
+    for hole in holes_xy:
+        for x, y in hole:
+            _get(x, y)
+
+    tris = []
+    for tri in tris_geom.geoms:
+        if not isinstance(tri, Polygon):
+            continue
+        coords = list(tri.exterior.coords)[:-1]
+        if len(coords) != 3:
+            continue
+        ia = _get(coords[0][0], coords[0][1])
+        ib = _get(coords[1][0], coords[1][1])
+        ic = _get(coords[2][0], coords[2][1])
+        if ia == ib or ib == ic or ia == ic:
+            continue
+        tris.append((ic, ib, ia))  # reverse CW→CCW to match earcut's convention
+
+    return (verts2d, tris) if tris else None
 
 
 def polygon_to_mesh(name, polygon):
     """Convert a Shapely Polygon to a flat Blender mesh object at z=0.
-
-    For polygons with holes the cap is triangulated with mapbox_earcut, which
-    shares every vertex by index and never emits overlapping triangles, so the
-    resulting 2D surface is manifold.  Extruding that surface (done by the
-    caller) yields a watertight manifold prism, which is required for the
-    MANIFOLD boolean against the terrain to work.
-
-    Falls back to mathutils.tessellate_polygon only if earcut is unavailable.
 
     Returns the new bpy.types.Object linked into the active collection, or
     None if the polygon is empty / degenerate.
@@ -552,85 +538,40 @@ def polygon_to_mesh(name, polygon):
     if holes:
         ext_xy = [(x, y) for x, y, _ in outer]
         holes_xy = [[(x, y) for x, y, _ in h] for h in holes]
-        ec = _earcut_triangulate(ext_xy, holes_xy)
-        if ec is not None:
-            verts2d, tris = ec
-            coords = [(x, y, 0.0) for x, y in verts2d]
-            mesh = bpy.data.meshes.new(name)
-            tobj = bpy.data.objects.new(name, mesh)
-            bpy.context.collection.objects.link(tobj)
-            mesh.from_pydata(coords, [], tris)
-            mesh.update()
-            # earcut "doesn't guarantee correctness" for self-touching rings; it
-            # can emit a few zero-area / overlapping sliver triangles that show up
-            # as non-manifold edges. Dissolve them. This runs on THIS cap's own
-            # fresh mesh only, so it never welds vertices across polygon parts
-            # (which is what previously created pinch-point non-manifold verts).
-            bm = bmesh.new()
-            bm.from_mesh(mesh)
-            bmesh.ops.dissolve_degenerate(bm, dist=1e-6, edges=bm.edges[:])
-            bm.to_mesh(mesh)
-            bm.free()
-            mesh.update()
-        else:
-            # Fallback: mathutils tessellation (earcut missing). Less robust --
-            # may produce non-manifold caps for complex holed polygons.
-            from mathutils.geometry import tessellate_polygon  # type: ignore
-
-            loops = [outer] + holes
-            veclists = [[Vector(p) for p in loop] for loop in loops]
-            all_coords = []
-            for loop in loops:
-                all_coords.extend(loop)
-            mtris = tessellate_polygon(veclists)
-            if not mtris:
-                return None
-            mesh = bpy.data.meshes.new(name)
-            tobj = bpy.data.objects.new(name, mesh)
-            bpy.context.collection.objects.link(tobj)
-            mesh.from_pydata(all_coords, [], [tuple(t) for t in mtris])
-            mesh.update()
-            bm = bmesh.new()
-            bm.from_mesh(mesh)
-            bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=1e-5)
-            bmesh.ops.dissolve_degenerate(bm, dist=1e-5, edges=bm.edges[:])
-            bm.to_mesh(mesh)
-            bm.free()
-            mesh.update()
-    else:
-        # No holes: still triangulate properly via earcut so the BVH gets
-        # real triangles rather than a single NGON that gets fan-tessellated
-        # incorrectly for concave river/ribbon polygons.
-        ext_xy = [(x, y) for x, y, _ in outer]
-        ec = _earcut_triangulate(ext_xy, [])
+        ec = _cdt_triangulate(polygon, ext_xy, holes_xy)
+        if ec is None:
+            return None
+        verts2d, tris = ec
+        coords = [(x, y, 0.0) for x, y in verts2d]
         mesh = bpy.data.meshes.new(name)
         tobj = bpy.data.objects.new(name, mesh)
         bpy.context.collection.objects.link(tobj)
-        if ec is not None:
-            verts2d, tris = ec
-            coords = [(x, y, 0.0) for x, y in verts2d]
-            mesh.from_pydata(coords, [], tris)
-            mesh.update()
-            bm = bmesh.new()
-            bm.from_mesh(mesh)
-            bmesh.ops.dissolve_degenerate(bm, dist=1e-6, edges=bm.edges[:])
-            bm.to_mesh(mesh)
-            bm.free()
-            mesh.update()
-        else:
-            # earcut unavailable — fall back to single NGON (old behaviour)
-            bm = bmesh.new()
-            bm_verts = [bm.verts.new(c) for c in outer]
-            try:
-                bm.faces.new(bm_verts)
-            except ValueError:
-                bm.free()
-                bpy.data.meshes.remove(mesh)
-                bpy.data.objects.remove(tobj, do_unlink=True)
-                return None
-            bm.to_mesh(mesh)
-            bm.free()
-            orient(mesh, exterior_cw=False)
+        mesh.from_pydata(coords, [], tris)
+        mesh.update()
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        bmesh.ops.dissolve_degenerate(bm, dist=1e-6, edges=bm.edges[:])
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.update()
+    else:
+        ext_xy = [(x, y) for x, y, _ in outer]
+        ec = _cdt_triangulate(polygon, ext_xy, [])
+        mesh = bpy.data.meshes.new(name)
+        tobj = bpy.data.objects.new(name, mesh)
+        bpy.context.collection.objects.link(tobj)
+        if ec is None:
+            return None
+        verts2d, tris = ec
+        coords = [(x, y, 0.0) for x, y in verts2d]
+        mesh.from_pydata(coords, [], tris)
+        mesh.update()
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        bmesh.ops.dissolve_degenerate(bm, dist=1e-6, edges=bm.edges[:])
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.update()
 
     return tobj
 
