@@ -167,18 +167,21 @@ def _require_shapely():
 # ---------------------------------------------------------------------------
 
 
-def validate(geom, method="structure", keep_collapsed=False):
+def validate(geom, method="structure", keep_collapsed=False, force=False):
     """Repair a Shapely geometry using make_valid(method='structure').
 
     'structure' treats outer rings as area and inner rings as holes, merges
     overlapping shells and subtracts holes — the correct behaviour for OSM
     polygons.  Returns the repaired geometry (Polygon / MultiPolygon /
     GeometryCollection).  Empty or None geometries pass through unchanged.
+
+    force=True bypasses the is_valid check — required for figure-8 self-touching
+    rings that Shapely considers valid but earcut triangulates incorrectly.
     """
     _require_shapely()
     if geom is None or geom.is_empty:
         return geom
-    if geom.is_valid:
+    if geom.is_valid and not force:
         return geom
     if _SHAPELY_MAJOR >= 2:
         return _make_valid_v2(geom, method=method, keep_collapsed=keep_collapsed)

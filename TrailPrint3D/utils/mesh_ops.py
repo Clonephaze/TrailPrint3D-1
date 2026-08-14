@@ -2366,10 +2366,21 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
         gap = tolerance * _const.SCM_ELEMENT_GAP_FACTOR
         if gap > 0:
             fp = fp.buffer(gap)
+            # unary_union merges self-overlapping regions produced when a
+            # curling-back peninsula's two expanded sides cross each other.
+            fp = _g2d.union([fp]) or fp
             fp = _g2d.validate(fp)
             if fp is None or fp.is_empty:
                 print("[single_color_mode_mesh_remesh] footprint empty after tolerance buffer -- skipping")
                 return None
+
+    # simplify removes near-coincident boundary vertices left by buffer at concave
+    # pinch points -- the same tolerance coloring_main uses after smoothing.
+    fp = fp.simplify(0.075)
+    fp = _g2d.validate(fp)
+    if fp is None or fp.is_empty:
+        print("[single_color_mode_mesh_remesh] footprint empty after simplify -- skipping")
+        return None
 
     # World-space bottom of the element: the prism floor (recess depth) sits here.
     mw = original.matrix_world
@@ -2381,20 +2392,34 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     else:
         PRISM_HEIGHT = 30.0
 
-    # _extrude_flat_polygon orients each polygon (CCW exterior) before earcut,
-    # so winding is deterministic regardless of what .buffer() returns.
-    verts, faces = [], []
+    # Build each polygon part as its own mesh so _clean_solid_mesh only welds
+    # earcut slivers within that part -- not across adjacent parts that share a
+    # boundary vertex (which would create non-manifold multiple-face edges).
+    # force-validate each part first: figure-8 self-touching rings from buffer
+    # are OGC-valid so validate() skips them, but earcut mishandles them.
+    part_objs = []
     for poly in _g2d.iter_polygons(fp):
-        _extrude_flat_polygon(_g2d, poly, bottom_z, bottom_z + PRISM_HEIGHT, verts, faces)
-    if not verts:
+        for sub_poly in _g2d.iter_polygons(_g2d.validate(poly, force=True)):
+            sub_poly = sub_poly.simplify(0.075)
+            if sub_poly is None or sub_poly.is_empty:
+                continue
+            p_verts, p_faces = [], []
+            _extrude_flat_polygon(_g2d, sub_poly, bottom_z, bottom_z + PRISM_HEIGHT, p_verts, p_faces)
+            if not p_verts:
+                continue
+            m = bpy.data.meshes.new(f"{original.name}_cutter_part")
+            m.from_pydata(p_verts, [], p_faces)
+            m.update()
+            _clean_solid_mesh(m)
+            part_obj = bpy.data.objects.new(m.name, m)
+            bpy.context.collection.objects.link(part_obj)
+            part_objs.append(part_obj)
+    if not part_objs:
         print("[single_color_mode_mesh_remesh] no cutter geometry -- skipping")
         return None
-    mesh = bpy.data.meshes.new(f"{original.name}_cutter")
-    mesh.from_pydata(verts, [], faces)
-    mesh.update()
-    _clean_solid_mesh(mesh)
-    obj = bpy.data.objects.new(mesh.name, mesh)
-    bpy.context.collection.objects.link(obj)
+    obj = part_objs[0] if len(part_objs) == 1 else merge_objects(part_objs)
+    if obj is None:
+        return None
     obj.name = f"{original.name}_cutter"
 
     # Boolean subtract from map
