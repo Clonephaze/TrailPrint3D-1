@@ -209,10 +209,6 @@
                 <button type="button" id="plateSettingsCloseBtn" title="Close">✕</button>
             </div>
             <div class="field-row">
-                <label for="holderTextInput">Text</label>
-                <input type="text" id="holderTextInput" placeholder="Label">
-            </div>
-            <div class="field-row">
                 <label for="holderWallWidthInput">Frame Thickness</label>
                 <input type="number" id="holderWallWidthInput" min="1" max="20" step="1" value="10">
             </div>
@@ -225,22 +221,36 @@
                 <input type="checkbox" id="holderSeamEngravingInput" checked>
             </div>
             <div class="field-row">
-                <label for="holderFontSelect">Font</label>
-                <select id="holderFontSelect">
-                    <option value="">Default</option>
-                    <option value="arial.ttf">Arial</option>
-                    <option value="arialbd.ttf">Arial Bold</option>
-                    <option value="ariblk.ttf">Arial Black</option>
-                    <option value="impact.ttf">Impact</option>
-                    <option value="times.ttf">Times New Roman</option>
-                    <option value="comic.ttf">Comic Sans MS</option>
-                </select>
+                <label for="holderFrameTerrainInput">Terrain on Frame</label>
+                <input type="checkbox" id="holderFrameTerrainInput">
             </div>
-            <div class="field-row">
-                <label for="holderTextSizeInput">Text Size (mm)</label>
-                <input type="number" id="holderTextSizeInput" min="1" max="50" step="0.5" value="8">
+            <!-- Everything below only applies to a plain flat rim -- greyed
+                 out together (updateTextAvailability) the moment Terrain on
+                 Frame is checked, since embossed text doesn't mean anything
+                 once the rim is real elevation-following terrain instead. -->
+            <div id="holderTextSection">
+                <div class="field-row">
+                    <label for="holderTextInput">Text</label>
+                    <input type="text" id="holderTextInput" placeholder="Label">
+                </div>
+                <div class="field-row">
+                    <label for="holderFontSelect">Font</label>
+                    <select id="holderFontSelect">
+                        <option value="">Default</option>
+                        <option value="arial.ttf">Arial</option>
+                        <option value="arialbd.ttf">Arial Bold</option>
+                        <option value="ariblk.ttf">Arial Black</option>
+                        <option value="impact.ttf">Impact</option>
+                        <option value="times.ttf">Times New Roman</option>
+                        <option value="comic.ttf">Comic Sans MS</option>
+                    </select>
+                </div>
+                <div class="field-row">
+                    <label for="holderTextSizeInput">Text Size (mm)</label>
+                    <input type="number" id="holderTextSizeInput" min="1" max="50" step="0.5" value="8">
+                </div>
+                <div id="holderTextPreview"></div>
             </div>
-            <div id="holderTextPreview"></div>
         </div>
     </div>
 
@@ -410,6 +420,7 @@
                     holderWallWidth: document.getElementById('holderWallWidthInput').value,
                     holderCornerRadius: document.getElementById('holderCornerRadiusInput').value,
                     holderSeamEngraving: document.getElementById('holderSeamEngravingInput').checked,
+                    holderFrameTerrain: document.getElementById('holderFrameTerrainInput').checked,
                     holderFont: document.getElementById('holderFontSelect').value,
                     holderTextSize: document.getElementById('holderTextSizeInput').value
                 })
@@ -451,9 +462,11 @@
                     if (s.holderWallWidth != null) document.getElementById('holderWallWidthInput').value = s.holderWallWidth;
                     if (s.holderCornerRadius != null) document.getElementById('holderCornerRadiusInput').value = s.holderCornerRadius;
                     if (s.holderSeamEngraving != null) document.getElementById('holderSeamEngravingInput').checked = s.holderSeamEngraving;
+                    if (s.holderFrameTerrain != null) document.getElementById('holderFrameTerrainInput').checked = s.holderFrameTerrain;
                     if (s.holderFont != null) document.getElementById('holderFontSelect').value = s.holderFont;
                     if (s.holderTextSize != null) document.getElementById('holderTextSizeInput').value = s.holderTextSize;
                     updateHolderVisibility();
+                    updateTextAvailability();
                     updateHolderTextPreview();
                     if (s.gpxPaths && s.gpxPaths.length) {
                         gpxPaths = s.gpxPaths;
@@ -825,6 +838,19 @@
 
         function closePlateSettings() {
             document.getElementById('plateSettingsModal').classList.remove('open');
+        }
+
+        // Text is embossed directly into the holder's own flat rim --
+        // meaningless (and server-side simply never applied, see
+        // build_puzzle_holder) once the rim is real elevation-following
+        // terrain instead, so grey the whole group out together rather than
+        // leave dead controls.
+        function updateTextAvailability() {
+            var terrainOn = document.getElementById('holderFrameTerrainInput').checked;
+            document.getElementById('holderTextInput').disabled = terrainOn;
+            document.getElementById('holderFontSelect').disabled = terrainOn;
+            document.getElementById('holderTextSizeInput').disabled = terrainOn;
+            document.getElementById('holderTextSection').style.opacity = terrainOn ? '0.4' : '1';
         }
 
         // Maps the <select id="holderFontSelect"> filenames (the actual font
@@ -1461,6 +1487,10 @@
         document.getElementById('holderFontSelect').addEventListener('change', function() { updateHolderTextPreview(); saveState(); });
         document.getElementById('holderTextSizeInput').addEventListener('input', function() { updateHolderTextPreview(); saveState(); });
         document.getElementById('holderSeamEngravingInput').addEventListener('change', saveState);
+        document.getElementById('holderFrameTerrainInput').addEventListener('change', function() {
+            updateTextAvailability();
+            saveState();
+        });
 
         document.getElementById('plateSettingsBtn').addEventListener('click', openPlateSettings);
         document.getElementById('plateSettingsCloseBtn').addEventListener('click', closePlateSettings);
@@ -1541,6 +1571,7 @@
                     wallWidth: parseFloat(document.getElementById('holderWallWidthInput').value) || 4,
                     cornerRadius: parseFloat(document.getElementById('holderCornerRadiusInput').value) || 0,
                     seamEngraving: document.getElementById('holderSeamEngravingInput').checked,
+                    frameTerrain: document.getElementById('holderFrameTerrainInput').checked,
                     font: document.getElementById('holderFontSelect').value || '',
                     textSize: parseFloat(document.getElementById('holderTextSizeInput').value) || 0
                 }
@@ -1561,6 +1592,7 @@
             });
         };
 
+        updateTextAvailability();
         updateHolderTextPreview();
         restoreState();
     </script>

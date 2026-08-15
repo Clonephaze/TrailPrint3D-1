@@ -1378,7 +1378,56 @@ def _bevel_bottom_edges(obj, bevel_width):
     bpy.ops.object.mode_set(mode='OBJECT')
 
 
-def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=None, buildings_data=None):
+def _cut_terrain_slab(terrain_obj, poly, bottom_z, top_z, name):
+    """Cut ONE flat-prism + boolean-INTERSECT terrain slab for a single 2D
+    polygon against terrain_obj, preserving terrain_obj's own per-face
+    paint-mode element colors (water/forest/city/etc) through the cut.
+
+    Shared by cut_into_puzzle_pieces / build_puzzle_holder here, and by the
+    premium sliding-puzzle generator's own equivalent functions
+    (cut_into_sliding_puzzle_pieces / build_sliding_puzzle_frame in
+    premium/utils_pe.py) -- a holder's own terrain cap used to build this
+    same shape by hand with its own separate, slightly different code path,
+    which was exactly why it didn't get colors: its cutter object started
+    with NO material slots of its own before the boolean ran. Populating the
+    result mesh with terrain_obj's OWN material list, in the SAME order,
+    BEFORE the INTERSECT is what actually makes Blender's boolean modifier
+    carry each source face's material_index through correctly -- an object
+    that starts with no material slots at all apparently doesn't reliably
+    carry a real material_index attribute through the operation even once
+    slots get merged in afterward, so every face silently falls back to slot
+    0 regardless of what the merged material list ends up containing.
+
+    Returns the new object, or None if the polygon produced no geometry, or
+    the INTERSECT emptied it out entirely (removed in that case too).
+    """
+    from . import geometry2d as g2d  # deferred to avoid circular import at load time
+
+    verts, faces = [], []
+    for part in g2d.iter_polygons(poly):
+        _extrude_flat_polygon(g2d, part, bottom_z, top_z, verts, faces)
+    if not verts:
+        return None
+
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+    _clean_solid_mesh(mesh)
+    for m in terrain_obj.data.materials:
+        mesh.materials.append(m)
+
+    obj = bpy.data.objects.new(mesh.name, mesh)
+    bpy.context.collection.objects.link(obj)
+
+    boolean_operation(obj, terrain_obj, 'INTERSECT')
+    if len(obj.data.vertices) == 0:
+        bpy.data.objects.remove(obj, do_unlink=True)
+        return None
+    return obj
+
+
+def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=None, buildings_data=None,
+                            piece_bounds=None, keep_terrain_obj=False):
     """Cut a single finished map tile into separate jigsaw puzzle piece objects.
 
     `terrain_obj` -- a normal, already-generated (and trail-merged, if
@@ -1416,19 +1465,34 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
     min(0.5mm, minThickness / 2), so pieces seat into each other more easily
     and the bottom edge isn't perfectly sharp.
 
+    `piece_bounds` -- (x_min, x_max, y_min, y_max) to normalize *pieces*'
+    own [0, 1] points against an explicit sub-region instead of terrain_obj's
+    own full bounding box, for when terrain_obj is actually LARGER than the
+    puzzle itself (e.g. it also covers a frame's outer margin, see
+    build_puzzle_holder's own frame_terrain_obj) and the puzzle's own points
+    shouldn't be reinterpreted against that bigger extent.
+
+    `keep_terrain_obj` -- if True, terrain_obj is left alone (not removed)
+    once every piece has been extracted, for a caller that still needs it
+    afterward (e.g. to also cut a holder's own terrain rim from the SAME
+    object/paint pass instead of a second, independently-fetched tile).
+
     Returns `(piece_objs, seam_polys)` -- the list of newly created piece
     objects, and the list of each survivor's own true (pre-tolerance-shrink)
     world-space Shapely polygon in the same order, for callers that want the
     exact jigsaw seam lines (e.g. build_puzzle_holder engraving them onto the
     holder floor). `terrain_obj` itself is removed once every piece has been
-    extracted.
+    extracted, unless *keep_terrain_obj* is set.
     """
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
     from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
 
     mc = [terrain_obj.matrix_world @ Vector(c) for c in terrain_obj.bound_box]
-    x_min = min(v.x for v in mc); x_max = max(v.x for v in mc)
-    y_min = min(v.y for v in mc); y_max = max(v.y for v in mc)
+    if piece_bounds is not None:
+        x_min, x_max, y_min, y_max = piece_bounds
+    else:
+        x_min = min(v.x for v in mc); x_max = max(v.x for v in mc)
+        y_min = min(v.y for v in mc); y_max = max(v.y for v in mc)
     z_min = min(v.z for v in mc); z_max = max(v.z for v in mc)
     bottom_z = z_min - 10.0
     top_z = z_max + 10.0
@@ -1588,19 +1652,21 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
         piece_objs.append(piece_obj)
         seam_polys.append(seam_poly)
 
-    if bpy.app.debug:
-        # Keep the original, uncut tile around for inspection when debugging
-        # -- shifted aside (same offset the debug cutters above use, so it
-        # lands next to them rather than overlapping the real pieces) and
-        # stripped of its MAP tag so later scene-wide raycasts/map pickers
-        # (e.g. RaycastCurveToAnyMesh's "is this a MAP object" check) can't
-        # mistake this leftover for a real, currently-active map.
-        terrain_obj.name = f"{terrain_obj.name}_DebugOriginal"
-        terrain_obj.location.y += debug_y_offset
-        terrain_obj.pop("objType", None)
-        terrain_obj.pop("Object type", None)
-    else:
-        bpy.data.objects.remove(terrain_obj, do_unlink=True)
+    if not keep_terrain_obj:
+        if bpy.app.debug:
+            # Keep the original, uncut tile around for inspection when
+            # debugging -- shifted aside (same offset the debug cutters
+            # above use, so it lands next to them rather than overlapping
+            # the real pieces) and stripped of its MAP tag so later
+            # scene-wide raycasts/map pickers (e.g. RaycastCurveToAnyMesh's
+            # "is this a MAP object" check) can't mistake this leftover for
+            # a real, currently-active map.
+            terrain_obj.name = f"{terrain_obj.name}_DebugOriginal"
+            terrain_obj.location.y += debug_y_offset
+            terrain_obj.pop("objType", None)
+            terrain_obj.pop("Object type", None)
+        else:
+            bpy.data.objects.remove(terrain_obj, do_unlink=True)
     return piece_objs, seam_polys
 
 
@@ -1717,7 +1783,8 @@ def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_
 def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
                          floor_thickness=2.0, clearance=0.1, corner_radius=5.0,
                          pocket_corner_radius=0.0, font="", text_size_mm=None,
-                         piece_seam_polys=None, seam_width=0.6, seam_depth=0.4):
+                         piece_seam_polys=None, seam_width=0.6, seam_depth=0.4,
+                         frame_terrain_obj=None):
     """Build a rounded-rectangle tray sized to hold an already-generated
     jigsaw puzzle (cut_into_puzzle_pieces' output).
 
@@ -1735,8 +1802,12 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     outer corners look like instead of always being sharp.
     The pocket is recessed `wall_height - floor_thickness` deep into the
     top, leaving a solid floor of *floor_thickness* underneath -- the rim
-    outside the pocket keeps the full *wall_height*. The holder gets the
-    BLACK material; embossed text (see `_emboss_holder_text`) gets WHITE.
+    outside the pocket keeps the full *wall_height*. The holder's own block
+    (rim AND pocket floor) gets the BLACK material -- or, whenever
+    *frame_terrain_obj* is given, frame_terrain_obj's own plain BASE material
+    instead, so the pocket floor blends with the terrain-colored rim rather
+    than showing black underneath it (see that parameter's own paragraph
+    below). Embossed text (see `_emboss_holder_text`) gets WHITE.
 
     If *piece_seam_polys* is given (cut_into_puzzle_pieces' own second return
     value -- each piece's true, pre-tolerance-shrink world-space polygon,
@@ -1745,13 +1816,55 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     is visible even with the pieces lifted out. Clipped to the pocket itself,
     so a seam within `seam_width` of the wall doesn't cut into it.
 
+    If *frame_terrain_obj* is given -- an already-elevation-generated terrain
+    tile covering at least the holder's own outer footprint, positioned in
+    world space (same shape createTerrainFromSelected produces for a normal
+    map tile) -- an annulus (outer_poly minus pocket_poly) terrain slab gets
+    cut from it and UNIONed onto the rim's own flat top, the same technique
+    (and the same _cut_terrain_slab helper, for the same material-preserving
+    reason) the premium sliding-puzzle frame uses. Unlike that frame, no
+    Z re-anchoring is needed here: the slab's own natural flat bottom always
+    lands at world Z=0 (see createTerrainFromSelected/_ctfs_apply_elevation
+    -- the bottom face is always seated there regardless of minThickness).
+*wall_height* is itself overridden to floor_thickness (see that override's
+    own comment) whenever *frame_terrain_obj* is given, BEFORE any of the
+    rim/pocket geometry above is even built -- otherwise a boolean UNION,
+    which can only ADD material, would leave the un-shortened flat
+    wall_height top exposed as a flat shelf wherever the real terrain dips
+    below it. Built short from the start, the terrain cap becomes the rim's
+    ONLY visible top surface almost everywhere, with the (now much shorter)
+    rim only showing through as a fallback floor wherever terrain dips below
+    floor_thickness itself. The holder's own base material is
+    frame_terrain_obj's own plain BASE material (not BLACK) in this case --
+    see the docstring paragraph above -- so the pocket floor, untouched by
+    this union, blends with the terrain-colored rim instead of showing black
+    underneath it. *text* is silently ignored
+    whenever *frame_terrain_obj* is given -- same reasoning as the sliding
+    puzzle frame's own top_bevel_mm: there's no flat surface left to emboss
+    into once the rim is real elevation-following terrain instead.
+    Consumes (removes) frame_terrain_obj either way.
+
     Reuses the same flat-prism + boolean technique as
     `cut_into_puzzle_pieces` / `single_color_mode_curve`.
     """
+    from shapely.affinity import translate as _shapely_translate
+
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
     from .primitives import (
         setupColors,  # deferred to avoid circular import at load time
     )
+
+    if frame_terrain_obj is not None:
+        # Built AT floor_thickness from the very start, rather than at the
+        # full wall_height and trimmed back down with a separate DIFFERENCE
+        # cutter afterward -- both produce the same final Z range in the end
+        # (floor_thickness is already what the rim gets trimmed BACK TO), but
+        # building it right the first time skips an entire boolean pass (and
+        # whatever seam artifacts that extra cut could leave behind) instead
+        # of building tall and cutting it back down. wall_height is unused
+        # for anything else once frame_terrain_obj is given (text -- the only
+        # other consumer -- is already skipped in that case).
+        wall_height = floor_thickness
 
     objs = [o for o in (piece_objs or []) if o is not None]
     if not objs:
@@ -1789,9 +1902,34 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     mesh.update()
     _clean_solid_mesh(mesh)
     setupColors()
-    black_mat = bpy.data.materials.get("BLACK")
-    if black_mat:
-        mesh.materials.append(black_mat)
+    if frame_terrain_obj is not None:
+        # frame_terrain_obj's own material_index-0 material (its plain,
+        # unpainted BASE) becomes the holder's OWN slot 0 -- not an
+        # additional slot appended after BLACK, a REPLACEMENT of it -- so the
+        # pocket floor (which keeps referencing slot 0, untouched by the
+        # terrain-cap union below since that union only adds new geometry to
+        # the rim) blends with the terrain-colored surroundings instead of
+        # showing black under real terrain. Same reasoning the premium
+        # sliding puzzle frame's own wall material uses. The rest of
+        # frame_terrain_obj's materials (water/forest/city/etc) still get
+        # appended as additional slots after it -- this also pre-populates
+        # the SAME material list the terrain cutter itself gets
+        # (_cut_terrain_slab, below) before its own boolean, since both
+        # sides of that eventual UNION need to already be multi-material for
+        # Blender to carry per-face material_index through correctly (see
+        # _cut_terrain_slab's own docstring).
+        base_mat = frame_terrain_obj.data.materials[0] if frame_terrain_obj.data.materials else None
+        if base_mat is None:
+            base_mat = bpy.data.materials.get("BLACK")
+        if base_mat is not None:
+            mesh.materials.append(base_mat)
+        for m in frame_terrain_obj.data.materials:
+            if m is not base_mat:
+                mesh.materials.append(m)
+    else:
+        black_mat = bpy.data.materials.get("BLACK")
+        if black_mat:
+            mesh.materials.append(black_mat)
 
     holder_obj = bpy.data.objects.new(mesh.name, mesh)
     bpy.context.collection.objects.link(holder_obj)
@@ -1844,7 +1982,10 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
                 boolean_operation(holder_obj, seam_cutter_obj, 'DIFFERENCE')
                 bpy.data.objects.remove(seam_cutter_obj, do_unlink=True)
 
-    if text:
+    if frame_terrain_obj is None and text:
+        # Must run BEFORE holder_obj.location is set below -- _emboss_holder_
+        # text places the text at a fixed offset from LOCAL (0, 0), matching
+        # outer_poly/pocket_poly's own local-origin-centered construction.
         available_w = max(1.0, outer_w - 6.0)  # margin so text clears the rim's outer/inner edges
         _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, wall_height,
                              font=font, text_size_mm=text_size_mm)
@@ -1854,6 +1995,41 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     # rest) lands exactly on world Z=0 -- the same plane the puzzle pieces
     # themselves sit on.
     holder_obj.location = (center_x, center_y, -floor_thickness)
+    bpy.context.view_layer.update()
+
+    if frame_terrain_obj is not None:
+        # Must run AFTER holder_obj.location is set above -- the annulus
+        # cutter below is built in WORLD coordinates (world_outer/world_pocket,
+        # shifted by center_x/center_y), so it can only UNION correctly
+        # against a holder_obj that's already sitting at its own real world
+        # position.
+        world_outer = _shapely_translate(outer_poly, xoff=center_x, yoff=center_y)
+        world_pocket = _shapely_translate(pocket_poly, xoff=center_x, yoff=center_y)
+        annulus = g2d.validate(world_outer.difference(world_pocket))
+
+        ft_corners = [frame_terrain_obj.matrix_world @ Vector(c) for c in frame_terrain_obj.bound_box]
+        ft_z_min = min(c.z for c in ft_corners)
+        ft_z_max = max(c.z for c in ft_corners)
+
+        cutter_obj = _cut_terrain_slab(
+            frame_terrain_obj, annulus, ft_z_min - 10.0, ft_z_max + 10.0, "PuzzleHolderTerrainCutter"
+        )
+        if cutter_obj is not None:
+            # No Z re-anchoring needed (unlike the sliding puzzle frame's own
+            # equivalent step) -- see this function's own docstring for why
+            # the slab's natural bottom (always world Z=0) already sits
+            # safely embedded in the rim's own solid Z range (already only
+            # floor_thickness tall to begin with -- see wall_height's own
+            # override above).
+            boolean_operation(holder_obj, cutter_obj, 'UNION')
+            bpy.data.objects.remove(cutter_obj, do_unlink=True)
+            _clean_solid_mesh(holder_obj.data, dist=1e-3)
+        if bpy.app.debug:
+            frame_terrain_obj.name = f"{frame_terrain_obj.name}_DebugOriginal"
+            frame_terrain_obj.pop("objType", None)
+            frame_terrain_obj.pop("Object type", None)
+        else:
+            bpy.data.objects.remove(frame_terrain_obj, do_unlink=True)
 
     holder_obj["objType"] = "HOLDER"
     holder_obj["Object type"] = "HOLDER"
