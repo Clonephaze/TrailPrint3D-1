@@ -36,7 +36,7 @@ def shape_callback(self,context):
 def get_special_blend_items(self, context):
     # puzzles.blend itself (the hand-crafted jigsaw/sliding-puzzle templates)
     # stays Premium-exclusive and is stripped from free builds by build.py --
-    # unlike the interactive Puzzle Generator, which is free. Items must be a
+    # unlike the interactive Jigsaw Puzzle Generator, which is free. Items must be a
     # callback (not a static default) so this list can change per-build.
     #
     # Dynamic-items EnumProperty can't take an explicit `default=` -- Blender

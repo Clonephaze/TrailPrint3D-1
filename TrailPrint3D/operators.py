@@ -2140,7 +2140,7 @@ def _generate_trails(context, gpx_paths, overlay, progress_start, progress_end):
 
 class TP3D_OT_puzzle_configurator(bpy.types.Operator):
     bl_idname = "tp3d.puzzle_configurator"
-    bl_label = "Puzzle Generator"
+    bl_label = "Jigsaw Puzzle Generator"
     bl_description = (
         "Open an interactive map — draw a rectangle and choose rows/columns, "
         "then Send to Blender to generate an interlocking jigsaw puzzle map"

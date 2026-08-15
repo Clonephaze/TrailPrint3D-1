@@ -391,7 +391,7 @@ class TP3D_PT_advanced(bpy.types.Panel):
         layout.prop(props, "show_special", icon="TRIA_DOWN" if props.show_special else "TRIA_RIGHT", emboss=False)
         if props.show_special:
             box = layout.box()
-            box.operator("tp3d.puzzle_configurator", text=_("Puzzle Generator"), icon='MOD_BOOLEAN')
+            box.operator("tp3d.puzzle_configurator", text=_("Jigsaw Puzzle Generator"), icon='MOD_BOOLEAN')
 
             box.separator(factor=0.5)
             col = box.column(align=True)
@@ -732,7 +732,7 @@ class TP3D_MT_generators_menu(bpy.types.Menu):
             layout.operator("tp3d.map_picker", text=_("Multi Tile Generator"), icon='WORLD')
         else:
             layout.operator("tp3d.terrain_dummy", text=_("Multi Tile Generator"), icon='LOCKED')
-        layout.operator("tp3d.puzzle_configurator", text=_("Puzzle Generator"), icon='MOD_BOOLEAN')
+        layout.operator("tp3d.puzzle_configurator", text=_("Jigsaw Puzzle Generator"), icon='MOD_BOOLEAN')
 
 
 def draw_tp3d_viewport_menu(self, context):
