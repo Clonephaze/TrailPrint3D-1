@@ -392,6 +392,10 @@ class TP3D_PT_advanced(bpy.types.Panel):
         if props.show_special:
             box = layout.box()
             box.operator("tp3d.puzzle_configurator", text=_("Jigsaw Puzzle Generator"), icon='MOD_BOOLEAN')
+            if temp.PREMIUMVERSION:
+                box.operator("tp3d.sliding_puzzle_configurator", text=_("Sliding Puzzle Generator"), icon='MOD_BOOLEAN')
+            else:
+                box.operator("tp3d.terrain_dummy", text=_("Sliding Puzzle Generator"), icon="LOCKED")
 
             box.separator(factor=0.5)
             col = box.column(align=True)
@@ -733,6 +737,10 @@ class TP3D_MT_generators_menu(bpy.types.Menu):
         else:
             layout.operator("tp3d.terrain_dummy", text=_("Multi Tile Generator"), icon='LOCKED')
         layout.operator("tp3d.puzzle_configurator", text=_("Jigsaw Puzzle Generator"), icon='MOD_BOOLEAN')
+        if temp.PREMIUMVERSION:
+            layout.operator("tp3d.sliding_puzzle_configurator", text=_("Sliding Puzzle Generator"), icon='MOD_BOOLEAN')
+        else:
+            layout.operator("tp3d.terrain_dummy", text=_("Sliding Puzzle Generator"), icon='LOCKED')
 
 
 def draw_tp3d_viewport_menu(self, context):

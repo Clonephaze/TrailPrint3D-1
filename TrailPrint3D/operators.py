@@ -2169,7 +2169,24 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
         try:
             data = json.loads(rp.read_text(encoding='utf-8'))
-            self._apply_puzzle_result(context, data)
+            # Jigsaw pieces get their own bottom chamfer/thickness handling
+            # independent of the sidebar's minThickness setting -- forcing
+            # it to 0 just for this generation avoids it padding out the
+            # piece base with extra material it doesn't actually need, then
+            # restoring it afterward (even on failure) leaves the user's own
+            # setting untouched for every other generator. minThickness's
+            # own FloatProperty declares min=0.5 (props.py), so a normal
+            # attribute assignment of 0 gets silently clamped back up to
+            # 0.5 -- setting it as a raw ID-property bypasses that RNA
+            # clamp and actually stores 0.0, which attribute reads
+            # (props.minThickness elsewhere in the generation pipeline)
+            # then read back correctly.
+            original_min_thickness = context.scene.tp3d.minThickness
+            context.scene.tp3d["minThickness"] = 0
+            try:
+                self._apply_puzzle_result(context, data)
+            finally:
+                context.scene.tp3d.minThickness = original_min_thickness
         except Exception as exc:  # noqa: BLE001 - Wide exception catch for puzzle result application
             import traceback
             traceback.print_exc()
