@@ -1637,7 +1637,7 @@ def _resolve_holder_font(font_filename):
 
 
 def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_z,
-                         font="", text_size_mm=None):
+                         font="", text_size_mm=None, y_offset=0.0):
     """Emboss *text* centered on the front (south, -Y) rim of holder_obj and
     join it in as one printable part, in the WHITE material.
 
@@ -1649,6 +1649,15 @@ def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_
     shape's actual width at the text's own Y position -- simply outer_w-ish
     for a rectangle, but a circle's rim is narrower there than its full
     diameter, see build_circular_puzzle_holder).
+
+    *y_offset* nudges the text further from the outer (south) edge, added
+    on top of the nominal `-outer_h/2 + wall_width/2` mid-band position --
+    0 for a plain flat rim (build_puzzle_holder's own default), but a caller
+    whose rim narrows near the top (e.g. build_sliding_puzzle_frame's own
+    top_bevel_mm chamfer, which shifts the OUTER edge inward there while the
+    inner/pocket edge stays put) can pass half that chamfer so the text stays
+    centered on the actual post-chamfer material band instead of the
+    pre-chamfer one.
     """
     from . import text_objects as txt  # deferred: text_objects imports from this module
     from .primitives import (
@@ -1686,7 +1695,7 @@ def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_
     # Z is set so the text is embedded well into the wall and only
     # ~raised_height pokes up above its top surface, regardless of whether
     # Curve.extrude turns out to be one- or two-sided.
-    text_obj.location = (0, -outer_h / 2 + wall_width / 2, top_z - 1.0 + raised_height)
+    text_obj.location = (0, -outer_h / 2 + wall_width / 2 + y_offset, top_z - 1.0 + raised_height)
 
     bpy.context.view_layer.objects.active = text_obj
     txt.convert_text_to_mesh(text_obj.name, holder_obj.name, False)
