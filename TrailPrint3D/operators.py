@@ -170,6 +170,17 @@ class TP3D_OT_export_three_mf(bpy.types.Operator):
     bl_idname = "tp3d.export_three_mf"
     bl_label = "Export 3mf"
     bl_description = "Export Selected Objects as Separate 3MF. Separate Addon by Clonephaze"
+    bl_options = {'REGISTER'}
+
+    filename: StringProperty(name=_("File Name"), default="")  # type: ignore
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "filename")
+
+    def invoke(self, context, event):
+        self.filename = context.scene.tp3d.modelname
+        return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
         tp3d = context.scene.tp3d  # Access stored variables
@@ -177,7 +188,7 @@ class TP3D_OT_export_three_mf(bpy.types.Operator):
         installed = utils.is_3mf_extension_installed()
 
         if installed:
-        
+
             exportPath = tp3d.get('export_path', None)
 
             if not exportPath:
@@ -195,18 +206,22 @@ class TP3D_OT_export_three_mf(bpy.types.Operator):
             if not os.path.isdir(exportPath):
                 self.report({'ERROR'}, f"Invalid export Directory: {exportPath}. Please select a valid Directory.")
                 return {'CANCELLED'}
-            
+
             if not context.selected_objects:
                 self.report({'ERROR'}, "Please select the Object you want to Export")
                 return {'CANCELLED'}
-            
-            utils.export_selected_to_3mf()
+
+            if not self.filename:
+                self.report({'ERROR'}, "Please enter a filename")
+                return {'CANCELLED'}
+
+            utils.export_selected_to_3mf(self.filename)
 
             utils.show_message_box(f"Exported to: {exportPath}", "INFO", "Export Complete")
         else:
             print("Addon not Installed")
 
-        
+
 
         return {'FINISHED'}
 
