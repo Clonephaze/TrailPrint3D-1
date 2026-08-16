@@ -258,7 +258,7 @@ def _buffer_tiers_to_polygons(
     n_skipped = 0
 
     for part in g2d.iter_polygons(road_union):
-        part = g2d.orient(part, exterior_cw=False)  # exterior CCW, holes CW
+        part = g2d.orient(part)  # exterior CCW, holes CW
         ext = list(part.exterior.coords)[:-1]
         if len(ext) < 3:
             continue
@@ -462,7 +462,7 @@ def _clip_terrain_grid_to_polygon(
             continue
 
         for part in g2d.iter_polygons(inter):
-            part = g2d.orient(part, exterior_cw=False)  # exterior CCW, holes CW -- matches terrain winding
+            part = g2d.orient(part)  # exterior CCW, holes CW -- matches terrain winding
             ext = list(part.exterior.coords)[:-1]
             if len(ext) < 3:
                 continue
