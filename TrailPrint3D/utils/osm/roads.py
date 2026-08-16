@@ -53,6 +53,8 @@ class RoadConfig:
     max_lat: float
     max_lon: float
     street_width_multiplier: float
+    # Always True (see from_scene) -- alley/driveway/parking_aisle filtering
+    # isn't user-configurable, just always-on cleanup of Service Roads.
     exclude_alleys: bool
     tier_active: dict[str, bool] = field(
         default_factory=lambda: {t: True for t in TIER_TAGS}
@@ -82,7 +84,7 @@ class RoadConfig:
             max_lat=tp3d.maxLat,
             max_lon=tp3d.maxLon,
             street_width_multiplier=tp3d.el_sMultiplier,
-            exclude_alleys=bool(tp3d.el_sExcludeAlleys),
+            exclude_alleys=True,
             tier_active=tier_active,
         )
 
