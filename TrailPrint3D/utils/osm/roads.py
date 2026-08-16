@@ -1,4 +1,3 @@
-import math
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -164,7 +163,7 @@ def _buffer_tiers_to_polygons(
     (including holes = city blocks) into triangles.
 
     Per-segment buffering → no self-intersecting prisms at intersections.
-    Per-tier unary_union first → Shapely's spatial index works on smaller sets.
+    Per-tier union first → Shapely's spatial index works on smaller sets.
     Final cross-tier union → single clean 2-D road footprint.
     make_valid instead of buffer(0) → preserves geometry, handles GEOS quirks.
 
@@ -172,7 +171,7 @@ def _buffer_tiers_to_polygons(
     returned too so the caller can later clip the terrain's own grid to the
     exact same 2-D shape (see finalize_roads / _clip_terrain_grid_to_polygon).
     """
-    from shapely.ops import unary_union
+    from ..geometry2d import union
 
     tier_unions = []
 
@@ -195,14 +194,14 @@ def _buffer_tiers_to_polygons(
                 continue
             if not buf.is_valid:
                 # buf = make_valid(buf, method="structure")
-                buf = unary_union(buf)
+                buf = union(buf)
             if buf and not buf.is_empty:
                 tier_buffered.append(buf)
 
         if not tier_buffered:
             continue
 
-        tier_union = unary_union(tier_buffered)
+        tier_union = union(tier_buffered)
         if tier_union.is_empty:
             continue
         if not tier_union.is_valid:
@@ -222,7 +221,7 @@ def _buffer_tiers_to_polygons(
     if not tier_unions:
         return [], [], None
 
-    road_union = unary_union(tier_unions)
+    road_union = union(tier_unions)
     if road_union.is_empty:
         return [], [], None
     if not road_union.is_valid:
@@ -697,7 +696,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize=1, full_depth=Fal
         debug_roads.name = "roads_stage3_extruded"
         debug_roads.location = (0, 0, -30.0)  # Offset downward to see separately
         bpy.context.collection.objects.link(debug_roads)
-        print(f"[DEBUG] Stage 3: Created extruded mesh copy at z=-30.0")
+        print("[DEBUG] Stage 3: Created extruded mesh copy at z=-30.0")
 
     if _ov.active:
         _ov.set_fetch_progress("roads", 0.90)
@@ -710,7 +709,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize=1, full_depth=Fal
         debug_roads_final.name = "roads_stage5_final"
         debug_roads_final.location = (0, 0, -60.0)  # Offset even lower
         bpy.context.collection.objects.link(debug_roads_final)
-        print(f"[DEBUG] Stage 5: Created final mesh copy at z=-60.0")
+        print("[DEBUG] Stage 5: Created final mesh copy at z=-60.0")
 
     # --- Finalise -------------------------------------------------------
     bpy.ops.object.select_all(action="DESELECT")

@@ -791,6 +791,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     To add a new terrain layer, append its key to TERRAIN_PRIORITY_ORDER and make
     sure it is populated in the terrain dict passed by the caller.
     """
+    from . import geometry2d as _g2d
     from .mesh_ops import (  # deferred to avoid circular import at load time
         boolean_operation,
         is_mesh_manifold,
@@ -842,7 +843,6 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     else:
         # PAINT mode: original _Trail curve objects are still in the scene; derive
         # their 2D ribbon footprints to subtract from roads_polygon before finalize_roads.
-        from . import geometry2d as _g2d_trail
         _tol = bpy.context.scene.tp3d.tolerance
         _pt  = bpy.context.scene.tp3d.pathThickness
         def _tile_extents(o):
@@ -863,7 +863,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                     _coords.append([(_mw @ Vector((_p.co.x, _p.co.y, _p.co.z)))[:2] for _p in _pts])
             if not _coords:
                 continue
-            _r = _g2d_trail.polylines_to_ribbon(_coords, _pt / 2 + _tol, quad_segs=4)
+            _r = _g2d.polylines_to_ribbon(_coords, _pt / 2 + _tol, quad_segs=4)
             if _r and not _r.is_empty:
                 trail_thick_ribbons.append(_r)
 
@@ -871,8 +871,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     if (props['elementMode'] == "CREATE_TEXTURE"
             and bpy.context.scene.tp3d.tex_include_trail
             and trail_thick_ribbons):
-        from shapely.ops import unary_union as _trail_union_op
-        terrain['_osm_polygons']['TRAIL'] = _trail_union_op(trail_thick_ribbons)
+        terrain['_osm_polygons']['TRAIL'] = _g2d.union(trail_thick_ribbons)
 
     if props['elementMode'] == "SEPARATE" and False:
         for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
@@ -995,7 +994,6 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         if cut_tolerance > 0:
             _road_poly = terrain.get('roads_polygon')
             if _road_poly is not None and not _road_poly.is_empty:
-                from . import geometry2d as _g2d
                 from .osm.roads import _build_extruded_mesh
                 _buffered = _road_poly.buffer(cut_tolerance, join_style='mitre')
                 if _buffered and not _buffered.is_empty:
@@ -1071,8 +1069,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         # builds the mesh -- avoids a post-build 3D boolean on a non-manifold mesh.
         _roads_poly = terrain.get('roads_polygon')
         if trail_thick_ribbons and _roads_poly is not None:
-            from shapely.ops import unary_union as _unary_union
-            _trail_union = _unary_union(trail_thick_ribbons)
+            _trail_union = _g2d.union(trail_thick_ribbons)
             _roads_poly = _roads_poly.difference(_trail_union)
             print(f"[TP3D roads] subtracted {len(trail_thick_ribbons)} trail ribbon(s) from roads_polygon in 2D")
         finalize_roads(
