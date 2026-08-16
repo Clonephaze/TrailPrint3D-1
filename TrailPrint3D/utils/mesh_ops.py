@@ -1586,7 +1586,7 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
         # Mesh-level 3MF paint metadata lives on the data block, not the object,
         # so it isn't carried by the bulk terrain_metadata copy below.
         for _pk in ("3mf_is_paint_texture", "3mf_paint_default_extruder", "3mf_paint_extruder_colors"):
-            if _pk in terrain_obj.data:
+            if _pk in terrain_obj.data and piece_obj.data is not None:
                 piece_obj.data[_pk] = terrain_obj.data[_pk]
 
         for k, v in terrain_metadata.items():
