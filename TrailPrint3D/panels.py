@@ -69,7 +69,7 @@ class TP3D_PT_generate(bpy.types.Panel):
             row.operator("tp3d.terrain_dummy", text=_("Multi"), icon='LOCKED')
             row.operator("tp3d.terrain_dummy", text=_("Terrain"), icon='LOCKED')
 
-        # --- Shapely / earcut status warnings ---
+        # --- Shapely status warning ---
         from .utils import geometry2d as _g2d
         if not _g2d._HAS_SHAPELY:
             row = layout.row()

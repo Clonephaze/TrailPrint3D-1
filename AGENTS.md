@@ -32,7 +32,7 @@ TrailPrint3D/                 - Blender addon package (installed as a Blender ex
   updater.py                   - GitHub/Patreon release checker + auto-download
   puzzleGenerator.html         - free Puzzle Configurator (browser UI)
   assets/                      - .blend asset libraries (connectors, holder, other) + progress-overlay SVG icons
-  wheels/                      - bundled Shapely / Mapbox Earcut wheels (per-platform)
+  wheels/                      - bundled Shapely wheels (per-platform)
   utils/
     __init__.py                - re-exports from submodules (wildcards OK here, see §10)
     elevation.py                - elevation API helpers
