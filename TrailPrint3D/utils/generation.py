@@ -12,7 +12,6 @@ from mathutils import Vector  # type: ignore
 from .. import addon_preferences
 from .. import constants as const
 from .. import progress as _progress
-from . import geometry2d as g2d
 from .elevation import compute_and_store_tile_bounds
 from .terrain import _ColoringTextureResult
 
@@ -792,6 +791,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     To add a new terrain layer, append its key to TERRAIN_PRIORITY_ORDER and make
     sure it is populated in the terrain dict passed by the caller.
     """
+    from . import geometry2d as _g2d
     from .mesh_ops import (  # deferred to avoid circular import at load time
         boolean_operation,
         is_mesh_manifold,
@@ -843,7 +843,6 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     else:
         # PAINT mode: original _Trail curve objects are still in the scene; derive
         # their 2D ribbon footprints to subtract from roads_polygon before finalize_roads.
-        from . import geometry2d as _g2d_trail
         _tol = bpy.context.scene.tp3d.tolerance
         _pt  = bpy.context.scene.tp3d.pathThickness
         def _tile_extents(o):
@@ -864,7 +863,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                     _coords.append([(_mw @ Vector((_p.co.x, _p.co.y, _p.co.z)))[:2] for _p in _pts])
             if not _coords:
                 continue
-            _r = _g2d_trail.polylines_to_ribbon(_coords, _pt / 2 + _tol, quad_segs=4)
+            _r = _g2d.polylines_to_ribbon(_coords, _pt / 2 + _tol, quad_segs=4)
             if _r and not _r.is_empty:
                 trail_thick_ribbons.append(_r)
 
@@ -872,8 +871,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     if (props['elementMode'] == "CREATE_TEXTURE"
             and bpy.context.scene.tp3d.tex_include_trail
             and trail_thick_ribbons):
-        from shapely.ops import unary_union as _trail_union_op
-        terrain['_osm_polygons']['TRAIL'] = _trail_union_op(trail_thick_ribbons)
+        terrain['_osm_polygons']['TRAIL'] = _g2d.union(trail_thick_ribbons)
 
     if props['elementMode'] == "SEPARATE" and False:
         for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
@@ -1001,16 +999,14 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             _road_poly = terrain.get('roads_polygon')
             if _road_poly is not None and not _road_poly.is_empty:
                 from .osm.roads import _build_extruded_mesh
-                from . import geometry2d as _g2d
-                from shapely.geometry.polygon import orient as _orient
                 _buffered = _road_poly.buffer(cut_tolerance, join_style='mitre')
                 if _buffered and not _buffered.is_empty:
                     _all_v2d, _all_tris = [], []
                     for _part in _g2d.iter_polygons(_buffered):
-                        _part = _orient(_part, sign=1.0)
+                        _part = _g2d.orient(_part)
                         _ext = list(_part.exterior.coords)[:-1]
                         _holes = [list(r.coords)[:-1] for r in _part.interiors if len(r.coords) >= 4]
-                        _ec = _g2d._earcut_triangulate(_ext, _holes)
+                        _ec = _g2d._cdt_triangulate(_part, _ext, _holes)
                         if _ec:
                             _v2, _t2 = _ec
                             _base = len(_all_v2d)
@@ -1077,8 +1073,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         # builds the mesh -- avoids a post-build 3D boolean on a non-manifold mesh.
         _roads_poly = terrain.get('roads_polygon')
         if trail_thick_ribbons and _roads_poly is not None:
-            from shapely.ops import unary_union as _unary_union
-            _trail_union = _unary_union(trail_thick_ribbons)
+            _trail_union = _g2d.union(trail_thick_ribbons)
             _roads_poly = _roads_poly.difference(_trail_union)
             print(f"[TP3D roads] subtracted {len(trail_thick_ribbons)} trail ribbon(s) from roads_polygon in 2D")
         finalize_roads(
@@ -1579,7 +1574,9 @@ def runGeneration(type, locked_scale=None):
         splitCurves,
     )
     try:
-        from ..premium.utils_pe import build_map_shell  # Premium-only: Shell shape extra
+        from ..premium.utils_pe import (
+            build_map_shell,  # Premium-only: Shell shape extra
+        )
     except ImportError:
         def build_map_shell(*_args, **_kwargs):
             return None
@@ -2092,7 +2089,11 @@ def runGeneration(type, locked_scale=None):
     if props.get('elementMode') == "CREATE_TEXTURE":
         _mmu_palette = elements.get('_mmu_palette')
         if _mmu_palette:
-            from .texture import tag_solid_color_for_paint_export, _WHITE_SRGB, _ROADS_SRGB
+            from .texture import (
+                _ROADS_SRGB,
+                _WHITE_SRGB,
+                tag_solid_color_for_paint_export,
+            )
             for _cobj, _ccol in [(textobj, _WHITE_SRGB), (plateobj, _ROADS_SRGB), (shellobj, _ROADS_SRGB)]:
                 tag_solid_color_for_paint_export(_cobj, _ccol, _mmu_palette)
     _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_time, exportformat, elements, shellobj)

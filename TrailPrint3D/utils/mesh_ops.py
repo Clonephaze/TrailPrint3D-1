@@ -1156,7 +1156,7 @@ def _extrude_flat_polygon(g2d_mod, polygon, bottom_z, top_z, verts, faces):
     # and every normal ends up flipped, which silently breaks the boolean
     # against the map. Normalize it explicitly rather than assume.
     g2d_mod._require_shapely()
-    polygon = g2d_mod.orient(polygon, sign=1.0)
+    polygon = g2d_mod.orient(polygon)
 
     ext = list(polygon.exterior.coords)
     if len(ext) > 1 and ext[0] == ext[-1]:
@@ -1170,10 +1170,10 @@ def _extrude_flat_polygon(g2d_mod, polygon, bottom_z, top_z, verts, faces):
             ring = ring[:-1]
         if len(ring) >= 3:
             holes.append(ring)
-    ec = g2d_mod._earcut_triangulate(ext, holes)
-    if ec is None:
+    triangulate = g2d_mod._cdt_triangulate(polygon, ext, holes)
+    if triangulate is None:
         return
-    verts2d, cap_tris = ec
+    verts2d, cap_tris = triangulate
     n2 = len(verts2d)
     base = len(verts)
     for (vx, vy) in verts2d:
@@ -1424,7 +1424,9 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
     extracted.
     """
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
-    from .scene import set_origin_to_3d_cursor  # deferred to avoid circular import at load time
+    from .scene import (
+        set_origin_to_3d_cursor,  # deferred to avoid circular import at load time
+    )
 
     mc = [terrain_obj.matrix_world @ Vector(c) for c in terrain_obj.bound_box]
     x_min = min(v.x for v in mc); x_max = max(v.x for v in mc)
@@ -1529,7 +1531,9 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
         _bevel_bottom_edges(piece_obj, bevel_width)
 
         if roads_data is not None:
-            from .osm.roads import roads_geometry_for_polygon  # deferred to avoid circular import
+            from .osm.roads import (
+                roads_geometry_for_polygon,  # deferred to avoid circular import
+            )
             road_polygon, terrain_tris, el_sHeight = roads_data
             clipped = road_polygon.intersection(poly)
             if not clipped.is_empty:
@@ -1551,7 +1555,9 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
                     bpy.ops.object.join()
 
         if buildings_data is not None:
-            from .osm.buildings import buildings_geometry_for_polygon  # deferred to avoid circular import
+            from .osm.buildings import (
+                buildings_geometry_for_polygon,  # deferred to avoid circular import
+            )
             b_verts, b_faces = buildings_geometry_for_polygon(poly, buildings_data)
             if b_verts:
                 b_mesh = bpy.data.meshes.new(f"_buildings_{row}_{col}")
@@ -1580,7 +1586,7 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
         # Mesh-level 3MF paint metadata lives on the data block, not the object,
         # so it isn't carried by the bulk terrain_metadata copy below.
         for _pk in ("3mf_is_paint_texture", "3mf_paint_default_extruder", "3mf_paint_extruder_colors"):
-            if _pk in terrain_obj.data:
+            if _pk in terrain_obj.data and piece_obj.data is not None:
                 piece_obj.data[_pk] = terrain_obj.data[_pk]
 
         for k, v in terrain_metadata.items():
@@ -1960,11 +1966,6 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         _extrude_flat_polygon(g2d, poly, bottom_z, top_z, verts, faces)
 
     if not verts:
-        if not g2d._HAS_EARCUT:
-            from .. import progress as _progress
-            _progress.WarningsOverlay.add_warning(
-                "Trail strip is empty -- mapbox_earcut failed to load (see the sidebar warning)", "error"
-            )
         bpy.data.objects.remove(crv, do_unlink=True)
         return None
 
@@ -1973,8 +1974,8 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         for poly in g2d.iter_polygons(thick_ribbon):
             _extrude_flat_polygon(g2d, poly, thick_bottom_z, top_z, t_verts, t_faces)
 
-    print(f"[TP3D trail] earcut prism: {len(verts)} verts, {len(faces)} faces  bottom_z={bottom_z:.3f}")
-    print(f"[TP3D trail] thick earcut prism: {len(t_verts)} verts, {len(t_faces)} faces  thick_bottom_z={thick_bottom_z:.3f}")
+    print(f"[TP3D trail] prism: {len(verts)} verts, {len(faces)} faces  bottom_z={bottom_z:.3f}")
+    print(f"[TP3D trail] thick prism: {len(t_verts)} verts, {len(t_faces)} faces  thick_bottom_z={thick_bottom_z:.3f}")
 
     # Convert crv to MESH in place (preserves object identity -- other code
     # holds references to this exact object for later material/metadata

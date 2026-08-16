@@ -10,7 +10,6 @@ from mathutils.bvhtree import BVHTree  # type: ignore
 from ... import constants as const
 from ... import progress as _progress
 from .. import geometry2d as g2d
-from ..geometry2d import _earcut_triangulate
 from ..mesh_ops import recalculateNormals
 from ..scene import remove_objects
 from .fetch_solo import fetch_osm_data
@@ -338,7 +337,8 @@ def _add_stadium_bowl(
         if ext_o is None or ext_i is None:
             return i > 0
         annulus_holes = (holes_o or []) + [ext_i]
-        ec = _earcut_triangulate(ext_o, annulus_holes)
+        _annulus_poly = g2d.Polygon(ext_o, annulus_holes)
+        ec = g2d._cdt_triangulate(_annulus_poly, ext_o, annulus_holes)
         if ec is None:
             return i > 0
         verts2d_a, cap_tris_a = ec
@@ -349,7 +349,7 @@ def _add_stadium_bowl(
     # Innermost area (the open playing field): thin floor slab.
     ext_c, holes_c = _poly_rings(rings[-1])
     if ext_c is not None:
-        ec = _earcut_triangulate(ext_c, holes_c)
+        ec = g2d._cdt_triangulate(rings[-1], ext_c, holes_c)
         if ec is not None:
             verts2d_c, cap_tris_c = ec
             _extrude_prism(
@@ -390,7 +390,7 @@ def _append_building(
     ext, holes = _poly_rings(poly)
     if ext is None:
         return
-    ec = _earcut_triangulate(ext, holes)
+    ec = g2d._cdt_triangulate(poly, ext, holes or [])
     if ec is None:
         return
     verts2d, cap_tris = ec

@@ -31,7 +31,6 @@ classes = [
     panels.TP3D_MT_generators_menu,
     operators.TP3D_OT_run_generation,
     operators.TP3D_OT_shapely_status,
-    operators.TP3D_OT_earcut_status,
     operators.TP3D_OT_export_stl,
     operators.TP3D_OT_export_obj,
     operators.TP3D_OT_export_three_mf,
