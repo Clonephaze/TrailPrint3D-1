@@ -934,17 +934,13 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                 )
 
             # Subtract all curve thicker-bodies
-            _elem_manifold = is_mesh_manifold(elem_obj)
             for tcrv in thickerCurves:
-                _solver = 'MANIFOLD' if (_elem_manifold and is_mesh_manifold(tcrv)) else 'EXACT'
-                boolean_operation(elem_obj, tcrv, solver=_solver)
+                boolean_operation(elem_obj, tcrv)
 
             # Subtract every higher-priority element that was already processed
             for prev_key in TERRAIN_PRIORITY_ORDER[:i]:
                 if prev_key in thicker_by_key:
-                    _prev = thicker_by_key[prev_key]
-                    _solver = 'MANIFOLD' if (_elem_manifold and is_mesh_manifold(_prev)) else 'EXACT'
-                    boolean_operation(elem_obj, _prev, solver=_solver)
+                    boolean_operation(elem_obj, thicker_by_key[prev_key])
 
             _scm_done += 1
 
