@@ -422,9 +422,17 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
 
     # ── Shapely: union all → subtract negatives → area-filter → ONE mesh ────────────
     _t_shapely = time.time()
+    _smooth_r = int(bpy.context.scene.tp3d.col_osmSmoothing * 20)
     merged_pos = _g2d.union(pos_geoms)
     merged_neg = _g2d.union(neg_geoms)
     final_geom = _g2d.subtract(merged_pos, merged_neg)
+    _pre_smooth_geom = final_geom if bpy.app.debug else None
+    if _smooth_r > 0 and kind not in "WATER":
+        outline = _g2d.map_footprint_polygon(map)
+        smoothed_geom = _g2d.smooth_polygon_taubin(final_geom, outline=outline, steps=_smooth_r)
+        print(f"  [smoothing steps] Taubin smoothing steps={_smooth_r}  ")
+        union_smoothed = _g2d.union(_g2d.iter_polygons(smoothed_geom))
+        final_geom = _g2d.validate(union_smoothed)
     print(f"  [coloring_main] Shapely union+subtract ({kind}): {time.time()-_t_shapely:.3f}s  pos={len(pos_geoms)}  neg={len(neg_geoms)}")
 
     # DEBUG: dump the exact Shapely geometry at each stage as stacked wireframes so
@@ -601,6 +609,26 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     bm.free()
     merged_object.location.z -= 1
 
+    # recalc_face_normals can leave faces pointing inward on non-manifold shapes;
+    # the MANIFOLD solver silently no-ops when normals are wrong, so fix them now.
+    bm = bmesh.new()
+    bm.from_mesh(merged_object.data)
+    bm.normal_update()
+    if bm.verts:
+        _nf_min_z = min(v.co.z for v in bm.verts)
+        _nf_max_z = max(v.co.z for v in bm.verts)
+        _nf_mid_z = (_nf_min_z + _nf_max_z) * 0.5
+        _nf_wrong = [
+            f for f in bm.faces
+            if (f.calc_center_median().z < _nf_mid_z and f.normal.dot(DOWN) < 0)
+            or (f.calc_center_median().z >= _nf_mid_z and f.normal.dot(UP) < 0)
+        ]
+        if _nf_wrong:
+            print(f"  [normal-fix] ({kind}) flipping {len(_nf_wrong)} faces before boolean")
+            bmesh.ops.reverse_faces(bm, faces=_nf_wrong)
+    bm.to_mesh(merged_object.data)
+    bm.free()
+
     _t_bool = time.time()
 
     # ── Pre-boolean manifold diagnostics ────────────────────────────────────
@@ -708,7 +736,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
         bm.free()
         surviving.append(zobj)
     print(f"  [coloring_main] split_loose ({kind}): {time.time()-_t_split:.3f}s  parts={len(surviving)}")
-    print(f"  [coloring_main] SEPARATE total ({kind}): {time.time()-_t_proc:.3f}s")
+    print(f"  [coloring_main] solid build total ({kind}, {elementMode}): {time.time()-_t_proc:.3f}s")
 
     if not surviving:
         return None
@@ -777,7 +805,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                     space.shading.type = 'MATERIAL'
 
     bpy.context.preferences.edit.use_global_undo = True
-    print(f"  [coloring_main] TOTAL ({kind}, SEPARATE): {time.time()-_t_color:.3f}s")
+    print(f"  [coloring_main] TOTAL ({kind}, {elementMode}): {time.time()-_t_color:.3f}s")
     return merged_object
 
 def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
