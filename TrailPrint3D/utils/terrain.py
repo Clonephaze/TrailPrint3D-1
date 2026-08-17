@@ -729,15 +729,6 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     _t_bool = time.time()
 
     # ── Pre-boolean manifold diagnostics ────────────────────────────────────
-    def _count_non_manifold(obj):
-        bm_d = bmesh.new()
-        bm_d.from_mesh(obj.data)
-        bm_d.verts.ensure_lookup_table()
-        bm_d.edges.ensure_lookup_table()
-        nm_verts = sum(1 for v in bm_d.verts if not v.is_manifold)
-        nm_edges = sum(1 for e in bm_d.edges if not e.is_manifold)
-        bm_d.free()
-        return nm_verts, nm_edges
 
     cutter_nm_v, cutter_nm_e = _count_non_manifold(merged_object)
     map_nm_v, map_nm_e = _count_non_manifold(map)
@@ -925,6 +916,16 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
         f"  [coloring_main] TOTAL ({kind}, {elementMode}): {time.time() - _t_color:.3f}s"
     )
     return merged_object
+
+def _count_non_manifold(obj):
+    bm_d = bmesh.new()
+    bm_d.from_mesh(obj.data)
+    bm_d.verts.ensure_lookup_table()
+    bm_d.edges.ensure_lookup_table()
+    nm_verts = sum(1 for v in bm_d.verts if not v.is_manifold)
+    nm_edges = sum(1 for e in bm_d.edges if not e.is_manifold)
+    bm_d.free()
+    return nm_verts, nm_edges
 
 
 def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):

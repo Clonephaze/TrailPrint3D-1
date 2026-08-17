@@ -2360,6 +2360,7 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
         tolerance = bpy.context.scene.tp3d.toleranceElements
 
     from . import geometry2d as _g2d  # deferred to avoid circular import at load time
+    from .terrain import _count_non_manifold
 
     # ── Build the cutter from the element's 2D footprint (interior holes kept) ──
     # The old path isolated the bottom cap and voxel-remeshed it into a solid.
@@ -2443,7 +2444,16 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     if obj is None:
         return None
     obj.name = f"{original.name}_cutter"
-
+    cutter_nm_v, cutter_nm_e = _count_non_manifold(obj)
+    if cutter_nm_v or cutter_nm_e > 0:
+        # clean up internal faces across whole object
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.mesh.select_interior_faces()
+        bpy.ops.mesh.delete(type='FACE')
+        bpy.ops.object.mode_set(mode='OBJECT')
+    
     # Boolean subtract from map
     boolean = map.modifiers.new(name="Boolean", type='BOOLEAN')
     boolean.operation = 'DIFFERENCE'
