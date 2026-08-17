@@ -1867,6 +1867,23 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     return holder_obj
 
 
+def _smooth_polyline_2d(pts, passes=3):
+    """Laplacian smoothing on an open 2-D polyline (interior points only)."""
+    if len(pts) < 3:
+        return pts
+    arr = list(pts)
+    for _ in range(passes):
+        new_arr = [arr[0]]
+        for i in range(1, len(arr) - 1):
+            new_arr.append((
+                (arr[i - 1][0] + arr[i][0] + arr[i + 1][0]) / 3.0,
+                (arr[i - 1][1] + arr[i][1] + arr[i + 1][1]) / 3.0,
+            ))
+        new_arr.append(arr[-1])
+        arr = new_arr
+    return arr
+
+
 def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projectionObj = None):
     """Build the single-color-mode trail strip + groove cutter for one curve.
 
@@ -1903,16 +1920,6 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     lowest_z = None
 
     if crv.type == "CURVE":
-        # Ensure the curve is selected and active
-        bpy.ops.object.select_all(action='DESELECT')
-        crv.select_set(True)
-        bpy.context.view_layer.objects.active = crv
-
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.curve.select_all(action='SELECT')
-        bpy.ops.curve.smooth()
-        bpy.ops.object.mode_set(mode='OBJECT')
-
         mw = crv.matrix_world
         coords_list = []
         for spline in crv.data.splines:
@@ -1929,6 +1936,10 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         if not coords_list:
             bpy.data.objects.remove(crv, do_unlink=True)
             return None
+
+        # Smooth in Python; avoids mutating Blender spline data through
+        # operators, which left curves in states that crashed object.convert.
+        coords_list = [_smooth_polyline_2d(c, passes=3) for c in coords_list]
 
         print(f"[TP3D trail] '{crv.name}': {len(coords_list)} spline(s), pts per spline={[len(s) for s in coords_list]}, lowest_z={lowest_z:.4f}")
         print(f"[TP3D trail] pathThickness={pathThickness} tol={tol} trailCutDepth={trailCutDepth}")
@@ -1980,6 +1991,16 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     # Convert crv to MESH in place (preserves object identity -- other code
     # holds references to this exact object for later material/metadata
     # assignment), then replace its data with the flat prism above.
+    if crv.type == "CURVE":
+        # Replace with a trivial two-point spline before converting — the
+        # tessellated output is discarded three lines later, but degenerate
+        # real spline data crashes Blender's parallelised BM_mesh_bm_from_me.
+        for _sp in list(crv.data.splines):
+            crv.data.splines.remove(_sp)
+        _sp = crv.data.splines.new('POLY')
+        _sp.points.add(1)
+        _sp.points[0].co = (0.0, 0.0, 0.0, 1.0)
+        _sp.points[1].co = (1.0, 0.0, 0.0, 1.0)
     bpy.ops.object.select_all(action='DESELECT')
     crv.select_set(True)
     bpy.context.view_layer.objects.active = crv
@@ -2377,7 +2398,7 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
 
     # simplify removes near-coincident boundary vertices left by buffer at concave
     # pinch points -- the same tolerance coloring_main uses after smoothing.
-    fp = fp.simplify(0.075)
+    fp = fp.simplify(0.1)
     fp = _g2d.validate(fp)
     if fp is None or fp.is_empty:
         print("[single_color_mode_mesh_remesh] footprint empty after simplify -- skipping")
