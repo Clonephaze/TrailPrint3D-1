@@ -157,7 +157,7 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
     return results
 
 
-def coloring_main(map, kind="WATER", prefetched_tiles=None):
+def coloring_main(map, kind="WATER", prefetched_tiles=None, outline=None):
     from . import geometry2d as _g2d  # Shapely-based 2D geometry helpers
     from .geo import (
         convert_to_blender_coordinates,  # deferred to avoid circular import at load time
@@ -473,7 +473,8 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     final_geom = _g2d.subtract(merged_pos, merged_neg)
     _pre_smooth_geom = final_geom if bpy.app.debug else None
     if _smooth_r > 0 and kind not in "WATER":
-        outline = _g2d.map_footprint_polygon(map)
+        if outline != None:
+            _g2d.debug_dump("DBG_map_shape", outline, "TP3D_Debug_Map", z=80.0)
         smoothed_geom = _g2d.smooth_polygon_taubin(
             final_geom, outline=outline, steps=_smooth_r
         )

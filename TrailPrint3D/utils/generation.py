@@ -488,8 +488,7 @@ def _rg_start_osm_prefetch(tp3d, map_km):
     return t, result
 
 
-def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, phase_end=0.95,
-                               prefetched_osm=None, tile_label=None):
+def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, phase_end=0.95, prefetched_osm=None, tile_label=None, outline=None):
     """Create water, forest, city, glacier, building and road overlay meshes.
 
     Reads all flags directly from bpy.context.scene.tp3d.
@@ -630,7 +629,7 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
         if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1):
             if map_km <= max_size:
                 _advance_elem_progress(phase, msg)
-                _result = coloring_main(obj, key.upper(), prefetched_tiles=_all_prefetched.get(key.upper(), {}))
+                _result = coloring_main(obj, key.upper(), prefetched_tiles=_all_prefetched.get(key.upper(), {}), outline=outline)
                 if key == 'water':
                     _water_result = _result
                 if _result is _COLORING_EMPTY:
@@ -1567,6 +1566,7 @@ def runGeneration(type, locked_scale=None):
         haversine,
         separate_duplicate_xy,
     )
+    from .geometry2d import map_footprint_polygon
     from .mesh_ops import (  # deferred to avoid circular import at load time
         RaycastCurveToMesh,
         merge_with_map,
@@ -1724,6 +1724,8 @@ def runGeneration(type, locked_scale=None):
     # Swap in trail_map GPX coordinates after the shape is positioned
     if "trail_map" in flags:
         coordinates = coordinates2
+
+    map_outline = map_footprint_polygon(MapObject)
 
     compute_and_store_tile_bounds(MapObject)
 
@@ -2046,7 +2048,7 @@ def runGeneration(type, locked_scale=None):
     if _osm_prefetch_thread is not None:
         _osm_prefetch_thread.join()
     elements = _rg_build_terrain_elements(obj, scaleHor, curveObj=curveObjs[0] if curveObjs else None,
-                                          prefetched_osm=_osm_prefetched)
+                                          prefetched_osm=_osm_prefetched, outline=map_outline)
 
     # --- Phase 15: Single color mode processing ---
     overlay.update(0.95, "Coloring", "Applying single-color mode…") 
