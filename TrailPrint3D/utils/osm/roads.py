@@ -451,7 +451,6 @@ def _clip_terrain_grid_to_polygon(
         if idx is None:
             idx = len(out_verts)
             out_verts.append((x, y, z))
-            print(f"[TP3D roads] clip diag: fast-path loop took {time.time() - _fast_t0:.2f}s")
             vert_cache[key] = idx
         return idx
 
@@ -462,6 +461,7 @@ def _clip_terrain_grid_to_polygon(
         i1 = _get_vert(tri[1][0], tri[1][1], tri[1][2] + z_offset)
         i2 = _get_vert(tri[2][0], tri[2][1], tri[2][2] + z_offset)
         out_tris.append((i0, i1, i2))
+    print(f"[TP3D roads] clip diag: fast-path loop took {time.time() - _fast_t0:.2f}s")
 
     # Slow path: only the (usually small) set of boundary-straddling triangles.
     for i, tp in zip(cand_idx[intersects_mask], tri_polys_arr[intersects_mask]):
