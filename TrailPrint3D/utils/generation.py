@@ -671,7 +671,11 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
             print("Create Ocean")
             _coastline_tiles = _all_prefetched.get("COASTLINE", {})
             terrain['ocean'] = createOcean(_coastline_tiles, scaleHor, obj)
-            if terrain['ocean'] is not None:
+            if isinstance(terrain['ocean'], _ColoringTextureResult):
+                terrain['_osm_polygons'][terrain['ocean'].kind] = terrain['ocean'].polygon
+                terrain['ocean'] = None
+                _ov.set_fetch_done('water', success=True)
+            elif terrain['ocean'] is not None:
                 _ov.set_fetch_done('water', success=True)
             elif _water_ocean_combined:
                 # No coastline nearby (or it failed to build) -- that's normal for
