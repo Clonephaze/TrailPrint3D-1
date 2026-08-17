@@ -6,7 +6,18 @@ import bmesh  # type: ignore
 import bpy  # type: ignore
 import numpy as np  # type: ignore
 from mathutils import Vector  # type: ignore
-from shapely import make_valid
+from shapely import (
+    area,
+    contains,
+    get_num_coordinates,
+    get_num_geometries,
+    intersects,
+    is_valid,
+    make_valid,
+    polygons,
+    prepare,
+)
+from shapely.geometry.polygon import orient
 
 from ... import progress as _progress
 from .. import geometry2d as g2d
@@ -388,48 +399,48 @@ def _clip_terrain_grid_to_polygon(
     z_offset: float,
 ) -> tuple[list[tuple[float, float, float]], list[tuple[int, int, int]]]:
     """Clip the terrain's own triangulated grid to a 2-D road polygon (holes included).
-
-    Triangles fully inside the polygon are kept verbatim -- same vertices, same
-    connectivity as the terrain mesh -- which is what gives the road top the
-    identical resolution/pattern as the terrain and painted elements, instead
-    of an independent (and much uglier) earcut triangulation. Triangles
-    straddling the polygon boundary are Shapely-clipped and earcut-filled only
-    for that sliver; height at any new vertex is barycentric-interpolated from
-    the original flat terrain triangle, so it's exact, not approximated.
-    Terrain outside the polygon (or inside a hole, e.g. a city block) is
-    dropped, which is what carves the hole into the road mesh.
+    (docstring unchanged)
     """
-    from shapely.geometry import Polygon as ShPolygon
-    from shapely.prepared import prep
-
     if polygon is None or polygon.is_empty:
         return [], []
 
-    # Cheap bounding-box pre-filter: only construct ShPolygon for triangles
-    # whose AABB overlaps the road polygon bbox.  For a road covering ~5% of
-    # the terrain this eliminates ~95% of ShPolygon constructions vs. the old
-    # STRtree approach (which built ShPolygon for every tri unconditionally).
-    pbounds = polygon.bounds          # (minx, miny, maxx, maxy)
-    px0, py0, px1, py1 = pbounds
-    prepared = prep(polygon)
+    prepare(polygon)  # cached prepared geometry, used automatically below
 
-    tri_polys = []
-    tri_data = []
-    for tri in terrain_tris:
-        (x0, y0, _z0), (x1, y1, _z1), (x2, y2, _z2) = tri
-        if max(x0, x1, x2) < px0 or min(x0, x1, x2) > px1:
-            continue
-        if max(y0, y1, y2) < py0 or min(y0, y1, y2) > py1:
-            continue
-        tp = ShPolygon(((x0, y0), (x1, y1), (x2, y2)))
-        if tp.is_empty or not tp.is_valid or tp.area <= 1e-12:
-            continue
-        tri_polys.append(tp)
-        tri_data.append(tri)
-
-    if not tri_polys:
+    tri_arr = np.asarray(terrain_tris, dtype=np.float64)  # (T, 3, 3)
+    if tri_arr.size == 0:
         return [], []
 
+    px0, py0, px1, py1 = polygon.bounds
+    xs, ys = tri_arr[:, :, 0], tri_arr[:, :, 1]
+    bbox_mask = (
+        (xs.max(axis=1) >= px0)
+        & (xs.min(axis=1) <= px1)
+        & (ys.max(axis=1) >= py0)
+        & (ys.min(axis=1) <= py1)
+    )
+    cand_idx = np.nonzero(bbox_mask)[0]
+    if cand_idx.size == 0:
+        return [], []
+
+    ring = tri_arr[cand_idx][:, :, :2]  # (C, 3, 2)
+    ring_closed = np.concatenate([ring, ring[:, :1, :]], axis=1)  # (C, 4, 2)
+    tri_polys_arr = polygons(ring_closed)
+
+    valid_mask = is_valid(tri_polys_arr) & (area(tri_polys_arr) > 1e-12)
+    cand_idx = cand_idx[valid_mask]
+    tri_polys_arr = tri_polys_arr[valid_mask]
+    if cand_idx.size == 0:
+        return [], []
+
+    contains_mask = contains(polygon, tri_polys_arr)
+    intersects_mask = intersects(polygon, tri_polys_arr) & ~contains_mask
+    n_poly_coords = get_num_coordinates(polygon)
+    n_poly_parts = get_num_geometries(polygon)
+    print(
+        f"[TP3D roads] clip diag: candidates={len(cand_idx)} contains={int(contains_mask.sum())} "
+        f"intersects_only={int(intersects_mask.sum())} polygon_coords={n_poly_coords} polygon_parts={n_poly_parts}"
+    )
+    _fast_t0 = time.time()
     out_verts: list[tuple[float, float, float]] = []
     out_tris: list[tuple[int, int, int]] = []
     vert_cache: dict[tuple[float, float, float], int] = {}
@@ -440,35 +451,30 @@ def _clip_terrain_grid_to_polygon(
         if idx is None:
             idx = len(out_verts)
             out_verts.append((x, y, z))
+            print(f"[TP3D roads] clip diag: fast-path loop took {time.time() - _fast_t0:.2f}s")
             vert_cache[key] = idx
         return idx
 
-    for idx in range(len(tri_polys)):
-        tp = tri_polys[idx]
-        tri = tri_data[idx]
+    # Fast path: triangles fully inside -- no per-triangle Shapely calls left at all.
+    for i in cand_idx[contains_mask]:
+        tri = terrain_tris[i]
+        i0 = _get_vert(tri[0][0], tri[0][1], tri[0][2] + z_offset)
+        i1 = _get_vert(tri[1][0], tri[1][1], tri[1][2] + z_offset)
+        i2 = _get_vert(tri[2][0], tri[2][1], tri[2][2] + z_offset)
+        out_tris.append((i0, i1, i2))
 
-        if prepared.contains(tp):
-            i0 = _get_vert(tri[0][0], tri[0][1], tri[0][2] + z_offset)
-            i1 = _get_vert(tri[1][0], tri[1][1], tri[1][2] + z_offset)
-            i2 = _get_vert(tri[2][0], tri[2][1], tri[2][2] + z_offset)
-            out_tris.append((i0, i1, i2))
-            continue
-
-        if not prepared.intersects(tp):
-            continue
-
+    # Slow path: only the (usually small) set of boundary-straddling triangles.
+    for i, tp in zip(cand_idx[intersects_mask], tri_polys_arr[intersects_mask]):
+        tri = terrain_tris[i]
         inter = tp.intersection(polygon)
         if inter.is_empty:
             continue
-
         for part in g2d.iter_polygons(inter):
-            part = g2d.orient(part)  # exterior CCW, holes CW -- matches terrain winding
+            part = orient(part, sign=1.0)
             ext = list(part.exterior.coords)[:-1]
             if len(ext) < 3:
                 continue
-            holes = [
-                list(ring.coords)[:-1] for ring in part.interiors if len(ring.coords) >= 4
-            ]
+            holes = [list(r.coords)[:-1] for r in part.interiors if len(r.coords) >= 4]
             ec = g2d._cdt_triangulate(part, ext, holes)
             if ec is None:
                 continue
@@ -480,6 +486,7 @@ def _clip_terrain_grid_to_polygon(
             for a, b, c in tris_part:
                 out_tris.append((local_idx[a], local_idx[b], local_idx[c]))
 
+    print(f"[TP3D roads] clip diag: cdt-fallback loop took {time.time() - _fast_t0:.2f}s")
     return out_verts, out_tris
 
 
@@ -551,13 +558,22 @@ def finalize_roads(
     2*el_sHeight, giving a thin slab that hugs the terrain surface on both
     faces instead of reaching down to the base.
     """
-    if roads.data.get('tp3d_roads_finalized'):
+    _t0 = 0
+    _t1 = 0
+    _t2 = 0
+    _t3 = 0
+    _t4 = 0
+    if roads.data.get("tp3d_roads_finalized"):
         return
     if not terrain_tris or road_polygon is None or road_polygon.is_empty:
         return
+    dbg = bpy.app.debug_events
 
-    _t0 = time.time()
-    top_verts, top_tris = _clip_terrain_grid_to_polygon(terrain_tris, road_polygon, el_sHeight)
+    if dbg:
+        _t0 = time.time()
+    top_verts, top_tris = _clip_terrain_grid_to_polygon(
+        terrain_tris, road_polygon, el_sHeight
+    )
     if not top_verts or not top_tris:
         print("[TP3D roads] finalize_roads: terrain-grid clip produced no geometry")
         return
@@ -568,13 +584,21 @@ def finalize_roads(
         # top = terrain_z + el_sHeight; bottom = terrain_z (slab sits on surface, not inside it)
         bottom_zs = [z - el_sHeight for _x, _y, z in top_verts]
 
+    if dbg:
+        _t1 = time.time()
     all_verts, faces = _build_variable_extruded_mesh(top_verts, top_tris, bottom_zs)
 
+    if dbg:
+        _t2 = time.time()
+    # vectorized transform from world space to local space (4x4 matrix)
     mw_inv = roads.matrix_world.inverted()
-    local_verts = [mw_inv @ Vector(v) for v in all_verts]
+    verts_arr = np.array(all_verts, dtype=np.float64)  # (N, 3)
+    mw_inv_np = np.array(mw_inv)  # (4, 4)
+    homo = np.hstack([verts_arr, np.ones((verts_arr.shape[0], 1))])  # (N, 4)
+    local_verts = (homo @ mw_inv_np.T)[:, :3]
 
     mesh = bpy.data.meshes.new("road_mesh")
-    mesh.from_pydata(local_verts, [], faces)
+    mesh.from_pydata(local_verts.tolist(), [], faces)
     mesh.update(calc_edges=True)
     mesh.validate(verbose=False)
 
@@ -583,15 +607,19 @@ def finalize_roads(
         mesh.materials.append(mat)  # from_pydata() starts with no material slots
     roads.data = mesh
     bpy.data.meshes.remove(old_mesh)
-    roads.data['tp3d_roads_finalized'] = 1  # type: ignore[index]
+    roads.data["tp3d_roads_finalized"] = 1  # type: ignore[index]
 
+    if dbg:
+        _t3 = time.time()
     from ..mesh_ops import recalculateNormals
+
     recalculateNormals(roads)
 
-    print(
-        f"[TP3D roads] finalize_roads: {len(all_verts)} verts, "
-        f"{len(faces)} faces, took {time.time() - _t0:.1f}s"
-    )
+    if dbg:
+        _t4 = time.time()
+        print(
+            f"[TP3D roads] clip={_t1 - _t0:.2f}s extrude={_t2 - _t1:.2f}s mesh_build={_t3 - _t2:.2f}s normals={_t4 - _t3:.2f}s"
+        )
 
 
 def roads_geometry_for_polygon(
@@ -604,7 +632,9 @@ def roads_geometry_for_polygon(
     Mirrors finalize_roads but for an arbitrary polygon (e.g. one puzzle piece).
     Returns (None, None) if the polygon yields no geometry.
     """
-    top_verts, top_tris = _clip_terrain_grid_to_polygon(terrain_tris, road_polygon, el_sHeight)
+    top_verts, top_tris = _clip_terrain_grid_to_polygon(
+        terrain_tris, road_polygon, el_sHeight
+    )
     if not top_verts or not top_tris:
         return None, None
     bottom_zs = [z - el_sHeight for _x, _y, z in top_verts]
@@ -676,7 +706,9 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize=1, full_depth=Fal
     map_fp = g2d.map_footprint_polygon(map)
 
     # --- Buffer ---------------------------------------------------------
-    verts_2d, tris, road_union = _buffer_tiers_to_polygons(tier_polylines, half_width, map_fp)
+    verts_2d, tris, road_union = _buffer_tiers_to_polygons(
+        tier_polylines, half_width, map_fp
+    )
     if not verts_2d or not tris:
         print("No road data returned")
         return None
