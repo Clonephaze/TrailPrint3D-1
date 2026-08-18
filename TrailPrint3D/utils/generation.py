@@ -1954,7 +1954,6 @@ def runGeneration(type, locked_scale=None):
     import shapely.ops as so
 
     from . import geometry2d as g2d
-    print("[DIAG 1] Starting boundary extrusion with Shapely hole preservation...")
 
     obj = MapObject
     if obj.mode != 'OBJECT':
@@ -2041,11 +2040,8 @@ def runGeneration(type, locked_scale=None):
             tcrv.select_set(True)
             bpy.ops.object.origin_set(type="ORIGIN_CURSOR")
 
-    print("[DIAG 2] Base extrusion with Shapely holes complete.")
-
     # --- Phase 12-13: Create text / plate overlays for text-based shapes ---
     overlay.update(0.82, "Shape Overlays", "Adding text and plate elements…")
-    print("[DIAG] Reached 82%")
     textobj   = None
     plateobj  = None
     shellobj  = None
@@ -2109,9 +2105,8 @@ def runGeneration(type, locked_scale=None):
 
     # --- Phase 14: Create terrain overlay elements ---
     overlay.update(0.83, "Terrain Elements", "Adding elements…")
-    print("[DIAG] Reached 83%, checking OSM thread...")
     if _osm_prefetch_thread is not None:
-        _osm_prefetch_thread.join(timeout=5.0)
+        _osm_prefetch_thread.join()
     elements = _rg_build_terrain_elements(obj, scaleHor, curveObj=curveObjs[0] if curveObjs else None,
                                           prefetched_osm=_osm_prefetched, outline=map_outline)
 
