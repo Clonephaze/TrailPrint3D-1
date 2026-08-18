@@ -6,18 +6,7 @@ import bmesh  # type: ignore
 import bpy  # type: ignore
 import numpy as np  # type: ignore
 from mathutils import Vector  # type: ignore
-from shapely import (
-    area,
-    contains,
-    get_num_coordinates,
-    get_num_geometries,
-    intersects,
-    is_valid,
-    make_valid,
-    polygons,
-    prepare,
-)
-from shapely.geometry.polygon import orient
+from shapely import make_valid
 
 from ... import progress as _progress
 from .. import geometry2d as g2d
@@ -180,7 +169,7 @@ def _buffer_tiers_to_polygons(
 
     Returns (flat_verts_2d, triangle_faces, road_union_polygon). The polygon is
     returned too so the caller can later clip the terrain's own grid to the
-    exact same 2-D shape (see finalize_roads / _clip_terrain_grid_to_polygon).
+    exact same 2-D shape (see finalize_roads / geometry2d.clip_triangles_to_polygon).
     """
     from ..geometry2d import union
 
@@ -381,115 +370,6 @@ def _triangulated_terrain_faces(map_obj: bpy.types.Object) -> list:
     return tris
 
 
-def _bary_z(tri: tuple, x: float, y: float) -> float:
-    """Interpolate Z at (x, y) inside a flat 3-D triangle via barycentric coords."""
-    (x0, y0, z0), (x1, y1, z1), (x2, y2, z2) = tri
-    d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
-    if abs(d) < 1e-12:
-        return (z0 + z1 + z2) / 3.0
-    w0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / d
-    w1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / d
-    w2 = 1.0 - w0 - w1
-    return w0 * z0 + w1 * z1 + w2 * z2
-
-
-def _clip_terrain_grid_to_polygon(
-    terrain_tris: list,
-    polygon,
-    z_offset: float,
-) -> tuple[list[tuple[float, float, float]], list[tuple[int, int, int]]]:
-    """Clip the terrain's own triangulated grid to a 2-D road polygon (holes included).
-    (docstring unchanged)
-    """
-    if polygon is None or polygon.is_empty:
-        return [], []
-
-    prepare(polygon)  # cached prepared geometry, used automatically below
-
-    tri_arr = np.asarray(terrain_tris, dtype=np.float64)  # (T, 3, 3)
-    if tri_arr.size == 0:
-        return [], []
-
-    px0, py0, px1, py1 = polygon.bounds
-    xs, ys = tri_arr[:, :, 0], tri_arr[:, :, 1]
-    bbox_mask = (
-        (xs.max(axis=1) >= px0)
-        & (xs.min(axis=1) <= px1)
-        & (ys.max(axis=1) >= py0)
-        & (ys.min(axis=1) <= py1)
-    )
-    cand_idx = np.nonzero(bbox_mask)[0]
-    if cand_idx.size == 0:
-        return [], []
-
-    ring = tri_arr[cand_idx][:, :, :2]  # (C, 3, 2)
-    ring_closed = np.concatenate([ring, ring[:, :1, :]], axis=1)  # (C, 4, 2)
-    tri_polys_arr = polygons(ring_closed)
-
-    valid_mask = is_valid(tri_polys_arr) & (area(tri_polys_arr) > 1e-12)
-    cand_idx = cand_idx[valid_mask]
-    tri_polys_arr = tri_polys_arr[valid_mask]
-    if cand_idx.size == 0:
-        return [], []
-
-    contains_mask = contains(polygon, tri_polys_arr)
-    intersects_mask = intersects(polygon, tri_polys_arr) & ~contains_mask
-    n_poly_coords = get_num_coordinates(polygon)
-    n_poly_parts = get_num_geometries(polygon)
-    print(
-        f"[TP3D roads] clip diag: candidates={len(cand_idx)} contains={int(contains_mask.sum())} "
-        f"intersects_only={int(intersects_mask.sum())} polygon_coords={n_poly_coords} polygon_parts={n_poly_parts}"
-    )
-    _fast_t0 = time.time()
-    out_verts: list[tuple[float, float, float]] = []
-    out_tris: list[tuple[int, int, int]] = []
-    vert_cache: dict[tuple[float, float, float], int] = {}
-
-    def _get_vert(x: float, y: float, z: float) -> int:
-        key = (round(x, 5), round(y, 5), round(z, 5))
-        idx = vert_cache.get(key)
-        if idx is None:
-            idx = len(out_verts)
-            out_verts.append((x, y, z))
-            vert_cache[key] = idx
-        return idx
-
-    # Fast path: triangles fully inside -- no per-triangle Shapely calls left at all.
-    for i in cand_idx[contains_mask]:
-        tri = terrain_tris[i]
-        i0 = _get_vert(tri[0][0], tri[0][1], tri[0][2] + z_offset)
-        i1 = _get_vert(tri[1][0], tri[1][1], tri[1][2] + z_offset)
-        i2 = _get_vert(tri[2][0], tri[2][1], tri[2][2] + z_offset)
-        out_tris.append((i0, i1, i2))
-    print(f"[TP3D roads] clip diag: fast-path loop took {time.time() - _fast_t0:.2f}s")
-
-    # Slow path: only the (usually small) set of boundary-straddling triangles.
-    for i, tp in zip(cand_idx[intersects_mask], tri_polys_arr[intersects_mask]):
-        tri = terrain_tris[i]
-        inter = tp.intersection(polygon)
-        if inter.is_empty:
-            continue
-        for part in g2d.iter_polygons(inter):
-            part = orient(part, sign=1.0)
-            ext = list(part.exterior.coords)[:-1]
-            if len(ext) < 3:
-                continue
-            holes = [list(r.coords)[:-1] for r in part.interiors if len(r.coords) >= 4]
-            ec = g2d._cdt_triangulate(part, ext, holes)
-            if ec is None:
-                continue
-            verts2d_part, tris_part = ec
-            local_idx = []
-            for vx, vy in verts2d_part:
-                vz = _bary_z(tri, vx, vy) + z_offset
-                local_idx.append(_get_vert(vx, vy, vz))
-            for a, b, c in tris_part:
-                out_tris.append((local_idx[a], local_idx[b], local_idx[c]))
-
-    print(f"[TP3D roads] clip diag: cdt-fallback loop took {time.time() - _fast_t0:.2f}s")
-    return out_verts, out_tris
-
-
 def _build_variable_extruded_mesh(
     top_verts: list[tuple[float, float, float]],
     top_tris: list[tuple[int, int, int]],
@@ -530,13 +410,40 @@ def _build_variable_extruded_mesh(
 # ---------------------------------------------------------------------------
 
 
+def compute_full_depth_bottom_z(
+    terrain_tris: list,
+    road_polygon,
+    el_sHeight: float,
+) -> float | None:
+    """Compute the flat printable-base Z for full-depth roads (SEPARATE /
+    SINGLECOLORMODE*), the road equivalent of how single-color-mode elements
+    get their own recess depth (see single_color_mode_mesh_remesh: bottom_z =
+    min(v.z) of the element's OWN geometry, not the map floor).
+
+    A road's top surface follows terrain_z(x, y) + el_sHeight across its
+    footprint. Placing the flat bottom at the LOWEST point that surface
+    reaches, minus el_sHeight, guarantees the slab is at least el_sHeight
+    thick everywhere along the road while sinking into the terrain/elements
+    below only as deep as this specific road actually needs -- not all the
+    way down to the map's own base the way a full elevation column would.
+
+    Returns None if the polygon/tris yield no geometry under the footprint
+    (caller should treat this the same as "no road here").
+    """
+    top_verts, _top_tris = g2d.clip_triangles_to_polygon(
+        terrain_tris, road_polygon, el_sHeight
+    )
+    if not top_verts:
+        return None
+    return min(z for _x, _y, z in top_verts) - el_sHeight
+
+
 def finalize_roads(
     roads: bpy.types.Object,
     terrain_tris: list,
     road_polygon,
     el_sHeight: float,
     full_depth: bool,
-    bottom_z: float,
 ) -> None:
     """Rebuild the road mesh's top surface from the terrain's own triangulated
     grid, clipped to the road footprint, so it shares the exact same
@@ -552,11 +459,14 @@ def finalize_roads(
     coarse mesh's own vertices, so it doesn't matter that they no longer
     exist by the time this runs.
 
-    full_depth=True (SEPARATE/SINGLECOLORMODE*): bottom cap is flat at
-    bottom_z, a normal printable base.
+    full_depth=True (SEPARATE/SINGLECOLORMODE*): bottom cap is flat, matching
+    the same flush-bottom-into-a-recess pattern single-color-mode elements
+    use -- see compute_full_depth_bottom_z. It's computed from the road's OWN
+    footprint here (not passed in), so it always matches whatever recess the
+    caller cut for it.
     full_depth=False (PAINT): bottom cap mirrors the top, offset down by
     2*el_sHeight, giving a thin slab that hugs the terrain surface on both
-    faces instead of reaching down to the base.
+    faces instead of reaching down to a base at all.
     """
     _t0 = 0
     _t1 = 0
@@ -571,7 +481,7 @@ def finalize_roads(
 
     if dbg:
         _t0 = time.time()
-    top_verts, top_tris = _clip_terrain_grid_to_polygon(
+    top_verts, top_tris = g2d.clip_triangles_to_polygon(
         terrain_tris, road_polygon, el_sHeight
     )
     if not top_verts or not top_tris:
@@ -579,6 +489,10 @@ def finalize_roads(
         return
 
     if full_depth:
+        # Same footprint/tris/el_sHeight that just produced top_verts, so this
+        # is guaranteed consistent with the surface actually being built here
+        # -- no separately-passed-in value that could drift out of sync.
+        bottom_z = min(z for _x, _y, z in top_verts) - el_sHeight
         bottom_zs = [bottom_z] * len(top_verts)
     else:
         # top = terrain_z + el_sHeight; bottom = terrain_z (slab sits on surface, not inside it)
@@ -632,7 +546,7 @@ def roads_geometry_for_polygon(
     Mirrors finalize_roads but for an arbitrary polygon (e.g. one puzzle piece).
     Returns (None, None) if the polygon yields no geometry.
     """
-    top_verts, top_tris = _clip_terrain_grid_to_polygon(
+    top_verts, top_tris = g2d.clip_triangles_to_polygon(
         terrain_tris, road_polygon, el_sHeight
     )
     if not top_verts or not top_tris:
@@ -696,6 +610,14 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize=1, full_depth=Fal
     )
 
     # --- Z bounds from terrain ------------------------------------------
+    # This mesh only ever gets used as a placeholder / last-resort fallback
+    # cutter -- for full_depth modes (SEPARATE/SINGLECOLORMODE*), the caller
+    # (see generation.py's road-cutting step) rebuilds a properly bounded
+    # cutter from compute_full_depth_bottom_z before actually cutting
+    # terrain/elements, since the real flush-bottom depth depends on terrain
+    # height under the road footprint, which isn't available yet at this
+    # point (map hasn't been triangulated/cached). Reaching to the map floor
+    # here is harmless as long as that rebuild happens.
     mc = [map.matrix_world @ Vector(c) for c in map.bound_box]
     bottom_z = min(v.z for v in mc) - 1.0
     top_z = max(v.z for v in mc) + default_height
