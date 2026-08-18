@@ -252,6 +252,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
             ("OCTAGON", _("Octagon"), _("Octagon Map")), #Premium
             ("ELLIPSE", _("Ellipse"), _("Ellipse Map")), #Premium
             ("HEART", _("Heart"), _("Heart Map")), #Premium
+            ("GEOJSON", _("GeoJSON"), _("Import a custom GeoJSON shape")),
+            ("SVG", _("SVG"), _("Import a custom SVG shape")),
         ],
         default = "HEXAGON",
         update = shape_update,
@@ -266,6 +268,12 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         # per-shape list in SHAPE_TEXT_STYLES, so it's the default.
     )# type: ignore
     shapeTextStyleCache: StringProperty(default="NONE", options={'HIDDEN'}) # type: ignore
+    customFilePath: bpy.props.StringProperty(
+        name="File Path",
+        description="Path to the GeoJSON or SVG file",
+        subtype='FILE_PATH',
+        default="",
+    )
 
     api: bpy.props.EnumProperty(
         name = "api",

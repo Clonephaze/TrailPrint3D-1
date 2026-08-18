@@ -12,10 +12,13 @@ raises ImportError with a message that tells the user to reinstall from
 the latest .zip.
 """
 
+import math
+import time
 from typing import Any
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
+import numpy as np  # type: ignore
 
 # These values are overwritten by _load_shapely() on success.
 _HAS_SHAPELY: bool = False
@@ -907,3 +910,289 @@ def debug_dump_mesh_footprint(
 
     debug_collection(collection_name).objects.link(debug_obj)
     return debug_obj
+
+
+# ---------------------------------------------------------------------------
+# Grid generation + grid/polygon clipping
+#
+# Shared by roads (clipping the terrain's own triangulated grid to a road
+# footprint) and by primitives.build_mesh_from_polygon (clipping a flat
+# lattice to any shape/GeoJSON/combined polygon) -- one clip implementation
+# instead of one per caller.
+# ---------------------------------------------------------------------------
+
+from shapely import (
+    area as _sh_area,
+)
+from shapely import (
+    contains as _sh_contains,
+)
+from shapely import (
+    get_num_coordinates as _sh_get_num_coordinates,
+)
+from shapely import (
+    get_num_geometries as _sh_get_num_geometries,
+)
+from shapely import (
+    intersects as _sh_intersects,
+)
+from shapely import (
+    is_valid as _sh_is_valid,
+)
+from shapely import (
+    polygons as _sh_polygons,
+)
+from shapely import (
+    prepare as _sh_prepare,
+)
+
+
+def build_triangular_lattice(
+    bounds: tuple[float, float, float, float],
+    cell_size: float,
+    max_cells: int = 10_000_000,
+):
+    """Build a regular triangular lattice covering *bounds* (minx, miny, maxx,
+    maxy), each grid cell split into 2 triangles, flat at z=0.
+
+    Returns an (T, 3, 3) ndarray -- T triangles, 3 verts each, 3 coords each
+    -- the same per-triangle-independent layout _triangulated_terrain_faces'
+    plain list produces, just as an array instead of nested tuples, so it
+    plugs directly into clip_triangles_to_polygon with no adapter needed
+    (its first step is np.asarray(triangles, ...), a free no-op on an array
+    already in this shape/dtype).
+
+    A tiny bit of overscan (half a cell past each edge) keeps boundary
+    triangles fully covering the polygon edge so the clip's slow/CDT path
+    isn't left with a sliver gap at the boundary.
+
+    Built with numpy (not a Python nested loop) -- at high num_subdivisions
+    callers can request millions of cells, and a pure-Python loop building
+    that many tuples is itself minutes slow before clip_triangles_to_polygon
+    even starts. max_cells is a hard backstop on top of that: cell_size gets
+    scaled up (coarser) just enough to land at or under the budget, since
+    callers (see primitives.create_*) derive cell_size from num_subdivisions
+    with exponential growth, and that field allows values well above its
+    slider (soft_max=10, max=50) that would otherwise generate an unbounded
+    lattice with no warning.
+    """
+    minx, miny, maxx, maxy = bounds
+    if cell_size <= 0 or maxx <= minx or maxy <= miny:
+        return []
+
+    pad = cell_size * 0.5
+    minx, miny = minx - pad, miny - pad
+    maxx, maxy = maxx + pad, maxy + pad
+
+    nx = max(1, math.ceil((maxx - minx) / cell_size))
+    ny = max(1, math.ceil((maxy - miny) / cell_size))
+
+    if nx * ny > max_cells:
+        scale = math.sqrt((nx * ny) / max_cells)
+        cell_size *= scale
+        nx = max(1, math.ceil((maxx - minx) / cell_size))
+        ny = max(1, math.ceil((maxy - miny) / cell_size))
+        print(
+            f"[TP3D lattice] requested lattice exceeded {max_cells} cells -- "
+            f"clamped cell_size to {cell_size:.4f} ({nx}x{ny} cells) to keep "
+            "generation tractable"
+        )
+
+    xs = minx + np.arange(nx + 1) * cell_size  # (nx+1,)
+    ys = miny + np.arange(ny + 1) * cell_size  # (ny+1,)
+
+    # Corners of every cell as 4 same-shaped (ny, nx) arrays -- a uniform
+    # lattice, so no per-vertex elevation lookup needed (unlike terrain).
+    x0 = np.tile(xs[:-1], (ny, 1))
+    x1 = np.tile(xs[1:], (ny, 1))
+    y0 = np.tile(ys[:-1].reshape(-1, 1), (1, nx))
+    y1 = np.tile(ys[1:].reshape(-1, 1), (1, nx))
+
+    z = np.zeros_like(x0)
+    p00 = np.stack([x0, y0, z], axis=-1)
+    p10 = np.stack([x1, y0, z], axis=-1)
+    p01 = np.stack([x0, y1, z], axis=-1)
+    p11 = np.stack([x1, y1, z], axis=-1)
+
+    tri_a = np.stack([p00, p10, p11], axis=-2)  # (ny, nx, 3, 3)
+    tri_b = np.stack([p00, p11, p01], axis=-2)  # (ny, nx, 3, 3)
+    # Returned as an (T, 3, 3) ndarray, NOT converted to nested Python
+    # tuples -- clip_triangles_to_polygon's first step is np.asarray(...)
+    # anyway, which is a free no-op passthrough on an array already in this
+    # shape/dtype, whereas building nested tuples here only to immediately
+    # convert them straight back was pure overhead (~3s at 500k triangles,
+    # for zero benefit -- every other consumer only ever indexes tri[i][j],
+    # which an ndarray supports identically to a tuple).
+    return np.concatenate([tri_a.reshape(-1, 3, 3), tri_b.reshape(-1, 3, 3)], axis=0)
+
+
+def _bary_z(tri: tuple, x: float, y: float) -> float:
+    """Interpolate Z at (x, y) inside a flat 3-D triangle via barycentric coords."""
+    (x0, y0, z0), (x1, y1, z1), (x2, y2, z2) = tri
+    d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+    if abs(d) < 1e-12:
+        return (z0 + z1 + z2) / 3.0
+    w0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / d
+    w1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / d
+    w2 = 1.0 - w0 - w1
+    return w0 * z0 + w1 * z1 + w2 * z2
+
+
+def clip_triangles_to_polygon(
+    triangles: list,
+    polygon,
+    z_offset: float = 0.0,
+) -> tuple[list[tuple[float, float, float]], list[tuple[int, int, int]]]:
+    """Clip a flat triangle list (see build_triangular_lattice /
+    osm.roads._triangulated_terrain_faces) to a 2-D polygon (holes included),
+    returning a deduped indexed mesh: (verts, tris).
+
+    Relocated from osm.roads._clip_terrain_grid_to_polygon -- unchanged in
+    behavior. Was terrain-specific in name only; the triangle input already
+    carries its own Z per vertex (interpolated via barycentric coords for
+    boundary-straddling triangles), which for a flat z=0 lattice just always
+    resolves to 0 -- z_offset works identically as a uniform height offset
+    for both use cases.
+    """
+    import shapely
+
+    if polygon is None or polygon.is_empty:
+        return [], []
+
+    _sh_prepare(polygon)  # cached prepared geometry, used automatically below
+
+    tri_arr = np.asarray(triangles, dtype=np.float64)  # (T, 3, 3)
+    if tri_arr.size == 0:
+        return [], []
+
+    px0, py0, px1, py1 = polygon.bounds
+    xs, ys = tri_arr[:, :, 0], tri_arr[:, :, 1]
+    bbox_mask = (
+        (xs.max(axis=1) >= px0)
+        & (xs.min(axis=1) <= px1)
+        & (ys.max(axis=1) >= py0)
+        & (ys.min(axis=1) <= py1)
+    )
+    cand_idx = np.nonzero(bbox_mask)[0]
+    if cand_idx.size == 0:
+        return [], []
+
+    ring = tri_arr[cand_idx][:, :, :2]  # (C, 3, 2)
+    ring_closed = np.concatenate([ring, ring[:, :1, :]], axis=1)  # (C, 4, 2)
+    tri_polys_arr = _sh_polygons(ring_closed)
+
+    valid_mask = _sh_is_valid(tri_polys_arr) & (_sh_area(tri_polys_arr) > 1e-12)
+    cand_idx = cand_idx[valid_mask]
+    tri_polys_arr = tri_polys_arr[valid_mask]
+    if cand_idx.size == 0:
+        return [], []
+
+    contains_mask = _sh_contains(polygon, tri_polys_arr)
+    intersects_mask = _sh_intersects(polygon, tri_polys_arr) & ~contains_mask
+    n_poly_coords = _sh_get_num_coordinates(polygon)
+    n_poly_parts = _sh_get_num_geometries(polygon)
+    print(
+        f"[TP3D clip] clip diag: candidates={len(cand_idx)} contains={int(contains_mask.sum())} "
+        f"intersects_only={int(intersects_mask.sum())} polygon_coords={n_poly_coords} polygon_parts={n_poly_parts}"
+    )
+    _fast_t0 = time.time()
+    out_verts: list[tuple[float, float, float]] = []
+    out_tris: list[tuple[int, int, int]] = []
+    vert_cache: dict[tuple[float, float, float], int] = {}
+
+    def _get_vert(x: float, y: float, z: float) -> int:
+        key = (round(x, 5), round(y, 5), round(z, 5))
+        idx = vert_cache.get(key)
+        if idx is None:
+            idx = len(out_verts)
+            out_verts.append((x, y, z))
+            vert_cache[key] = idx
+        return idx
+
+    # Fast path: triangles fully inside -- no per-triangle Shapely calls needed
+    fast_idx = cand_idx[contains_mask]
+    if fast_idx.size:
+        fast_tris = tri_arr[fast_idx].copy()  # (F, 3, 3)
+        fast_tris[:, :, 2] += z_offset
+        rounded = np.round(fast_tris.reshape(-1, 3), 5)  # (F*3, 3)
+        uniq, inverse = np.unique(rounded, axis=0, return_inverse=True)
+        uniq_list = [tuple(v) for v in uniq.tolist()]  # native python floats
+        out_verts.extend(uniq_list)
+        vert_cache.update((v, i) for i, v in enumerate(uniq_list))
+        out_tris.extend(tuple(row) for row in inverse.reshape(-1, 3).tolist())
+    print(f"[TP3D clip] clip diag: fast-path loop took {time.time() - _fast_t0:.2f}s")
+
+    # Slow path: vectorized intersection across all boundary triangles at once
+    slow_cand = cand_idx[intersects_mask]
+    slow_polys = tri_polys_arr[intersects_mask]
+
+    if slow_cand.size > 0:
+        intersections = shapely.intersection(slow_polys, polygon)
+
+        for i, inter in zip(slow_cand, intersections):
+            if inter.is_empty:
+                continue
+            tri = triangles[i]
+            for part in iter_polygons(inter):
+                part = orient(part, sign=1.0)
+                ext = list(part.exterior.coords)[:-1]
+                if len(ext) < 3:
+                    continue
+                holes = [
+                    list(r.coords)[:-1] for r in part.interiors if len(r.coords) >= 4
+                ]
+                ec = _cdt_triangulate(part, ext, holes)
+                if ec is None:
+                    continue
+                verts2d_part, tris_part = ec
+                local_idx = []
+                for vx, vy in verts2d_part:
+                    vz = _bary_z(tri, vx, vy) + z_offset
+                    local_idx.append(_get_vert(vx, vy, vz))
+                for a, b, c in tris_part:
+                    out_tris.append((local_idx[a], local_idx[b], local_idx[c]))
+
+    print(
+        f"[TP3D clip] clip diag: cdt-fallback loop took {time.time() - _fast_t0:.2f}s"
+    )
+    return out_verts, out_tris
+
+
+def group_boundary_loops(edges):
+    """Sort unsorted boundary edges into ordered vertex loops."""
+    adj = {}
+    for e in edges:
+        for v in e.verts:
+            adj.setdefault(v, []).append(e)
+
+    visited_edges = set()
+    loops = []
+
+    for start_edge in edges:
+        if start_edge in visited_edges:
+            continue
+
+        loop = []
+        curr_edge = start_edge
+        curr_v = curr_edge.verts[0]
+
+        while curr_edge not in visited_edges:
+            visited_edges.add(curr_edge)
+            loop.append(curr_v)
+            next_v = curr_edge.other_vert(curr_v)
+
+            next_edge = None
+            for e in adj.get(next_v, []):
+                if e not in visited_edges:
+                    next_edge = e
+                    break
+
+            curr_v = next_v
+            if next_edge is None:
+                break
+            curr_edge = next_edge
+
+        if len(loop) >= 3:
+            loops.append(loop)
+
+    return loops

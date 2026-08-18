@@ -181,6 +181,9 @@ class TP3D_PT_generate(bpy.types.Panel):
             elif props.shape == "ELLIPSE":
                 col.prop(props, "objSize")
                 col.prop(props, "ellipseRatio")
+            elif props.shape in {"GEOJSON", "SVG"}:
+                col.prop(props, "customFilePath", text=_("File"))
+                col.prop(props, "objSize")
             else:
                 col.prop(props, "objSize")
             col.prop(props, "num_subdivisions")

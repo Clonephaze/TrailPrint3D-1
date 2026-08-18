@@ -335,6 +335,8 @@ def _rg_create_map_object(flags, props, modelname, centerx, centery):
     )
     from .primitives import (  # deferred to avoid circular import at load time
         create_circle,
+        create_custom_geojson,
+        create_custom_svg,
         create_ellipse,
         create_heart,
         create_hexagon,
@@ -372,6 +374,16 @@ def _rg_create_map_object(flags, props, modelname, centerx, centery):
         elif shape in {"ELLIPSE", "ELLIPSE SHELL"}:
             ratio = bpy.context.scene.tp3d.ellipseRatio
             MapObject = create_ellipse(size / 2, num_subdivisions, modelname, ratio)
+        elif shape == "GEOJSON":
+            filepath = bpy.path.abspath(bpy.context.scene.tp3d.customFilePath)
+            MapObject = create_custom_geojson(
+                filepath, size / 2, num_subdivisions, modelname
+            )
+        elif shape == "SVG":
+            filepath = bpy.path.abspath(bpy.context.scene.tp3d.customFilePath)
+            MapObject = create_custom_svg(
+                filepath, size / 2, num_subdivisions, modelname
+            )
         else:
             MapObject = create_hexagon(size / 2, num_subdivisions, modelname)
         print(f"[map_object] shape created in {time.time()-_t_shape:.3f}s")
@@ -1081,7 +1093,6 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             _roads_poly,
             el_sHeight,
             full_depth,
-            bottom_z,
         )
 
         # Repair non-manifold boundary edges left by the terrain-grid clip and
@@ -1937,51 +1948,104 @@ def runGeneration(type, locked_scale=None):
         for tcrv in curveObjs:
             RaycastCurveToMesh(tcrv, MapObject)
 
-    # Extrude map shape downward and set bottom face z
-    bpy.context.view_layer.objects.active = MapObject
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.mesh.extrude_region_move()
-    bpy.ops.mesh.dissolve_faces()
-    bpy.ops.transform.translate(value=(0, 0, -1))
-    bpy.ops.object.mode_set(mode='OBJECT')
+    # Extrude ONLY outer boundary down to form walls + single bottom cap
+    import bmesh
+    import shapely.geometry as sg
+    import shapely.ops as so
 
-    obj = bpy.context.object
-    mesh = obj.data
-    selected_faces = [face for face in mesh.polygons if face.select]
-    if selected_faces:
-        for face in selected_faces:
-            for vert_idx in face.vertices:
-                mesh.vertices[vert_idx].co.z = additionalExtrusion - props['minThickness']
-    else:
-        print("No face selected.")
+    from . import geometry2d as g2d
+    print("[DIAG 1] Starting boundary extrusion with Shapely hole preservation...")
 
-    # Shift all geometry so bottom face sits at the correct z
-    bpy.context.view_layer.objects.active = MapObject
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.transform.translate(value=(0, 0, -additionalExtrusion + props['minThickness']))
-    bpy.ops.object.mode_set(mode='OBJECT')
+    obj = MapObject
+    if obj.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
 
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+
+    target_bottom_z = additionalExtrusion - props['minThickness']
+    shift_z = -additionalExtrusion + props['minThickness']
+
+    # 1. Extrude boundary edges downward
+    top_boundary_edges = [e for e in bm.edges if e.is_boundary]
+    extrude_res = bmesh.ops.extrude_edge_only(bm, edges=top_boundary_edges)
+
+    extruded_verts = [elem for elem in extrude_res['geom'] if isinstance(elem, bmesh.types.BMVert)]
+    extruded_edges = [elem for elem in extrude_res['geom'] if isinstance(elem, bmesh.types.BMEdge)]
+
+    # 2. Flatten bottom edge vertices
+    for v in extruded_verts:
+        v.co.z = target_bottom_z
+
+    # 3. Group bottom boundary loops into ordered vertex paths
+    bottom_boundary_edges = [e for e in extruded_edges if e.is_boundary]
+    loops = g2d.group_boundary_loops(bottom_boundary_edges)
+
+    if loops:
+        # Build 2D point sequences for Shapely
+        coords_loops = [[(v.co.x, v.co.y) for v in loop] for loop in loops]
+
+        # Sort loops by 2D area (largest is the outer perimeter, rest are internal holes)
+        def loop_area_2d(loop_coords):
+            n = len(loop_coords)
+            area = sum(loop_coords[i][0] * loop_coords[(i + 1) % n][1] - loop_coords[(i + 1) % n][0] * loop_coords[i][1] for i in range(n))
+            return abs(area / 2.0)
+
+        coords_loops.sort(key=loop_area_2d, reverse=True)
+
+        exterior_ring = coords_loops[0]
+        interior_rings = coords_loops[1:]
+
+        # Construct Shapely Polygon with holes
+        poly = sg.Polygon(shell=exterior_ring, holes=interior_rings)
+
+        # Triangulate vertices
+        delaunay_tris = so.triangulate(poly)
+
+        # Quick lookup table mapping (x, y) coordinates back to BMVerts
+        vert_lookup = {(round(v.co.x, 6), round(v.co.y, 6)): v for loop in loops for v in loop}
+
+        # Generate faces for triangles that sit inside the solid polygon boundary
+        for tri in delaunay_tris:
+            if poly.covers(tri.centroid):
+                tri_coords = list(tri.exterior.coords)[:3]
+                bm_verts = [vert_lookup.get((round(pt[0], 6), round(pt[1], 6))) for pt in tri_coords]
+
+                if None not in bm_verts:
+                    v1, v2, v3 = bm_verts
+                    # Ensure downward-facing normal (-Z)
+                    normal = (v2.co - v1.co).cross(v3.co - v1.co)
+                    if normal.z > 0:
+                        bm.faces.new((v1, v3, v2))
+                    else:
+                        bm.faces.new((v1, v2, v3))
+
+    # 4. Shift all geometry to final relative Z position
+    for v in bm.verts:
+        v.co.z += shift_z
+
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+
+    # Shift curve objects in Python space
     if curveObjs:
         for tcrv in curveObjs:
-            bpy.context.view_layer.objects.active = tcrv
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.curve.select_all(action='SELECT')
-            bpy.ops.transform.translate(value=(0, 0, -additionalExtrusion + props['minThickness']))
-            bpy.ops.object.mode_set(mode='OBJECT')
+            tcrv.location.z += shift_z
 
-    # Set object origins to tile location
+    # Set object origin to cursor position
     location = obj.location
     bpy.context.scene.cursor.location = location
     if curveObjs:
         for tcrv in curveObjs:
             tcrv.select_set(True)
             bpy.ops.object.origin_set(type="ORIGIN_CURSOR")
-    recalculateNormals(obj)
+
+    print("[DIAG 2] Base extrusion with Shapely holes complete.")
 
     # --- Phase 12-13: Create text / plate overlays for text-based shapes ---
     overlay.update(0.82, "Shape Overlays", "Adding text and plate elements…")
+    print("[DIAG] Reached 82%")
     textobj   = None
     plateobj  = None
     shellobj  = None
@@ -2045,8 +2109,9 @@ def runGeneration(type, locked_scale=None):
 
     # --- Phase 14: Create terrain overlay elements ---
     overlay.update(0.83, "Terrain Elements", "Adding elements…")
+    print("[DIAG] Reached 83%, checking OSM thread...")
     if _osm_prefetch_thread is not None:
-        _osm_prefetch_thread.join()
+        _osm_prefetch_thread.join(timeout=5.0)
     elements = _rg_build_terrain_elements(obj, scaleHor, curveObj=curveObjs[0] if curveObjs else None,
                                           prefetched_osm=_osm_prefetched, outline=map_outline)
 
