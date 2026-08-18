@@ -11,16 +11,16 @@ class TP3D_MeshSelectionError(Exception):
 
 
 def applyModifier(obj, modifier):
-        depsgraph = bpy.context.evaluated_depsgraph_get()
-        eval_obj = obj.evaluated_get(depsgraph)
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    eval_obj = obj.evaluated_get(depsgraph)
 
-        new_mesh = bpy.data.meshes.new_from_object(eval_obj)
+    new_mesh = bpy.data.meshes.new_from_object(eval_obj)
 
-        old_mesh = obj.data
-        obj.data = new_mesh
-        obj.modifiers.remove(modifier)
+    old_mesh = obj.data
+    obj.data = new_mesh
+    obj.modifiers.remove(modifier)
 
-        bpy.data.meshes.remove(old_mesh)
+    bpy.data.meshes.remove(old_mesh)
 
 
 def dilate_copy(obj, distance, name_suffix="_dilated"):
@@ -50,8 +50,8 @@ def dilate_copy(obj, distance, name_suffix="_dilated"):
     return dup
 
 
-def recalculateNormals(obj, ins = False):
-    '''
+def recalculateNormals(obj, ins=False):
+    """
     OLD WAY THAT DIDNT WORK FOR COMPLETELY FLIPPED VOLUMES
 
 
@@ -66,32 +66,31 @@ def recalculateNormals(obj, ins = False):
     bm.to_mesh(mesh)
     bm.free()
     mesh.update()
-    '''
+    """
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
 
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.mesh.normals_make_consistent(inside=ins)
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="OBJECT")
 
 
 def selectBottomFaces(obj):
 
-    if obj is None or obj.type != 'MESH':
+    if obj is None or obj.type != "MESH":
         raise TP3D_MeshSelectionError(_("Please select a mesh object."))
 
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
 
-
     # Enter Edit Mode
-    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.object.mode_set(mode="EDIT")
     mesh = bmesh.from_edit_mesh(obj.data)
 
     # Recalculate normals
-    #bmesh.ops.recalc_face_normals(mesh, faces=mesh.faces)
+    # bmesh.ops.recalc_face_normals(mesh, faces=mesh.faces)
 
     # Threshold for downward-facing
     threshold = -0.95
@@ -107,15 +106,15 @@ def selectBottomFaces(obj):
 
 
 def selectBottomFacesByZ(obj, tolerance=0.01):
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
 
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="OBJECT")
     bottom_z = min(v.co.z for v in obj.data.vertices)
 
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_mode(type='VERT')
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_mode(type="VERT")
     bm = bmesh.from_edit_mesh(obj.data)
     bm.verts.ensure_lookup_table()
     for v in bm.verts:
@@ -123,9 +122,8 @@ def selectBottomFacesByZ(obj, tolerance=0.01):
     bmesh.update_edit_mesh(obj.data)
 
 
-
 def getBottomFacesArea(obj):
-    if obj is None or obj.type != 'MESH':
+    if obj is None or obj.type != "MESH":
         return 0.0
     bm = bmesh.new()
     bm.from_mesh(obj.data)
@@ -135,12 +133,11 @@ def getBottomFacesArea(obj):
 
 
 def selectTopFaces(obj):
-    if obj is None or obj.type != 'MESH':
+    if obj is None or obj.type != "MESH":
         raise TP3D_MeshSelectionError(_("Please select a mesh object."))
 
-
     # Enter Edit Mode
-    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.object.mode_set(mode="EDIT")
     mesh = bmesh.from_edit_mesh(obj.data)
 
     # Recalculate normals
@@ -159,13 +156,13 @@ def selectTopFaces(obj):
     bmesh.update_edit_mesh(obj.data, loop_triangles=False)
 
 
-def extrude_plane(obj, value=1.0, bydistance = True):
+def extrude_plane(obj, value=1.0, bydistance=True):
 
-    #bydistance = True: Extrudes by value
-    #bydistance = False: Extrudes and sets all vertices to the value
+    # bydistance = True: Extrudes by value
+    # bydistance = False: Extrudes and sets all vertices to the value
 
     # Ensure we are working on a mesh
-    if obj.type != 'MESH':
+    if obj.type != "MESH":
         print("Not a mesh object.")
         return
 
@@ -200,7 +197,7 @@ def extrude_plane(obj, value=1.0, bydistance = True):
 
 def merge_by_distance(obj, distance=0.01):
     # Make sure we're in Object Mode
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="OBJECT")
 
     mesh = obj.data
     bm = bmesh.new()
@@ -223,19 +220,18 @@ def merge_objects(objects, name="MergedObject"):
     This is fast but requires changing selection/context.
     """
     # filter only mesh objects
-    #mesh_objs = [o for o in objects if o.type == 'MESH']
+    # mesh_objs = [o for o in objects if o.type == 'MESH']
     mesh_objs = objects
     if not mesh_objs:
         return None
     if len(mesh_objs) == 1:
-        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.object.select_all(action="DESELECT")
         mesh_objs[0].select_set(True)
         bpy.context.view_layer.objects.active = mesh_objs[0]
         return mesh_objs[0]
 
-
     # ensure in same collection / visible
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     for o in mesh_objs:
         o.select_set(True)
     bpy.context.view_layer.objects.active = mesh_objs[0]
@@ -247,13 +243,12 @@ def merge_objects(objects, name="MergedObject"):
     joined = bpy.context.view_layer.objects.active
     joined.name = name
 
-
     return joined
 
 
 def removeDoubles(obj):
 
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
 
@@ -269,12 +264,12 @@ def delete_non_manifold(object):
 
     bpy.ops.object.select_all(action="DESELECT")
 
-    #if the mergeobject is a Text object -> Convert it into a mesh
+    # if the mergeobject is a Text object -> Convert it into a mesh
     object.select_set(True)
     bpy.context.view_layer.objects.active = object
 
     # Make sure you're in edit mode
-    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.object.mode_set(mode="EDIT")
 
     # Get the active mesh
     obj = bpy.context.edit_object
@@ -287,7 +282,7 @@ def delete_non_manifold(object):
     bm.normal_update()
 
     # Deselect everything first (optional)
-    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.mesh.select_all(action="DESELECT")
 
     # Select non-manifold edges
     bpy.ops.mesh.select_non_manifold()
@@ -295,15 +290,15 @@ def delete_non_manifold(object):
     # (Optional) Update the mesh to reflect selection in UI
     bmesh.update_edit_mesh(me, loop_triangles=True)
 
-    bpy.ops.mesh.delete(type='VERT')
+    bpy.ops.mesh.delete(type="VERT")
 
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="OBJECT")
 
 
 def delete_selected_verts(obj):
     # Must be in Edit Mode
-    if obj.mode != 'EDIT':
-        bpy.ops.object.mode_set(mode='EDIT')
+    if obj.mode != "EDIT":
+        bpy.ops.object.mode_set(mode="EDIT")
 
     # Get the BMesh representation
     me = obj.data
@@ -314,7 +309,7 @@ def delete_selected_verts(obj):
 
     # Use bmesh.ops to delete them
     # context='VERTS' also deletes connected edges and faces
-    bmesh.ops.delete(bm, geom=verts_to_delete, context='VERTS')
+    bmesh.ops.delete(bm, geom=verts_to_delete, context="VERTS")
 
     # Update the mesh and viewport
     bmesh.update_edit_mesh(me)
@@ -331,13 +326,14 @@ def is_mesh_manifold(obj):
     """
     bm = bmesh.new()
     bm.from_mesh(obj.data)
-    manifold = (all(v.is_manifold for v in bm.verts)
-                and all(e.is_manifold for e in bm.edges))
+    manifold = all(v.is_manifold for v in bm.verts) and all(
+        e.is_manifold for e in bm.edges
+    )
     bm.free()
     return manifold
 
 
-def boolean_operation(obj_a, obj_b, operation='DIFFERENCE', solver='MANIFOLD'):
+def boolean_operation(obj_a, obj_b, operation="DIFFERENCE", solver="MANIFOLD"):
     """
     Performs a Boolean operation on obj_a with obj_b.
 
@@ -351,7 +347,7 @@ def boolean_operation(obj_a, obj_b, operation='DIFFERENCE', solver='MANIFOLD'):
         return None
 
     # Add Boolean modifier to obj_a
-    mod = obj_a.modifiers.new(name="BooleanManifold", type='BOOLEAN')
+    mod = obj_a.modifiers.new(name="BooleanManifold", type="BOOLEAN")
     mod.object = obj_b
     mod.operation = operation
     mod.solver = solver
@@ -367,7 +363,7 @@ def boolean_operation(obj_a, obj_b, operation='DIFFERENCE', solver='MANIFOLD'):
 
 
 def splitCurves(obj):
-    if not obj or obj.type != 'CURVE':
+    if not obj or obj.type != "CURVE":
         return []
 
     original_spline_count = len(obj.data.splines)
@@ -376,7 +372,7 @@ def splitCurves(obj):
 
     new_objects = []
 
-    #Create a duplicate for every spline
+    # Create a duplicate for every spline
     for i in range(original_spline_count):
         # Create a full copy of the object and its data
         new_obj = obj.copy()
@@ -392,18 +388,18 @@ def splitCurves(obj):
 
         new_objects.append(new_obj)
 
-    #Clean up the original consolidated object
+    # Clean up the original consolidated object
     bpy.data.objects.remove(obj, do_unlink=True)
 
     return new_objects
 
 
-def point_inside(obj, point, direction=(0,0,-1), eps=1e-6):
+def point_inside(obj, point, direction=(0, 0, -1), eps=1e-6):
     """
     Check if a world-space point is inside a mesh object using raycasting.
     Handles global coordinates properly.
     """
-    if not obj or obj.type != 'MESH':
+    if not obj or obj.type != "MESH":
         return False
 
     deps = bpy.context.evaluated_depsgraph_get()
@@ -417,7 +413,7 @@ def point_inside(obj, point, direction=(0,0,-1), eps=1e-6):
     # Convert world-space point and direction into **object local space**
     inv_mat = eval_obj.matrix_world.inverted()
     local_point = inv_mat @ Vector(point)
-    local_dir   = inv_mat.to_3x3() @ Vector(direction)
+    local_dir = inv_mat.to_3x3() @ Vector(direction)
     local_dir.normalize()
 
     # offset slightly backward to avoid starting exactly on geometry
@@ -456,10 +452,7 @@ def RaycastPointToMeshZ(point, mesh_obj, offset_z=1000.0):
     ray_direction_local = (mesh_world_inv.to_3x3() @ ray_direction_world).normalized()
 
     # Raycast
-    success, hit_loc, *_ = eval_mesh_obj.ray_cast(
-        ray_origin_local,
-        ray_direction_local
-    )
+    success, hit_loc, *_ = eval_mesh_obj.ray_cast(ray_origin_local, ray_direction_local)
 
     if not success:
         return None
@@ -470,15 +463,36 @@ def RaycastPointToMeshZ(point, mesh_obj, offset_z=1000.0):
     return hit_world.z
 
 
-def RaycastCurveToMesh(curve_obj, mesh_obj):
+from mathutils.bvhtree import BVHTree
 
-    #MOVE EVERY POINT UP BY 100 SO ITS POSSIBLE TO RAYCAST IT DOWNARDS ONTO THE MESH
+
+def _bboxes_overlap_2d(obj1, obj2) -> bool:
+    """Fast $O(1)$ check to see if two objects overlap in 2D world space."""
+    bb1 = [obj1.matrix_world @ Vector(c) for c in obj1.bound_box]
+    bb2 = [obj2.matrix_world @ Vector(c) for c in obj2.bound_box]
+
+    min_x1, max_x1 = min(v.x for v in bb1), max(v.x for v in bb1)
+    min_y1, max_y1 = min(v.y for v in bb1), max(v.y for v in bb1)
+
+    min_x2, max_x2 = min(v.x for v in bb2), max(v.x for v in bb2)
+    min_y2, max_y2 = min(v.y for v in bb2), max(v.y for v in bb2)
+
+    return not (
+        max_x1 < min_x2 or min_x1 > max_x2 or max_y1 < min_y2 or min_y1 > max_y2
+    )
+
+
+def RaycastCurveToMesh(curve_obj, mesh_obj):
+    # 1. EARLY OUT: If bounding boxes don't overlap in 2D, don't touch the curve at all
+    if not _bboxes_overlap_2d(curve_obj, mesh_obj):
+        print(f"Skipping {curve_obj.name}: Bounding box outside map bounds.")
+        return
+
     offset = Vector((0, 0, 1000))
     for spline in curve_obj.data.splines:
-        if spline.type == 'BEZIER':
+        if spline.type == "BEZIER":
             for p in spline.bezier_points:
                 p.co += offset
-                # if you want to move the handles too:
                 p.handle_left += offset
                 p.handle_right += offset
         else:  # POLY / NURBS
@@ -488,65 +502,49 @@ def RaycastCurveToMesh(curve_obj, mesh_obj):
     depsgraph = bpy.context.evaluated_depsgraph_get()
     eval_mesh_obj = mesh_obj.evaluated_get(depsgraph)
 
-    curve_world     = curve_obj.matrix_world
+    # Build C-accelerated BVH spatial tree
+    bvh = BVHTree.FromObject(eval_mesh_obj, depsgraph)
+
+    curve_world = curve_obj.matrix_world
     curve_world_inv = curve_world.inverted()
 
-    mesh_world     = eval_mesh_obj.matrix_world
+    mesh_world = eval_mesh_obj.matrix_world
     mesh_world_inv = mesh_world.inverted()
 
-    direction_world = Vector((0, 0, -1))  # world -Z
+    direction_world = Vector((0, 0, -1))
     direction_local = (mesh_world_inv.to_3x3() @ direction_world).normalized()
 
-    for spline in curve_obj.data.splines:
-        if spline.type == 'BEZIER':
-            points = spline.bezier_points
-        else:
-            points = spline.points
+    total_hits_count = 0
 
-        # First pass: raycast every point, recording the local-space hit (or
-        # None on a miss/bad hit) without touching the curve yet. A miss
-        # usually means this particular point fell just past the terrain's
-        # edge -- falling back to the point's own pre-raycast position (the
-        # old behaviour) left a sharp drop to whatever raw elevation it had
-        # there instead of continuing the terrain's actual surface height.
-        #
-        # A "successful" hit can still be wrong: near a jigsaw piece's
-        # boundary the straight-down ray can graze the piece's near-vertical
-        # side wall instead of its flat top, which ray_cast reports as a
-        # normal success just at whatever height it happened to clip that
-        # wall -- producing an isolated steep spike, not a clean miss. Only
-        # accept a hit whose surface normal points mostly upward (a true top
-        # face); anything else is treated as a miss too.
-        #
-        # Threshold is 0.1 (not 0.5): jigsaw walls are truly vertical
-        # (normal.z ≈ 0) so 0.1 still catches them, but 0.5 incorrectly
-        # rejected steep terrain at high elevation scales — at elev scale 5
-        # a real-world 20° slope appears as ~64°, normal.z ≈ 0.44 < 0.5,
-        # causing valid hits to be discarded and replaced with the last-valid
-        # Z, which produced flat plateaus followed by sudden vertical steps.
+    for spline in curve_obj.data.splines:
+        points = spline.bezier_points if spline.type == "BEZIER" else spline.points
+
         hits = []
         originals = []
         for point in points:
-            if spline.type == 'BEZIER':
+            if spline.type == "BEZIER":
                 co_world = curve_world @ point.co
+                originals.append(point.co.copy())
             else:
                 co_world = curve_world @ point.co.xyz
-            originals.append(point.co.xyz if spline.type != 'BEZIER' else point.co.copy())
+                originals.append(point.co.xyz)
 
             co_local = mesh_world_inv @ co_world
-            success, hit_loc, normal, _ = eval_mesh_obj.ray_cast(co_local, direction_local)
-            if success:
+
+            hit_loc, normal, face_idx, dist = bvh.ray_cast(co_local, direction_local)
+
+            if hit_loc is not None:
                 world_normal = (mesh_world.to_3x3() @ normal).normalized()
                 if world_normal.z < 0.1:
-                    success = False
-            hits.append(curve_world_inv @ (mesh_world @ hit_loc) if success else None)
+                    hit_loc = None
 
-        # Fill gaps from the nearest point along the spline that DID hit --
-        # carried forward first, then backward (covers a run of misses at
-        # the very start of the spline, before any hit has happened yet).
-        # Only the HEIGHT is borrowed from that neighbour, not its full
-        # position -- copying the whole hit vector collapsed every point in
-        # a miss run onto that one neighbour's x/y.
+            if hit_loc is not None:
+                hits.append(curve_world_inv @ (mesh_world @ hit_loc))
+                total_hits_count += 1
+            else:
+                hits.append(None)
+
+        # Fill gaps from nearest valid Z hit
         filled_z = [h.z if h is not None else None for h in hits]
         last_z = None
         for i, z in enumerate(filled_z):
@@ -561,39 +559,37 @@ def RaycastCurveToMesh(curve_obj, mesh_obj):
             elif next_z is not None:
                 filled_z[i] = next_z
 
-        # Second pass: apply. If literally nothing on this spline ever hit
-        # (no terrain below it at all), restore each point to where it
-        # started rather than leaving it stranded 1000 units up in the air.
+        # Apply position updates
         for point, local_hit, orig, z in zip(points, hits, originals, filled_z):
             if local_hit is not None:
-                if spline.type == 'BEZIER':
+                if spline.type == "BEZIER":
                     point.co = local_hit
-                    point.handle_left_type = point.handle_right_type = 'AUTO'
+                    point.handle_left_type = point.handle_right_type = "AUTO"
                 else:
                     point.co = (local_hit.x, local_hit.y, local_hit.z, 1.0)
                 continue
 
             if z is None:
-                point.co = orig - offset if spline.type == 'BEZIER' else (orig.x, orig.y, orig.z - offset.z, 1.0)
-            elif spline.type == 'BEZIER':
+                if spline.type == "BEZIER":
+                    point.co = orig - offset
+                else:
+                    point.co = (orig.x, orig.y, orig.z - offset.z, 1.0)
+            elif spline.type == "BEZIER":
                 point.co = Vector((orig.x, orig.y, z))
-                point.handle_left_type = point.handle_right_type = 'AUTO'
+                point.handle_left_type = point.handle_right_type = "AUTO"
             else:
                 point.co = (orig.x, orig.y, z, 1.0)
 
-    bpy.context.view_layer.objects.active = curve_obj
-    bpy.ops.object.mode_set(mode='EDIT')
-
-    # select all points if you want to smooth everything
-    bpy.ops.curve.select_all(action='SELECT')
-
-    # run the smooth operator
-    bpy.ops.curve.smooth()
-
-    # back to Object Mode if you like
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    print("Path Elevation Overwritten")
+    # 2. GUARD: Only trigger UI Mode switches and Operators if terrain hits actually occurred
+    if total_hits_count > 0:
+        bpy.context.view_layer.objects.active = curve_obj
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.curve.select_all(action="SELECT")
+        bpy.ops.curve.smooth()
+        bpy.ops.object.mode_set(mode="OBJECT")
+        print("Path Elevation Overwritten")
+    else:
+        print("No surface hits found for curve; restored original elevations.")
 
 
 def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
@@ -608,7 +604,7 @@ def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
 
     # Move points up by offset so we can raycast downwards
     for spline in curve_obj.data.splines:
-        if spline.type == 'BEZIER':
+        if spline.type == "BEZIER":
             for p in spline.bezier_points:
                 p.co += offset
                 p.handle_left += offset
@@ -618,14 +614,14 @@ def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
                 # p.co is (x, y, z, w)
                 p.co = (p.co.x, p.co.y, p.co.z + offset_z, p.co.w)
 
-    curve_world     = curve_obj.matrix_world
+    curve_world = curve_obj.matrix_world
     curve_world_inv = curve_world.inverted()
 
     # ray direction in world space: straight down
     direction_world = Vector((0.0, 0.0, -1.0))
 
     for spline in curve_obj.data.splines:
-        if spline.type == 'BEZIER':
+        if spline.type == "BEZIER":
             points = spline.bezier_points
         else:
             points = spline.points
@@ -642,7 +638,7 @@ def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
         originals = []
         ws = []
         for point in points:
-            if spline.type == 'BEZIER':
+            if spline.type == "BEZIER":
                 co_world = curve_world @ point.co
                 originals.append(point.co.copy())
             else:
@@ -660,7 +656,9 @@ def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
             # MAP/terrain object; everything else (trails, or anything else
             # in the scene) is rejected regardless of its normal.
             hit_obj = hit_result[4] if hit_result[0] else None
-            is_map_hit = hit_obj is not None and (hit_obj.get("objType") == "MAP" or hit_obj.get("Object type") == "MAP")
+            is_map_hit = hit_obj is not None and (
+                hit_obj.get("objType") == "MAP" or hit_obj.get("Object type") == "MAP"
+            )
             # Same reasoning as RaycastCurveToMesh on top of that: only
             # accept a hit whose normal points mostly upward (a true top
             # face) -- near a jigsaw piece's boundary the ray can otherwise
@@ -704,22 +702,30 @@ def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
         for i, point in enumerate(points):
             local_hit = hits[i]
             if local_hit is not None:
-                if spline.type == 'BEZIER':
+                if spline.type == "BEZIER":
                     point.co = local_hit
                     # keep handles auto to get a reasonable shape; alternatively compute
-                    point.handle_left_type = point.handle_right_type = 'AUTO'
+                    point.handle_left_type = point.handle_right_type = "AUTO"
                 else:
                     point.co = (local_hit.x, local_hit.y, local_hit.z, ws[i])
                 continue
 
             z = filled_z[i]
             if z is None:
-                point.co = originals[i] - offset if spline.type == 'BEZIER' else \
-                    (originals[i].x, originals[i].y, originals[i].z - offset.z, ws[i])
-            elif spline.type == 'BEZIER':
+                point.co = (
+                    originals[i] - offset
+                    if spline.type == "BEZIER"
+                    else (
+                        originals[i].x,
+                        originals[i].y,
+                        originals[i].z - offset.z,
+                        ws[i],
+                    )
+                )
+            elif spline.type == "BEZIER":
                 orig = originals[i]
                 point.co = Vector((orig.x, orig.y, z))
-                point.handle_left_type = point.handle_right_type = 'AUTO'
+                point.handle_left_type = point.handle_right_type = "AUTO"
             else:
                 orig = originals[i]
                 point.co = (orig.x, orig.y, z, ws[i])
@@ -727,24 +733,28 @@ def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
     # optional smoothing (go into edit mode, smooth, come back)
     if smooth_after:
         bpy.context.view_layer.objects.active = curve_obj
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.curve.select_all(action='SELECT')
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.curve.select_all(action="SELECT")
         bpy.ops.curve.smooth()
-        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode="OBJECT")
 
 
 def intersectWithTile(tile, element, extrude_amount=1.0):
-#'Intersects Element with Tile in x and y so the element fits on the tile shape'
+    #'Intersects Element with Tile in x and y so the element fits on the tile shape'
 
     try:
         # Validate input objects
 
-        if tile.type != 'MESH':
-            raise ValueError(f"Tile object '{tile.name}' is not a mesh (type={tile.type}).")
+        if tile.type != "MESH":
+            raise ValueError(
+                f"Tile object '{tile.name}' is not a mesh (type={tile.type})."
+            )
 
-        if element.type != 'MESH':
+        if element.type != "MESH":
             print("Obj is not a mesh")
-            raise ValueError(f"Element object '{element.name}' is not a mesh (type={element.type}).")
+            raise ValueError(
+                f"Element object '{element.name}' is not a mesh (type={element.type})."
+            )
 
         # Remember current mode and active object so we can restore later
         prev_mode = bpy.context.mode
@@ -763,49 +773,49 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
             bpy.context.collection.objects.link(dup)
 
         # Make sure duplicate is selected and active
-        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.object.select_all(action="DESELECT")
         dup.select_set(True)
         bpy.context.view_layer.objects.active = dup
 
         # Add Solidify modifier to create an extrusion (thickness in Blender units)
         # We set use_rim to True so caps are created, giving a closed volume suitable for Boolean
-        #solid_mod = dup.modifiers.new(name="__auto_solidify__", type='SOLIDIFY')
-        #solid_mod.thickness = extrude_amount
-        #solid_mod.offset = 1.0    # push outwards relative to normals
-        #solid_mod.use_rim = True
-        #solid_mod.use_even_offset = True
+        # solid_mod = dup.modifiers.new(name="__auto_solidify__", type='SOLIDIFY')
+        # solid_mod.thickness = extrude_amount
+        # solid_mod.offset = 1.0    # push outwards relative to normals
+        # solid_mod.use_rim = True
+        # solid_mod.use_even_offset = True
         dup.scale.z = 50
 
         # Apply the Solidify modifier (ensure we're in OBJECT mode)
-        if bpy.context.mode != 'OBJECT':
-            bpy.ops.object.mode_set(mode='OBJECT')
-        #bpy.ops.object.modifier_apply(modifier=solid_mod.name)
+        if bpy.context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        # bpy.ops.object.modifier_apply(modifier=solid_mod.name)
 
         # Ensure the duplicate has up-to-date transforms applied for Boolean reliability
         # (optional but often useful)
         bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
         # Prepare the Element object for boolean
-        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.object.select_all(action="DESELECT")
         element.select_set(True)
         bpy.context.view_layer.objects.active = element
 
-        bool_mod = element.modifiers.new(name="__auto_boolean__", type='BOOLEAN')
-        bool_mod.operation = 'INTERSECT'
+        bool_mod = element.modifiers.new(name="__auto_boolean__", type="BOOLEAN")
+        bool_mod.operation = "INTERSECT"
         bool_mod.object = dup
         # EXACT (not MANIFOLD): buildings/roads footprints can be non-manifold
         # (self-touching OSM outlines). The MANIFOLD solver refuses non-manifold
         # input and silently no-ops, which left elements spanning the whole bbox.
         # EXACT tolerates non-manifold input so the clip to the map shape works.
-        bool_mod.solver = 'EXACT'
+        bool_mod.solver = "EXACT"
 
         # Apply the boolean modifier
-        if bpy.context.mode != 'OBJECT':
-            bpy.ops.object.mode_set(mode='OBJECT')
+        if bpy.context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
         bpy.ops.object.modifier_apply(modifier=bool_mod.name)
 
         # Delete the duplicated tile
-        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.object.select_all(action="DESELECT")
         dup.select_set(True)
         bpy.context.view_layer.objects.active = dup
         bpy.ops.object.delete()
@@ -828,7 +838,7 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
         dup_obj = bpy.data.objects.get(f"{tile.name}_duplicate_for_bool")
         if dup_obj:
             try:
-                bpy.ops.object.select_all(action='DESELECT')
+                bpy.ops.object.select_all(action="DESELECT")
                 dup_obj.select_set(True)
                 bpy.context.view_layer.objects.active = dup_obj
                 bpy.ops.object.delete()
@@ -838,19 +848,18 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
 
 
 def intersect_alltrails_with_existing_box(cutobject):
-    #cutobject is the object that will be cut to the Map shapes
+    # cutobject is the object that will be cut to the Map shapes
     cutobject.scale.z = 1000
-
 
     robj2 = None
 
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
 
     cutobject.select_set(True)
     bpy.context.view_layer.objects.active = cutobject
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
-    #cube = bpy.data.objects.get(cutobject)
+    # cube = bpy.data.objects.get(cutobject)
     cube = cutobject
     if not cube:
         print(f"Object named '{cutobject}' not found.")
@@ -859,34 +868,38 @@ def intersect_alltrails_with_existing_box(cutobject):
     # Get cube's bounding box in world coordinates
     cube_bb = [cube.matrix_world @ Vector(corner) for corner in cube.bound_box]
 
-
     def is_point_inside_cube(point, bb):
-        min_corner = Vector((min(v[0] for v in bb),
-                             min(v[1] for v in bb),
-                             min(v[2] for v in bb)))
-        max_corner = Vector((max(v[0] for v in bb),
-                             max(v[1] for v in bb),
-                             max(v[2] for v in bb)))
+        min_corner = Vector(
+            (min(v[0] for v in bb), min(v[1] for v in bb), min(v[2] for v in bb))
+        )
+        max_corner = Vector(
+            (max(v[0] for v in bb), max(v[1] for v in bb), max(v[2] for v in bb))
+        )
         return all(min_corner[i] <= point[i] <= max_corner[i] for i in range(3))
+
     done = False
     boolObjects = []
     trail_mesh = None
     for robj in bpy.data.objects:
-        if "_Trail" in robj.name and robj.type in {'CURVE', 'MESH'} and not robj.hide_get():
+        if (
+            "_Trail" in robj.name
+            and robj.type in {"CURVE", "MESH"}
+            and not robj.hide_get()
+        ):
             # Convert curve to mesh
-            if robj.type == 'CURVE':
+            if robj.type == "CURVE":
                 bpy.context.view_layer.objects.active = robj
-                bpy.ops.object.select_all(action='DESELECT')
+                bpy.ops.object.select_all(action="DESELECT")
                 robj2 = robj.copy()
                 robj2.data = robj.data.copy()
                 bpy.context.collection.objects.link(robj2)
                 robj2.select_set(True)
-                bpy.ops.object.convert(target='MESH')
+                bpy.ops.object.convert(target="MESH")
                 trail_mesh = robj2
             else:
                 trail_mesh = robj
 
-            #robj.hide_set(True)
+            # robj.hide_set(True)
 
             if trail_mesh:
                 if trail_mesh.type == "MESH" and len(trail_mesh.data.vertices) > 0:
@@ -895,52 +908,52 @@ def intersect_alltrails_with_existing_box(cutobject):
                         global_coord = trail_mesh.matrix_world @ v.co
                         if is_point_inside_cube(global_coord, cube_bb):
                             # Apply Boolean modifier
-                            #print(f"{trail_mesh.name} is inside the Boundaries")
+                            # print(f"{trail_mesh.name} is inside the Boundaries")
                             if trail_mesh not in boolObjects:
                                 boolObjects.append(trail_mesh)
-                            #Set done to True so it doesnt delete the object later
+                            # Set done to True so it doesnt delete the object later
                             done = True
-                            #Change Collection
+                            # Change Collection
                             continue  # No need to keep checking this object
                         else:
                             pass
-                            #print(f"{trail_mesh.name} is NOT inside the Boundaries")
+                            # print(f"{trail_mesh.name} is NOT inside the Boundaries")
                 else:
                     print("No Vertices for Trail Found")
                     bpy.data.objects.remove(trail_mesh, do_unlink=True)
 
-            #bpy.data.objects.remove(robj, do_unlink=True)
-            #break
+            # bpy.data.objects.remove(robj, do_unlink=True)
+            # break
     if done == False:
         bpy.data.objects.remove(cutobject, do_unlink=True)
         if trail_mesh and trail_mesh.name in bpy.data.objects:
             bpy.data.objects.remove(trail_mesh, do_unlink=True)
 
-    #Pfade kopieren, zusammenfügen und die boolean operation mit allen trails kombiniert ausführen
+    # Pfade kopieren, zusammenfügen und die boolean operation mit allen trails kombiniert ausführen
     if done == True:
         copied_objects = []
-        #Copy objects
+        # Copy objects
         for obj in boolObjects:
             obj_copy = obj.copy()
             obj_copy.data = obj.data.copy()
             bpy.context.collection.objects.link(obj_copy)
             copied_objects.append(obj_copy)
 
-        #Deselect all
-        bpy.ops.object.select_all(action='DESELECT')
+        # Deselect all
+        bpy.ops.object.select_all(action="DESELECT")
 
-        #Select all copied objects and make one active
+        # Select all copied objects and make one active
         for obj in copied_objects:
             obj.select_set(True)
         bpy.context.view_layer.objects.active = copied_objects[0]
 
-        #Join them into a single object
+        # Join them into a single object
         bpy.ops.object.join()
 
         merged_object = bpy.context.active_object
 
-        bool_mod = cube.modifiers.new(name="Intersect", type='BOOLEAN')
-        bool_mod.operation = 'INTERSECT'
+        bool_mod = cube.modifiers.new(name="Intersect", type="BOOLEAN")
+        bool_mod.operation = "INTERSECT"
         bool_mod.object = merged_object
         bpy.context.view_layer.objects.active = cube
         bpy.ops.object.modifier_apply(modifier=bool_mod.name)
@@ -956,11 +969,12 @@ def intersect_alltrails_with_existing_box(cutobject):
         from .metadata import (
             writeMetadata,  # deferred to avoid circular import at load time
         )
-        writeMetadata(cube,"TRAIL")
+
+        writeMetadata(cube, "TRAIL")
 
 
-def intersect_trail_with_existing_box(cutobject,trail):
-    #cutobject is the object that will be cut to the Map shapes
+def intersect_trail_with_existing_box(cutobject, trail):
+    # cutobject is the object that will be cut to the Map shapes
 
     # Replace cutobject's own geometry with a CLEAN tall prism built from
     # just its flat 2D footprint, before anything else. The old approach
@@ -974,6 +988,7 @@ def intersect_trail_with_existing_box(cutobject,trail):
     # final clipped result still ends up baked into cutobject either way
     # (every caller relies on that), just built from clean geometry now.
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
+
     footprint = g2d.footprint_with_holes(cutobject, down_only=True)
     if footprint is not None and not footprint.is_empty:
         mc = [cutobject.matrix_world @ Vector(c) for c in cutobject.bound_box]
@@ -999,12 +1014,12 @@ def intersect_trail_with_existing_box(cutobject,trail):
 
     robj2 = None
 
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
 
     cutobject.select_set(True)
     bpy.context.view_layer.objects.active = cutobject
 
-    #cube = bpy.data.objects.get(cutobject)
+    # cube = bpy.data.objects.get(cutobject)
     cube = cutobject
     if not cube:
         print(f"Object named '{cutobject}' not found.")
@@ -1013,29 +1028,29 @@ def intersect_trail_with_existing_box(cutobject,trail):
     # Get cube's bounding box in world coordinates
     cube_bb = [cube.matrix_world @ Vector(corner) for corner in cube.bound_box]
 
-
     def is_point_inside_cube(point, bb):
-        min_corner = Vector((min(v[0] for v in bb),
-                             min(v[1] for v in bb),
-                             min(v[2] for v in bb)))
-        max_corner = Vector((max(v[0] for v in bb),
-                             max(v[1] for v in bb),
-                             max(v[2] for v in bb)))
+        min_corner = Vector(
+            (min(v[0] for v in bb), min(v[1] for v in bb), min(v[2] for v in bb))
+        )
+        max_corner = Vector(
+            (max(v[0] for v in bb), max(v[1] for v in bb), max(v[2] for v in bb))
+        )
         return all(min_corner[i] <= point[i] <= max_corner[i] for i in range(3))
+
     done = False
     boolObjects = []
-    trail_mesh = trail if trail.type == 'MESH' else None
-    if trail.type == 'CURVE':
+    trail_mesh = trail if trail.type == "MESH" else None
+    if trail.type == "CURVE":
         bpy.context.view_layer.objects.active = trail
-        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.object.select_all(action="DESELECT")
         robj2 = trail.copy()
         robj2.data = trail.data.copy()
         bpy.context.collection.objects.link(robj2)
         robj2.select_set(True)
-        bpy.ops.object.convert(target='MESH')
+        bpy.ops.object.convert(target="MESH")
         trail_mesh = robj2
 
-    #robj.hide_set(True)
+    # robj.hide_set(True)
 
     if trail_mesh:
         if trail_mesh.type == "MESH" and len(trail_mesh.data.vertices) > 0:
@@ -1044,51 +1059,50 @@ def intersect_trail_with_existing_box(cutobject,trail):
                 global_coord = trail_mesh.matrix_world @ v.co
                 if is_point_inside_cube(global_coord, cube_bb):
                     # Apply Boolean modifier
-                    #print(f"{trail_mesh.name} is inside the Boundaries")
+                    # print(f"{trail_mesh.name} is inside the Boundaries")
                     if trail_mesh not in boolObjects:
                         boolObjects.append(trail_mesh)
-                    #Set done to True so it doesnt delete the object later
+                    # Set done to True so it doesnt delete the object later
                     done = True
-                    #Change Collection
+                    # Change Collection
                     continue  # No need to keep checking this object
                 else:
                     pass
-                    #print(f"{trail_mesh.name} is NOT inside the Boundaries")
+                    # print(f"{trail_mesh.name} is NOT inside the Boundaries")
         else:
             print("No Vertices for Trail Found")
             bpy.data.objects.remove(trail_mesh, do_unlink=True)
             trail_mesh = None
 
-
     if done == False:
         bpy.data.objects.remove(cutobject, do_unlink=True)
         if trail_mesh and trail_mesh.name in bpy.data.objects:
             bpy.data.objects.remove(trail_mesh, do_unlink=True)
-    #Pfade kopieren, zusammenfügen und die boolean operation mit allen trails kombiniert ausführen
+    # Pfade kopieren, zusammenfügen und die boolean operation mit allen trails kombiniert ausführen
     if done == True:
         copied_objects = []
-        #Copy objects
+        # Copy objects
         for obj in boolObjects:
             obj_copy = obj.copy()
             obj_copy.data = obj.data.copy()
             bpy.context.collection.objects.link(obj_copy)
             copied_objects.append(obj_copy)
 
-        #Deselect all
-        bpy.ops.object.select_all(action='DESELECT')
+        # Deselect all
+        bpy.ops.object.select_all(action="DESELECT")
 
-        #Select all copied objects and make one active
+        # Select all copied objects and make one active
         for obj in copied_objects:
             obj.select_set(True)
         bpy.context.view_layer.objects.active = copied_objects[0]
 
-        #Join them into a single object
+        # Join them into a single object
         bpy.ops.object.join()
 
         merged_object = bpy.context.active_object
 
-        bool_mod = cube.modifiers.new(name="Intersect", type='BOOLEAN')
-        bool_mod.operation = 'INTERSECT'
+        bool_mod = cube.modifiers.new(name="Intersect", type="BOOLEAN")
+        bool_mod.operation = "INTERSECT"
         bool_mod.object = merged_object
         bpy.context.view_layer.objects.active = cube
         bpy.ops.object.modifier_apply(modifier=bool_mod.name)
@@ -1109,14 +1123,19 @@ def intersect_trail_with_existing_box(cutobject,trail):
         # Keep whatever material the original trail had (e.g. trails
         # generated with alternating TRAIL/YELLOW materials) instead of
         # forcing TRAIL on every merge.
-        mat = trail.data.materials[0] if trail.data.materials else bpy.data.materials.get("TRAIL")
+        mat = (
+            trail.data.materials[0]
+            if trail.data.materials
+            else bpy.data.materials.get("TRAIL")
+        )
         cube.data.materials.clear()
         cube.data.materials.append(mat)
 
         from .metadata import (
             writeMetadata,  # deferred to avoid circular import at load time
         )
-        writeMetadata(cube,"TRAIL")
+
+        writeMetadata(cube, "TRAIL")
 
 
 def _clean_solid_mesh(mesh, dist=1e-6):
@@ -1176,13 +1195,13 @@ def _extrude_flat_polygon(g2d_mod, polygon, bottom_z, top_z, verts, faces):
     verts2d, cap_tris = triangulate
     n2 = len(verts2d)
     base = len(verts)
-    for (vx, vy) in verts2d:
+    for vx, vy in verts2d:
         verts.append((vx, vy, bottom_z))
-    for (vx, vy) in verts2d:
+    for vx, vy in verts2d:
         verts.append((vx, vy, top_z))
-    for (ia, ib, ic) in cap_tris:
-        faces.append((base + ic, base + ib, base + ia))                 # floor (down)
-        faces.append((base + n2 + ia, base + n2 + ib, base + n2 + ic))   # roof (up)
+    for ia, ib, ic in cap_tris:
+        faces.append((base + ic, base + ib, base + ia))  # floor (down)
+        faces.append((base + n2 + ia, base + n2 + ib, base + n2 + ic))  # roof (up)
     start = 0
     for ring in [ext] + holes:
         rn = len(ring)
@@ -1220,7 +1239,8 @@ def _ensure_outward_normals(obj):
     min_z = min(v.co.z for v in mesh.vertices)
     z_tol = max(1e-3, (max(v.co.z for v in mesh.vertices) - min_z) * 0.01)
     bottom_normals_z = [
-        p.normal.z for p in mesh.polygons
+        p.normal.z
+        for p in mesh.polygons
         if all(abs(mesh.vertices[vi].co.z - min_z) < z_tol for vi in p.vertices)
     ]
     if not bottom_normals_z or sum(bottom_normals_z) / len(bottom_normals_z) < 0:
@@ -1288,7 +1308,8 @@ def _ensure_outward_normals_per_island(obj):
         max_z = max(v.co.z for v in verts)
         z_tol = max(1e-3, (max_z - min_z) * 0.01)
         bottom_normals_z = [
-            f.normal.z for f in island
+            f.normal.z
+            for f in island
             if all(abs(v.co.z - min_z) < z_tol for v in f.verts)
         ]
         if not bottom_normals_z or sum(bottom_normals_z) / len(bottom_normals_z) < 0:
@@ -1328,17 +1349,17 @@ def _bevel_bottom_edges(obj, bevel_width):
 
     _ensure_outward_normals(obj)
 
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_mode(type='FACE')
-    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_mode(type="FACE")
+    bpy.ops.mesh.select_all(action="DESELECT")
 
     bm = bmesh.from_edit_mesh(obj.data)
     bm.verts.ensure_lookup_table()
     if not bm.verts:
-        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode="OBJECT")
         return
     z_values = [v.co.z for v in bm.verts]
     min_z, max_z = min(z_values), max(z_values)
@@ -1349,18 +1370,22 @@ def _bevel_bottom_edges(obj, bevel_width):
             f.select = True
             n_bottom += 1
     bmesh.update_edit_mesh(obj.data)
-    print(f"[TP3D puzzle bevel] {obj.name}: {n_bottom} bottom face(s) found (by Z position)")
+    print(
+        f"[TP3D puzzle bevel] {obj.name}: {n_bottom} bottom face(s) found (by Z position)"
+    )
 
     if n_bottom == 0:
-        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode="OBJECT")
         return
 
     bpy.ops.mesh.region_to_loop()
-    bpy.ops.mesh.select_mode(type='EDGE')
+    bpy.ops.mesh.select_mode(type="EDGE")
 
     bm = bmesh.from_edit_mesh(obj.data)
     n_edges = sum(1 for e in bm.edges if e.select)
-    print(f"[TP3D puzzle bevel] {obj.name}: {n_edges} boundary edge(s) selected, beveling {bevel_width}mm")
+    print(
+        f"[TP3D puzzle bevel] {obj.name}: {n_edges} boundary edge(s) selected, beveling {bevel_width}mm"
+    )
 
     if n_edges > 0:
         # clamp_overlap: without it, a fixed-width bevel is applied
@@ -1372,13 +1397,20 @@ def _bevel_bottom_edges(obj, bevel_width):
         # Blender's own bevel operator automatically shrinks the offset
         # locally wherever the full width would overlap, instead of always
         # applying the same fixed width.
-        bpy.ops.mesh.bevel(offset=bevel_width, offset_type='OFFSET', segments=1, affect='EDGES',
-                            clamp_overlap=True)
+        bpy.ops.mesh.bevel(
+            offset=bevel_width,
+            offset_type="OFFSET",
+            segments=1,
+            affect="EDGES",
+            clamp_overlap=True,
+        )
 
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="OBJECT")
 
 
-def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=None, buildings_data=None):
+def cut_into_puzzle_pieces(
+    terrain_obj, pieces, tolerance_mm=0.3, roads_data=None, buildings_data=None
+):
     """Cut a single finished map tile into separate jigsaw puzzle piece objects.
 
     `terrain_obj` -- a normal, already-generated (and trail-merged, if
@@ -1429,9 +1461,12 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
     )
 
     mc = [terrain_obj.matrix_world @ Vector(c) for c in terrain_obj.bound_box]
-    x_min = min(v.x for v in mc); x_max = max(v.x for v in mc)
-    y_min = min(v.y for v in mc); y_max = max(v.y for v in mc)
-    z_min = min(v.z for v in mc); z_max = max(v.z for v in mc)
+    x_min = min(v.x for v in mc)
+    x_max = max(v.x for v in mc)
+    y_min = min(v.y for v in mc)
+    y_max = max(v.y for v in mc)
+    z_min = min(v.z for v in mc)
+    z_max = max(v.z for v in mc)
     bottom_z = z_min - 10.0
     top_z = z_max + 10.0
 
@@ -1455,12 +1490,14 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
     # plus a fixed gap; X stays untouched so each cutter lines up directly
     # under its real piece for easy comparison.
     debug_y_offset = -(y_max - y_min) - 20.0
-    debug_coll = g2d.debug_collection("TP3D_Debug_PuzzleCutters") if bpy.app.debug else None
+    debug_coll = (
+        g2d.debug_collection("TP3D_Debug_PuzzleCutters") if bpy.app.debug else None
+    )
 
     for piece in pieces:
         world_xy = [
             (x_min + nx * (x_max - x_min), y_min + ny * (y_max - y_min))
-            for nx, ny in piece['points']
+            for nx, ny in piece["points"]
         ]
         poly = g2d.xy_ring_to_polygon(world_xy)
         if poly is None or poly.is_empty:
@@ -1479,7 +1516,7 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
             # angled segments -- every one of those bends would otherwise
             # sprout its own little cluster of extra vertices. Mitre just
             # extends the two adjacent edges to meet at a single sharp point.
-            poly = g2d.validate(poly.buffer(-tolerance_mm / 2, join_style='mitre'))
+            poly = g2d.validate(poly.buffer(-tolerance_mm / 2, join_style="mitre"))
         if poly is None or poly.is_empty:
             continue
 
@@ -1489,11 +1526,13 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
         if not verts:
             continue
 
-        row, col = piece.get('row', 0), piece.get('col', 0)
+        row, col = piece.get("row", 0), piece.get("col", 0)
 
         if debug_coll is not None:
             for i, part in enumerate(g2d.iter_polygons(poly)):
-                dbg_obj = g2d.polygon_to_mesh(f"{terrain_obj.name}_piece_{row}_{col}_cutter_{i}", part)
+                dbg_obj = g2d.polygon_to_mesh(
+                    f"{terrain_obj.name}_piece_{row}_{col}_cutter_{i}", part
+                )
                 if dbg_obj is None:
                     continue
                 for coll in list(dbg_obj.users_collection):
@@ -1511,7 +1550,7 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
         piece_obj = bpy.data.objects.new(mesh.name, mesh)
         bpy.context.collection.objects.link(piece_obj)
 
-        boolean_operation(piece_obj, terrain_obj, 'INTERSECT')
+        boolean_operation(piece_obj, terrain_obj, "INTERSECT")
         if len(piece_obj.data.vertices) == 0:
             bpy.data.objects.remove(piece_obj, do_unlink=True)
             continue
@@ -1534,10 +1573,13 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
             from .osm.roads import (
                 roads_geometry_for_polygon,  # deferred to avoid circular import
             )
+
             road_polygon, terrain_tris, el_sHeight = roads_data
             clipped = road_polygon.intersection(poly)
             if not clipped.is_empty:
-                road_verts, road_faces = roads_geometry_for_polygon(clipped, terrain_tris, el_sHeight)
+                road_verts, road_faces = roads_geometry_for_polygon(
+                    clipped, terrain_tris, el_sHeight
+                )
                 if road_verts:
                     road_mesh = bpy.data.meshes.new(f"_road_{row}_{col}")
                     road_mesh.from_pydata(road_verts, [], road_faces)
@@ -1548,7 +1590,7 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
                         road_mesh.materials.append(black_mat)
                     road_piece = bpy.data.objects.new(road_mesh.name, road_mesh)
                     bpy.context.collection.objects.link(road_piece)
-                    bpy.ops.object.select_all(action='DESELECT')
+                    bpy.ops.object.select_all(action="DESELECT")
                     road_piece.select_set(True)
                     piece_obj.select_set(True)
                     bpy.context.view_layer.objects.active = piece_obj
@@ -1558,6 +1600,7 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
             from .osm.buildings import (
                 buildings_geometry_for_polygon,  # deferred to avoid circular import
             )
+
             b_verts, b_faces = buildings_geometry_for_polygon(poly, buildings_data)
             if b_verts:
                 b_mesh = bpy.data.meshes.new(f"_buildings_{row}_{col}")
@@ -1569,7 +1612,7 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
                     b_mesh.materials.append(buildings_mat)
                 b_piece = bpy.data.objects.new(b_mesh.name, b_mesh)
                 bpy.context.collection.objects.link(b_piece)
-                bpy.ops.object.select_all(action='DESELECT')
+                bpy.ops.object.select_all(action="DESELECT")
                 b_piece.select_set(True)
                 piece_obj.select_set(True)
                 bpy.context.view_layer.objects.active = piece_obj
@@ -1585,7 +1628,11 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
 
         # Mesh-level 3MF paint metadata lives on the data block, not the object,
         # so it isn't carried by the bulk terrain_metadata copy below.
-        for _pk in ("3mf_is_paint_texture", "3mf_paint_default_extruder", "3mf_paint_extruder_colors"):
+        for _pk in (
+            "3mf_is_paint_texture",
+            "3mf_paint_default_extruder",
+            "3mf_paint_extruder_colors",
+        ):
             if _pk in terrain_obj.data and piece_obj.data is not None:
                 piece_obj.data[_pk] = terrain_obj.data[_pk]
 
@@ -1622,12 +1669,18 @@ def _rounded_rect_polygon(width, height, radius, quad_segs=8):
     rounding never exceeds half the rectangle's own width/height).
     """
     from . import geometry2d as _g2d  # deferred to avoid circular import at load time
+
     _g2d._require_shapely()
     radius = max(0.0, min(radius, width / 2, height / 2))
     if radius <= 1e-6:
         return _g2d.box(-width / 2, -height / 2, width / 2, height / 2)
-    inner = _g2d.box(-width / 2 + radius, -height / 2 + radius, width / 2 - radius, height / 2 - radius)
-    return inner.buffer(radius, quad_segs=quad_segs, join_style='round')
+    inner = _g2d.box(
+        -width / 2 + radius,
+        -height / 2 + radius,
+        width / 2 - radius,
+        height / 2 - radius,
+    )
+    return inner.buffer(radius, quad_segs=quad_segs, join_style="round")
 
 
 def _resolve_holder_font(font_filename):
@@ -1642,14 +1695,23 @@ def _resolve_holder_font(font_filename):
         return None
     import os
     import sys
-    if sys.platform != 'win32':
+
+    if sys.platform != "win32":
         return None
     candidate = f"C:/WINDOWS/FONTS/{font_filename}"
     return candidate if os.path.isfile(candidate) else None
 
 
-def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_z,
-                         font="", text_size_mm=None):
+def _emboss_holder_text(
+    holder_obj,
+    text,
+    available_w,
+    outer_h,
+    wall_width,
+    top_z,
+    font="",
+    text_size_mm=None,
+):
     """Emboss *text* centered on the front (south, -Y) rim of holder_obj and
     join it in as one printable part, in the WHITE material.
 
@@ -1678,7 +1740,9 @@ def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_
     if old:
         bpy.data.objects.remove(old, do_unlink=True)
 
-    text_obj = txt.create_text(name, text, (0, 0, 0), 1.0, font_path=_resolve_holder_font(font))
+    text_obj = txt.create_text(
+        name, text, (0, 0, 0), 1.0, font_path=_resolve_holder_font(font)
+    )
 
     depsgraph = bpy.context.evaluated_depsgraph_get()
     obj_eval = text_obj.evaluated_get(depsgraph)
@@ -1689,7 +1753,11 @@ def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_
         bpy.data.objects.remove(text_obj, do_unlink=True)
         return holder_obj
 
-    target_h = text_size_mm if text_size_mm and text_size_mm > 0 else max(0.5, wall_width - 1.5)
+    target_h = (
+        text_size_mm
+        if text_size_mm and text_size_mm > 0
+        else max(0.5, wall_width - 1.5)
+    )
     scale = min(target_h / natural_h, available_w / natural_w)
     text_obj.scale = (scale, scale, 1)
 
@@ -1708,7 +1776,7 @@ def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_
     if white_mat:
         text_obj.data.materials.append(white_mat)
 
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     text_obj.select_set(True)
     holder_obj.select_set(True)
     bpy.context.view_layer.objects.active = holder_obj
@@ -1717,10 +1785,21 @@ def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_
     return holder_obj
 
 
-def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
-                         floor_thickness=2.0, clearance=0.1, corner_radius=5.0,
-                         pocket_corner_radius=0.0, font="", text_size_mm=None,
-                         piece_seam_polys=None, seam_width=0.6, seam_depth=0.4):
+def build_puzzle_holder(
+    piece_objs,
+    text="",
+    wall_width=4.0,
+    wall_height=4.0,
+    floor_thickness=2.0,
+    clearance=0.1,
+    corner_radius=5.0,
+    pocket_corner_radius=0.0,
+    font="",
+    text_size_mm=None,
+    piece_seam_polys=None,
+    seam_width=0.6,
+    seam_depth=0.4,
+):
     """Build a rounded-rectangle tray sized to hold an already-generated
     jigsaw puzzle (cut_into_puzzle_pieces' output).
 
@@ -1760,8 +1839,8 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     if not objs:
         return None
 
-    x_min = y_min = float('inf')
-    x_max = y_max = float('-inf')
+    x_min = y_min = float("inf")
+    x_max = y_max = float("-inf")
     for obj in objs:
         corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
         x_min = min(x_min, min(c.x for c in corners))
@@ -1806,7 +1885,9 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     pocket_bottom_z = floor_thickness - min(0.05, floor_thickness * 0.25)
     pocket_verts, pocket_faces = [], []
     for part in g2d.iter_polygons(pocket_poly):
-        _extrude_flat_polygon(g2d, part, pocket_bottom_z, wall_height + 5.0, pocket_verts, pocket_faces)
+        _extrude_flat_polygon(
+            g2d, part, pocket_bottom_z, wall_height + 5.0, pocket_verts, pocket_faces
+        )
     cutter_mesh = bpy.data.meshes.new("PuzzleHolderPocketCutter")
     cutter_mesh.from_pydata(pocket_verts, [], pocket_faces)
     cutter_mesh.update()
@@ -1814,7 +1895,7 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
     cutter_obj = bpy.data.objects.new(cutter_mesh.name, cutter_mesh)
     bpy.context.collection.objects.link(cutter_obj)
 
-    boolean_operation(holder_obj, cutter_obj, 'DIFFERENCE')
+    boolean_operation(holder_obj, cutter_obj, "DIFFERENCE")
     bpy.data.objects.remove(cutter_obj, do_unlink=True)
 
     if piece_seam_polys:
@@ -1825,8 +1906,14 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
         for poly in piece_seam_polys:
             for part in g2d.iter_polygons(poly):
                 for ring in [part.exterior] + list(part.interiors):
-                    seam_lines.append([(x - center_x, y - center_y) for x, y in ring.coords])
-        seam_ribbon = g2d.polylines_to_ribbon(seam_lines, seam_width / 2, quad_segs=4) if seam_lines else None
+                    seam_lines.append(
+                        [(x - center_x, y - center_y) for x, y in ring.coords]
+                    )
+        seam_ribbon = (
+            g2d.polylines_to_ribbon(seam_lines, seam_width / 2, quad_segs=4)
+            if seam_lines
+            else None
+        )
         if seam_ribbon is not None and not seam_ribbon.is_empty:
             seam_ribbon = g2d.validate(seam_ribbon.intersection(pocket_poly))
         if seam_ribbon is not None and not seam_ribbon.is_empty:
@@ -1836,7 +1923,9 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
             seam_bottom_z = floor_thickness - cut_depth
             seam_verts, seam_faces = [], []
             for part in g2d.iter_polygons(seam_ribbon):
-                _extrude_flat_polygon(g2d, part, seam_bottom_z, wall_height + 5.0, seam_verts, seam_faces)
+                _extrude_flat_polygon(
+                    g2d, part, seam_bottom_z, wall_height + 5.0, seam_verts, seam_faces
+                )
             if seam_verts:
                 seam_mesh = bpy.data.meshes.new("PuzzleHolderSeamCutter")
                 seam_mesh.from_pydata(seam_verts, [], seam_faces)
@@ -1844,13 +1933,23 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
                 _clean_solid_mesh(seam_mesh)
                 seam_cutter_obj = bpy.data.objects.new(seam_mesh.name, seam_mesh)
                 bpy.context.collection.objects.link(seam_cutter_obj)
-                boolean_operation(holder_obj, seam_cutter_obj, 'DIFFERENCE')
+                boolean_operation(holder_obj, seam_cutter_obj, "DIFFERENCE")
                 bpy.data.objects.remove(seam_cutter_obj, do_unlink=True)
 
     if text:
-        available_w = max(1.0, outer_w - 6.0)  # margin so text clears the rim's outer/inner edges
-        _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, wall_height,
-                             font=font, text_size_mm=text_size_mm)
+        available_w = max(
+            1.0, outer_w - 6.0
+        )  # margin so text clears the rim's outer/inner edges
+        _emboss_holder_text(
+            holder_obj,
+            text,
+            available_w,
+            outer_h,
+            wall_width,
+            wall_height,
+            font=font,
+            text_size_mm=text_size_mm,
+        )
 
     # Positioned at the puzzle's own XY center; Z so the pocket floor's TOP
     # surface (local Z = floor_thickness, where an assembled puzzle would
@@ -1875,16 +1974,20 @@ def _smooth_polyline_2d(pts, passes=3):
     for _ in range(passes):
         new_arr = [arr[0]]
         for i in range(1, len(arr) - 1):
-            new_arr.append((
-                (arr[i - 1][0] + arr[i][0] + arr[i + 1][0]) / 3.0,
-                (arr[i - 1][1] + arr[i][1] + arr[i + 1][1]) / 3.0,
-            ))
+            new_arr.append(
+                (
+                    (arr[i - 1][0] + arr[i][0] + arr[i + 1][0]) / 3.0,
+                    (arr[i - 1][1] + arr[i][1] + arr[i + 1][1]) / 3.0,
+                )
+            )
         new_arr.append(arr[-1])
         arr = new_arr
     return arr
 
 
-def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projectionObj = None):
+def single_color_mode_curve(
+    crv, map, keepTolTrail=False, cutDepth=2, projectionObj=None
+):
     """Build the single-color-mode trail strip + groove cutter for one curve.
 
     Builds two flat-topped/flat-bottomed prisms from the trail's 2D footprint
@@ -1900,12 +2003,16 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     if projectionObj == None:
         projectionObj = map
 
-    tol = bpy.context.scene.tp3d.tolerance #Tolerance between Map and the Trail on each side (0.2 worked great so far)
+    tol = (
+        bpy.context.scene.tp3d.tolerance
+    )  # Tolerance between Map and the Trail on each side (0.2 worked great so far)
     minThickness = bpy.context.scene.tp3d.minThickness
     pathThickness = bpy.context.scene.tp3d.pathThickness
 
-    trailCutDepth = min(cutDepth, minThickness/2) # How deep the trail will be placed into the map
-                                            # Either 2mm or for flatter maps half of the minThickness
+    trailCutDepth = min(
+        cutDepth, minThickness / 2
+    )  # How deep the trail will be placed into the map
+    # Either 2mm or for flatter maps half of the minThickness
 
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
 
@@ -1914,7 +2021,9 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         bm_d.from_mesh(mesh)
         nm_e = sum(1 for e in bm_d.edges if not e.is_manifold)
         nm_v = sum(1 for v in bm_d.verts if not v.is_manifold)
-        print(f"[TP3D trail] {label}: verts={len(bm_d.verts)} faces={len(bm_d.faces)} non-manifold edges={nm_e} verts={nm_v}")
+        print(
+            f"[TP3D trail] {label}: verts={len(bm_d.verts)} faces={len(bm_d.faces)} non-manifold edges={nm_e} verts={nm_v}"
+        )
         bm_d.free()
 
     lowest_z = None
@@ -1941,12 +2050,22 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         # operators, which left curves in states that crashed object.convert.
         coords_list = [_smooth_polyline_2d(c, passes=3) for c in coords_list]
 
-        print(f"[TP3D trail] '{crv.name}': {len(coords_list)} spline(s), pts per spline={[len(s) for s in coords_list]}, lowest_z={lowest_z:.4f}")
-        print(f"[TP3D trail] pathThickness={pathThickness} tol={tol} trailCutDepth={trailCutDepth}")
+        print(
+            f"[TP3D trail] '{crv.name}': {len(coords_list)} spline(s), pts per spline={[len(s) for s in coords_list]}, lowest_z={lowest_z:.4f}"
+        )
+        print(
+            f"[TP3D trail] pathThickness={pathThickness} tol={tol} trailCutDepth={trailCutDepth}"
+        )
         ribbon = g2d.polylines_to_ribbon(coords_list, pathThickness / 2, quad_segs=4)
-        thick_ribbon = g2d.polylines_to_ribbon(coords_list, pathThickness / 2 + tol, quad_segs=4)
-        print(f"[TP3D trail] ribbon: {ribbon.geom_type if ribbon else None} area={(ribbon.area if ribbon else 0):.4f} valid={ribbon.is_valid if ribbon else False}")
-        print(f"[TP3D trail] thick_ribbon: {thick_ribbon.geom_type if thick_ribbon else None} area={(thick_ribbon.area if thick_ribbon else 0):.4f} valid={thick_ribbon.is_valid if thick_ribbon else False}")
+        thick_ribbon = g2d.polylines_to_ribbon(
+            coords_list, pathThickness / 2 + tol, quad_segs=4
+        )
+        print(
+            f"[TP3D trail] ribbon: {ribbon.geom_type if ribbon else None} area={(ribbon.area if ribbon else 0):.4f} valid={ribbon.is_valid if ribbon else False}"
+        )
+        print(
+            f"[TP3D trail] thick_ribbon: {thick_ribbon.geom_type if thick_ribbon else None} area={(thick_ribbon.area if thick_ribbon else 0):.4f} valid={thick_ribbon.is_valid if thick_ribbon else False}"
+        )
 
     elif crv.type == "MESH":
         ribbon = g2d.footprint_with_holes(crv)
@@ -1985,8 +2104,12 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         for poly in g2d.iter_polygons(thick_ribbon):
             _extrude_flat_polygon(g2d, poly, thick_bottom_z, top_z, t_verts, t_faces)
 
-    print(f"[TP3D trail] prism: {len(verts)} verts, {len(faces)} faces  bottom_z={bottom_z:.3f}")
-    print(f"[TP3D trail] thick prism: {len(t_verts)} verts, {len(t_faces)} faces  thick_bottom_z={thick_bottom_z:.3f}")
+    print(
+        f"[TP3D trail] prism: {len(verts)} verts, {len(faces)} faces  bottom_z={bottom_z:.3f}"
+    )
+    print(
+        f"[TP3D trail] thick prism: {len(t_verts)} verts, {len(t_faces)} faces  thick_bottom_z={thick_bottom_z:.3f}"
+    )
 
     # Convert crv to MESH in place (preserves object identity -- other code
     # holds references to this exact object for later material/metadata
@@ -1997,14 +2120,14 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         # real spline data crashes Blender's parallelised BM_mesh_bm_from_me.
         for _sp in list(crv.data.splines):
             crv.data.splines.remove(_sp)
-        _sp = crv.data.splines.new('POLY')
+        _sp = crv.data.splines.new("POLY")
         _sp.points.add(1)
         _sp.points[0].co = (0.0, 0.0, 0.0, 1.0)
         _sp.points[1].co = (1.0, 0.0, 0.0, 1.0)
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     crv.select_set(True)
     bpy.context.view_layer.objects.active = crv
-    bpy.ops.object.convert(target='MESH')
+    bpy.ops.object.convert(target="MESH")
 
     new_mesh = bpy.data.meshes.new(crv.data.name)
     new_mesh.from_pydata(verts, [], faces)
@@ -2016,7 +2139,7 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     crv.matrix_world = Matrix.Identity(4)
     _dbg_manifold(crv.data, "prism after _clean_solid_mesh (pre-INTERSECT)")
 
-    boolean_operation(crv, projectionObj, 'INTERSECT')
+    boolean_operation(crv, projectionObj, "INTERSECT")
     _dbg_manifold(crv.data, "trail strip after INTERSECT")
 
     if len(crv.data.vertices) == 0:
@@ -2047,6 +2170,7 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     from .scene import (
         set_origin_to_3d_cursor,  # deferred to avoid circular import at load time
     )
+
     set_origin_to_3d_cursor(crv)
 
     # Build the wider carving tool and cut the groove directly into `map`
@@ -2063,11 +2187,11 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
         crv_thick = bpy.data.objects.new(f"{crv.name}_thick", thick_mesh)
         bpy.context.collection.objects.link(crv_thick)
         set_origin_to_3d_cursor(crv_thick)
-        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.object.select_all(action="DESELECT")
         crv_thick.select_set(True)
         bpy.context.view_layer.objects.active = crv_thick
-        #boolean_operation(map, crv_thick, 'DIFFERENCE', solver='EXACT')
-        boolean_operation(map, crv_thick, 'DIFFERENCE')
+        # boolean_operation(map, crv_thick, 'DIFFERENCE', solver='EXACT')
+        boolean_operation(map, crv_thick, "DIFFERENCE")
 
     if not keepTolTrail:
         if crv_thick is not None:
@@ -2087,34 +2211,28 @@ def single_color_mode_curve(crv, map, keepTolTrail = False, cutDepth = 2, projec
     return (crv, crv_thick, thick_ribbon)
 
 
-def single_color_mode_mesh_wireframe(original, map, tolerance = None):
+def single_color_mode_mesh_wireframe(original, map, tolerance=None):
 
-
-
-    #Original = Element usually
+    # Original = Element usually
     if tolerance == None:
         tolerance = bpy.context.scene.tp3d.toleranceElements
 
-
-    obj = original.copy()             # copy the object
-    obj.data = obj.data.copy()   # copy the mesh (optional: if you want unique mesh)
+    obj = original.copy()  # copy the object
+    obj.data = obj.data.copy()  # copy the mesh (optional: if you want unique mesh)
     bpy.context.collection.objects.link(obj)  # link to current collection
     obj.name = "Duplicate"
-
 
     # Delete all faces except downward-facing ones
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.mode_set(mode='EDIT')
-
-
+    bpy.ops.object.mode_set(mode="EDIT")
 
     bm = bmesh.from_edit_mesh(obj.data)
     for f in bm.faces:
         f.select = f.normal.normalized().z >= -0.95  # select non-downward faces
     bmesh.update_edit_mesh(obj.data)
-    bpy.ops.mesh.delete(type='FACE')
+    bpy.ops.mesh.delete(type="FACE")
 
     # The flat bottom shell carries the ocean region's full triangulation
     # (every internal diagonal plus the bridge edges that represent island
@@ -2131,7 +2249,7 @@ def single_color_mode_mesh_wireframe(original, map, tolerance = None):
         edges=bm.edges[:],
     )
     bmesh.update_edit_mesh(obj.data)
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="OBJECT")
 
     # Guard: if the face deletion wiped all vertices (can happen when the
     # intersection left only upward-facing faces), bail out gracefully.
@@ -2152,57 +2270,52 @@ def single_color_mode_mesh_wireframe(original, map, tolerance = None):
         _extrude_height = 50.0
 
     # Apply Wireframe modifier with -tolerance as thickness
-    wire = obj.modifiers.new(name="Wireframe", type='WIREFRAME')
+    wire = obj.modifiers.new(name="Wireframe", type="WIREFRAME")
     wire.thickness = -tolerance
     wire.offset = 0
     wire.use_replace = True
     wire.use_even_offset = True
     applyModifier(obj, wire)
 
-
     # Remove top and bottom vertices, keep only those coplanar with bottom_z
-    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.object.mode_set(mode="EDIT")
     bm = bmesh.from_edit_mesh(obj.data)
     bm.verts.ensure_lookup_table()
     for v in bm.verts:
         v.select = abs(v.co.z - bottom_z) > 0.001
     bmesh.update_edit_mesh(obj.data)
-    bpy.ops.mesh.delete(type='VERT')
-
-
-
+    bpy.ops.mesh.delete(type="VERT")
 
     # Fill the edge loop to create a face (equivalent of pressing F)
-    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.mesh.edge_face_add()
 
     # Extrude upward past the top of the map
-    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.mesh.extrude_region_move(
         TRANSFORM_OT_translate={"value": (0, 0, _extrude_height)}
     )
-    bpy.ops.object.mode_set(mode='OBJECT')
-
+    bpy.ops.object.mode_set(mode="OBJECT")
 
     # Clear materials from the duplicate before subtracting
     obj.data.materials.clear()
 
     # Separate obj into loose parts, subtract each individually from map
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.mesh.separate(type='LOOSE')
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.separate(type="LOOSE")
+    bpy.ops.object.mode_set(mode="OBJECT")
 
     loose_parts = list(bpy.context.selected_objects)
 
     for part in loose_parts:
-        boolean = map.modifiers.new(name="Boolean", type='BOOLEAN')
-        boolean.operation = 'DIFFERENCE'
+        boolean = map.modifiers.new(name="Boolean", type="BOOLEAN")
+        boolean.operation = "DIFFERENCE"
         boolean.object = part
-        boolean.solver = 'MANIFOLD'
+        boolean.solver = "MANIFOLD"
         applyModifier(map, boolean)
         bpy.data.objects.remove(part, do_unlink=True)
 
@@ -2216,7 +2329,6 @@ def single_color_mode_mesh_wireframe(original, map, tolerance = None):
 
 def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
 
-
     # Nothing valid to measure if the element is empty.
     if not obj.data.vertices:
         print("[remeshClearing] object has no vertices on entry -- skipping")
@@ -2228,56 +2340,52 @@ def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
     print(f"Bottom_z: {bottom_z}")
 
     # Extrude bottom faces upward by 1, then shift all vertices down by 0.5
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.mesh.extrude_region_move(
-        TRANSFORM_OT_translate={"value": (0, 0, 4)}
-    )
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.extrude_region_move(TRANSFORM_OT_translate={"value": (0, 0, 4)})
 
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="OBJECT")
 
     if tolerance > 0:
         # Solidify to create the tolerance thickness
-        solid = obj.modifiers.new(name="Solidify", type='SOLIDIFY')
+        solid = obj.modifiers.new(name="Solidify", type="SOLIDIFY")
         solid.offset = 1.0
         solid.thickness = -tolerance / 2
         applyModifier(obj, solid)
 
-    remesh = obj.modifiers.new(name="Remesh", type='REMESH')
-    remesh.mode = 'VOXEL'
+    remesh = obj.modifiers.new(name="Remesh", type="REMESH")
+    remesh.mode = "VOXEL"
     remesh.voxel_size = voxelSize2
     remesh.use_smooth_shade = False
 
-
-
     applyModifier(obj, remesh)
 
-
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.transform.translate(value=(0, 0, -2.025), snap=False) # -0.51, die 0.01 damit es außermittig liegt und später nicht mehr als eine outer edge übrig bleibt
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.transform.translate(
+        value=(0, 0, -2.025), snap=False
+    )  # -0.51, die 0.01 damit es außermittig liegt und später nicht mehr als eine outer edge übrig bleibt
+    bpy.ops.object.mode_set(mode="OBJECT")
 
-
-    #----------------------
-    bpy.ops.object.mode_set(mode='OBJECT')
+    # ----------------------
+    bpy.ops.object.mode_set(mode="OBJECT")
 
     # Build a cube that's slightly larger than obj in XY, bottom face at z=0, 50 units tall.
     # Subtracting it from obj keeps only whatever is above z=50 and cuts a clean plane there.
-    mw  = obj.matrix_world
-    xs  = [(mw @ v.co).x for v in obj.data.vertices]
-    ys  = [(mw @ v.co).y for v in obj.data.vertices]
+    mw = obj.matrix_world
+    xs = [(mw @ v.co).x for v in obj.data.vertices]
+    ys = [(mw @ v.co).y for v in obj.data.vertices]
     if not xs:
         print("[remeshClearing] object has no vertices after remesh -- skipping")
         return
     pad = 0.5
-    cx  = (min(xs) + max(xs)) / 2
-    cy  = (min(ys) + max(ys)) / 2
-    sx  = (max(xs) - min(xs)) + pad * 2
-    sy  = (max(ys) - min(ys)) + pad * 2
+    cx = (min(xs) + max(xs)) / 2
+    cy = (min(ys) + max(ys)) / 2
+    sx = (max(xs) - min(xs)) + pad * 2
+    sy = (max(ys) - min(ys)) + pad * 2
 
     print(f"Cube center: ({cx}, {cy}), size: ({sx}, {sy})")
 
@@ -2289,16 +2397,19 @@ def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
 
     cube_obj = bpy.data.objects.new("_BoolCube", _cube_mesh)
     bpy.context.collection.objects.link(cube_obj)
-    cube_obj.scale    = (sx, sy, 150.0)
-    cube_obj.location = (cx, cy, 75.0+bottom_z)   # bottom face lands at z=0, top at z=50
+    cube_obj.scale = (sx, sy, 150.0)
+    cube_obj.location = (
+        cx,
+        cy,
+        75.0 + bottom_z,
+    )  # bottom face lands at z=0, top at z=50
 
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
-    bool_mod = obj.modifiers.new(name="_BoolCube", type='BOOLEAN')
-    bool_mod.operation = 'DIFFERENCE'
-    bool_mod.object    = cube_obj
-    bool_mod.solver    = 'MANIFOLD'
-
+    bool_mod = obj.modifiers.new(name="_BoolCube", type="BOOLEAN")
+    bool_mod.operation = "DIFFERENCE"
+    bool_mod.object = cube_obj
+    bool_mod.solver = "MANIFOLD"
 
     applyModifier(obj, bool_mod)
     bpy.data.objects.remove(cube_obj, do_unlink=True)
@@ -2312,8 +2423,8 @@ def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
     # Keep only the topmost vertices (the flat cap left by the cube's top face)
     top_z = max(v.co.z for v in obj.data.vertices)
     bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_mode(type='VERT')
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_mode(type="VERT")
     bm2 = bmesh.from_edit_mesh(obj.data)
     bm2.verts.ensure_lookup_table()
     for v in bm2.verts:
@@ -2324,7 +2435,7 @@ def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
     # on the second generation Blender reuses that freed memory and
     # python313.dll crashes when mode_set later finalises the edit mesh.
     del bm2
-    bpy.ops.mesh.delete(type='VERT')
+    bpy.ops.mesh.delete(type="VERT")
 
     # Flatten remaining verts to exactly z bottom_z
     bm = bmesh.from_edit_mesh(obj.data)
@@ -2340,21 +2451,19 @@ def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
     else:
         extrude_height = 30.0
 
-    bpy.ops.mesh.select_mode(type='FACE')
-    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.select_mode(type="FACE")
+    bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.mesh.extrude_region_move(
         TRANSFORM_OT_translate={"value": (0, 0, extrude_height)}
     )
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-
+    bpy.ops.object.mode_set(mode="OBJECT")
 
     recalculateNormals(obj)
 
 
-def single_color_mode_mesh_remesh(original, map, tolerance = None):
+def single_color_mode_mesh_remesh(original, map, tolerance=None):
 
-    #Original = Element usually
+    # Original = Element usually
 
     if tolerance == None:
         tolerance = bpy.context.scene.tp3d.toleranceElements
@@ -2386,6 +2495,7 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
         from .. import (
             constants as _const,  # deferred to avoid circular import at load time
         )
+
         gap = tolerance * _const.SCM_ELEMENT_GAP_FACTOR
         if gap > 0:
             fp = fp.buffer(gap)
@@ -2394,7 +2504,9 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
             fp = _g2d.union([fp]) or fp
             fp = _g2d.validate(fp)
             if fp is None or fp.is_empty:
-                print("[single_color_mode_mesh_remesh] footprint empty after tolerance buffer -- skipping")
+                print(
+                    "[single_color_mode_mesh_remesh] footprint empty after tolerance buffer -- skipping"
+                )
                 return None
 
     # simplify removes near-coincident boundary vertices left by buffer at concave
@@ -2402,7 +2514,9 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     fp = fp.simplify(0.1)
     fp = _g2d.validate(fp)
     if fp is None or fp.is_empty:
-        print("[single_color_mode_mesh_remesh] footprint empty after simplify -- skipping")
+        print(
+            "[single_color_mode_mesh_remesh] footprint empty after simplify -- skipping"
+        )
         return None
 
     # World-space bottom of the element: the prism floor (recess depth) sits here.
@@ -2427,7 +2541,9 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
             if sub_poly is None or sub_poly.is_empty:
                 continue
             p_verts, p_faces = [], []
-            _extrude_flat_polygon(_g2d, sub_poly, bottom_z, bottom_z + PRISM_HEIGHT, p_verts, p_faces)
+            _extrude_flat_polygon(
+                _g2d, sub_poly, bottom_z, bottom_z + PRISM_HEIGHT, p_verts, p_faces
+            )
             if not p_verts:
                 continue
             m = bpy.data.meshes.new(f"{original.name}_cutter_part")
@@ -2448,28 +2564,32 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     if cutter_nm_v or cutter_nm_e > 0:
         # clean up internal faces across whole object
         bpy.context.view_layer.objects.active = obj
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="DESELECT")
         bpy.ops.mesh.select_interior_faces()
-        bpy.ops.mesh.delete(type='FACE')
-        bpy.ops.object.mode_set(mode='OBJECT')
-    
+        bpy.ops.mesh.delete(type="FACE")
+        bpy.ops.object.mode_set(mode="OBJECT")
+
     # Boolean subtract from map
-    boolean = map.modifiers.new(name="Boolean", type='BOOLEAN')
-    boolean.operation = 'DIFFERENCE'
+    boolean = map.modifiers.new(name="Boolean", type="BOOLEAN")
+    boolean.operation = "DIFFERENCE"
     boolean.object = obj
-    boolean.solver = 'MANIFOLD'
+    boolean.solver = "MANIFOLD"
     applyModifier(map, boolean)
 
     if "type" in original and original["type"] == "OTHER":
         print("Setting ExportGroup to 0 for OTHER type")
         original["ExportGroup"] = 0
 
-
     return obj
 
 
-def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode = False,):
+def merge_with_map(
+    mapobject,
+    mergeobject,
+    flatBottom=False,
+    singleColorMode=False,
+):
 
     if mergeobject == None:
         print("func merge_with_map: No Object to merge with Map")
@@ -2478,27 +2598,25 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
     if mergeobject.type == "CURVE":
         print("MERGE CURVE WITH MAP")
 
-
-        duplicate  = mapobject.copy()
+        duplicate = mapobject.copy()
         duplicate.data = mapobject.data.copy()
         bpy.context.collection.objects.link(duplicate)
-        #intersect_alltrails_with_existing_box(duplicate)
-        intersect_trail_with_existing_box(duplicate,mergeobject)
+        # intersect_alltrails_with_existing_box(duplicate)
+        intersect_trail_with_existing_box(duplicate, mergeobject)
         return duplicate
-
 
     bpy.ops.object.select_all(action="DESELECT")
 
-    #if the mergeobject is a Text object -> Convert it into a mesh
+    # if the mergeobject is a Text object -> Convert it into a mesh
     if mergeobject.type == "FONT":
         mergeobject.select_set(True)
         bpy.context.view_layer.objects.active = mergeobject
-        bpy.ops.object.convert(target='MESH')
+        bpy.ops.object.convert(target="MESH")
 
     if mergeobject.type == "CURVE":
         mergeobject.select_set(True)
         bpy.context.view_layer.objects.active = mergeobject
-        bpy.ops.object.convert(target='MESH')
+        bpy.ops.object.convert(target="MESH")
 
     bpy.context.view_layer.objects.active = mergeobject
     mergeobject.select_set(True)
@@ -2509,22 +2627,22 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
     # below the print's base plane).
     is_ocean = mergeobject.get("_tp3d_is_ocean", False)
 
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.mesh.extrude_region_move()
     bpy.ops.transform.translate(value=(0, 0, 200))
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="OBJECT")
     mergeobject.location.z = -1
 
     recalculateNormals(mergeobject)
 
     # Add boolean modifier
-    bool_mod = mergeobject.modifiers.new(name="Boolean", type='BOOLEAN')
+    bool_mod = mergeobject.modifiers.new(name="Boolean", type="BOOLEAN")
     bool_mod.object = mapobject
-    bool_mod.operation = 'INTERSECT'
-    bool_mod.solver = 'MANIFOLD'
+    bool_mod.operation = "INTERSECT"
+    bool_mod.solver = "MANIFOLD"
 
-    #apply boolean modifier
+    # apply boolean modifier
     bpy.ops.object.modifier_apply(modifier=bool_mod.name)
 
     bpy.ops.object.mode_set(mode="EDIT")
@@ -2533,20 +2651,16 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
 
-
-
     try:
         min_z = min(v.co.z for v in bm.verts)
     except ValueError:
         bm.free()
-        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode="OBJECT")
         return
 
     tol = 0.1
 
     lowestVert = 100
-
-
 
     for v in bm.verts:
         if abs(v.co.z - min_z) < tol:
@@ -2555,18 +2669,25 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
             v.select = False
             lowestVert = min(lowestVert, v.co.z)
 
-
-    if flatBottom == False: #Extrudes terrain shape down 1mm
+    if flatBottom == False:  # Extrudes terrain shape down 1mm
         bpy.context.tool_settings.mesh_select_mode = (True, False, False)
-        #bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.select], context="FACES")
-        #bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
-        bmesh.ops.delete(bm, geom=[elem for elem in bm.verts[:] + bm.edges[:] + bm.faces[:] if elem.select], context='VERTS')
+        # bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.select], context="FACES")
+        # bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+        bmesh.ops.delete(
+            bm,
+            geom=[
+                elem for elem in bm.verts[:] + bm.edges[:] + bm.faces[:] if elem.select
+            ],
+            context="VERTS",
+        )
 
-        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.select_all(action="SELECT")
         bpy.ops.mesh.extrude_region_move()
-        bpy.ops.transform.translate(value=(0, 0, -1))#bpy.ops.mesh.select_all(action='DESELECT')
-    elif flatBottom == True: #Extrudes and sets new faces flat to set value
-        #bpy.ops.transform.translate(value=(0, 0, 1))#bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.transform.translate(
+            value=(0, 0, -1)
+        )  # bpy.ops.mesh.select_all(action='DESELECT')
+    elif flatBottom == True:  # Extrudes and sets new faces flat to set value
+        # bpy.ops.transform.translate(value=(0, 0, 1))#bpy.ops.mesh.select_all(action='DESELECT')
 
         lowestprojection = 100
         secondlowestprojection = 200
@@ -2577,13 +2698,9 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
         bm.faces.ensure_lookup_table()
 
         for v in bm.verts:
-                
-                lowestprojection = min(lowestprojection, v.co.z)
-                if lowestprojection < v.co.z < secondlowestprojection:
-                    secondlowestprojection = v.co.z
-
-
-
+            lowestprojection = min(lowestprojection, v.co.z)
+            if lowestprojection < v.co.z < secondlowestprojection:
+                secondlowestprojection = v.co.z
 
         bottom_drop = secondlowestprojection - lowestprojection - 1
         if is_ocean:
@@ -2591,12 +2708,10 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
             # face is already flush with the map base (z = lowestprojection);
             # clamp the skirt so it is never pushed below that plane.
             bottom_drop = max(bottom_drop, 0.0)
-        bpy.ops.transform.translate(value=(0, 0, bottom_drop), orient_type='LOCAL')
-
+        bpy.ops.transform.translate(value=(0, 0, bottom_drop), orient_type="LOCAL")
 
     bmesh.update_edit_mesh(mergeobject.data)
     bpy.ops.object.mode_set(mode="OBJECT")
-
 
     if not singleColorMode:
         mergeobject.location.z += 0.05
@@ -2634,8 +2749,8 @@ def merge_active_with_map(map_obj, active_obj):
         bpy.context.scene.tp3d.currentMap = map_obj
         active_obj.select_set(True)
         bpy.context.view_layer.objects.active = active_obj
-        bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.tp3d.popup_merge('INVOKE_DEFAULT')
+        bpy.ops.object.select_all(action="DESELECT")
+        bpy.ops.tp3d.popup_merge("INVOKE_DEFAULT")
 
     elif active_obj.type == "CURVE":
         if not bpy.context.scene.tp3d.singleColorMode:
@@ -2663,6 +2778,7 @@ def merge_active_with_map(map_obj, active_obj):
                     from .scene import (
                         set_origin_to_3d_cursor,  # deferred to avoid circular import at load time
                     )
+
                     set_origin_to_3d_cursor(duplicate)
                 except ReferenceError:
                     pass
@@ -2680,7 +2796,11 @@ def merge_active_with_map(map_obj, active_obj):
                 # Keep whatever material the original trail had (e.g. trails
                 # generated with alternating TRAIL/YELLOW materials) instead
                 # of forcing TRAIL on every merge.
-                mat = active_obj.data.materials[0] if active_obj.data.materials else bpy.data.materials.get("TRAIL")
+                mat = (
+                    active_obj.data.materials[0]
+                    if active_obj.data.materials
+                    else bpy.data.materials.get("TRAIL")
+                )
                 dup.data.materials.clear()
                 dup.data.materials.append(mat)
 
@@ -2702,19 +2822,24 @@ def projection(operation, Mapobject, obj):
         try:
             name = o.name  # raises ReferenceError if the Blender object was removed
         except ReferenceError:
-            raise ValueError(f"projection: '{label}' refers to a removed Blender object")
+            raise ValueError(
+                f"projection: '{label}' refers to a removed Blender object"
+            )
         if name not in bpy.data.objects:
-            raise ValueError(f"projection: '{label}' ('{name}') is not in the current scene")
-        if o.type not in ('MESH', 'FONT') or o.data is None:
-            raise ValueError(f"projection: '{label}' ('{name}') is not a valid mesh object (type={o.type!r})")
+            raise ValueError(
+                f"projection: '{label}' ('{name}') is not in the current scene"
+            )
+        if o.type not in ("MESH", "FONT") or o.data is None:
+            raise ValueError(
+                f"projection: '{label}' ('{name}') is not a valid mesh object (type={o.type!r})"
+            )
 
     if operation == "paint":
         merge_with_map(Mapobject, obj)
 
-        #obj.location.z += 1
+        # obj.location.z += 1
 
-
-        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
+        bpy.ops.object.origin_set(type="ORIGIN_CURSOR", center="MEDIAN")
         color_map_faces_by_terrain(Mapobject, obj)
         mesh_data = obj.data
         bpy.data.objects.remove(obj, do_unlink=True)
@@ -2727,25 +2852,21 @@ def projection(operation, Mapobject, obj):
 
         obj.location.z += 0.2
         if "TYPE" in obj and obj["TYPE"] == "OTHER":
-                obj["ExportGroup"] = 1
+            obj["ExportGroup"] = 1
 
     if operation == "singleColorMode":
-
         merge_with_map(Mapobject, obj, True)
 
         obj.data.materials.clear()
 
         single_color_mode_mesh_wireframe(obj, Mapobject)
 
-
     if operation == "singleColorMode_remesh":
-
         merge_with_map(Mapobject, obj, True)
 
         obj.data.materials.clear()
 
         thicker = single_color_mode_mesh_remesh(obj, Mapobject)
-
 
         remove_objects(thicker)
 
