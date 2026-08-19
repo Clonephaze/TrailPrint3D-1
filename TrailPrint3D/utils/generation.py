@@ -23,6 +23,7 @@ _puzzle_roads_data: tuple | None = None
 # runGeneration sub-phase helpers
 # ---------------------------------------------------------------------------
 
+
 def _rg_validate_inputs(flags):
     """Load all scene properties, validate inputs, and open the console.
 
@@ -45,46 +46,56 @@ def _rg_validate_inputs(flags):
     print(" ")
 
     tp3d = bpy.context.scene.tp3d
-    gpx_file_path      = tp3d.get('file_path', None)
-    gpx_chain_path     = tp3d.get('chain_path', None)
-    exportPath         = tp3d.get('export_path', None)
-    shape              = get_effective_shape(tp3d)
-    name               = tp3d.get('trailName', "")
-    size               = tp3d.get('objSize', 100)
-    scaleElevation     = tp3d.get('scaleElevation', 1)
-    scalemode          = tp3d.scalemode
-    scaleLon1          = tp3d.get('scaleLon1', 0)
-    scaleLat1          = tp3d.get('scaleLat1', 0)
-    scaleLon2          = tp3d.get('scaleLon2', 0)
-    scaleLat2          = tp3d.get('scaleLat2', 0)
-    shapeRotation      = tp3d.get('shapeRotation', 0)
-    overwritePathElev  = tp3d.get('overwritePathElevation', True)
-    api                = tp3d.api
-    selfHosted         = tp3d.get("selfHosted", "")
-    fixedElevScale     = tp3d.get('fixedElevationScale', False)
-    minThickness       = tp3d.get("minThickness", 2)
-    xTerrainOffset     = tp3d.get("xTerrainOffset", 0)
-    yTerrainOffset     = tp3d.get("yTerrainOffset", 0)
-    singleColorMode    = tp3d.get("singleColorMode", 0)
-    elementMode        = tp3d.elementMode
-    disableCache       = tp3d.get("disableCache", 0)
-    num_subdivisions   = tp3d.num_subdivisions
-    textFont           = tp3d.get("textFont", "")
-    plateThickness     = tp3d.get("plateThickness", 5)
-    col_wActive        = any([tp3d.col_wPondsActive, tp3d.col_wSmallRiversActive, tp3d.col_wBigRiversActive])
-    col_fActive        = tp3d.col_fActive
-    col_cActive        = tp3d.col_cActive
-    col_grActive       = tp3d.col_grActive
-    col_glActive       = tp3d.col_glActive
-    el_bActive         = tp3d.el_bActive
-    el_sActive         = any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive])
-    jMapLat            = tp3d.get("jMapLat", 49)
-    jMapLon            = tp3d.get("jMapLon", 9)
-    jMapRadius         = tp3d.get("jMapRadius", 50)
-    jMapLat1           = tp3d.get("jMapLat1", 48)
-    jMapLon1           = tp3d.get("jMapLon1", 8)
-    jMapLat2           = tp3d.get("jMapLat2", 49)
-    jMapLon2           = tp3d.get("jMapLon2", 9)
+    gpx_file_path = tp3d.get("file_path", None)
+    gpx_chain_path = tp3d.get("chain_path", None)
+    exportPath = tp3d.get("export_path", None)
+    shape = get_effective_shape(tp3d)
+    name = tp3d.get("trailName", "")
+    size = tp3d.get("objSize", 100)
+    scaleElevation = tp3d.get("scaleElevation", 1)
+    scalemode = tp3d.scalemode
+    scaleLon1 = tp3d.get("scaleLon1", 0)
+    scaleLat1 = tp3d.get("scaleLat1", 0)
+    scaleLon2 = tp3d.get("scaleLon2", 0)
+    scaleLat2 = tp3d.get("scaleLat2", 0)
+    shapeRotation = tp3d.get("shapeRotation", 0)
+    overwritePathElev = tp3d.get("overwritePathElevation", True)
+    api = tp3d.api
+    selfHosted = tp3d.get("selfHosted", "")
+    fixedElevScale = tp3d.get("fixedElevationScale", False)
+    minThickness = tp3d.get("minThickness", 2)
+    xTerrainOffset = tp3d.get("xTerrainOffset", 0)
+    yTerrainOffset = tp3d.get("yTerrainOffset", 0)
+    singleColorMode = tp3d.get("singleColorMode", 0)
+    elementMode = tp3d.elementMode
+    disableCache = tp3d.get("disableCache", 0)
+    num_subdivisions = tp3d.num_subdivisions
+    textFont = tp3d.get("textFont", "")
+    plateThickness = tp3d.get("plateThickness", 5)
+    col_wActive = any(
+        [tp3d.col_wPondsActive, tp3d.col_wSmallRiversActive, tp3d.col_wBigRiversActive]
+    )
+    col_fActive = tp3d.col_fActive
+    col_cActive = tp3d.col_cActive
+    col_grActive = tp3d.col_grActive
+    col_glActive = tp3d.col_glActive
+    el_bActive = tp3d.el_bActive
+    el_sActive = any(
+        [
+            tp3d.el_sBigActive,
+            tp3d.el_sMedActive,
+            tp3d.el_sSmallActive,
+            tp3d.el_sServiceActive,
+            tp3d.el_sFootwaysActive,
+        ]
+    )
+    jMapLat = tp3d.get("jMapLat", 49)
+    jMapLon = tp3d.get("jMapLon", 9)
+    jMapRadius = tp3d.get("jMapRadius", 50)
+    jMapLat1 = tp3d.get("jMapLat1", 48)
+    jMapLon1 = tp3d.get("jMapLon1", 8)
+    jMapLat2 = tp3d.get("jMapLat2", 49)
+    jMapLon2 = tp3d.get("jMapLon2", 9)
 
     opentopoAdress = "https://api.opentopodata.org/v1/"
     if selfHosted != "" and selfHosted is not None and api == "OPENTOPODATA":
@@ -94,6 +105,7 @@ def _rg_validate_inputs(flags):
 
     # --- Input validation ---
     from ..addon_preferences import get_prefs
+
     _ot_api_key = get_prefs().openTopographyApiKey
 
     if elementMode == "PAINT" and el_sActive and tp3d.el_sHeight == 0:
@@ -111,7 +123,7 @@ def _rg_validate_inputs(flags):
         )
         return None
 
-    #if singleColorMode and elementMode == "SEPARATE":
+    # if singleColorMode and elementMode == "SEPARATE":
     #    show_message_box("Single Color Mode and Separate Element Mode cannot be used together. either disable Single-color Mode for the trail or switch to SingleColorMode for elements.")
     #    return None
 
@@ -120,11 +132,13 @@ def _rg_validate_inputs(flags):
             show_message_box("File path is empty! Please select a valid file.")
             return None
         if not os.path.isfile(gpx_file_path):
-            show_message_box(f"Invalid file path: {gpx_file_path}. Please select a valid file.")
+            show_message_box(
+                f"Invalid file path: {gpx_file_path}. Please select a valid file."
+            )
             return None
         gpx_file_path = bpy.path.abspath(gpx_file_path)
         file_extension = os.path.splitext(gpx_file_path)[1].lower()
-        if file_extension != '.gpx' and file_extension != ".igc":
+        if file_extension != ".gpx" and file_extension != ".igc":
             show_message_box("Invalid file format. Please Use a .GPX file")
             return None
     if "gpx_chain" in flags:
@@ -142,7 +156,9 @@ def _rg_validate_inputs(flags):
         show_message_box("Export path is empty! Please select a valid folder.")
         return None
     if not os.path.isdir(exportPath):
-        show_message_box(f"Invalid export Directory: {exportPath}. Please select a valid Directory.")
+        show_message_box(
+            f"Invalid export Directory: {exportPath}. Please select a valid Directory."
+        )
         return None
     try:
         test_path = os.path.join(exportPath, ".tp3d_write_test")
@@ -150,7 +166,9 @@ def _rg_validate_inputs(flags):
             f.write("")
         os.remove(test_path)
     except OSError:
-        show_message_box(f"No write permission for export folder: {exportPath}. Please select a different folder.")
+        show_message_box(
+            f"No write permission for export folder: {exportPath}. Please select a different folder."
+        )
         return None
 
     # --- Default font ---
@@ -177,48 +195,48 @@ def _rg_validate_inputs(flags):
     tp3d.modelname = modelname
 
     return {
-        'start_time':            start_time,
-        'gpx_file_path':         gpx_file_path,
-        'gpx_chain_path':        gpx_chain_path,
-        'exportPath':            exportPath,
-        'shape':                 shape,
-        'name':                  name,
-        'modelname':             modelname,
-        'size':                  size,
-        'scaleElevation':        scaleElevation,
-        'scalemode':             scalemode,
-        'scaleLon1':             scaleLon1,
-        'scaleLat1':             scaleLat1,
-        'scaleLon2':             scaleLon2,
-        'scaleLat2':             scaleLat2,
-        'shapeRotation':         shapeRotation,
-        'overwritePathElevation': overwritePathElev,
-        'api':                   api,
-        'selfHosted':            selfHosted,
-        'fixedElevationScale':   fixedElevScale,
-        'minThickness':          minThickness,
-        'xTerrainOffset':        xTerrainOffset,
-        'yTerrainOffset':        yTerrainOffset,
-        'singleColorMode':       singleColorMode,
-        'elementMode':           elementMode,
-        'disableCache':          disableCache,
-        'num_subdivisions':      num_subdivisions,
-        'textFont':              textFont,
-        'plateThickness':        plateThickness,
-        'col_wActive':           col_wActive,
-        'col_fActive':           col_fActive,
-        'col_cActive':           col_cActive,
-        'col_grActive':          col_grActive,
-        'col_glActive':          col_glActive,
-        'el_bActive':            el_bActive,
-        'el_sActive':            el_sActive,
-        'jMapLat':               jMapLat,
-        'jMapLon':               jMapLon,
-        'jMapRadius':            jMapRadius,
-        'jMapLat1':              jMapLat1,
-        'jMapLon1':              jMapLon1,
-        'jMapLat2':              jMapLat2,
-        'jMapLon2':              jMapLon2,
+        "start_time": start_time,
+        "gpx_file_path": gpx_file_path,
+        "gpx_chain_path": gpx_chain_path,
+        "exportPath": exportPath,
+        "shape": shape,
+        "name": name,
+        "modelname": modelname,
+        "size": size,
+        "scaleElevation": scaleElevation,
+        "scalemode": scalemode,
+        "scaleLon1": scaleLon1,
+        "scaleLat1": scaleLat1,
+        "scaleLon2": scaleLon2,
+        "scaleLat2": scaleLat2,
+        "shapeRotation": shapeRotation,
+        "overwritePathElevation": overwritePathElev,
+        "api": api,
+        "selfHosted": selfHosted,
+        "fixedElevationScale": fixedElevScale,
+        "minThickness": minThickness,
+        "xTerrainOffset": xTerrainOffset,
+        "yTerrainOffset": yTerrainOffset,
+        "singleColorMode": singleColorMode,
+        "elementMode": elementMode,
+        "disableCache": disableCache,
+        "num_subdivisions": num_subdivisions,
+        "textFont": textFont,
+        "plateThickness": plateThickness,
+        "col_wActive": col_wActive,
+        "col_fActive": col_fActive,
+        "col_cActive": col_cActive,
+        "col_grActive": col_grActive,
+        "col_glActive": col_glActive,
+        "el_bActive": el_bActive,
+        "el_sActive": el_sActive,
+        "jMapLat": jMapLat,
+        "jMapLon": jMapLon,
+        "jMapRadius": jMapRadius,
+        "jMapLat1": jMapLat1,
+        "jMapLon1": jMapLon1,
+        "jMapLat2": jMapLat2,
+        "jMapLon2": jMapLon2,
     }
 
 
@@ -238,18 +256,26 @@ def _rg_load_coordinates(flags, props):
 
     setupColors()
 
-    if props['disableCache'] == 1:
+    if props["disableCache"] == 1:
         print("INFO: Cache Disabled (in Advanced Settings)")
-    if not props['overwritePathElevation'] and not props['singleColorMode']:
-        print("INFO: Overwrite Path Elevation disabled: Path Elevation wont be Adjusted to Map elevation")
-    if "gpx_file" in flags or ("gpx_chain" in flags and "append_collection" not in flags):
-        if props['xTerrainOffset'] > 0:
-            print(f"INFO: Map will be moved in X by {props['xTerrainOffset']} (Advanced Settings -> Map -> xTerrainOffset)")
-        if props['yTerrainOffset'] > 0:
-            print(f"INFO: Map will be moved in Y by {props['yTerrainOffset']} (Advanced Settings -> Map -> yTerrainOffset)")
+    if not props["overwritePathElevation"] and not props["singleColorMode"]:
+        print(
+            "INFO: Overwrite Path Elevation disabled: Path Elevation wont be Adjusted to Map elevation"
+        )
+    if "gpx_file" in flags or (
+        "gpx_chain" in flags and "append_collection" not in flags
+    ):
+        if props["xTerrainOffset"] > 0:
+            print(
+                f"INFO: Map will be moved in X by {props['xTerrainOffset']} (Advanced Settings -> Map -> xTerrainOffset)"
+            )
+        if props["yTerrainOffset"] > 0:
+            print(
+                f"INFO: Map will be moved in Y by {props['yTerrainOffset']} (Advanced Settings -> Map -> yTerrainOffset)"
+            )
 
-    if bpy.context.object and bpy.context.object.mode == 'EDIT':
-        bpy.ops.object.mode_set(mode='OBJECT')
+    if bpy.context.object and bpy.context.object.mode == "EDIT":
+        bpy.ops.object.mode_set(mode="OBJECT")
     bpy.context.scene.tool_settings.use_mesh_automerge = False
 
     coordinates2 = []
@@ -259,26 +285,38 @@ def _rg_load_coordinates(flags, props):
         if "gpx_file" in flags and "trail_map" not in flags:
             separate_paths = read_gpx_file()
         if "gpx_chain" in flags:
-            separate_paths_by_file = read_gpx_directory(props['gpx_chain_path'])
-            separate_paths = [seg for file_segs in separate_paths_by_file for seg in file_segs]
+            separate_paths_by_file = read_gpx_directory(props["gpx_chain_path"])
+            separate_paths = [
+                seg for file_segs in separate_paths_by_file for seg in file_segs
+            ]
         if "jmap" in flags:
-            nlat, nlon = move_coordinates(props['jMapLat'], props['jMapLon'], props['jMapRadius'], "e")
+            nlat, nlon = move_coordinates(
+                props["jMapLat"], props["jMapLon"], props["jMapRadius"], "e"
+            )
             separate_paths.append([(nlat, nlon, 0, 0)])
-            nlat, nlon = move_coordinates(props['jMapLat'], props['jMapLon'], props['jMapRadius'], "s")
+            nlat, nlon = move_coordinates(
+                props["jMapLat"], props["jMapLon"], props["jMapRadius"], "s"
+            )
             separate_paths.append([(nlat, nlon, 0, 0)])
-            nlat, nlon = move_coordinates(props['jMapLat'], props['jMapLon'], props['jMapRadius'], "w")
+            nlat, nlon = move_coordinates(
+                props["jMapLat"], props["jMapLon"], props["jMapRadius"], "w"
+            )
             separate_paths.append([(nlat, nlon, 0, 0)])
-            nlat, nlon = move_coordinates(props['jMapLat'], props['jMapLon'], props['jMapRadius'], "n")
+            nlat, nlon = move_coordinates(
+                props["jMapLat"], props["jMapLon"], props["jMapRadius"], "n"
+            )
             separate_paths.append([(nlat, nlon, 0, 0)])
             if "trail_map" in flags:
                 tempcoordinates = read_gpx_file()
                 coordinates2 = [item for sublist in tempcoordinates for item in sublist]
         if "jmap_bbox" in flags:
-            separate_paths.append([(props['jMapLat1'], props['jMapLon1'], 0, 0)])
-            separate_paths.append([(props['jMapLat2'], props['jMapLon2'], 0, 0)])
+            separate_paths.append([(props["jMapLat1"], props["jMapLon1"], 0, 0)])
+            separate_paths.append([(props["jMapLat2"], props["jMapLon2"], 0, 0)])
     except Exception:  # noqa: BLE001 — GPX/IGC parsing can raise many unpredictable types
-        #show_message_box(f"Something went Wrong reading the GPX. Type {type}")
-        _progress.WarningsOverlay.add_warning("Something went Wrong reading the GPX file", "error")
+        # show_message_box(f"Something went Wrong reading the GPX. Type {type}")
+        _progress.WarningsOverlay.add_warning(
+            "Something went Wrong reading the GPX file", "error"
+        )
         return None
 
     coordinates = [item for sublist in separate_paths for item in sublist]
@@ -301,24 +339,24 @@ def _rg_compute_trail_stats(flags, coordinates):
     average_speed = 0
     trail_date = ""
     if "stats" in flags:
-        total_length    = calculate_total_length(coordinates)
+        total_length = calculate_total_length(coordinates)
         total_elevation = calculate_total_elevation(coordinates)
-        total_time      = calculate_total_time(coordinates)
-        trail_date      = calculate_date(coordinates)
+        total_time = calculate_total_time(coordinates)
+        trail_date = calculate_date(coordinates)
         if total_time is not None and total_time > 0:
             average_speed = total_length / total_time
-            
+
     if total_time is not None and total_time > 0:
         hours = int(total_time)
         minutes = int((total_time - hours) * 60)
         time_str = f"{hours}h {minutes}m"
         tp3d = bpy.context.scene.tp3d
-        tp3d.sTime_str      = time_str
-        tp3d.total_length   = total_length
+        tp3d.sTime_str = time_str
+        tp3d.total_length = total_length
         tp3d.total_elevation = total_elevation
-        tp3d.total_time     = total_time
-        tp3d.average_speed  = average_speed
-        tp3d.trail_date     = trail_date
+        tp3d.total_time = total_time
+        tp3d.average_speed = average_speed
+        tp3d.trail_date = trail_date
 
 
 def _rg_create_map_object(flags, props, modelname, centerx, centery):
@@ -347,13 +385,13 @@ def _rg_create_map_object(flags, props, modelname, centerx, centery):
         transform_MapObject,  # deferred to avoid circular import at load time
     )
 
-    shape          = props['shape']
-    size           = props['size']
-    num_subdivisions = props['num_subdivisions']
-    shapeRotation  = props['shapeRotation']
-    scalemode      = props['scalemode']
-    xTerrainOffset = props['xTerrainOffset']
-    yTerrainOffset = props['yTerrainOffset']
+    shape = props["shape"]
+    size = props["size"]
+    num_subdivisions = props["num_subdivisions"]
+    shapeRotation = props["shapeRotation"]
+    scalemode = props["scalemode"]
+    xTerrainOffset = props["xTerrainOffset"]
+    yTerrainOffset = props["yTerrainOffset"]
 
     MapObject = None
 
@@ -363,7 +401,13 @@ def _rg_create_map_object(flags, props, modelname, centerx, centery):
         if shape in {"SQUARE", "SQUARE SHELL"}:
             rHeight = bpy.context.scene.tp3d.rectangleHeight
             MapObject = create_rectangle(size, rHeight, num_subdivisions, modelname)
-        elif shape in {"HEXAGON", "HEXAGON SHELL", "HEXAGON INNER TEXT", "HEXAGON OUTER TEXT", "HEXAGON FRONT TEXT"}:
+        elif shape in {
+            "HEXAGON",
+            "HEXAGON SHELL",
+            "HEXAGON INNER TEXT",
+            "HEXAGON OUTER TEXT",
+            "HEXAGON FRONT TEXT",
+        }:
             MapObject = create_hexagon(size / 2, num_subdivisions, modelname)
         elif shape == "HEART":
             MapObject = create_heart(size / 2, num_subdivisions, modelname)
@@ -386,11 +430,11 @@ def _rg_create_map_object(flags, props, modelname, centerx, centery):
             )
         else:
             MapObject = create_hexagon(size / 2, num_subdivisions, modelname)
-        print(f"[map_object] shape created in {time.time()-_t_shape:.3f}s")
+        print(f"[map_object] shape created in {time.time() - _t_shape:.3f}s")
     if "append_collection" in flags:
         appendCollection()
         MapObject = bpy.context.view_layer.objects.active
-        MapObject.location = Vector((0,0,0))
+        MapObject.location = Vector((0, 0, 0))
     if "use_active_object" in flags:
         MapObject = bpy.context.view_layer.objects.active
         return MapObject
@@ -405,7 +449,12 @@ def _rg_create_map_object(flags, props, modelname, centerx, centery):
     targetx = centerx + xTerrainOffset
     targety = centery + yTerrainOffset
     if scalemode == "COORDINATES" and "chain_coords_center" in flags:
-        midLat, midLon = midpoint_spherical(props['scaleLat1'], props['scaleLon1'], props['scaleLat2'], props['scaleLon2'])
+        midLat, midLon = midpoint_spherical(
+            props["scaleLat1"],
+            props["scaleLon1"],
+            props["scaleLat2"],
+            props["scaleLon2"],
+        )
         targetx, targety, _el = convert_to_blender_coordinates(midLat, midLon, 0, 0)
 
     transform_MapObject(MapObject, targetx, targety)
@@ -418,13 +467,51 @@ def _rg_create_map_object(flags, props, modelname, centerx, centery):
 #   (result_key, active_flag_attr, max_size_const, phase_label, fetch_message)
 # ---------------------------------------------------------------------------
 COLORING_ELEMENTS = [
-    ('forest',  'col_fActive',   const.FOREST_MAXSIZE,  "Forest",  "Fetching forest data\u2026"),
-    ('water',   lambda t: t.col_wPondsActive or t.col_wSmallRiversActive or t.col_wBigRiversActive, const.WATER_MAXSIZE, "Water", "Fetching water data\u2026"),
-    ('scree',   'col_scrActive', const.SCREE_MAXSIZE,   "Scree",   "Fetching scree data\u2026"),
-    ('city',       'col_cActive',   const.CITY_MAXSIZE,       "City",       "Fetching city data\u2026"),
-    ('greenspace', 'col_grActive', const.GREENSPACE_MAXSIZE, "Greenspace", "Fetching greenspace data\u2026"),
-    ('farmland',   'col_faActive', const.FARMLAND_MAXSIZE,   "Farmland",   "Fetching farmland data\u2026"),
-    ('glacier',  'col_glActive',  const.GLACIER_MAXSIZE,  "Glacier",  "Fetching glacier data\u2026"),
+    (
+        "forest",
+        "col_fActive",
+        const.FOREST_MAXSIZE,
+        "Forest",
+        "Fetching forest data\u2026",
+    ),
+    (
+        "water",
+        lambda t: (
+            t.col_wPondsActive or t.col_wSmallRiversActive or t.col_wBigRiversActive
+        ),
+        const.WATER_MAXSIZE,
+        "Water",
+        "Fetching water data\u2026",
+    ),
+    (
+        "scree",
+        "col_scrActive",
+        const.SCREE_MAXSIZE,
+        "Scree",
+        "Fetching scree data\u2026",
+    ),
+    ("city", "col_cActive", const.CITY_MAXSIZE, "City", "Fetching city data\u2026"),
+    (
+        "greenspace",
+        "col_grActive",
+        const.GREENSPACE_MAXSIZE,
+        "Greenspace",
+        "Fetching greenspace data\u2026",
+    ),
+    (
+        "farmland",
+        "col_faActive",
+        const.FARMLAND_MAXSIZE,
+        "Farmland",
+        "Fetching farmland data\u2026",
+    ),
+    (
+        "glacier",
+        "col_glActive",
+        const.GLACIER_MAXSIZE,
+        "Glacier",
+        "Fetching glacier data\u2026",
+    ),
 ]
 
 
@@ -442,36 +529,40 @@ def _rg_start_osm_prefetch(tp3d, map_km):
         _fetch_all_kinds_parallel,  # deferred to avoid circular import at load time
     )
 
-    _lat_span  = tp3d.maxLat - tp3d.minLat
-    _lon_span  = tp3d.maxLon - tp3d.minLon
+    _lat_span = tp3d.maxLat - tp3d.minLat
+    _lon_span = tp3d.maxLon - tp3d.minLon
     if _lat_span <= 0 or _lon_span <= 0:
         return None, {}
-    _lat_step  = min(2.0, _lat_span)
-    _lon_step  = min(2.0, _lon_span)
+    _lat_step = min(2.0, _lat_span)
+    _lon_step = min(2.0, _lon_span)
     _tile_lats = math.ceil(_lat_span / _lat_step)
     _tile_lons = math.ceil(_lon_span / _lon_step)
     _tile_tasks = [
-        (tp3d.minLat + k * _lat_step,
-         tp3d.minLon + l * _lon_step,
-         tp3d.minLat + k * _lat_step + _lat_step,
-         tp3d.minLon + l * _lon_step + _lon_step)
+        (
+            tp3d.minLat + k * _lat_step,
+            tp3d.minLon + l * _lon_step,
+            tp3d.minLat + k * _lat_step + _lat_step,
+            tp3d.minLon + l * _lon_step + _lon_step,
+        )
         for k in range(_tile_lats)
         for l in range(_tile_lons)
     ]
-    _semaphore = threading.Semaphore(1)  # max 1 concurrent live Overpass request (avoid 429s on the public instance)
+    _semaphore = threading.Semaphore(
+        1
+    )  # max 1 concurrent live Overpass request (avoid 429s on the public instance)
     _fetch_settings = OsmFetchSettings(
-        disable_cache       = tp3d.disableCache,
-        api_retries         = tp3d.apiRetries,
-        mapsize             = tp3d.sMapInKm,
-        road_big            = bool(tp3d.el_sBigActive),
-        road_med            = bool(tp3d.el_sMedActive),
-        road_small          = bool(tp3d.el_sSmallActive),
-        water_ponds         = bool(tp3d.col_wPondsActive),
-        water_small_rivers  = bool(tp3d.col_wSmallRiversActive),
-        water_big_rivers    = bool(tp3d.col_wBigRiversActive),
-        exclude_alleys      = bool(tp3d.el_sExcludeAlleys),
-        road_footways       = bool(tp3d.el_sFootwaysActive),
-        road_service        = bool(tp3d.el_sServiceActive),
+        disable_cache=tp3d.disableCache,
+        api_retries=tp3d.apiRetries,
+        mapsize=tp3d.sMapInKm,
+        road_big=bool(tp3d.el_sBigActive),
+        road_med=bool(tp3d.el_sMedActive),
+        road_small=bool(tp3d.el_sSmallActive),
+        water_ponds=bool(tp3d.col_wPondsActive),
+        water_small_rivers=bool(tp3d.col_wSmallRiversActive),
+        water_big_rivers=bool(tp3d.col_wBigRiversActive),
+        exclude_alleys=bool(tp3d.el_sExcludeAlleys),
+        road_footways=bool(tp3d.el_sFootwaysActive),
+        road_service=bool(tp3d.el_sServiceActive),
     )
     _active_kind_tasks = [
         (key.upper(), _tile_tasks)
@@ -481,7 +572,18 @@ def _rg_start_osm_prefetch(tp3d, map_km):
     ]
     if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE:
         _active_kind_tasks.append(("BUILDINGS", _tile_tasks))
-    if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive]) and map_km <= const.ROADS_MAXSIZE:
+    if (
+        any(
+            [
+                tp3d.el_sBigActive,
+                tp3d.el_sMedActive,
+                tp3d.el_sSmallActive,
+                tp3d.el_sServiceActive,
+                tp3d.el_sFootwaysActive,
+            ]
+        )
+        and map_km <= const.ROADS_MAXSIZE
+    ):
         _active_kind_tasks.append(("STREETS", _tile_tasks))
     if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE:
         _active_kind_tasks.append(("COASTLINE", _tile_tasks))
@@ -491,8 +593,9 @@ def _rg_start_osm_prefetch(tp3d, map_km):
     result = {}
 
     def _run():
-        fetched = _fetch_all_kinds_parallel(_active_kind_tasks, _semaphore,
-                                            settings=_fetch_settings)
+        fetched = _fetch_all_kinds_parallel(
+            _active_kind_tasks, _semaphore, settings=_fetch_settings
+        )
         result.update(fetched)
 
     t = threading.Thread(target=_run, daemon=True, name="osm-prefetch")
@@ -500,7 +603,16 @@ def _rg_start_osm_prefetch(tp3d, map_km):
     return t, result
 
 
-def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, phase_end=0.95, prefetched_osm=None, tile_label=None, outline=None):
+def _rg_build_terrain_elements(
+    obj,
+    scaleHor,
+    curveObj=None,
+    phase_start=0.83,
+    phase_end=0.95,
+    prefetched_osm=None,
+    tile_label=None,
+    outline=None,
+):
     """Create water, forest, city, glacier, building and road overlay meshes.
 
     Reads all flags directly from bpy.context.scene.tp3d.
@@ -527,9 +639,9 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
         createOcean,
     )
 
-    tp3d   = bpy.context.scene.tp3d
+    tp3d = bpy.context.scene.tp3d
     map_km = tp3d["sMapInKm"]
-    _ov    = _progress.ProgressOverlay.get()
+    _ov = _progress.ProgressOverlay.get()
 
     # --------------------------------------------------
     # Standard coloring elements (all share the same pattern).
@@ -537,23 +649,87 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     #   (result_key, active_flag_attr, max_size_const, phase_label, fetch_message)
     # --------------------------------------------------
     COLORING_ELEMENTS = [
-        ('forest',  'col_fActive',   const.FOREST_MAXSIZE,  "Forest",  "Fetching forest data…"),
-        ('water',   lambda t: t.col_wPondsActive or t.col_wSmallRiversActive or t.col_wBigRiversActive, const.WATER_MAXSIZE, "Water", "Fetching water data…"),
-        ('scree',   'col_scrActive', const.SCREE_MAXSIZE,   "Scree",   "Fetching scree data…"),
-        ('city',       'col_cActive',   const.CITY_MAXSIZE,       "City",       "Fetching city data…"),
-        ('greenspace', 'col_grActive', const.GREENSPACE_MAXSIZE, "Greenspace", "Fetching greenspace data…"),
-        ('farmland',   'col_faActive', const.FARMLAND_MAXSIZE,   "Farmland",   "Fetching farmland data…"),
-        ('glacier',  'col_glActive',  const.GLACIER_MAXSIZE,  "Glacier",  "Fetching glacier data…"),
+        (
+            "forest",
+            "col_fActive",
+            const.FOREST_MAXSIZE,
+            "Forest",
+            "Fetching forest data…",
+        ),
+        (
+            "water",
+            lambda t: (
+                t.col_wPondsActive or t.col_wSmallRiversActive or t.col_wBigRiversActive
+            ),
+            const.WATER_MAXSIZE,
+            "Water",
+            "Fetching water data…",
+        ),
+        (
+            "scree",
+            "col_scrActive",
+            const.SCREE_MAXSIZE,
+            "Scree",
+            "Fetching scree data…",
+        ),
+        ("city", "col_cActive", const.CITY_MAXSIZE, "City", "Fetching city data…"),
+        (
+            "greenspace",
+            "col_grActive",
+            const.GREENSPACE_MAXSIZE,
+            "Greenspace",
+            "Fetching greenspace data…",
+        ),
+        (
+            "farmland",
+            "col_faActive",
+            const.FARMLAND_MAXSIZE,
+            "Farmland",
+            "Fetching farmland data…",
+        ),
+        (
+            "glacier",
+            "col_glActive",
+            const.GLACIER_MAXSIZE,
+            "Glacier",
+            "Fetching glacier data…",
+        ),
     ]
 
     # Count total active elements (coloring + optional ocean/buildings/roads) for progress spread
     _ELEM_PHASE_START = phase_start
-    _ELEM_PHASE_END   = phase_end
+    _ELEM_PHASE_END = phase_end
     _active_elem_flags = (
-        [flag for _, flag, size, _, _ in COLORING_ELEMENTS if (flag(tp3d) if callable(flag) else getattr(tp3d, flag) == 1) and map_km <= size]
-        + (['_ocean']    if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE else [])
-        + (['_buildings'] if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE else [])
-        + (['_roads']    if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive]) and map_km <= const.ROADS_MAXSIZE else [])
+        [
+            flag
+            for _, flag, size, _, _ in COLORING_ELEMENTS
+            if (flag(tp3d) if callable(flag) else getattr(tp3d, flag) == 1)
+            and map_km <= size
+        ]
+        + (
+            ["_ocean"]
+            if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE
+            else []
+        )
+        + (
+            ["_buildings"]
+            if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE
+            else []
+        )
+        + (
+            ["_roads"]
+            if any(
+                [
+                    tp3d.el_sBigActive,
+                    tp3d.el_sMedActive,
+                    tp3d.el_sSmallActive,
+                    tp3d.el_sServiceActive,
+                    tp3d.el_sFootwaysActive,
+                ]
+            )
+            and map_km <= const.ROADS_MAXSIZE
+            else []
+        )
     )
     _total_active = max(len(_active_elem_flags), 1)
     _elem_step = (_ELEM_PHASE_END - _ELEM_PHASE_START) / _total_active
@@ -567,9 +743,10 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
         _elem_idx[0] += 1
 
     _water_feat_active = (
-        (tp3d.col_wPondsActive or tp3d.col_wSmallRiversActive or tp3d.col_wBigRiversActive)
-        and map_km <= const.WATER_MAXSIZE
-    )
+        tp3d.col_wPondsActive
+        or tp3d.col_wSmallRiversActive
+        or tp3d.col_wBigRiversActive
+    ) and map_km <= const.WATER_MAXSIZE
     _ocean_active = tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE
     _water_ocean_combined = _water_feat_active and _ocean_active
 
@@ -583,36 +760,45 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
         _tile_lats = math.ceil((tp3d.maxLat - tp3d.minLat) / _lat_step)
         _tile_lons = math.ceil((tp3d.maxLon - tp3d.minLon) / _lon_step)
         _tile_tasks = [
-            (tp3d.minLat + k * _lat_step,
-             tp3d.minLon + l * _lon_step,
-             tp3d.minLat + k * _lat_step + _lat_step,
-             tp3d.minLon + l * _lon_step + _lon_step)
+            (
+                tp3d.minLat + k * _lat_step,
+                tp3d.minLon + l * _lon_step,
+                tp3d.minLat + k * _lat_step + _lat_step,
+                tp3d.minLon + l * _lon_step + _lon_step,
+            )
             for k in range(_tile_lats)
             for l in range(_tile_lons)
         ]
-        _overpass_semaphore = threading.Semaphore(1)  # max 1 concurrent live Overpass request (avoid 429s on the public instance)
+        _overpass_semaphore = threading.Semaphore(
+            1
+        )  # max 1 concurrent live Overpass request (avoid 429s on the public instance)
         _fetch_settings = OsmFetchSettings(
-            disable_cache       = tp3d.disableCache,
-            api_retries         = tp3d.apiRetries,
-            mapsize             = tp3d.sMapInKm,
-            road_big            = bool(tp3d.el_sBigActive),
-            road_med            = bool(tp3d.el_sMedActive),
-            road_small          = bool(tp3d.el_sSmallActive),
-            water_ponds         = bool(tp3d.col_wPondsActive),
-            water_small_rivers  = bool(tp3d.col_wSmallRiversActive),
-            water_big_rivers    = bool(tp3d.col_wBigRiversActive),
-            exclude_alleys      = bool(tp3d.el_sExcludeAlleys),
-            road_footways       = bool(tp3d.el_sFootwaysActive),
-            road_service        = bool(tp3d.el_sServiceActive),
+            disable_cache=tp3d.disableCache,
+            api_retries=tp3d.apiRetries,
+            mapsize=tp3d.sMapInKm,
+            road_big=bool(tp3d.el_sBigActive),
+            road_med=bool(tp3d.el_sMedActive),
+            road_small=bool(tp3d.el_sSmallActive),
+            water_ponds=bool(tp3d.col_wPondsActive),
+            water_small_rivers=bool(tp3d.col_wSmallRiversActive),
+            water_big_rivers=bool(tp3d.col_wBigRiversActive),
+            exclude_alleys=bool(tp3d.el_sExcludeAlleys),
+            road_footways=bool(tp3d.el_sFootwaysActive),
+            road_service=bool(tp3d.el_sServiceActive),
         )
         _active_kind_tasks = [
             (key.upper(), _tile_tasks)
             for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS
-            if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1)
+            if (
+                flag_attr(tp3d)
+                if callable(flag_attr)
+                else getattr(tp3d, flag_attr) == 1
+            )
             and map_km <= max_size
         ]
-        _all_prefetched = _fetch_all_kinds_parallel(_active_kind_tasks, _overpass_semaphore,
-                                                    settings=_fetch_settings)
+        _all_prefetched = _fetch_all_kinds_parallel(
+            _active_kind_tasks, _overpass_semaphore, settings=_fetch_settings
+        )
     else:
         _all_prefetched = prefetched_osm
 
@@ -622,27 +808,60 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     # the mesh operations for that kind are complete.
     if _ov.active:
         for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS:
-            if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1) and map_km <= max_size and _all_prefetched.get(key.upper()):
+            if (
+                (
+                    flag_attr(tp3d)
+                    if callable(flag_attr)
+                    else getattr(tp3d, flag_attr) == 1
+                )
+                and map_km <= max_size
+                and _all_prefetched.get(key.upper())
+            ):
                 _ov.set_fetch_ready(key)
         # Buildings, roads, and ocean are pre-fetched in the same batch but aren't
         # in COLORING_ELEMENTS, so mark them ready here too.
-        if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE and _all_prefetched.get('BUILDINGS'):
-            _ov.set_fetch_ready('buildings')
-        if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive]) and map_km <= const.ROADS_MAXSIZE and _all_prefetched.get('STREETS'):
-            _ov.set_fetch_ready('roads')
-        if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE and _all_prefetched.get('COASTLINE'):
-            _ov.set_fetch_ready('water')
+        if (
+            tp3d.el_bActive == 1
+            and map_km <= const.BUILDINGS_MAXSIZE
+            and _all_prefetched.get("BUILDINGS")
+        ):
+            _ov.set_fetch_ready("buildings")
+        if (
+            any(
+                [
+                    tp3d.el_sBigActive,
+                    tp3d.el_sMedActive,
+                    tp3d.el_sSmallActive,
+                    tp3d.el_sServiceActive,
+                    tp3d.el_sFootwaysActive,
+                ]
+            )
+            and map_km <= const.ROADS_MAXSIZE
+            and _all_prefetched.get("STREETS")
+        ):
+            _ov.set_fetch_ready("roads")
+        if (
+            tp3d.el_oActive == 1
+            and map_km <= const.COASTLINE_MAXSIZE
+            and _all_prefetched.get("COASTLINE")
+        ):
+            _ov.set_fetch_ready("water")
 
     terrain = {}
-    terrain['_osm_polygons'] = {}  # populated only in CREATE_TEXTURE mode
+    terrain["_osm_polygons"] = {}  # populated only in CREATE_TEXTURE mode
     _water_result = None  # raw coloring_main() result for 'water' -- replayed below if ocean finds nothing
     for key, flag_attr, max_size, phase, msg in COLORING_ELEMENTS:
         terrain[key] = None
-        if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1):
+        if flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1:
             if map_km <= max_size:
                 _advance_elem_progress(phase, msg)
-                _result = coloring_main(obj, key.upper(), prefetched_tiles=_all_prefetched.get(key.upper(), {}), outline=outline)
-                if key == 'water':
+                _result = coloring_main(
+                    obj,
+                    key.upper(),
+                    prefetched_tiles=_all_prefetched.get(key.upper(), {}),
+                    outline=outline,
+                )
+                if key == "water":
                     _water_result = _result
                 if _result is _COLORING_EMPTY:
                     terrain[key] = None
@@ -651,10 +870,10 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                     terrain[key] = None
                     _ov.set_fetch_filtered(key)
                 elif _result is _COLORING_PAINTED:
-                    terrain[key] = None          # object was deleted after painting
+                    terrain[key] = None  # object was deleted after painting
                     _ov.set_fetch_done(key, success=True)
                 elif isinstance(_result, _ColoringTextureResult):
-                    terrain['_osm_polygons'][_result.kind] = _result.polygon
+                    terrain["_osm_polygons"][_result.kind] = _result.polygon
                     terrain[key] = None
                     _ov.set_fetch_done(key, success=True)
                 elif _result is None:
@@ -663,68 +882,84 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                 else:
                     terrain[key] = _result
                     _ov.set_fetch_done(key, success=True)
-                if key == 'water' and _water_ocean_combined:
+                if key == "water" and _water_ocean_combined:
                     # Ocean will complete this chip; hold at 50%
-                    _ov.set_fetch_progress('water', 0.5)
+                    _ov.set_fetch_progress("water", 0.5)
             else:
-                print(f"INFO: MAP IS TOO BIG FOR {key.upper()} (< {max_size} km required)")
-                _progress.WarningsOverlay.add_warning(f"Map too big for {phase} layer.", "warn")
-
+                print(
+                    f"INFO: MAP IS TOO BIG FOR {key.upper()} (< {max_size} km required)"
+                )
+                _progress.WarningsOverlay.add_warning(
+                    f"Map too big for {phase} layer.", "warn"
+                )
 
     # --------------------------------------------------
     # Ocean — unique creation logic.
     # --------------------------------------------------
-    terrain['ocean'] = None
+    terrain["ocean"] = None
     if tp3d.el_oActive == 1:
         if map_km <= const.COASTLINE_MAXSIZE:
             _advance_elem_progress("Ocean", "Creating ocean…")
-            _ov.set_fetch_progress('water', 0.5 if _water_feat_active else 0.0)
+            _ov.set_fetch_progress("water", 0.5 if _water_feat_active else 0.0)
             print("Create Ocean")
             _coastline_tiles = _all_prefetched.get("COASTLINE", {})
-            terrain['ocean'] = createOcean(_coastline_tiles, scaleHor, obj)
-            if isinstance(terrain['ocean'], _ColoringTextureResult):
-                terrain['_osm_polygons'][terrain['ocean'].kind] = terrain['ocean'].polygon
-                terrain['ocean'] = None
-                _ov.set_fetch_done('water', success=True)
-            elif terrain['ocean'] is not None:
-                _ov.set_fetch_done('water', success=True)
+            terrain["ocean"] = createOcean(_coastline_tiles, scaleHor, obj)
+            if isinstance(terrain["ocean"], _ColoringTextureResult):
+                terrain["_osm_polygons"][terrain["ocean"].kind] = terrain[
+                    "ocean"
+                ].polygon
+                terrain["ocean"] = None
+                _ov.set_fetch_done("water", success=True)
+            elif terrain["ocean"] is not None:
+                _ov.set_fetch_done("water", success=True)
             elif _water_ocean_combined:
                 # No coastline nearby (or it failed to build) -- that's normal for
                 # an inland map, not a failure. Fall back to the water-features
                 # chip's own result instead of marking the combined chip red just
                 # because there's no ocean in this area.
                 if _water_result is _COLORING_EMPTY:
-                    _ov.set_fetch_empty('water')
+                    _ov.set_fetch_empty("water")
                 elif _water_result is _COLORING_FILTERED:
-                    _ov.set_fetch_filtered('water')
+                    _ov.set_fetch_filtered("water")
                 else:
-                    _ov.set_fetch_done('water', success=_water_result is not None)
+                    _ov.set_fetch_done("water", success=_water_result is not None)
             else:
-                _ov.set_fetch_done('water', success=False)
+                _ov.set_fetch_done("water", success=False)
         else:
-            print(f"INFO: MAP IS TOO BIG FOR COASTLINE (< {const.COASTLINE_MAXSIZE}km required)")
-            _progress.WarningsOverlay.add_warning("Map too big for Ocean/Coastline layer.", "warn")
+            print(
+                f"INFO: MAP IS TOO BIG FOR COASTLINE (< {const.COASTLINE_MAXSIZE}km required)"
+            )
+            _progress.WarningsOverlay.add_warning(
+                "Map too big for Ocean/Coastline layer.", "warn"
+            )
 
     print("Base elements Created")
-
 
     # --------------------------------------------------
     # Warn if buildings or roads are used together with any singleColorMode.
     # --------------------------------------------------
-    _roads_active = any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive])
+    _roads_active = any(
+        [
+            tp3d.el_sBigActive,
+            tp3d.el_sMedActive,
+            tp3d.el_sSmallActive,
+            tp3d.el_sServiceActive,
+            tp3d.el_sFootwaysActive,
+        ]
+    )
     _any_scm = tp3d.singleColorMode or "SINGLECOLORMODE" in tp3d.elementMode
-    #if (tp3d.el_bActive == 1 or _roads_active) and _any_scm:
+    # if (tp3d.el_bActive == 1 or _roads_active) and _any_scm:
     #    _progress.WarningsOverlay.add_warning("3D Elements (Buildings/Roads) are not compatible with SingleColorMode", "warn")
 
     # --------------------------------------------------
     # Buildings — own creation function + intersection post-processing.
     # --------------------------------------------------
-    terrain['buildings'] = None
+    terrain["buildings"] = None
     if tp3d.el_bActive == 1:
         if map_km <= const.BUILDINGS_MAXSIZE:
             _advance_elem_progress("Buildings", "Fetching building data…")
-            _ov.set_fetch_progress('buildings', 0.0)
-            _ov.set_fetch_ready('buildings')
+            _ov.set_fetch_progress("buildings", 0.0)
+            _ov.set_fetch_ready("buildings")
             buildings = create_buildings(obj, 10, scaleHor)
 
             if buildings is not None:
@@ -732,9 +967,9 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                 # create_buildings, so no 3D boolean clip is needed here.
                 set_origin_to_3d_cursor(buildings)
                 buildings.name = obj.name + "_" + "BUILDINGS"
-                terrain['buildings'] = buildings
+                terrain["buildings"] = buildings
                 writeMetadata(buildings, type="BUILDINGS")
-            _ov.set_fetch_done('buildings', success=buildings is not None)
+            _ov.set_fetch_done("buildings", success=buildings is not None)
         else:
             print("INFO: MAP IS TOO BIG FOR BUILDINGS (< 10Km Map size Required)")
             _progress.WarningsOverlay.add_warning("Map too big for Buildings.", "warn")
@@ -742,20 +977,33 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
     # --------------------------------------------------
     # Roads — own creation function + clipping + material post-processing.
     # --------------------------------------------------
-    terrain['roads'] = None
-    if any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive]):
+    terrain["roads"] = None
+    if any(
+        [
+            tp3d.el_sBigActive,
+            tp3d.el_sMedActive,
+            tp3d.el_sSmallActive,
+            tp3d.el_sServiceActive,
+            tp3d.el_sFootwaysActive,
+        ]
+    ):
         if map_km <= const.ROADS_MAXSIZE:
             _advance_elem_progress("Roads", "Fetching road data…")
-            _ov.set_fetch_progress('roads', 0.0)
-            _ov.set_fetch_ready('roads')
+            _ov.set_fetch_progress("roads", 0.0)
+            _ov.set_fetch_ready("roads")
             # PAINT mode: roads is fused visually onto a single-piece terrain,
             # never printed standalone -- a thin raised strip is fine. Every
             # other mode (SEPARATE / SINGLECOLORMODE*) needs roads to stand on
             # its own as a base-to-top piece, like the coloring elements and
             # the SCM trail groove insert, so it can be printed/assembled
             # separately instead of being a sliver with nothing to sit on.
-            result = create_roads(obj, tp3d.el_sHeight, scaleHor, map_km,
-                                   full_depth=(tp3d.elementMode not in ("PAINT", "CREATE_TEXTURE")))
+            result = create_roads(
+                obj,
+                tp3d.el_sHeight,
+                scaleHor,
+                map_km,
+                full_depth=(tp3d.elementMode not in ("PAINT", "CREATE_TEXTURE")),
+            )
             if result is not None:
                 roads, roads_polygon = result
                 # Cache the terrain's own triangulated grid + the road footprint
@@ -764,14 +1012,34 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                 # cheap boolean cutter) needs the original height data under
                 # the road footprint, which a cut would otherwise destroy.
                 from .mesh_ops import recalculateNormals as _rg_recalc_normals
-                from .osm.roads import _triangulated_terrain_faces
+                from .osm.roads import (
+                    _triangulated_terrain_faces,
+                    compute_full_depth_bottom_z,
+                )
+
                 _rg_recalc_normals(obj)
-                terrain['roads_polygon'] = roads_polygon
-                terrain['_terrain_tris_cache'] = _triangulated_terrain_faces(obj)
+                terrain["roads_polygon"] = roads_polygon
+                terrain["_terrain_tris_cache"] = _triangulated_terrain_faces(obj)
                 global _puzzle_roads_data
-                _puzzle_roads_data = (roads_polygon, terrain['_terrain_tris_cache'], tp3d.el_sHeight)
-                if tp3d.elementMode == "CREATE_TEXTURE" and roads_polygon is not None and tp3d.tex_include_roads:
-                    terrain['_osm_polygons']['ROADS'] = roads_polygon
+                _puzzle_roads_data = (
+                    roads_polygon,
+                    terrain["_terrain_tris_cache"],
+                    tp3d.el_sHeight,
+                )
+                terrain["roads_bottom_z"] = None
+                if (
+                    tp3d.elementMode not in ("PAINT", "CREATE_TEXTURE")
+                    and roads_polygon is not None
+                ):
+                    terrain["roads_bottom_z"] = compute_full_depth_bottom_z(
+                        terrain["_terrain_tris_cache"], roads_polygon, tp3d.el_sHeight
+                    )
+                if (
+                    tp3d.elementMode == "CREATE_TEXTURE"
+                    and roads_polygon is not None
+                    and tp3d.tex_include_roads
+                ):
+                    terrain["_osm_polygons"]["ROADS"] = roads_polygon
                 if tp3d.elementMode == "CREATE_TEXTURE" and tp3d.tex_include_roads:
                     # tex_include_roads on — polygon stored above; discard the mesh.
                     bpy.data.objects.remove(roads, do_unlink=True)
@@ -781,14 +1049,14 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                     set_origin_to_3d_cursor(roads)
                     roads.data.materials.clear()
                     roads.data.materials.append(bpy.data.materials.get("BLACK"))
-                    terrain['roads'] = roads
+                    terrain["roads"] = roads
                     roads.name = obj.name + "_" + "ROADS"
                     writeMetadata(roads, type="ROADS")
-                _ov.set_fetch_done('roads', success=True)
+                _ov.set_fetch_done("roads", success=True)
             else:
                 print("INFO: No road data returned, skipping road processing.")
                 _progress.WarningsOverlay.add_warning("No road data returned.", "warn")
-                _ov.set_fetch_done('roads', success=False)
+                _ov.set_fetch_done("roads", success=False)
         else:
             print("INFO: MAP IS TOO BIG FOR STREETS (< 100Km Map size Required)")
             _progress.WarningsOverlay.add_warning("Map too big for Roads.", "warn")
@@ -820,10 +1088,21 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
 
     # Priority order: index 0 = highest priority (subtracted from everything below it).
     # Add new terrain keys here to include them automatically.
-    TERRAIN_PRIORITY_ORDER = ['water', 'forest', 'scree', 'city', 'greenspace', 'farmland', 'glacier', 'ocean']
- 
+    TERRAIN_PRIORITY_ORDER = [
+        "water",
+        "forest",
+        "scree",
+        "city",
+        "greenspace",
+        "farmland",
+        "glacier",
+        "ocean",
+    ]
 
-    _effective_scm_trail = props['singleColorMode'] or props['elementMode'] in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH")
+    _effective_scm_trail = props["singleColorMode"] or props["elementMode"] in (
+        "SINGLECOLORMODE",
+        "SINGLECOLORMODE_REMESH",
+    )
     thickerCurves = []
     trail_thick_ribbons = []
     if _effective_scm_trail and curveObjs:
@@ -845,7 +1124,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                     trail_thick_ribbons.append(result[2])
         remove_objects(dup)
         for tcrv in thickerCurves:
-            bpy.ops.object.select_all(action='DESELECT')
+            bpy.ops.object.select_all(action="DESELECT")
             tcrv.select_set(True)
             bpy.context.view_layer.objects.active = tcrv
         for i in range(len(thickerCurves)):
@@ -859,13 +1138,20 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         # PAINT mode: original _Trail curve objects are still in the scene; derive
         # their 2D ribbon footprints to subtract from roads_polygon before finalize_roads.
         _tol = bpy.context.scene.tp3d.tolerance
-        _pt  = bpy.context.scene.tp3d.pathThickness
+        _pt = bpy.context.scene.tp3d.pathThickness
+
         def _tile_extents(o):
             cs = [o.matrix_world @ Vector(c) for c in o.bound_box]
-            return min(c.x for c in cs), max(c.x for c in cs), min(c.y for c in cs), max(c.y for c in cs)
+            return (
+                min(c.x for c in cs),
+                max(c.x for c in cs),
+                min(c.y for c in cs),
+                max(c.y for c in cs),
+            )
+
         tx0, tx1, ty0, ty1 = _tile_extents(obj)
         for _ob in bpy.context.view_layer.objects:
-            if _ob is None or '_Trail' not in _ob.name or _ob.type != 'CURVE':
+            if _ob is None or "_Trail" not in _ob.name or _ob.type != "CURVE":
                 continue
             cx0, cx1, cy0, cy1 = _tile_extents(_ob)
             if cx0 > tx1 or cx1 < tx0 or cy0 > ty1 or cy1 < ty0:
@@ -875,7 +1161,9 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             for _sp in _ob.data.splines:
                 _pts = _sp.points if len(_sp.points) > 0 else _sp.bezier_points
                 if len(_pts) >= 2:
-                    _coords.append([(_mw @ Vector((_p.co.x, _p.co.y, _p.co.z)))[:2] for _p in _pts])
+                    _coords.append(
+                        [(_mw @ Vector((_p.co.x, _p.co.y, _p.co.z)))[:2] for _p in _pts]
+                    )
             if not _coords:
                 continue
             _r = _g2d.polylines_to_ribbon(_coords, _pt / 2 + _tol, quad_segs=4)
@@ -883,14 +1171,15 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                 trail_thick_ribbons.append(_r)
 
     # In CREATE_TEXTURE mode, store trail ribbon union for texture rasterisation.
-    if (props['elementMode'] == "CREATE_TEXTURE"
-            and bpy.context.scene.tp3d.tex_include_trail
-            and trail_thick_ribbons):
-        terrain['_osm_polygons']['TRAIL'] = _g2d.union(trail_thick_ribbons)
+    if (
+        props["elementMode"] == "CREATE_TEXTURE"
+        and bpy.context.scene.tp3d.tex_include_trail
+        and trail_thick_ribbons
+    ):
+        terrain["_osm_polygons"]["TRAIL"] = _g2d.union(trail_thick_ribbons)
 
-    if props['elementMode'] == "SEPARATE" and False:
+    if props["elementMode"] == "SEPARATE" and False:
         for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
-
             elem_obj = terrain.get(key)
 
             if not elem_obj:
@@ -903,26 +1192,29 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
 
             selectBottomFaces(elem_obj)
             bpy.ops.mesh.select_more()
-            bpy.ops.mesh.delete(type='FACE')
-            bpy.ops.mesh.select_all(action='SELECT')
-            bpy.ops.mesh.extrude_region_move(TRANSFORM_OT_translate={"value": (0, 0, -1)})
-            bpy.ops.object.mode_set(mode='OBJECT')
-
+            bpy.ops.mesh.delete(type="FACE")
+            bpy.ops.mesh.select_all(action="SELECT")
+            bpy.ops.mesh.extrude_region_move(
+                TRANSFORM_OT_translate={"value": (0, 0, -1)}
+            )
+            bpy.ops.object.mode_set(mode="OBJECT")
 
             if _effective_scm_trail:
                 for tcrv in curveObjs:
                     boolean_operation(elem_obj, tcrv)
 
-    if props['elementMode'] in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
-
+    if props["elementMode"] in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
             _ov.update(message="Applying Single-color Mode…")
         # Maps key -> thicker mesh object, filled as each element is processed.
         thicker_by_key = {}
 
-
-        _scm_fn = single_color_mode_mesh_remesh if props['elementMode'] == "SINGLECOLORMODE_REMESH" else single_color_mode_mesh_wireframe
+        _scm_fn = (
+            single_color_mode_mesh_remesh
+            if props["elementMode"] == "SINGLECOLORMODE_REMESH"
+            else single_color_mode_mesh_wireframe
+        )
 
         _active_scm_keys = [k for k in TERRAIN_PRIORITY_ORDER if terrain.get(k)]
         _n_scm = max(1, len(_active_scm_keys))
@@ -960,14 +1252,14 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             _scm_done += 1
 
         if bpy.app.debug:
-            obj_size = props.get('size', 100)
+            obj_size = props.get("size", 100)
             for thicker in thicker_by_key.values():
                 thicker.location.x += obj_size
         else:
             for thicker in thicker_by_key.values():
                 remove_objects(thicker)
 
-    if props['elementMode'] == "SEPARATE" and thickerCurves:
+    if props["elementMode"] == "SEPARATE" and thickerCurves:
         for key in TERRAIN_PRIORITY_ORDER:
             elem_obj = terrain.get(key)
             if not elem_obj:
@@ -989,57 +1281,78 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     # run AFTER every element's own cross-element cuts above are finished,
     # and BEFORE the trail-groove step below, which stays the true last
     # boolean of the whole pipeline.
-    roads_obj = terrain.get('roads')
-    if roads_obj is not None and props['elementMode'] in ("SEPARATE", "SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
+    roads_obj = terrain.get("roads")
+    if roads_obj is not None and props["elementMode"] in (
+        "SEPARATE",
+        "SINGLECOLORMODE",
+        "SINGLECOLORMODE_REMESH",
+    ):
         # MANIFOLD requires BOTH operands to be watertight -- roads is the
         # known carrier of a small residual non-manifold defect (see osm.py's
         # create_roads notes), so it must be checked here too, not just the
         # element being cut. Checking only elem_obj (as an earlier version of
         # this fix did) let the solver stay MANIFOLD and silently no-op on
         # every single cut whenever roads itself was the non-manifold side.
-        roads_manifold = is_mesh_manifold(roads_obj)
-
-        # For the boolean cuts, use a slightly wider cutter built from the
-        # Shapely road polygon buffered outward by el_sCutTolerance.  This
-        # gives a clean, uniform XY expansion without deforming the mesh
-        # (vertex-normal dilation is unreliable on slab geometry with walls).
+        roads_manifold = is_mesh_manifold(
+            roads_obj
+        )  # For the boolean cuts, build a cutter from the Shapely road polygon
+        # (optionally buffered outward by el_sCutTolerance for a clean,
+        # uniform XY expansion -- vertex-normal dilation is unreliable on
+        # slab geometry with walls), extruded only from this road's own
+        # flush-bottom depth (see compute_full_depth_bottom_z) up past the
+        # terrain top. Falling back to raw roads_obj here would cut all the
+        # way down to the map floor, leaving no matching recess for the
+        # element to actually sit flush in -- always build the properly
+        # bounded cutter instead, regardless of the tolerance setting.
         cut_tolerance = bpy.context.scene.tp3d.el_sCutTolerance
         roads_cutter = roads_obj
         _cutter_tmp = None
-        if cut_tolerance > 0:
-            _road_poly = terrain.get('roads_polygon')
-            if _road_poly is not None and not _road_poly.is_empty:
-                from .osm.roads import _build_extruded_mesh
-                _buffered = _road_poly.buffer(cut_tolerance, join_style='mitre')
-                if _buffered and not _buffered.is_empty:
-                    _all_v2d, _all_tris = [], []
-                    for _part in _g2d.iter_polygons(_buffered):
-                        _part = _g2d.orient(_part)
-                        _ext = list(_part.exterior.coords)[:-1]
-                        _holes = [list(r.coords)[:-1] for r in _part.interiors if len(r.coords) >= 4]
-                        _ec = _g2d._cdt_triangulate(_part, _ext, _holes)
-                        if _ec:
-                            _v2, _t2 = _ec
-                            _base = len(_all_v2d)
-                            _all_v2d.extend(_v2)
-                            _all_tris += [(a + _base, b + _base, c + _base) for a, b, c in _t2]
-                    if _all_v2d and _all_tris:
-                        _mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
-                        _bz = min(v.z for v in _mc) - 2.0
-                        _tz = max(v.z for v in _mc) + 20.0
-                        _cutter_tmp = _build_extruded_mesh(_all_v2d, _all_tris, _bz, _tz)
-                        recalculateNormals(_cutter_tmp)
-                        roads_cutter = _cutter_tmp
+        _road_poly = terrain.get("roads_polygon")
+        _roads_bz = terrain.get("roads_bottom_z")
+        if _road_poly is not None and not _road_poly.is_empty and _roads_bz is not None:
+            from .osm.roads import _build_extruded_mesh
+
+            _buffered = (
+                _road_poly.buffer(cut_tolerance, join_style="mitre")
+                if cut_tolerance > 0
+                else _road_poly
+            )
+            if _buffered and not _buffered.is_empty:
+                _all_v2d, _all_tris = [], []
+                for _part in _g2d.iter_polygons(_buffered):
+                    _part = _g2d.orient(_part)
+                    _ext = list(_part.exterior.coords)[:-1]
+                    _holes = [
+                        list(r.coords)[:-1]
+                        for r in _part.interiors
+                        if len(r.coords) >= 4
+                    ]
+                    _ec = _g2d._cdt_triangulate(_part, _ext, _holes)
+                    if _ec:
+                        _v2, _t2 = _ec
+                        _base = len(_all_v2d)
+                        _all_v2d.extend(_v2)
+                        _all_tris += [
+                            (a + _base, b + _base, c + _base) for a, b, c in _t2
+                        ]
+                if _all_v2d and _all_tris:
+                    _mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+                    # Small safety margin below the road's own flush depth, purely
+                    # to guarantee boolean overlap -- not a return to map-floor depth.
+                    _bz = _roads_bz - 0.05
+                    _tz = max(v.z for v in _mc) + 20.0
+                    _cutter_tmp = _build_extruded_mesh(_all_v2d, _all_tris, _bz, _tz)
+                    recalculateNormals(_cutter_tmp)
+                    roads_cutter = _cutter_tmp
 
         # Cut roads out of the main terrain object too, not just the
         # coloring elements -- otherwise the terrain piece and the roads
-        # piece occupy the same 3D space wherever a road runs (full_depth
-        # roads reaches all the way down to terrain's own base), leaving
-        # no matching recess for the roads piece to sit in when assembled.
+        # piece occupy the same 3D space wherever a road runs, leaving no
+        # matching recess for the roads piece to sit in when assembled.
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
             _ov.update(message="Cutting road from Terrain…")
-        solver = 'MANIFOLD' if (roads_manifold and is_mesh_manifold(obj)) else 'EXACT'
+        solver = "MANIFOLD" if (roads_manifold and is_mesh_manifold(obj)) else "EXACT"
         boolean_operation(obj, roads_cutter, solver=solver)
 
         for key in TERRAIN_PRIORITY_ORDER:
@@ -1049,7 +1362,11 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             _ov = _progress.ProgressOverlay.get()
             if _ov.active:
                 _ov.update(message=f"Cutting road from {key.capitalize()}…")
-            solver = 'MANIFOLD' if (roads_manifold and is_mesh_manifold(elem_obj)) else 'EXACT'
+            solver = (
+                "MANIFOLD"
+                if (roads_manifold and is_mesh_manifold(elem_obj))
+                else "EXACT"
+            )
             boolean_operation(elem_obj, roads_cutter, solver=solver)
 
         if _cutter_tmp is not None:
@@ -1059,37 +1376,42 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     # Roads are handled separately AFTER finalize_roads (which rebuilds roads.data
     # from terrain cache -- any cut made here would be overwritten).
     if thickerCurves:
-        elem_obj = terrain.get('buildings')
+        elem_obj = terrain.get("buildings")
         if elem_obj is not None:
             _ov = _progress.ProgressOverlay.get()
             if _ov.active:
                 _ov.update(message="Subtracting trail from Buildings…")
             for tcrv in thickerCurves:
-                solver = 'MANIFOLD' if (is_mesh_manifold(elem_obj) and is_mesh_manifold(tcrv)) else 'EXACT'
+                solver = (
+                    "MANIFOLD"
+                    if (is_mesh_manifold(elem_obj) and is_mesh_manifold(tcrv))
+                    else "EXACT"
+                )
                 boolean_operation(elem_obj, tcrv, solver=solver)
 
     # Rebuild the road top surface from the terrain-grid cache captured before
     # any of the cuts above, so it shares the exact terrain/element resolution.
-    roads_obj = terrain.get('roads')
+    roads_obj = terrain.get("roads")
     if roads_obj is not None:
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
             _ov.update(message="Roads: adding terrain detail…")
         from .osm.roads import finalize_roads  # deferred — only needed here
+
         el_sHeight = bpy.context.scene.tp3d.el_sHeight
-        full_depth = props['elementMode'] not in ('PAINT', 'CREATE_TEXTURE')
-        mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
-        bottom_z = min(v.z for v in mc) - 1.0
+        full_depth = props["elementMode"] not in ("PAINT", "CREATE_TEXTURE")
         # Subtract the trail 2D footprint from roads_polygon before finalize_roads
         # builds the mesh -- avoids a post-build 3D boolean on a non-manifold mesh.
-        _roads_poly = terrain.get('roads_polygon')
+        _roads_poly = terrain.get("roads_polygon")
         if trail_thick_ribbons and _roads_poly is not None:
             _trail_union = _g2d.union(trail_thick_ribbons)
             _roads_poly = _roads_poly.difference(_trail_union)
-            print(f"[TP3D roads] subtracted {len(trail_thick_ribbons)} trail ribbon(s) from roads_polygon in 2D")
+            print(
+                f"[TP3D roads] subtracted {len(trail_thick_ribbons)} trail ribbon(s) from roads_polygon in 2D"
+            )
         finalize_roads(
             roads_obj,
-            terrain.get('_terrain_tris_cache'),
+            terrain.get("_terrain_tris_cache"),
             _roads_poly,
             el_sHeight,
             full_depth,
@@ -1100,31 +1422,39 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         # trail subtraction: select boundaries → limited dissolve → merge by
         # distance → fill holes.  The four remaining "multiple face" issues are
         # structural and ignored here.
-        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.object.select_all(action="DESELECT")
         roads_obj.select_set(True)
         bpy.context.view_layer.objects.active = roads_obj
-        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.object.mode_set(mode="EDIT")
         # select_non_manifold's poll() requires vertex or edge select mode --
         # fails silently as a Report: Error if mode was left on face-select
         # (e.g. by a prior operator) instead of raising an exception.
         bpy.context.tool_settings.mesh_select_mode = (True, False, False)
-        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.mesh.select_all(action="DESELECT")
         bpy.ops.mesh.select_non_manifold(
-            extend=False, use_wire=False, use_boundary=True,
-            use_multi_face=False, use_non_contiguous=False, use_verts=False,
+            extend=False,
+            use_wire=False,
+            use_boundary=True,
+            use_multi_face=False,
+            use_non_contiguous=False,
+            use_verts=False,
         )
         bpy.ops.mesh.dissolve_limited(angle_limit=0.0872665)  # 5°
         bpy.ops.mesh.remove_doubles(threshold=0.001)
         bpy.ops.mesh.select_non_manifold(
-            extend=False, use_wire=False, use_boundary=True,
-            use_multi_face=False, use_non_contiguous=False, use_verts=False,
+            extend=False,
+            use_wire=False,
+            use_boundary=True,
+            use_multi_face=False,
+            use_non_contiguous=False,
+            use_verts=False,
         )
         bpy.ops.mesh.fill_holes(sides=0)
-        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode="OBJECT")
 
     if thickerCurves:
         if bpy.app.debug:
-            obj_size = props.get('size', 100)
+            obj_size = props.get("size", 100)
             for tcrv in thickerCurves:
                 tcrv.location.x += obj_size
         else:
@@ -1137,9 +1467,9 @@ def _rg_assign_materials(obj, curveObjs, textobj, plateobj, props, shellobj=None
         writeMetadata,  # deferred to avoid circular import at load time
     )
 
-    shape = props.get('shape', None)
+    shape = props.get("shape", None)
 
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
 
     writeMetadata(obj, "MAP")
     if curveObjs:
@@ -1162,14 +1492,33 @@ def _rg_assign_materials(obj, curveObjs, textobj, plateobj, props, shellobj=None
             except ReferenceError:
                 pass
 
-    if shape in {"HEXAGON INNER TEXT", "HEXAGON OUTER TEXT", "OCTAGON OUTER TEXT", "HEXAGON FRONT TEXT", "CIRCLE OUTER TEXT"} and textobj:
+    if (
+        shape
+        in {
+            "HEXAGON INNER TEXT",
+            "HEXAGON OUTER TEXT",
+            "OCTAGON OUTER TEXT",
+            "HEXAGON FRONT TEXT",
+            "CIRCLE OUTER TEXT",
+        }
+        and textobj
+    ):
         mat_name = "TRAIL" if shape == "HEXAGON INNER TEXT" else "WHITE"
         mat = bpy.data.materials.get(mat_name)
         textobj.data.materials.clear()
         textobj.data.materials.append(mat)
         writeMetadata(textobj, type="TEXT")
 
-    if shape in {"HEXAGON OUTER TEXT", "OCTAGON OUTER TEXT", "HEXAGON FRONT TEXT", "CIRCLE OUTER TEXT"} and plateobj:
+    if (
+        shape
+        in {
+            "HEXAGON OUTER TEXT",
+            "OCTAGON OUTER TEXT",
+            "HEXAGON FRONT TEXT",
+            "CIRCLE OUTER TEXT",
+        }
+        and plateobj
+    ):
         mat = bpy.data.materials.get("BLACK")
         plateobj.data.materials.clear()
         plateobj.data.materials.append(mat)
@@ -1183,7 +1532,18 @@ def _rg_assign_materials(obj, curveObjs, textobj, plateobj, props, shellobj=None
         writeMetadata(shellobj, type="SHELL")
 
 
-def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_time, exportformat, elements=None, shellobj=None):
+def _rg_export(
+    obj,
+    curveObjs,
+    textobj,
+    plateobj,
+    props,
+    buggyDataset,
+    start_time,
+    exportformat,
+    elements=None,
+    shellobj=None,
+):
     """Export all geometry, update API counters, and zoom camera."""
     from ..export import (  # deferred to avoid circular import at load time
         export_selected_to_3mf,
@@ -1197,16 +1557,21 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
         zoom_camera_to_selected,  # deferred to avoid circular import at load time
     )
 
-    shape = props.get('shape', None)
+    shape = props.get("shape", None)
 
     tp3d_props = bpy.context.scene.tp3d
-    if getattr(tp3d_props, 'disable_auto_export', False):
+    if getattr(tp3d_props, "disable_auto_export", False):
         print("Auto export disabled, skipping export")
         return
 
-    if is_3mf_extension_installed() and not getattr(tp3d_props, 'disable_3mf_export', False):
+    if is_3mf_extension_installed() and not getattr(
+        tp3d_props, "disable_3mf_export", False
+    ):
         print("Exporting to 3mf")
-        if curveObjs and (props.get('elementMode') != "CREATE_TEXTURE" or not tp3d_props.tex_include_trail):
+        if curveObjs and (
+            props.get("elementMode") != "CREATE_TEXTURE"
+            or not tp3d_props.tex_include_trail
+        ):
             for tcrv in curveObjs:
                 try:
                     if tcrv and tcrv.name in bpy.data.objects:
@@ -1215,20 +1580,46 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
                     pass
         obj.select_set(True)
 
-        if elements and (props.get('elementMode') == "SEPARATE" or "SINGLECOLORMODE" in props.get('elementMode')):
+        if elements and (
+            props.get("elementMode") == "SEPARATE"
+            or "SINGLECOLORMODE" in props.get("elementMode")
+        ):
             for elem_obj in elements.values():
-                if elem_obj and isinstance(elem_obj, bpy.types.Object) and elem_obj.name in bpy.data.objects:
+                if (
+                    elem_obj
+                    and isinstance(elem_obj, bpy.types.Object)
+                    and elem_obj.name in bpy.data.objects
+                ):
                     elem_obj.select_set(True)
-        elif elements and props.get('elementMode') in ("PAINT", "CREATE_TEXTURE"):
+        elif elements and props.get("elementMode") in ("PAINT", "CREATE_TEXTURE"):
             for key in ("roads", "buildings"):
                 elem_obj = elements.get(key)
                 if elem_obj and elem_obj.name in bpy.data.objects:
                     elem_obj.select_set(True)
 
-        if shape in {"HEXAGON INNER TEXT", "HEXAGON OUTER TEXT", "OCTAGON OUTER TEXT", "HEXAGON FRONT TEXT", "CIRCLE OUTER TEXT"} and textobj:
+        if (
+            shape
+            in {
+                "HEXAGON INNER TEXT",
+                "HEXAGON OUTER TEXT",
+                "OCTAGON OUTER TEXT",
+                "HEXAGON FRONT TEXT",
+                "CIRCLE OUTER TEXT",
+            }
+            and textobj
+        ):
             textobj.select_set(True)
 
-        if shape in {"HEXAGON OUTER TEXT", "OCTAGON OUTER TEXT", "HEXAGON FRONT TEXT", "CIRCLE OUTER TEXT"} and plateobj:
+        if (
+            shape
+            in {
+                "HEXAGON OUTER TEXT",
+                "OCTAGON OUTER TEXT",
+                "HEXAGON FRONT TEXT",
+                "CIRCLE OUTER TEXT",
+            }
+            and plateobj
+        ):
             plateobj.select_set(True)
 
         if shellobj:
@@ -1237,20 +1628,49 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
         export_selected_to_3mf(is_auto=True)
     else:
         print("exporting as STL/OBJ")
-        if curveObjs and (props.get('elementMode') != "CREATE_TEXTURE" or not tp3d_props.tex_include_trail):
+        if curveObjs and (
+            props.get("elementMode") != "CREATE_TEXTURE"
+            or not tp3d_props.tex_include_trail
+        ):
             for tcrv in curveObjs:
                 export_to_STL(tcrv, exportformat)
         export_to_STL(obj, exportformat)
 
-        if elements and (props.get('elementMode') == "SEPARATE" or "SINGLECOLORMODE" in props.get('elementMode')):
+        if elements and (
+            props.get("elementMode") == "SEPARATE"
+            or "SINGLECOLORMODE" in props.get("elementMode")
+        ):
             for elem_obj in elements.values():
-                if elem_obj and isinstance(elem_obj, bpy.types.Object) and elem_obj.name in bpy.data.objects:
+                if (
+                    elem_obj
+                    and isinstance(elem_obj, bpy.types.Object)
+                    and elem_obj.name in bpy.data.objects
+                ):
                     export_to_STL(elem_obj, exportformat)
 
-        if shape in {"HEXAGON INNER TEXT", "HEXAGON OUTER TEXT", "OCTAGON OUTER TEXT", "HEXAGON FRONT TEXT", "CIRCLE OUTER TEXT"} and textobj:
+        if (
+            shape
+            in {
+                "HEXAGON INNER TEXT",
+                "HEXAGON OUTER TEXT",
+                "OCTAGON OUTER TEXT",
+                "HEXAGON FRONT TEXT",
+                "CIRCLE OUTER TEXT",
+            }
+            and textobj
+        ):
             export_to_STL(textobj, exportformat)
 
-        if shape in {"HEXAGON OUTER TEXT", "OCTAGON OUTER TEXT", "HEXAGON FRONT TEXT", "CIRCLE OUTER TEXT"} and plateobj:
+        if (
+            shape
+            in {
+                "HEXAGON OUTER TEXT",
+                "OCTAGON OUTER TEXT",
+                "HEXAGON FRONT TEXT",
+                "CIRCLE OUTER TEXT",
+            }
+            and plateobj
+        ):
             export_to_STL(plateobj, exportformat)
 
         if shellobj:
@@ -1270,11 +1690,11 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
     )
 
     if buggyDataset != 0:
-        _progress.WarningsOverlay.add_warning("API might have faulty DATA. Maybe try diffrent Resolution or API", "warn")
+        _progress.WarningsOverlay.add_warning(
+            "API might have faulty DATA. Maybe try diffrent Resolution or API", "warn"
+        )
 
     zoom_camera_to_selected(obj)
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -1284,52 +1704,86 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
 # ---------------------------------------------------------------------------
 
 _GEN_FLAGS = {
-    0:  frozenset({"gpx_file",  "trail", "stats", "gpx_scale"}),
-    1:  frozenset({"gpx_chain", "trail", "stats", "gpx_scale", "separate_paths", "chain_coords_center"}),
-    2:  frozenset({"jmap"}),
-    3:  frozenset({"jmap_bbox"}),
-    4:  frozenset({"gpx_file",  "jmap",  "trail", "trail_map"}),
+    0: frozenset({"gpx_file", "trail", "stats", "gpx_scale"}),
+    1: frozenset(
+        {
+            "gpx_chain",
+            "trail",
+            "stats",
+            "gpx_scale",
+            "separate_paths",
+            "chain_coords_center",
+        }
+    ),
+    2: frozenset({"jmap"}),
+    3: frozenset({"jmap_bbox"}),
+    4: frozenset({"gpx_file", "jmap", "trail", "trail_map"}),
     10: frozenset({"gpx_file", "stats", "gpx_scale"}),
-    11: frozenset({"gpx_chain", "stats", "gpx_scale", "separate_path", "chain_coords_center"}),
-    20: frozenset({"gpx_file", "trail", "stats", "gpx_scale","append_collection"}),
-    21: frozenset({"gpx_chain", "trail", "stats", "gpx_scale", "separate_paths", "chain_coords_center","append_collection"}),
+    11: frozenset(
+        {"gpx_chain", "stats", "gpx_scale", "separate_path", "chain_coords_center"}
+    ),
+    20: frozenset({"gpx_file", "trail", "stats", "gpx_scale", "append_collection"}),
+    21: frozenset(
+        {
+            "gpx_chain",
+            "trail",
+            "stats",
+            "gpx_scale",
+            "separate_paths",
+            "chain_coords_center",
+            "append_collection",
+        }
+    ),
 }
 
 # ---------------------------------------------------------------------------
 # Shared helper: build the fetch-item list for the progress chip strip
 # ---------------------------------------------------------------------------
 
+
 def build_fetch_items(map_km=None):
     """Return the list of fetch-item dicts for the active scene settings."""
     tp3d = bpy.context.scene.tp3d
     if map_km is None:
         map_km = round(tp3d.get("sMapInKm", 0), 1)
-    items = [{'key': 'elevation', 'icon': 'E', 'label': 'Elevation'}]
+    items = [{"key": "elevation", "icon": "E", "label": "Elevation"}]
     defs = [
-        ('forest',     'col_fActive',   const.FOREST_MAXSIZE,     'F', 'Forest'),
-        ('water',      None,            const.WATER_MAXSIZE,       'W', 'Water'),
-        ('scree',      'col_scrActive', const.SCREE_MAXSIZE,       'S', 'Scree'),
-        ('city',       'col_cActive',   const.CITY_MAXSIZE,        'C', 'City'),
-        ('greenspace', 'col_grActive',  const.GREENSPACE_MAXSIZE,  'G', 'Green'),
-        ('farmland',   'col_faActive',  const.FARMLAND_MAXSIZE,    'A', 'Farm'),
-        ('glacier',    'col_glActive',  const.GLACIER_MAXSIZE,     'I', 'Glacr'),
-        ('buildings',  'el_bActive',    const.BUILDINGS_MAXSIZE,   'B', 'Build'),
-        ('roads',      None,            const.ROADS_MAXSIZE,       'R', 'Roads'),
+        ("forest", "col_fActive", const.FOREST_MAXSIZE, "F", "Forest"),
+        ("water", None, const.WATER_MAXSIZE, "W", "Water"),
+        ("scree", "col_scrActive", const.SCREE_MAXSIZE, "S", "Scree"),
+        ("city", "col_cActive", const.CITY_MAXSIZE, "C", "City"),
+        ("greenspace", "col_grActive", const.GREENSPACE_MAXSIZE, "G", "Green"),
+        ("farmland", "col_faActive", const.FARMLAND_MAXSIZE, "A", "Farm"),
+        ("glacier", "col_glActive", const.GLACIER_MAXSIZE, "I", "Glacr"),
+        ("buildings", "el_bActive", const.BUILDINGS_MAXSIZE, "B", "Build"),
+        ("roads", None, const.ROADS_MAXSIZE, "R", "Roads"),
     ]
     for key, flag, max_size, icon, label in defs:
-        if key == 'water':
-            water_feats = ((tp3d.col_wPondsActive or tp3d.col_wSmallRiversActive
-                            or tp3d.col_wBigRiversActive) and map_km <= const.WATER_MAXSIZE)
-            active = water_feats or (tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE)
+        if key == "water":
+            water_feats = (
+                tp3d.col_wPondsActive
+                or tp3d.col_wSmallRiversActive
+                or tp3d.col_wBigRiversActive
+            ) and map_km <= const.WATER_MAXSIZE
+            active = water_feats or (
+                tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE
+            )
             max_size = None
-        elif key == 'roads':
-            active = any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive])
+        elif key == "roads":
+            active = any(
+                [
+                    tp3d.el_sBigActive,
+                    tp3d.el_sMedActive,
+                    tp3d.el_sSmallActive,
+                    tp3d.el_sServiceActive,
+                    tp3d.el_sFootwaysActive,
+                ]
+            )
         else:
             active = bool(flag and getattr(tp3d, flag, 0) == 1)
         if active and (max_size is None or map_km <= max_size):
-            items.append({'key': key, 'icon': icon, 'label': label})
+            items.append({"key": key, "icon": icon, "label": label})
     return items
-
 
 
 # 'water' and 'roads' are each an OR of several independent sub-checkboxes
@@ -1338,17 +1792,34 @@ def build_fetch_items(map_km=None):
 # build_element_toggle_states and apply_element_toggle below so the two
 # stay in sync by construction rather than by convention.
 _ELEMENT_SINGLE_FLAGS = {
-    'forest': 'col_fActive',
-    'scree': 'col_scrActive',
-    'city': 'col_cActive',
-    'greenspace': 'col_grActive',
-    'farmland': 'col_faActive',
-    'glacier': 'col_glActive',
-    'buildings': 'el_bActive',
+    "forest": "col_fActive",
+    "scree": "col_scrActive",
+    "city": "col_cActive",
+    "greenspace": "col_grActive",
+    "farmland": "col_faActive",
+    "glacier": "col_glActive",
+    "buildings": "el_bActive",
 }
 _ELEMENT_COMPOSITE_FLAGS = {
-    'water': (('col_wPondsActive', 'col_wSmallRiversActive', 'col_wBigRiversActive', 'el_oActive'), 'col_wPondsActive'),
-    'roads': (('el_sBigActive', 'el_sMedActive', 'el_sSmallActive', 'el_sServiceActive', 'el_sFootwaysActive'), 'el_sSmallActive'),
+    "water": (
+        (
+            "col_wPondsActive",
+            "col_wSmallRiversActive",
+            "col_wBigRiversActive",
+            "el_oActive",
+        ),
+        "col_wPondsActive",
+    ),
+    "roads": (
+        (
+            "el_sBigActive",
+            "el_sMedActive",
+            "el_sSmallActive",
+            "el_sServiceActive",
+            "el_sFootwaysActive",
+        ),
+        "el_sSmallActive",
+    ),
 }
 
 
@@ -1364,7 +1835,7 @@ def build_element_toggle_states(tp3d=None):
     """
     if tp3d is None:
         tp3d = bpy.context.scene.tp3d
-    states = {'elevation': True}
+    states = {"elevation": True}
     for key, attr in _ELEMENT_SINGLE_FLAGS.items():
         states[key] = bool(getattr(tp3d, attr))
     for key, (subflags, _) in _ELEMENT_COMPOSITE_FLAGS.items():
@@ -1397,7 +1868,7 @@ def apply_element_toggle(tp3d, key):
         return  # 'elevation' or an unrecognized key -- nothing to toggle
 
     subflags, bootstrap = _ELEMENT_COMPOSITE_FLAGS[key]
-    remember_key = f'_toggle_remember_{key}'
+    remember_key = f"_toggle_remember_{key}"
     if any(getattr(tp3d, f) for f in subflags):
         tp3d[remember_key] = [bool(getattr(tp3d, f)) for f in subflags]
         for f in subflags:
@@ -1417,14 +1888,14 @@ def apply_element_toggle(tp3d, key):
 # build_settings_row_state / apply_setting_update stay in sync by
 # construction.
 _SETTINGS_ROW_FIELDS = {
-    'scaleElevation': ('scaleElevation', float),
-    'fixedElevationScale': ('fixedElevationScale', bool),
-    'pathThickness': ('pathThickness', float),
-    'overwritePathElevation': ('overwritePathElevation', bool),
-    'objSize': ('objSize', int),
-    'resolution': ('num_subdivisions', int),
-    'singleColorMode': ('singleColorMode', bool),
-    'singleColorModeTolerance': ('tolerance', float),
+    "scaleElevation": ("scaleElevation", float),
+    "fixedElevationScale": ("fixedElevationScale", bool),
+    "pathThickness": ("pathThickness", float),
+    "overwritePathElevation": ("overwritePathElevation", bool),
+    "objSize": ("objSize", int),
+    "resolution": ("num_subdivisions", int),
+    "singleColorMode": ("singleColorMode", bool),
+    "singleColorModeTolerance": ("tolerance", float),
 }
 
 
@@ -1472,34 +1943,99 @@ def apply_setting_update(tp3d, key, value):
 # key -> attr/type mapping needed to read current values and
 # validate+apply incoming updates.
 _ADVANCED_SETTINGS_FIELDS = [
-    {'key': 'disableElevationOutlierFix', 'attr': 'disableElevationOutlierFix', 'type': bool, 'group': 'Elevation'},
-    {'key': 'colWPondsActive', 'attr': 'col_wPondsActive', 'type': bool, 'group': 'Water'},
-    {'key': 'colWSmallRiversActive', 'attr': 'col_wSmallRiversActive', 'type': bool, 'group': 'Water'},
-    {'key': 'colWBigRiversActive', 'attr': 'col_wBigRiversActive', 'type': bool, 'group': 'Water'},
-    {'key': 'elOActive', 'attr': 'el_oActive', 'type': bool, 'group': 'Water'},
-    {'key': 'colWArea', 'attr': 'col_wArea', 'type': float, 'group': 'Water'},
-    {'key': 'colWStreamWidth', 'attr': 'col_wStreamWidth', 'type': float, 'group': 'Water'},
-    {'key': 'elOMinIslandArea', 'attr': 'el_oMinIslandArea', 'type': float, 'group': 'Water'},
-    {'key': 'elORdpEpsilon', 'attr': 'el_oRdpEpsilon', 'type': float, 'group': 'Water'},
-    {'key': 'colFArea', 'attr': 'col_fArea', 'type': float, 'group': 'Forest'},
-    {'key': 'colScrArea', 'attr': 'col_scrArea', 'type': float, 'group': 'Scree'},
-    {'key': 'colCArea', 'attr': 'col_cArea', 'type': float, 'group': 'City Boundaries'},
-    {'key': 'colGrArea', 'attr': 'col_grArea', 'type': float, 'group': 'Greenspace'},
-    {'key': 'colFaArea', 'attr': 'col_faArea', 'type': float, 'group': 'Farmland'},
-    {'key': 'colGlArea', 'attr': 'col_glArea', 'type': float, 'group': 'Glacier'},
-    {'key': 'elBHeightMultiplier', 'attr': 'el_bHeightMultiplier', 'type': float, 'group': 'Buildings'},
-    {'key': 'elBMinPrintMM', 'attr': 'el_bMinPrintMM', 'type': float, 'group': 'Buildings'},
-    {'key': 'elSBigActive', 'attr': 'el_sBigActive', 'type': bool, 'group': 'Roads'},
-    {'key': 'elSMedActive', 'attr': 'el_sMedActive', 'type': bool, 'group': 'Roads'},
-    {'key': 'elSSmallActive', 'attr': 'el_sSmallActive', 'type': bool, 'group': 'Roads'},
-    {'key': 'elSServiceActive', 'attr': 'el_sServiceActive', 'type': bool, 'group': 'Roads'},
-    {'key': 'elSFootwaysActive', 'attr': 'el_sFootwaysActive', 'type': bool, 'group': 'Roads'},
-    {'key': 'elSMultiplier', 'attr': 'el_sMultiplier', 'type': float, 'group': 'Roads'},
-    {'key': 'elSHeight', 'attr': 'el_sHeight', 'type': float, 'group': 'Roads'},
-    {'key': 'elSCutTolerance', 'attr': 'el_sCutTolerance', 'type': float, 'group': 'Roads'},
-    {'key': 'elSExcludeAlleys', 'attr': 'el_sExcludeAlleys', 'type': bool, 'group': 'Roads'},
+    {
+        "key": "disableElevationOutlierFix",
+        "attr": "disableElevationOutlierFix",
+        "type": bool,
+        "group": "Elevation",
+    },
+    {
+        "key": "colWPondsActive",
+        "attr": "col_wPondsActive",
+        "type": bool,
+        "group": "Water",
+    },
+    {
+        "key": "colWSmallRiversActive",
+        "attr": "col_wSmallRiversActive",
+        "type": bool,
+        "group": "Water",
+    },
+    {
+        "key": "colWBigRiversActive",
+        "attr": "col_wBigRiversActive",
+        "type": bool,
+        "group": "Water",
+    },
+    {"key": "elOActive", "attr": "el_oActive", "type": bool, "group": "Water"},
+    {"key": "colWArea", "attr": "col_wArea", "type": float, "group": "Water"},
+    {
+        "key": "colWStreamWidth",
+        "attr": "col_wStreamWidth",
+        "type": float,
+        "group": "Water",
+    },
+    {
+        "key": "elOMinIslandArea",
+        "attr": "el_oMinIslandArea",
+        "type": float,
+        "group": "Water",
+    },
+    {"key": "elORdpEpsilon", "attr": "el_oRdpEpsilon", "type": float, "group": "Water"},
+    {"key": "colFArea", "attr": "col_fArea", "type": float, "group": "Forest"},
+    {"key": "colScrArea", "attr": "col_scrArea", "type": float, "group": "Scree"},
+    {"key": "colCArea", "attr": "col_cArea", "type": float, "group": "City Boundaries"},
+    {"key": "colGrArea", "attr": "col_grArea", "type": float, "group": "Greenspace"},
+    {"key": "colFaArea", "attr": "col_faArea", "type": float, "group": "Farmland"},
+    {"key": "colGlArea", "attr": "col_glArea", "type": float, "group": "Glacier"},
+    {
+        "key": "elBHeightMultiplier",
+        "attr": "el_bHeightMultiplier",
+        "type": float,
+        "group": "Buildings",
+    },
+    {
+        "key": "elBMinPrintMM",
+        "attr": "el_bMinPrintMM",
+        "type": float,
+        "group": "Buildings",
+    },
+    {"key": "elSBigActive", "attr": "el_sBigActive", "type": bool, "group": "Roads"},
+    {"key": "elSMedActive", "attr": "el_sMedActive", "type": bool, "group": "Roads"},
+    {
+        "key": "elSSmallActive",
+        "attr": "el_sSmallActive",
+        "type": bool,
+        "group": "Roads",
+    },
+    {
+        "key": "elSServiceActive",
+        "attr": "el_sServiceActive",
+        "type": bool,
+        "group": "Roads",
+    },
+    {
+        "key": "elSFootwaysActive",
+        "attr": "el_sFootwaysActive",
+        "type": bool,
+        "group": "Roads",
+    },
+    {"key": "elSMultiplier", "attr": "el_sMultiplier", "type": float, "group": "Roads"},
+    {"key": "elSHeight", "attr": "el_sHeight", "type": float, "group": "Roads"},
+    {
+        "key": "elSCutTolerance",
+        "attr": "el_sCutTolerance",
+        "type": float,
+        "group": "Roads",
+    },
+    {
+        "key": "elSExcludeAlleys",
+        "attr": "el_sExcludeAlleys",
+        "type": bool,
+        "group": "Roads",
+    },
 ]
-_ADVANCED_SETTINGS_BY_KEY = {f['key']: f for f in _ADVANCED_SETTINGS_FIELDS}
+_ADVANCED_SETTINGS_BY_KEY = {f["key"]: f for f in _ADVANCED_SETTINGS_FIELDS}
 
 
 def build_advanced_settings_state(tp3d=None):
@@ -1507,7 +2043,7 @@ def build_advanced_settings_state(tp3d=None):
     picker pages' ADVANCED_SETTINGS_STATE snapshot."""
     if tp3d is None:
         tp3d = bpy.context.scene.tp3d
-    return {f['key']: getattr(tp3d, f['attr']) for f in _ADVANCED_SETTINGS_FIELDS}
+    return {f["key"]: getattr(tp3d, f["attr"]) for f in _ADVANCED_SETTINGS_FIELDS}
 
 
 def apply_advanced_setting_update(tp3d, key, value):
@@ -1521,7 +2057,7 @@ def apply_advanced_setting_update(tp3d, key, value):
     if not field:
         return
     try:
-        setattr(tp3d, field['attr'], field['type'](value))
+        setattr(tp3d, field["attr"], field["type"](value))
     except (TypeError, ValueError):
         pass
 
@@ -1529,6 +2065,7 @@ def apply_advanced_setting_update(tp3d, key, value):
 # ---------------------------------------------------------------------------
 # Trail segment subdivision helper
 # ---------------------------------------------------------------------------
+
 
 def _subdivide_long_segments(coords, max_xy_dist, depsgraph=None):
     """Split trail segments longer than max_xy_dist Blender units to prevent clipping through hills.
@@ -1566,8 +2103,8 @@ def _subdivide_long_segments(coords, max_xy_dist, depsgraph=None):
 # Main generation orchestrator
 # ---------------------------------------------------------------------------
 
-def runGeneration(type, locked_scale=None):
 
+def runGeneration(type, locked_scale=None):
     """Orchestrate the full 3D map generation pipeline."""
     from .elevation import (
         get_tile_elevation,  # deferred to avoid circular import at load time
@@ -1585,13 +2122,16 @@ def runGeneration(type, locked_scale=None):
         recalculateNormals,
         splitCurves,
     )
+
     try:
         from ..premium.utils_pe import (
             build_map_shell,  # Premium-only: Shell shape extra
         )
     except ImportError:
+
         def build_map_shell(*_args, **_kwargs):
             return None
+
     from .primitives import (  # deferred to avoid circular import at load time
         create_curve_from_coordinates,
         simplify_curve,
@@ -1624,16 +2164,16 @@ def runGeneration(type, locked_scale=None):
     if props is None:
         overlay.finish()
         return
-    start_time = props['start_time']
+    start_time = props["start_time"]
     buggyDataset = 0
     # PAINT mode bakes terrain-element colors as per-face materials on a single
     # mesh; STL cannot store material data at all, so PAINT-mode maps must be
     # exported as OBJ to keep the colors. Mirrors the equivalent computation in
     # terrain.coloring_main().
     # CREATE_TEXTURE: 3MF is the primary export; STL serves as no-addon fallback.
-    if props['elementMode'] == "PAINT":
+    if props["elementMode"] == "PAINT":
         exportformat = "OBJ"
-    elif props['elementMode'] == "CREATE_TEXTURE":
+    elif props["elementMode"] == "CREATE_TEXTURE":
         exportformat = "STL"  # fallback only; 3MF addon handles the real export
     else:
         exportformat = "STL"
@@ -1669,9 +2209,16 @@ def runGeneration(type, locked_scale=None):
     # --- Phase 5: Calculate horizontal scale factor ---
     overlay.update(0.20, "Scale Calculation", "Computing horizontal scale…")
     scalecoords = coordinates
-    if props['scalemode'] == "COORDINATES" and "gpx_scale" in flags:
-        scalecoords = ((props['scaleLon1'], props['scaleLat1']), (props['scaleLon2'], props['scaleLat2']))
-    scaleHor = locked_scale if locked_scale is not None else calculate_scale(props['size'], scalecoords, type, diagonal=True)
+    if props["scalemode"] == "COORDINATES" and "gpx_scale" in flags:
+        scalecoords = (
+            (props["scaleLon1"], props["scaleLat1"]),
+            (props["scaleLon2"], props["scaleLat2"]),
+        )
+    scaleHor = (
+        locked_scale
+        if locked_scale is not None
+        else calculate_scale(props["size"], scalecoords, type, diagonal=True)
+    )
     bpy.context.scene.tp3d["sScaleHor"] = scaleHor
 
     # --- Phase 6: Convert to Blender coordinates and find map center ---
@@ -1680,8 +2227,7 @@ def runGeneration(type, locked_scale=None):
     blender_coords_separate = []
     if "separate_paths" in flags or len(separate_paths) > 1:
         blender_coords_separate = [
-            convert_to_blender_coordinates_batch(path)
-            for path in separate_paths
+            convert_to_blender_coordinates_batch(path) for path in separate_paths
         ]
     blender_coords_by_file = []
     if separate_paths_by_file:
@@ -1700,15 +2246,20 @@ def runGeneration(type, locked_scale=None):
 
     # --- Phase 7: Remove previously generated objects at the same location ---
     overlay.update(0.28, "Scene Cleanup", "Removing previous objects…")
-    xOff = props['xTerrainOffset']
-    yOff = props['yTerrainOffset']
-    target_2d        = Vector((centerx, centery))
+    xOff = props["xTerrainOffset"]
+    yOff = props["yTerrainOffset"]
+    target_2d = Vector((centerx, centery))
     target_2d_offset = Vector((centerx + xOff, centery + yOff))
     for obs in bpy.data.objects:
-        obj_2d        = Vector((obs.location.x, obs.location.y))
+        obj_2d = Vector((obs.location.x, obs.location.y))
         obj_2d_offset = obj_2d
         if "xTerrainOffset" in obs or "yTerrainOffset" in obs:
-            obj_2d_offset = Vector((obs.location.x - obs["xTerrainOffset"], obs.location.y - obs["yTerrainOffset"]))
+            obj_2d_offset = Vector(
+                (
+                    obs.location.x - obs["xTerrainOffset"],
+                    obs.location.y - obs["yTerrainOffset"],
+                )
+            )
         if (
             (obj_2d - target_2d).length <= 0.2
             or (obj_2d - target_2d_offset).length <= 0.2
@@ -1716,17 +2267,21 @@ def runGeneration(type, locked_scale=None):
             or (obj_2d_offset - target_2d_offset).length <= 0.2
         ):
             bpy.data.objects.remove(obs, do_unlink=True)
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
 
     _tp3d = bpy.context.scene.tp3d
     if "stats" in flags and _tp3d.total_length > 0:
-        overlay.add_completed_step(f"GPX loaded  —  {_tp3d.total_length:.1f} km, {int(_tp3d.total_elevation)} m gain")
+        overlay.add_completed_step(
+            f"GPX loaded  —  {_tp3d.total_length:.1f} km, {int(_tp3d.total_elevation)} m gain"
+        )
     else:
         overlay.add_completed_step("GPX data loaded")
 
     # --- Phase 8: Create base map shape ---
     overlay.update(0.33, "Building Map Shape", "Creating base mesh…")
-    MapObject = _rg_create_map_object(flags, props, props['modelname'], centerx, centery)
+    MapObject = _rg_create_map_object(
+        flags, props, props["modelname"], centerx, centery
+    )
 
     props["currentMap"] = MapObject
     bpy.context.scene.tp3d.currentMap = MapObject
@@ -1742,7 +2297,9 @@ def runGeneration(type, locked_scale=None):
     compute_and_store_tile_bounds(MapObject)
 
     _map_km = round(bpy.context.scene.tp3d.get("sMapInKm", 0), 1)
-    overlay.add_completed_step(f"Map shape created  ({props['shape'].capitalize()}, {_map_km} km)")
+    overlay.add_completed_step(
+        f"Map shape created  ({props['shape'].capitalize()}, {_map_km} km)"
+    )
 
     # Build the fetch-item strip
     overlay.set_fetch_items(build_fetch_items(_map_km))
@@ -1754,7 +2311,9 @@ def runGeneration(type, locked_scale=None):
         print("OSM prefetch started (overlapping elevation download)")
 
     # --- Phase 9: Fetch terrain elevation data ---
-    overlay.update(0.38, "Fetching Elevation Data", "Querying API — this may take a moment…")
+    overlay.update(
+        0.38, "Fetching Elevation Data", "Querying API — this may take a moment…"
+    )
     print("------------------------------------------------")
     print("FETCHING ELEVATION DATA FOR THE MAP")
     print("------------------------------------------------")
@@ -1762,7 +2321,7 @@ def runGeneration(type, locked_scale=None):
 
     def _elevation_progress(pct):
         t = pct / 100.0
-        overlay.set_fetch_progress('elevation', t)
+        overlay.set_fetch_progress("elevation", t)
         overlay.update(
             0.38 + t * (0.65 - 0.38),
             "Fetching Elevation Data",
@@ -1773,57 +2332,81 @@ def runGeneration(type, locked_scale=None):
 
     tileVerts, diff = get_tile_elevation(MapObject, progress_cb=_elevation_progress)
     print("Elevation Data fetched")
-    overlay.sub_percent = None   # hide sub-bar now that elevation is done
-    overlay.set_fetch_done('elevation', success=True)
+    overlay.sub_percent = None  # hide sub-bar now that elevation is done
+    overlay.set_fetch_done("elevation", success=True)
     overlay.add_completed_step(f"Elevation fetched  ({len(tileVerts)} pts)")
     overlay.update(0.65, "Elevation Data Ready", f"{len(tileVerts)} points fetched")
 
     if len(tileVerts) < 1000:
-        _progress.WarningsOverlay.add_warning(f"Mesh has only {len(tileVerts)} Points. Increase Resolution for higher Quality", "warn")
-    if props['fixedElevationScale']:
+        _progress.WarningsOverlay.add_warning(
+            f"Mesh has only {len(tileVerts)} Points. Increase Resolution for higher Quality",
+            "warn",
+        )
+    if props["fixedElevationScale"]:
         autoScale = 10 / (diff / 1000) if diff > 0 else 10
     else:
         autoScale = scaleHor
     bpy.context.scene.tp3d.sAutoScale = autoScale
 
-    if not props['fixedElevationScale'] and (diff == 0 or (diff / 1000) * autoScale * props['scaleElevation'] < 2):
-        _progress.WarningsOverlay.add_warning("Terrain seems to be really flat. If not intended, increase Elevation scale", icon="warn")
+    if not props["fixedElevationScale"] and (
+        diff == 0 or (diff / 1000) * autoScale * props["scaleElevation"] < 2
+    ):
+        _progress.WarningsOverlay.add_warning(
+            "Terrain seems to be really flat. If not intended, increase Elevation scale",
+            icon="warn",
+        )
 
     # Recalculate blender coords with elevation applied, simplify, deduplicate
     blender_coords = convert_to_blender_coordinates_batch(coordinates)
     if bpy.app.debug:
         _g_slopes = []
-        _all_segs = blender_coords_separate if blender_coords_separate else [blender_coords]
+        _all_segs = (
+            blender_coords_separate if blender_coords_separate else [blender_coords]
+        )
         for _seg in _all_segs:
             for _i in range(len(_seg) - 1):
                 x1, y1, z1 = _seg[_i]
-                x2, y2, z2 = _seg[_i+1]
-                _h = math.sqrt((x2-x1)**2 + (y2-y1)**2)
+                x2, y2, z2 = _seg[_i + 1]
+                _h = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
                 if _h > 0:
                     _g_slopes.append(abs(z2 - z1) / _h)
         if _g_slopes:
             _avg_g = sum(_g_slopes) / len(_g_slopes)
-            print(f"[DEBUG] GPX avg slope:     {_avg_g:.4f}  ({math.degrees(math.atan(_avg_g)):.2f}°)")
-    blender_coords = simplify_curve(blender_coords, .12)
+            print(
+                f"[DEBUG] GPX avg slope:     {_avg_g:.4f}  ({math.degrees(math.atan(_avg_g)):.2f}°)"
+            )
+    blender_coords = simplify_curve(blender_coords, 0.12)
     print("Removing duplicates")
     blender_coords = separate_duplicate_xy(blender_coords, 0.05)
-    if ("separate_paths" in flags or len(separate_paths) > 1) and "trail_map" not in flags:
+    if (
+        "separate_paths" in flags or len(separate_paths) > 1
+    ) and "trail_map" not in flags:
         blender_coords_separate = [
-            separate_duplicate_xy(simplify_curve(convert_to_blender_coordinates_batch(path), .12), 0.05)
+            separate_duplicate_xy(
+                simplify_curve(convert_to_blender_coordinates_batch(path), 0.12), 0.05
+            )
             for path in separate_paths
         ]
     if separate_paths_by_file and "trail_map" not in flags:
         blender_coords_by_file = [
-            [separate_duplicate_xy(simplify_curve(convert_to_blender_coordinates_batch(seg), .12), 0.05) for seg in file_segs]
+            [
+                separate_duplicate_xy(
+                    simplify_curve(convert_to_blender_coordinates_batch(seg), 0.12),
+                    0.05,
+                )
+                for seg in file_segs
+            ]
             for file_segs in separate_paths_by_file
         ]
 
     # Subdivide segments that are too far apart to prevent the trail from
     # clipping through hills between sparse GPX points
     _MAX_TRAIL_SEG_BU = 0.25
-    
+
     _depsgraph = bpy.context.evaluated_depsgraph_get()
-    blender_coords = _subdivide_long_segments(blender_coords, _MAX_TRAIL_SEG_BU, _depsgraph)
+    blender_coords = _subdivide_long_segments(
+        blender_coords, _MAX_TRAIL_SEG_BU, _depsgraph
+    )
     if blender_coords_separate:
         blender_coords_separate = [
             _subdivide_long_segments(seg, _MAX_TRAIL_SEG_BU, _depsgraph)
@@ -1831,63 +2414,83 @@ def runGeneration(type, locked_scale=None):
         ]
     if blender_coords_by_file:
         blender_coords_by_file = [
-            [_subdivide_long_segments(seg, _MAX_TRAIL_SEG_BU, _depsgraph) for seg in file_segs]
+            [
+                _subdivide_long_segments(seg, _MAX_TRAIL_SEG_BU, _depsgraph)
+                for seg in file_segs
+            ]
             for file_segs in blender_coords_by_file
         ]
 
     # Store real-world map scale
     lat1, lon1 = coordinates[0][0], coordinates[0][1]
     lat2, lon2 = coordinates[-1][0], coordinates[-1][1]
-    tdist  = haversine(lat1, lon1, lat2, lon2)
-    mscale = (tdist / props['size']) * 1000000
+    tdist = haversine(lat1, lon1, lat2, lon2)
+    mscale = (tdist / props["size"]) * 1000000
     bpy.context.scene.tp3d["o_mapScale"] = f"{mscale:.0f}"
 
     # --- Phase 10: Build trail curves ---
     overlay.update(0.70, "Building Trail", "Creating curve objects…")
-    curveObj  = None
+    curveObj = None
     curveObjs = None
     print("Building trail curve(s)")
     try:
-        if ("gpx_file" in flags and "trail_map" not in flags and len(blender_coords_separate) <= 1) or "trail_map" in flags:
+        if (
+            "gpx_file" in flags
+            and "trail_map" not in flags
+            and len(blender_coords_separate) <= 1
+        ) or "trail_map" in flags:
             # Single segment or trail_map: one curve directly
             create_curve_from_coordinates(blender_coords)
             curveObj = bpy.context.view_layer.objects.active
-        elif "gpx_chain" in flags and blender_coords_by_file and "trail_map" not in flags and "trail" in flags:
+        elif (
+            "gpx_chain" in flags
+            and blender_coords_by_file
+            and "trail_map" not in flags
+            and "trail" in flags
+        ):
             # Multi-file: create one object per file by joining its segments as separate splines
             curveObjs = []
             for file_segs in blender_coords_by_file:
-                bpy.ops.object.select_all(action='DESELECT')
+                bpy.ops.object.select_all(action="DESELECT")
                 for crds in file_segs:
                     create_curve_from_coordinates(crds)
                 if len(file_segs) > 1:
                     bpy.ops.object.join()
                 curveObjs.append(bpy.context.view_layer.objects.active)
-        elif ("separate_paths" in flags or len(blender_coords_separate) > 1) and "trail_map" not in flags and "trail" in flags:
+        elif (
+            ("separate_paths" in flags or len(blender_coords_separate) > 1)
+            and "trail_map" not in flags
+            and "trail" in flags
+        ):
             # Single file with multiple segments: join all into one object
-            bpy.ops.object.select_all(action='DESELECT')
+            bpy.ops.object.select_all(action="DESELECT")
             for crds in blender_coords_separate:
                 create_curve_from_coordinates(crds)
             bpy.ops.object.join()
             curveObjs = [bpy.context.view_layer.objects.active]
     except RuntimeError:
-        show_message_box("Bad Response from API while creating the curve. If this happens everytime contact dev")
+        show_message_box(
+            "Bad Response from API while creating the curve. If this happens everytime contact dev"
+        )
         overlay.finish()
         return
-    
+
     print(f"Curve objects created: {len(curveObjs) if curveObjs else 0}")
 
     if curveObjs is None:
         curveObjs = splitCurves(curveObj)
-    curveObj  = None
-    bpy.ops.object.select_all(action='DESELECT')
+    curveObj = None
+    bpy.ops.object.select_all(action="DESELECT")
 
     if curveObjs:
         props["currentTrail"] = curveObjs[0]
         bpy.context.scene.tp3d.currentTrail = curveObjs[0]
 
     _n_segs = len(curveObjs) if curveObjs else 0
-    _n_pts  = len(blender_coords)
-    overlay.add_completed_step(f"Trail built  —  {_n_segs} seg{'s' if _n_segs != 1 else ''}, {_n_pts} pts")
+    _n_pts = len(blender_coords)
+    overlay.add_completed_step(
+        f"Trail built  —  {_n_segs} seg{'s' if _n_segs != 1 else ''}, {_n_pts} pts"
+    )
 
     # --- Phase 11: Apply terrain elevation to mesh vertices ---
     overlay.update(0.75, "Applying Terrain", "Displacing mesh vertices…")
@@ -1911,18 +2514,24 @@ def runGeneration(type, locked_scale=None):
     merc = 1.0 / np.cos(lat_rad)
 
     # Compute new Z for all vertices at once and write back
-    new_z = np.array(tileVerts, dtype=np.float64) / 1000.0 * props['scaleElevation'] * autoScale * merc
+    new_z = (
+        np.array(tileVerts, dtype=np.float64)
+        / 1000.0
+        * props["scaleElevation"]
+        * autoScale
+        * merc
+    )
     co[:, 2] = new_z
     mesh.vertices.foreach_set("co", co.ravel())
     mesh.update()
 
-    lowestZ  = float(new_z.min())
+    lowestZ = float(new_z.min())
     highestZ = float(new_z.max())
     overlay.update(0.80, "Terrain Ready", "Vertices displaced…")
     overlay.sub_percent = None
     additionalExtrusion = lowestZ
     bpy.context.scene.tp3d.sAdditionalExtrusion = additionalExtrusion
-    bpy.context.scene.tp3d.lowestZ  = lowestZ
+    bpy.context.scene.tp3d.lowestZ = lowestZ
     bpy.context.scene.tp3d.highestZ = highestZ
 
     print(f"additionalExtrusion: {additionalExtrusion}")
@@ -1934,18 +2543,19 @@ def runGeneration(type, locked_scale=None):
             verts = tuple(edge.vertices)
             v1 = mesh.vertices[verts[0]].co
             v2 = mesh.vertices[verts[1]].co
-            _h = math.sqrt((v2.x-v1.x)**2 + (v2.y-v1.y)**2)
+            _h = math.sqrt((v2.x - v1.x) ** 2 + (v2.y - v1.y) ** 2)
             if _h > 0:
                 _t_slopes.append(abs(v2.z - v1.z) / _h)
         if _t_slopes:
             _avg_t = sum(_t_slopes) / len(_t_slopes)
-            print(f"[DEBUG] Terrain avg slope: {_avg_t:.4f}  ({math.degrees(math.atan(_avg_t)):.2f}°)")
-
+            print(
+                f"[DEBUG] Terrain avg slope: {_avg_t:.4f}  ({math.degrees(math.atan(_avg_t)):.2f}°)"
+            )
 
     # Snap trail curves onto terrain surface
-    if props['overwritePathElevation'] and curveObj is not None:
+    if props["overwritePathElevation"] and curveObj is not None:
         RaycastCurveToMesh(curveObj, MapObject)
-    if props['overwritePathElevation'] and curveObjs is not None:
+    if props["overwritePathElevation"] and curveObjs is not None:
         for tcrv in curveObjs:
             RaycastCurveToMesh(tcrv, MapObject)
 
@@ -1953,74 +2563,116 @@ def runGeneration(type, locked_scale=None):
     import bmesh
     import shapely.geometry as sg
     import shapely.ops as so
+    from shapely.ops import polygonize
 
     from . import geometry2d as g2d
 
     obj = MapObject
-    if obj.mode != 'OBJECT':
-        bpy.ops.object.mode_set(mode='OBJECT')
+    if obj.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
 
     bm = bmesh.new()
     bm.from_mesh(obj.data)
 
-    target_bottom_z = additionalExtrusion - props['minThickness']
-    shift_z = -additionalExtrusion + props['minThickness']
+    target_bottom_z = additionalExtrusion - props["minThickness"]
+    shift_z = -additionalExtrusion + props["minThickness"]
 
-    # 1. Extrude boundary edges downward
+    # Extrude boundary edges downward
     top_boundary_edges = [e for e in bm.edges if e.is_boundary]
     extrude_res = bmesh.ops.extrude_edge_only(bm, edges=top_boundary_edges)
 
-    extruded_verts = [elem for elem in extrude_res['geom'] if isinstance(elem, bmesh.types.BMVert)]
-    extruded_edges = [elem for elem in extrude_res['geom'] if isinstance(elem, bmesh.types.BMEdge)]
+    extruded_verts = [
+        elem for elem in extrude_res["geom"] if isinstance(elem, bmesh.types.BMVert)
+    ]
+    extruded_edges = [
+        elem for elem in extrude_res["geom"] if isinstance(elem, bmesh.types.BMEdge)
+    ]
 
-    # 2. Flatten bottom edge vertices
+    # 1. Flatten all bottom vertices
     for v in extruded_verts:
         v.co.z = target_bottom_z
 
-    # 3. Group bottom boundary loops into ordered vertex paths
+    # 2. Build direct 2D coordinate lookup for extruded bottom vertices
     bottom_boundary_edges = [e for e in extruded_edges if e.is_boundary]
     loops = g2d.group_boundary_loops(bottom_boundary_edges)
 
+    rings = []
     if loops:
-        # Build 2D point sequences for Shapely
-        coords_loops = [[(v.co.x, v.co.y) for v in loop] for loop in loops]
+        # 3. Convert mesh boundary loops into 2D Shapely LinearRings (contains ALL lattice verts)
+        for loop in loops:
+            if len(loop) >= 3:
+                pts = [(v.co.x, v.co.y) for v in loop]
+                if pts[0] != pts[-1]:
+                    pts.append(pts[0])
+                rings.append(sg.LinearRing(pts))
 
-        # Sort loops by 2D area (largest is the outer perimeter, rest are internal holes)
-        def loop_area_2d(loop_coords):
-            n = len(loop_coords)
-            area = sum(loop_coords[i][0] * loop_coords[(i + 1) % n][1] - loop_coords[(i + 1) % n][0] * loop_coords[i][1] for i in range(n))
-            return abs(area / 2.0)
+    # 4. Automatically reconstruct shell & hole hierarchy from the mesh boundary rings
+    mesh_polygons = list(polygonize(rings))
 
-        coords_loops.sort(key=loop_area_2d, reverse=True)
+    # Filter out empty space voids using original vector outline
+    map_polygon = g2d.get_map_polygon(obj)
+    if map_polygon:
+        mesh_polygons = [
+            p for p in mesh_polygons if map_polygon.covers(p.representative_point())
+        ]
 
-        exterior_ring = coords_loops[0]
-        interior_rings = coords_loops[1:]
+    # Lookup mapping 2D coords back to the exact bottom BMVerts
+    vert_lookup = {
+        (round(v.co.x, 6), round(v.co.y, 6)): v for loop in loops for v in loop
+    }
 
-        # Construct Shapely Polygon with holes
-        poly = sg.Polygon(shell=exterior_ring, holes=interior_rings)
+    for poly in mesh_polygons:
+        if poly.is_empty:
+            continue
 
-        # Triangulate vertices
-        delaunay_tris = so.triangulate(poly)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
 
-        # Quick lookup table mapping (x, y) coordinates back to BMVerts
-        vert_lookup = {(round(v.co.x, 6), round(v.co.y, 6)): v for loop in loops for v in loop}
+        exterior_ring = list(poly.exterior.coords)[:-1]
+        interior_rings = [list(h.coords)[:-1] for h in poly.interiors]
 
-        # Generate faces for triangles that sit inside the solid polygon boundary
-        for tri in delaunay_tris:
-            if poly.covers(tri.centroid):
+        # Triangulate using the mesh-derived boundary vertices
+        cdt_res = g2d._cdt_triangulate(poly, exterior_ring, interior_rings)
+
+        if cdt_res is None:
+            # Fallback
+            delaunay_tris = [t for t in so.triangulate(poly) if poly.covers(t.centroid)]
+            for tri in delaunay_tris:
                 tri_coords = list(tri.exterior.coords)[:3]
-                bm_verts = [vert_lookup.get((round(pt[0], 6), round(pt[1], 6))) for pt in tri_coords]
+                bm_verts = [
+                    vert_lookup.get((round(pt[0], 6), round(pt[1], 6)))
+                    for pt in tri_coords
+                ]
 
-                if None not in bm_verts:
+                if None not in bm_verts and len(set(bm_verts)) == 3:
                     v1, v2, v3 = bm_verts
-                    # Ensure downward-facing normal (-Z)
+                    normal = (v2.co - v1.co).cross(v3.co - v1.co)
+                    if normal.z > 0:
+                        bm.faces.new((v1, v3, v2))
+                    else:
+                        bm.faces.new((v1, v2, v3))
+        else:
+            verts2d, tris = cdt_res
+            bm_vert_list = []
+
+            for x, y in verts2d:
+                key = (round(x, 6), round(y, 6))
+                if key in vert_lookup:
+                    bm_vert_list.append(vert_lookup[key])
+                else:
+                    new_v = bm.verts.new((x, y, target_bottom_z))
+                    bm_vert_list.append(new_v)
+                    vert_lookup[key] = new_v
+
+            for ia, ib, ic in tris:
+                v1, v2, v3 = bm_vert_list[ia], bm_vert_list[ib], bm_vert_list[ic]
+                if len({v1, v2, v3}) == 3:
                     normal = (v2.co - v1.co).cross(v3.co - v1.co)
                     if normal.z > 0:
                         bm.faces.new((v1, v3, v2))
                     else:
                         bm.faces.new((v1, v2, v3))
 
-    # 4. Shift all geometry to final relative Z position
     for v in bm.verts:
         v.co.z += shift_z
 
@@ -2043,13 +2695,13 @@ def runGeneration(type, locked_scale=None):
 
     # --- Phase 12-13: Create text / plate overlays for text-based shapes ---
     overlay.update(0.82, "Shape Overlays", "Adding text and plate elements…")
-    textobj   = None
-    plateobj  = None
-    shellobj  = None
-    shape     = props['shape']
-    plateThickness = props['plateThickness']
-    shapeRotation  = props['shapeRotation']
-    bpy.ops.object.select_all(action='DESELECT')
+    textobj = None
+    plateobj = None
+    shellobj = None
+    shape = props["shape"]
+    plateThickness = props["plateThickness"]
+    shapeRotation = props["shapeRotation"]
+    bpy.ops.object.select_all(action="DESELECT")
 
     if "append_collection" not in flags:
         if shape == "HEXAGON INNER TEXT":
@@ -2067,23 +2719,39 @@ def runGeneration(type, locked_scale=None):
             textobj, plateobj = MedalText()
             obj.location.z += plateThickness
         elif shape.endswith(" SHELL"):
-            shellobj = build_map_shell(obj, bpy.context.scene.tp3d.tolerance, wall=bpy.context.scene.tp3d.shellWallThickness, bottom_wall=1.0)
+            shellobj = build_map_shell(
+                obj,
+                bpy.context.scene.tp3d.tolerance,
+                wall=bpy.context.scene.tp3d.shellWallThickness,
+                bottom_wall=1.0,
+            )
             if shellobj:
                 set_origin_to_3d_cursor(shellobj)
         else:
             pass  # BottomText() — currently disabled
 
-    if ("TEXT" in shape and curveObjs is not None and "INNER TEXT" not in shape) or \
-       (shape == "CIRCLE OUTER TEXT" and curveObjs is not None):
+    if ("TEXT" in shape and curveObjs is not None and "INNER TEXT" not in shape) or (
+        shape == "CIRCLE OUTER TEXT" and curveObjs is not None
+    ):
         for tcrv in curveObjs:
             tcrv.location.z += plateThickness
 
     # Plate insert
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     dist = bpy.context.scene.tp3d.plateInsertValue
-    if shape in {"HEXAGON OUTER TEXT", "OCTAGON OUTER TEXT", "HEXAGON FRONT TEXT", "CIRCLE OUTER TEXT"} and plateobj and textobj:
-        transform_MapObject(plateobj, props['xTerrainOffset'], props['yTerrainOffset'])
-        transform_MapObject(textobj,  props['xTerrainOffset'], props['yTerrainOffset'])
+    if (
+        shape
+        in {
+            "HEXAGON OUTER TEXT",
+            "OCTAGON OUTER TEXT",
+            "HEXAGON FRONT TEXT",
+            "CIRCLE OUTER TEXT",
+        }
+        and plateobj
+        and textobj
+    ):
+        transform_MapObject(plateobj, props["xTerrainOffset"], props["yTerrainOffset"])
+        transform_MapObject(textobj, props["xTerrainOffset"], props["yTerrainOffset"])
         set_origin_to_3d_cursor(plateobj)
         set_origin_to_3d_cursor(textobj)
         if dist > 0:
@@ -2094,10 +2762,10 @@ def runGeneration(type, locked_scale=None):
 
     # --- Material preview mode ---
     for area in bpy.context.screen.areas:
-        if area.type == 'VIEW_3D':
+        if area.type == "VIEW_3D":
             for space in area.spaces:
-                if space.type == 'VIEW_3D':
-                    space.shading.type = 'MATERIAL'
+                if space.type == "VIEW_3D":
+                    space.shading.type = "MATERIAL"
 
     # Apply BASE material to the map mesh
     mat = bpy.data.materials.get("BASE")
@@ -2108,24 +2776,30 @@ def runGeneration(type, locked_scale=None):
     overlay.update(0.83, "Terrain Elements", "Adding elements…")
     if _osm_prefetch_thread is not None:
         _osm_prefetch_thread.join()
-    elements = _rg_build_terrain_elements(obj, scaleHor, curveObj=curveObjs[0] if curveObjs else None,
-                                          prefetched_osm=_osm_prefetched, outline=map_outline)
+    elements = _rg_build_terrain_elements(
+        obj,
+        scaleHor,
+        curveObj=curveObjs[0] if curveObjs else None,
+        prefetched_osm=_osm_prefetched,
+        outline=map_outline,
+    )
 
     # --- Phase 15: Single color mode processing ---
-    overlay.update(0.95, "Coloring", "Applying single-color mode…") 
+    overlay.update(0.95, "Coloring", "Applying single-color mode…")
     _rg_apply_single_color_mode(obj, curveObjs, elements, props)
 
     # --- Phase 15b: CREATE_TEXTURE — rasterise OSM polygons into UV texture ---
-    if props.get('elementMode') == "CREATE_TEXTURE":
+    if props.get("elementMode") == "CREATE_TEXTURE":
         from .texture import setup_paint_texture
+
         overlay.update(0.96, "Texture", "Rasterising OSM texture…")
-        _mmu_palette = setup_paint_texture(obj, elements.get('_osm_polygons', {}))
-        elements['_mmu_palette'] = _mmu_palette
+        _mmu_palette = setup_paint_texture(obj, elements.get("_osm_polygons", {}))
+        elements["_mmu_palette"] = _mmu_palette
         # When SCM trail is on, curveObjs hold the converted trail-strip meshes
         # (single_color_mode_curve converts in-place); keep them as 3D geometry.
         # When tex_include_trail is off, keep curveObjs as PAINT-style overlay objects.
         _tex_trail = bpy.context.scene.tp3d.tex_include_trail
-        if curveObjs and not props.get('singleColorMode') and _tex_trail:
+        if curveObjs and not props.get("singleColorMode") and _tex_trail:
             for tcrv in list(curveObjs):
                 if tcrv and tcrv.name in bpy.data.objects:
                     bpy.data.objects.remove(tcrv, do_unlink=True)
@@ -2141,7 +2815,6 @@ def runGeneration(type, locked_scale=None):
             remove_objects(crv)
             curveObjs[i] = tmp
 
-
     # --- Phases 16-18: Assign materials, export, and finalize ---
     overlay.update(0.97, "Finalizing", "Exporting files...")
     _rg_assign_materials(obj, curveObjs, textobj, plateobj, props, shellobj)
@@ -2149,24 +2822,43 @@ def runGeneration(type, locked_scale=None):
     # --- Phase 15c: Tag companion objects with solid-colour paint textures ---
     # Without this the Orca exporter sees no paint data on these objects and
     # the slicer defaults them to extruder 1 regardless of material colour.
-    if props.get('elementMode') == "CREATE_TEXTURE":
-        _mmu_palette = elements.get('_mmu_palette')
+    if props.get("elementMode") == "CREATE_TEXTURE":
+        _mmu_palette = elements.get("_mmu_palette")
         if _mmu_palette:
             from .texture import (
                 _ROADS_SRGB,
                 _WHITE_SRGB,
                 tag_solid_color_for_paint_export,
             )
-            for _cobj, _ccol in [(textobj, _WHITE_SRGB), (plateobj, _ROADS_SRGB), (shellobj, _ROADS_SRGB)]:
+
+            for _cobj, _ccol in [
+                (textobj, _WHITE_SRGB),
+                (plateobj, _ROADS_SRGB),
+                (shellobj, _ROADS_SRGB),
+            ]:
                 tag_solid_color_for_paint_export(_cobj, _ccol, _mmu_palette)
-    _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_time, exportformat, elements, shellobj)
+    _rg_export(
+        obj,
+        curveObjs,
+        textobj,
+        plateobj,
+        props,
+        buggyDataset,
+        start_time,
+        exportformat,
+        elements,
+        shellobj,
+    )
     # Script duration
     end_time = time.time()
     duration = end_time - start_time
     bpy.context.scene.tp3d.sRunDuration = round(duration)
-    bpy.context.scene.tp3d["o_time"] = _("Script ran for {} seconds").format(round(duration))
+    bpy.context.scene.tp3d["o_time"] = _("Script ran for {} seconds").format(
+        round(duration)
+    )
 
     from .elevation import load_generation_counter, save_generation_counter
+
     _total_maps = load_generation_counter() + 1
     save_generation_counter(_total_maps)
     bpy.context.scene.tp3d["o_mapsGenerated"] = f"Maps Generated: {_total_maps}"
@@ -2174,11 +2866,9 @@ def runGeneration(type, locked_scale=None):
     if obj:
         obj["GenerationTime"] = round(duration)
 
-
     print(f"Finished. Generating Map took {duration:.0f} seconds")
     print("----------------------------------------------------------------")
     print(" ")
-
 
     _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
     _m, _s = divmod(_elapsed, 60)
@@ -2197,20 +2887,21 @@ def runGeneration(type, locked_scale=None):
 # above, just driven from a different entry point.
 # ---------------------------------------------------------------------------
 
+
 def _ctfs_load_props():
     """Load all settings needed by createTerrainFromSelected from the scene."""
     tp3d = bpy.context.scene.tp3d
     return {
-        'scaleElevation':     tp3d.scaleElevation,
-        'api':                tp3d.api,
-        'minThickness':       tp3d.minThickness,
-        'autoScale':          tp3d.sAutoScale,
-        'singleColorMode':    tp3d.singleColorMode,
-        'elementMode':        tp3d.elementMode,
-        'selfHosted':         tp3d.selfHosted,
-        'indipendendTiles':   tp3d.indipendendTiles,
-        'additionalExtrusion': tp3d.sAdditionalExtrusion,
-        'scaleHor':           tp3d.get("sScaleHor", 1),
+        "scaleElevation": tp3d.scaleElevation,
+        "api": tp3d.api,
+        "minThickness": tp3d.minThickness,
+        "autoScale": tp3d.sAutoScale,
+        "singleColorMode": tp3d.singleColorMode,
+        "elementMode": tp3d.elementMode,
+        "selfHosted": tp3d.selfHosted,
+        "indipendendTiles": tp3d.indipendendTiles,
+        "additionalExtrusion": tp3d.sAdditionalExtrusion,
+        "scaleHor": tp3d.get("sScaleHor", 1),
     }
 
 
@@ -2237,11 +2928,11 @@ def _ctfs_apply_elevation(zobj, props, progress_cb=None, skip_bottom_recess=Fals
     )
     from .geo import convert_to_geo  # deferred to avoid circular import at load time
 
-    scaleElevation      = props['scaleElevation']
-    autoScale           = props['autoScale']
-    minThickness        = props['minThickness']
-    additionalExtrusion = props['additionalExtrusion']
-    indipendendTiles    = props['indipendendTiles']
+    scaleElevation = props["scaleElevation"]
+    autoScale = props["autoScale"]
+    minThickness = props["minThickness"]
+    additionalExtrusion = props["additionalExtrusion"]
+    indipendendTiles = props["indipendendTiles"]
 
     print(f"additionalExtrusion: {additionalExtrusion}")
 
@@ -2253,12 +2944,13 @@ def _ctfs_apply_elevation(zobj, props, progress_cb=None, skip_bottom_recess=Fals
 
     if len(tileVerts) < 500:
         _progress.WarningsOverlay.add_warning(
-            f"Mesh has only {len(tileVerts)} Points. Increase Resolution for higher Quality", "warn"
+            f"Mesh has only {len(tileVerts)} Points. Increase Resolution for higher Quality",
+            "warn",
         )
 
     # Find elevation range
     mesh = zobj.data
-    lowestZ  = 1000
+    lowestZ = 1000
     highestZ = 0
     _obj_matrix = zobj.matrix_world
     for i, vert in enumerate(mesh.vertices):
@@ -2266,7 +2958,7 @@ def _ctfs_apply_elevation(zobj, props, progress_cb=None, skip_bottom_recess=Fals
         _vert_lat, _unused_var = convert_to_geo(_world_co.x, _world_co.y)
         _merc = 1 / math.cos(math.radians(_vert_lat))
         val = tileVerts[i] / 1000 * scaleElevation * autoScale * _merc
-        lowestZ  = min(lowestZ,  val)
+        lowestZ = min(lowestZ, val)
         highestZ = max(highestZ, val)
 
     if indipendendTiles:
@@ -2278,17 +2970,17 @@ def _ctfs_apply_elevation(zobj, props, progress_cb=None, skip_bottom_recess=Fals
         _vert_lat, _unused_var = convert_to_geo(_world_co.x, _world_co.y)
         _merc = 1 / math.cos(math.radians(_vert_lat))
         vert.co.z = tileVerts[i] / 1000 * scaleElevation * autoScale * _merc
-        lowestZ  = min(lowestZ,  vert.co.z)
+        lowestZ = min(lowestZ, vert.co.z)
         highestZ = max(highestZ, vert.co.z)
 
     # Extrude bottom face and set its z
     bpy.context.view_layer.objects.active = zobj
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.mesh.extrude_region_move()
     bpy.ops.transform.translate(value=(0, 0, -8))
     bpy.ops.mesh.dissolve_faces()
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="OBJECT")
 
     mesh = zobj.data
     selected_faces = [face for face in mesh.polygons if face.select]
@@ -2301,10 +2993,10 @@ def _ctfs_apply_elevation(zobj, props, progress_cb=None, skip_bottom_recess=Fals
 
     # Shift geometry so bottom sits at correct z
     bpy.context.view_layer.objects.active = zobj
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.transform.translate(value=(0, 0, -additionalExtrusion + minThickness))
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="OBJECT")
 
     # When extending, additionalExtrusion is locked to an older tile's own
     # lowest point so the terrain surface stays seamless across the join. If
@@ -2330,7 +3022,8 @@ def _ctfs_apply_elevation(zobj, props, progress_cb=None, skip_bottom_recess=Fals
                 for vert_idx in face.vertices:
                     mesh.vertices[vert_idx].co.z -= bottom_drop
             _progress.WarningsOverlay.add_warning(
-                f"{zobj.name}: base recessed {bottom_drop:.0f}mm to keep the terrain seamless with the existing map", "warn"
+                f"{zobj.name}: base recessed {bottom_drop:.0f}mm to keep the terrain seamless with the existing map",
+                "warn",
             )
 
     return lowestZ, highestZ, additionalExtrusion, len(tileVerts)
@@ -2360,12 +3053,20 @@ def _ctfs_handle_trail(zobj, duplicate, singleColorMode):
 
     def _near_tile(ob):
         cx_min, cx_max, cy_min, cy_max = _xy_extents(ob)
-        return cx_min <= tx_max and cx_max >= tx_min and cy_min <= ty_max and cy_max >= ty_min
+        return (
+            cx_min <= tx_max
+            and cx_max >= tx_min
+            and cy_min <= ty_max
+            and cy_max >= ty_min
+        )
 
     search_str = "_Trail"
-    matches = [ob for ob in bpy.context.view_layer.objects if search_str in ob.name and _near_tile(ob)]
+    matches = [
+        ob
+        for ob in bpy.context.view_layer.objects
+        if search_str in ob.name and _near_tile(ob)
+    ]
     curveObjs = []
-
 
     print(f"matches: {matches}")
 
@@ -2378,7 +3079,13 @@ def _ctfs_handle_trail(zobj, duplicate, singleColorMode):
                 curveObjs.append(cd)
 
     elif not singleColorMode and matches:
-        trail_matches = [ob for ob in matches if ob.type in {'CURVE', 'MESH'} and not ob.hide_get() and ob.name in bpy.context.view_layer.objects]
+        trail_matches = [
+            ob
+            for ob in matches
+            if ob.type in {"CURVE", "MESH"}
+            and not ob.hide_get()
+            and ob.name in bpy.context.view_layer.objects
+        ]
         for i, trail in enumerate(trail_matches):
             if i == 0 and duplicate is not None:
                 dup = duplicate
@@ -2390,15 +3097,15 @@ def _ctfs_handle_trail(zobj, duplicate, singleColorMode):
                     if dup.name not in col.objects:
                         col.objects.link(dup)
 
-            bpy.ops.object.select_all(action='DESELECT')
+            bpy.ops.object.select_all(action="DESELECT")
             dup.select_set(True)
             zobj.select_set(False)
             bpy.context.view_layer.objects.active = dup
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='SELECT')
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_all(action="SELECT")
             bpy.ops.mesh.extrude_region_move()
             bpy.ops.transform.translate(value=(0, 0, 1))
-            bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.ops.object.mode_set(mode="OBJECT")
             dup.name = f"{zobj.name}_TRAIL_{i}"
             dup_name = dup.name
             intersect_trail_with_existing_box(dup, trail)
@@ -2441,8 +3148,11 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     print("SCRIPT STARTED - createTerrainFromSelected")
     print("------------------------------------------------")
 
-
-    if props['selfHosted'] != "" and props['selfHosted'] is not None and props['api'] == 1:
+    if (
+        props["selfHosted"] != ""
+        and props["selfHosted"] is not None
+        and props["api"] == 1
+    ):
         print(f"!!using {props['selfHosted']} instead of Opentopodata!!")
 
     setupColors()
@@ -2454,17 +3164,17 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
         from .scene import (
             show_message_box,  # deferred to avoid circular import at load time
         )
+
         show_message_box("No objects selected")
         if manage_overlay:
             overlay.finish()
-        return {'FINISHED'}
+        return {"FINISHED"}
 
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
 
-    lowestZ  = 0
+    lowestZ = 0
     highestZ = 0
-    additionalExtrusion = props['additionalExtrusion']
-
+    additionalExtrusion = props["additionalExtrusion"]
 
     _map_km = round(bpy.context.scene.tp3d.get("sMapInKm", 0), 1)
     _fetch_items = build_fetch_items(_map_km)
@@ -2476,7 +3186,8 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     #   - objType absent OR == "MAP"  (objects without objType are valid map tiles)
     #   - not already processed (highestZ and lowestZ both non-zero)
     _mp_valid = [
-        obj for obj in selected_objects
+        obj
+        for obj in selected_objects
         if obj.type == "MESH"
         and obj.get("objType", "MAP") == "MAP"
         and not (obj.get("highestZ", 0) != 0 and obj.get("lowestZ", 0) != 0)
@@ -2485,25 +3196,34 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     _mp_tile_size = float(_mp_valid[0].get("objSize", 1.0)) if _mp_valid else 1.0
     if len(_mp_valid) >= 2:
         for obj in _mp_valid:
-            _mp_tiles_info.append({
-                'bx': round(float(obj.location.x), 3),
-                'by': round(float(obj.location.y), 3),
-                'status': 'pending',
-                'shape': obj.get("Shape", "square").lower().split()[0],
-            })
-        overlay.set_map_preview({'tiles': _mp_tiles_info, 'tile_size': round(_mp_tile_size, 3)})
+            _mp_tiles_info.append(
+                {
+                    "bx": round(float(obj.location.x), 3),
+                    "by": round(float(obj.location.y), 3),
+                    "status": "pending",
+                    "shape": obj.get("Shape", "square").lower().split()[0],
+                }
+            )
+        overlay.set_map_preview(
+            {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
+        )
 
     n_tiles = len(selected_objects)
     for tile_idx, zobj in enumerate(selected_objects):
         tile_label = f"Tile {tile_idx + 1}/{n_tiles}"
-        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.object.select_all(action="DESELECT")
         bpy.context.scene.cursor.location = zobj.location
 
         if zobj.type != "MESH":
             continue
         if "objType" in zobj and zobj["objType"] != "MAP":
             continue
-        if "highestZ" in zobj and "lowestZ" in zobj and zobj["highestZ"] != 0 and zobj["lowestZ"] != 0:
+        if (
+            "highestZ" in zobj
+            and "lowestZ" in zobj
+            and zobj["highestZ"] != 0
+            and zobj["lowestZ"] != 0
+        ):
             continue
 
         if _mp_tiles_info and _progress.SubprocessProgress.get().is_cancel_requested():
@@ -2516,59 +3236,81 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
         if _mp_tiles_info and zobj in _mp_valid:
             _mp_idx = _mp_valid.index(zobj)
             for k in range(_mp_idx):
-                _mp_tiles_info[k]['status'] = 'done'
-            _mp_tiles_info[_mp_idx]['status'] = 'active'
-            overlay.set_map_preview({'tiles': _mp_tiles_info, 'tile_size': round(_mp_tile_size, 3)})
+                _mp_tiles_info[k]["status"] = "done"
+            _mp_tiles_info[_mp_idx]["status"] = "active"
+            overlay.set_map_preview(
+                {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
+            )
 
         # Reset chip strip for this tile
         overlay.set_fetch_items(build_fetch_items(_map_km))
 
         # Create flat duplicate for trail boolean (normal mode only)
         duplicate = None
-        if not props['singleColorMode']:
+        if not props["singleColorMode"]:
             pass
-            #COMMENTED OUT FOR NOW, NOT SURE IF NEEDED CURRENTLY (MAYBE FOR SINGLE COLOR MODE)
-            #duplicate = zobj.copy()
-            #duplicate.data = zobj.data.copy()
-            #bpy.context.collection.objects.link(duplicate)
-            #for col in zobj.users_collection:
+            # COMMENTED OUT FOR NOW, NOT SURE IF NEEDED CURRENTLY (MAYBE FOR SINGLE COLOR MODE)
+            # duplicate = zobj.copy()
+            # duplicate.data = zobj.data.copy()
+            # bpy.context.collection.objects.link(duplicate)
+            # for col in zobj.users_collection:
             #    if duplicate.name not in col.objects:
             #        col.objects.link(duplicate)
-            #duplicate.name = "Bool"
-            #duplicate.select_set(False)
+            # duplicate.name = "Bool"
+            # duplicate.select_set(False)
 
         # Apply terrain elevation + extrude bottom face (0% → 50% of this tile)
-        overlay.update(base_pct + step * 0.00, "Fetching Elevation", f"{tile_label} — querying elevation API…")
-        overlay.set_fetch_progress('elevation', 0.0)
+        overlay.update(
+            base_pct + step * 0.00,
+            "Fetching Elevation",
+            f"{tile_label} — querying elevation API…",
+        )
+        overlay.set_fetch_progress("elevation", 0.0)
 
         def _elev_progress(pct, _base_pct=base_pct, _step=step, _tile_label=tile_label):
             t = pct / 100.0
-            overlay.update(_base_pct + _step * t * 0.50,
-                           "Fetching Elevation",
-                           f"{_tile_label} — {pct}% complete…",
-                           sub_percent=t,
-                           sub_label="Elevation tiles")
-            overlay.set_fetch_progress('elevation', t)
+            overlay.update(
+                _base_pct + _step * t * 0.50,
+                "Fetching Elevation",
+                f"{_tile_label} — {pct}% complete…",
+                sub_percent=t,
+                sub_label="Elevation tiles",
+            )
+            overlay.set_fetch_progress("elevation", t)
 
-        props['additionalExtrusion'] = additionalExtrusion
+        props["additionalExtrusion"] = additionalExtrusion
         lowestZ, highestZ, additionalExtrusion, n_elev_pts = _ctfs_apply_elevation(
-            zobj, props, progress_cb=_elev_progress, skip_bottom_recess=skip_bottom_recess
+            zobj,
+            props,
+            progress_cb=_elev_progress,
+            skip_bottom_recess=skip_bottom_recess,
         )
-        props['additionalExtrusion'] = additionalExtrusion
+        props["additionalExtrusion"] = additionalExtrusion
         overlay.sub_percent = None
-        overlay.set_fetch_done('elevation', success=True)
-        overlay.update(base_pct + step * 0.50, "Elevation Ready", f"{tile_label} — {n_elev_pts} pts, z {lowestZ:.1f}–{highestZ:.1f}")
-        overlay.add_completed_step(f"{tile_label} — elevation fetched ({n_elev_pts} pts, z {lowestZ:.1f}–{highestZ:.1f})")
+        overlay.set_fetch_done("elevation", success=True)
+        overlay.update(
+            base_pct + step * 0.50,
+            "Elevation Ready",
+            f"{tile_label} — {n_elev_pts} pts, z {lowestZ:.1f}–{highestZ:.1f}",
+        )
+        overlay.add_completed_step(
+            f"{tile_label} — elevation fetched ({n_elev_pts} pts, z {lowestZ:.1f}–{highestZ:.1f})"
+        )
 
         # Handle trail projection / intersection
-        overlay.update(base_pct + step * 0.60, "Building Trail", f"{tile_label} — projecting trail onto terrain…")
+        overlay.update(
+            base_pct + step * 0.60,
+            "Building Trail",
+            f"{tile_label} — projecting trail onto terrain…",
+        )
         print(f"duplicate: {duplicate}")
-        curveObjs = _ctfs_handle_trail(zobj, duplicate, props['singleColorMode'])
+        curveObjs = _ctfs_handle_trail(zobj, duplicate, props["singleColorMode"])
         _n_trails = len(curveObjs)
         print(f"_n_trails: {_n_trails}")
         overlay.add_completed_step(
             f"{tile_label} — trail built ({_n_trails} seg{'s' if _n_trails != 1 else ''})"
-            if _n_trails else f"{tile_label} — no trail"
+            if _n_trails
+            else f"{tile_label} — no trail"
         )
 
         # Base material
@@ -2578,41 +3320,62 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
 
         # Terrain overlay elements (water, forest, city, glacier, buildings, roads)
         _elem_start = base_pct + step * 0.70
-        _elem_end   = base_pct + step * 0.93
-        overlay.update(_elem_start, "Terrain Elements", f"{tile_label} — building overlay layers…")
-        terrain = _rg_build_terrain_elements(zobj, props['scaleHor'], phase_start=_elem_start, phase_end=_elem_end, tile_label=tile_label)
-        if terrain['roads']:
-            terrain['roads'].location.z += 0.4
+        _elem_end = base_pct + step * 0.93
+        overlay.update(
+            _elem_start, "Terrain Elements", f"{tile_label} — building overlay layers…"
+        )
+        terrain = _rg_build_terrain_elements(
+            zobj,
+            props["scaleHor"],
+            phase_start=_elem_start,
+            phase_end=_elem_end,
+            tile_label=tile_label,
+        )
+        if terrain["roads"]:
+            terrain["roads"].location.z += 0.4
         _found = [k for k, v in terrain.items() if v is not None]
         overlay.add_completed_step(
-            f"{tile_label} — elements: {', '.join(_found)}" if _found else f"{tile_label} — no elements"
+            f"{tile_label} — elements: {', '.join(_found)}"
+            if _found
+            else f"{tile_label} — no elements"
         )
 
         recalculateNormals(zobj)
 
         # Single color mode processing
-        overlay.update(base_pct + step * 0.85, "Coloring", f"{tile_label} — applying single-color mode…")
+        overlay.update(
+            base_pct + step * 0.85,
+            "Coloring",
+            f"{tile_label} — applying single-color mode…",
+        )
         print(f"curveObjs: {curveObjs} ")
         _rg_apply_single_color_mode(zobj, curveObjs, terrain, props)
 
         # CREATE_TEXTURE: rasterise OSM polygons into a UV paint texture.
         # _rg_build_terrain_elements already populated terrain['_osm_polygons']
         # and discarded the road mesh; we just need to bake the texture here.
-        if props['elementMode'] == "CREATE_TEXTURE":
+        if props["elementMode"] == "CREATE_TEXTURE":
             from .texture import setup_paint_texture
-            overlay.update(base_pct + step * 0.89, "Texture", f"{tile_label} — rasterising OSM texture…")
-            setup_paint_texture(zobj, terrain.get('_osm_polygons', {}))
+
+            overlay.update(
+                base_pct + step * 0.89,
+                "Texture",
+                f"{tile_label} — rasterising OSM texture…",
+            )
+            setup_paint_texture(zobj, terrain.get("_osm_polygons", {}))
             # Trail curves are encoded in the texture; 3D objects not needed.
-            if curveObjs and not props['singleColorMode']:
+            if curveObjs and not props["singleColorMode"]:
                 for _tcrv in list(curveObjs):
                     if _tcrv and _tcrv.name in bpy.data.objects:
                         bpy.data.objects.remove(_tcrv, do_unlink=True)
                 curveObjs.clear()
 
         # Finalize tile
-        overlay.update(base_pct + step * 0.93, "Finalizing", f"{tile_label} — writing metadata…")
+        overlay.update(
+            base_pct + step * 0.93, "Finalizing", f"{tile_label} — writing metadata…"
+        )
         writeMetadata(zobj)
-        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.object.select_all(action="DESELECT")
         zobj.select_set(False)
         zobj["lowestZ"] += additionalExtrusion
         zobj["highestZ"] += additionalExtrusion
@@ -2622,9 +3385,10 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     # Mark all tiles done in the preview
     if _mp_tiles_info:
         for _info in _mp_tiles_info:
-            _info['status'] = 'done'
-        overlay.set_map_preview({'tiles': _mp_tiles_info, 'tile_size': round(_mp_tile_size, 3)})
-
+            _info["status"] = "done"
+        overlay.set_map_preview(
+            {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
+        )
 
     bpy.context.view_layer.objects.active = selected_objects[0]
     for zobj in selected_objects:
@@ -2633,11 +3397,12 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     end_time = time.time()
     duration = end_time - start_time
 
-    bpy.context.scene.tp3d.lowestZ  = lowestZ
+    bpy.context.scene.tp3d.lowestZ = lowestZ
     bpy.context.scene.tp3d.highestZ = highestZ
     bpy.context.scene.tp3d["o_time"] = f"Script ran for {duration:.0f} seconds"
 
     from .elevation import load_generation_counter, save_generation_counter
+
     _total_maps = load_generation_counter() + 1
     save_generation_counter(_total_maps)
     bpy.context.scene.tp3d["o_mapsGenerated"] = f"Maps Generated: {_total_maps}"
@@ -2645,7 +3410,10 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
     _m, _s = divmod(_elapsed, 60)
     overlay.add_completed_step(f"Done  —  {_m:02d}:{_s:02d} total")
-    _progress.WarningsOverlay.add_warning("Multi-tile maps are not exported automatically — please use the Export buttons to export your tiles manually.", "warn")
+    _progress.WarningsOverlay.add_warning(
+        "Multi-tile maps are not exported automatically — please use the Export buttons to export your tiles manually.",
+        "warn",
+    )
     if manage_overlay:
         overlay.finish()
         _progress.WarningsOverlay.get().show()
@@ -2681,8 +3449,7 @@ def generateJustTrail(material="TRAIL"):
     blender_coords_separate = []
     type = 0
 
-    bpy.ops.object.select_all(action='DESELECT')
-
+    bpy.ops.object.select_all(action="DESELECT")
 
     try:
         separate_paths = read_gpx_file()
@@ -2690,30 +3457,42 @@ def generateJustTrail(material="TRAIL"):
         show_message_box(f"Something went Wrong reading the GPX. Type {type}")
     coordinates = [item for sublist in separate_paths for item in sublist]
 
-
-    #RECALCULATE THE COORDS WITH AUTOSCALE APPLIED
-    blender_coords = [convert_to_blender_coordinates(lat, lon, ele,timestamp) for lat, lon, ele, timestamp in coordinates]
+    # RECALCULATE THE COORDS WITH AUTOSCALE APPLIED
+    blender_coords = [
+        convert_to_blender_coordinates(lat, lon, ele, timestamp)
+        for lat, lon, ele, timestamp in coordinates
+    ]
 
     if type == 1 or len(separate_paths) > 1:
         blender_coords_separate = [
-            separate_duplicate_xy([convert_to_blender_coordinates(lat, lon, ele, timestamp) for lat, lon, ele, timestamp in path], 0.05)
+            separate_duplicate_xy(
+                [
+                    convert_to_blender_coordinates(lat, lon, ele, timestamp)
+                    for lat, lon, ele, timestamp in path
+                ],
+                0.05,
+            )
             for path in separate_paths
-            ]
+        ]
 
-    blender_coords = simplify_curve(blender_coords, .12)
+    blender_coords = simplify_curve(blender_coords, 0.12)
 
-    #PREVENT CLIPPING OF IDENTICAL COORDINATES
+    # PREVENT CLIPPING OF IDENTICAL COORDINATES
     blender_coords = separate_duplicate_xy(blender_coords, 0.05)
-
 
     print(len(separate_paths))
 
-
     if (type == 1 or len(separate_paths) > 1) and type != 4:
         blender_coords_separate = [
-            separate_duplicate_xy([convert_to_blender_coordinates(lat, lon, ele, timestamp) for lat, lon, ele, timestamp in path], 0.05)
+            separate_duplicate_xy(
+                [
+                    convert_to_blender_coordinates(lat, lon, ele, timestamp)
+                    for lat, lon, ele, timestamp in path
+                ],
+                0.05,
+            )
             for path in separate_paths
-            ]
+        ]
 
     curveObj = None
     try:
@@ -2731,26 +3510,24 @@ def generateJustTrail(material="TRAIL"):
     except RuntimeError as e:
         show_message_box(e)
 
-
     if curveObj:
         bpy.context.view_layer.objects.active = curveObj
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.curve.select_all(action='SELECT')
-        bpy.ops.transform.translate(value=(0, 0, -additionalExtrusion+minThickness))#bpy.ops.mesh.select_all(action='DESELECT')
-        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.curve.select_all(action="SELECT")
+        bpy.ops.transform.translate(
+            value=(0, 0, -additionalExtrusion + minThickness)
+        )  # bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.object.mode_set(mode="OBJECT")
 
-
-
-    #sets 3D cursor to origin of tile
+    # sets 3D cursor to origin of tile
     if curveObj:
         curveObj.select_set(True)
         bpy.ops.object.origin_set(type="ORIGIN_CURSOR")
 
-    #Raycast the curve points onto the Mesh surface
+    # Raycast the curve points onto the Mesh surface
     if overwritePathElevation == True:
-        #pass
-        RaycastCurveToAnyMesh(curveObj,1000,True)
-
+        # pass
+        RaycastCurveToAnyMesh(curveObj, 1000, True)
 
     if curveObj:
         mat = bpy.data.materials.get(material)
