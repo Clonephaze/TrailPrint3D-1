@@ -1093,6 +1093,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             _roads_poly,
             el_sHeight,
             full_depth,
+            map_polygon=_g2d.get_map_polygon(obj),
         )
 
         # Repair non-manifold boundary edges left by the terrain-grid clip and

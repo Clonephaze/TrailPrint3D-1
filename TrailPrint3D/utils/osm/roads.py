@@ -444,6 +444,7 @@ def finalize_roads(
     road_polygon,
     el_sHeight: float,
     full_depth: bool,
+    map_polygon=None,
 ) -> None:
     """Rebuild the road mesh's top surface from the terrain's own triangulated
     grid, clipped to the road footprint, so it shares the exact same
@@ -477,6 +478,14 @@ def finalize_roads(
         return
     if not terrain_tris or road_polygon is None or road_polygon.is_empty:
         return
+    
+    # --- CLIP ROAD FOOTPRINT TO MAP BOUNDARY & HOLES ---
+    if map_polygon is not None and not map_polygon.is_empty:
+        road_polygon = road_polygon.intersection(map_polygon)
+        if road_polygon.is_empty:
+            print("[TP3D roads] finalize_roads: road footprint sits entirely outside map boundary")
+            return
+
     dbg = bpy.app.debug_events
 
     if dbg:

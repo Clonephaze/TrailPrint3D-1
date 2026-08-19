@@ -1196,3 +1196,11 @@ def group_boundary_loops(edges):
             loops.append(loop)
 
     return loops
+
+
+def get_map_polygon(obj) -> Polygon | MultiPolygon | None:
+    """Retrieve the original 2D Shapely polygon stored on a map object."""
+    from shapely import wkt
+    if obj and "map_polygon_wkt" in obj:
+        return wkt.loads(obj["map_polygon_wkt"])
+    return None

@@ -253,6 +253,10 @@ def build_mesh_from_polygon(polygon, cell_size: float, name: str = "Shape"):
 
     obj.name = name
     obj.data.name = name
+
+    # --- ATTACH CANONICAL SHAPELY OUTLINE ---
+    obj["map_polygon_wkt"] = polygon.wkt
+
     return obj
 
 
