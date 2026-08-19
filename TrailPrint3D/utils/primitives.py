@@ -3,6 +3,7 @@ import math
 import bmesh  # type: ignore
 import bpy  # type: ignore
 from mathutils import Vector  # type: ignore
+from shapely import wkt
 
 from . import geometry2d as g2d  # deferred-safe: pure-Python, no bpy-time side effects
 
@@ -242,6 +243,12 @@ def build_mesh_from_polygon(polygon, cell_size: float, name: str = "Shape"):
     bpy.context.view_layer.objects.active = obj
     bm = bmesh.new()
     bm.from_mesh(mesh)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+
+    degenerate_faces = [f for f in bm.faces if f.calc_area() < 1e-7]
+    if degenerate_faces:
+        bmesh.ops.delete(bm, geom=degenerate_faces, context="FACES")
+
     bm.normal_update()
     if bm.faces and sum(f.normal.z for f in bm.faces) / len(bm.faces) < 0:
         for f in bm.faces:
@@ -263,32 +270,70 @@ def build_mesh_from_polygon(polygon, cell_size: float, name: str = "Shape"):
 def clean_and_union_geometry(
     geometries, target_size: float = None, min_area_ratio: float = 0.001
 ):
-    """Fixes self-intersections, unions all input polygons, filters out tiny
-    floating noise specks, and optionally centers at (0, 0) and scales to target_size.
-    """
+    from shapely import Polygon, make_valid, normalize, set_precision
     from shapely.affinity import scale as af_scale
     from shapely.affinity import translate as af_trans
-    from shapely.geometry import Polygon
 
     if not isinstance(geometries, (list, tuple)):
         geometries = [geometries]
 
-    valid_geoms = []
+    # 1. UNPACK all inputs into discrete individual Polygons
+    raw_polys = []
     for g in geometries:
         if g is None or g.is_empty:
             continue
-        v = g2d.validate(g)
-        if not v.is_empty:
-            valid_geoms.append(v)
+        v = make_valid(g)
+        if v.is_empty:
+            continue
 
-    if not valid_geoms:
+        if isinstance(v, Polygon):
+            raw_polys.append(v)
+        elif hasattr(v, "geoms"):
+            for sub_g in v.geoms:
+                if sub_g.geom_type == "Polygon" and not sub_g.is_empty:
+                    raw_polys.append(sub_g)
+
+    if not raw_polys:
         return None
 
-    # Union everything into one clean geometry (Polygon or MultiPolygon)
-    unioned = g2d.union(valid_geoms)
-    unioned = g2d.validate(unioned)
+    # 2. SCALE raw modules together first
+    minx = min(p.bounds[0] for p in raw_polys)
+    miny = min(p.bounds[1] for p in raw_polys)
+    maxx = max(p.bounds[2] for p in raw_polys)
+    maxy = max(p.bounds[3] for p in raw_polys)
 
-    # 1. Extract purely polygonal components (drops stray points/lines)
+    width, height = maxx - minx, maxy - miny
+    max_dim = max(width, height)
+
+    scaled_polys = []
+    if target_size is not None and max_dim > 0:
+        scale_factor = target_size / max_dim
+        cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+
+        for p in raw_polys:
+            p_trans = af_trans(p, xoff=-cx, yoff=-cy)
+            p_scaled = af_scale(
+                p_trans, xfact=scale_factor, yfact=scale_factor, origin=(0, 0)
+            )
+            scaled_polys.append(p_scaled)
+    else:
+        scaled_polys = raw_polys
+
+    # 3. PRE-UNION BUFFER
+    target_dim = target_size if target_size is not None else max_dim
+    micro_offset = target_dim * 0.0005  # 0.05% weld thickness
+
+    welded_polys = [p.buffer(micro_offset, join_style="bevel") for p in scaled_polys]
+
+    # 4. UNION into a single geometry
+    unioned = g2d.union(welded_polys)
+    unioned = make_valid(unioned)
+
+    # Snap micro-precision jitter
+    unioned = set_precision(unioned, grid_size=1e-5)
+    unioned = make_valid(unioned)
+
+    # Extract purely polygonal components
     polys = []
     if isinstance(unioned, Polygon):
         polys = [unioned]
@@ -300,35 +345,26 @@ def clean_and_union_geometry(
     if not polys:
         return None
 
-    # 2. Filter out tiny noise islands relative to the largest shape
+    # Filter out tiny noise islands
     max_area = max(p.area for p in polys)
     filtered_polys = [p for p in polys if p.area >= (max_area * min_area_ratio)]
 
     if filtered_polys:
         unioned = g2d.union(filtered_polys)
-        unioned = g2d.validate(unioned)
+        unioned = make_valid(unioned)
 
-    # Center at (0,0) and scale bounding box to fit target_size
-    if target_size is not None and not unioned.is_empty:
-        minx, miny, maxx, maxy = unioned.bounds
-        width, height = maxx - minx, maxy - miny
-        max_dim = max(width, height)
-
-        if max_dim > 0:
-            scale_factor = target_size / max_dim
-            cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
-
-            # Recenter and scale
-            unioned = af_trans(unioned, xoff=-cx, yoff=-cy)
-            unioned = af_scale(
-                unioned, xfact=scale_factor, yfact=scale_factor, origin=(0, 0)
-            )
-
-    # Simplify redundant collinear vertices on curves before returning
+    # 5. SHAVE OFF MITRE SPIKES
+    # Tolerance set slightly higher than micro_offset collapses near-collinear nubs on flat edges
     if unioned and not unioned.is_empty:
-        unioned = unioned.simplify(1e-4, preserve_topology=True)
-    num_coords = len(unioned.exterior.coords) if hasattr(unioned, 'exterior') else sum(len(p.exterior.coords) for p in unioned.geoms)
-    print(f"[SVG Node Count] Total vertices after cleaning: {num_coords}")
+        clean_tol = micro_offset * 1.5
+        unioned = unioned.simplify(clean_tol, preserve_topology=True)
+        unioned = make_valid(unioned)
+
+    # Enforce CCW exterior / CW holes winding
+    if unioned and not unioned.is_empty:
+        unioned = g2d.orient(unioned, sign=1.0)
+        unioned = normalize(unioned)
+
     return unioned
 
 
