@@ -461,7 +461,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
 
 
     col_wArea: FloatProperty(name= _("Water Threshold"), default = 1, description = _("Lakes smaller than the threshold won't be included")) # type: ignore
-    col_wStreamWidth: FloatProperty(name= _("River Width"), default = 1.0, min=0.1, max=10.0, description = _("Adjusts the thickness of rivers and streams")) # type: ignore
+    col_wStreamWidth: FloatProperty(name= _("River Width"), default = 1.0, min=0.1, max=100.0, description = _("Adjusts the thickness of rivers and streams")) # type: ignore
     col_wPondsActive: BoolProperty(name= _("Water"), default=False, description = _("Include ponds and lakes (natural=water)")) # type: ignore
     col_wSmallRiversActive: BoolProperty(name= _("Small Rivers"), default=False, description = _("smaller Streams, canals, ditches and other minor waterways are not included in default water setting")) # type: ignore
     col_wBigRiversActive: BoolProperty(name= _("Big Rivers"), default=False, description = _("Major named rivers (waterway with wikidata tag. Usually already part of water setting)")) # type: ignore
@@ -482,7 +482,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     el_bHeightMultiplier: FloatProperty(name= _("Height Multiplier"), default=1.0, min=0.01, soft_max=10.0, description=_("Multiplies building height")) # type: ignore
     el_bMinPrintMM: FloatProperty(name= _("Min Footprint (mm)"), default=0.15, min=0.0, soft_max=5.0, precision=2, description=_("Buildings whose printed footprint side is smaller than this (in model mm) are skipped. Scale-aware: a larger real-world building on a bigger-km map prints smaller, so this threshold naturally culls more on larger maps.")) # type: ignore
 
-    el_sMultiplier: FloatProperty(name= _("Road Width Multiplier"), default = 1, description = _("To make Roads thicker or thinner")) # type: ignore
+    el_sMultiplier: FloatProperty(name= _("Road Width Multiplier"), default = 1, min=0.01, soft_max=100.0, description = _("To make Roads thicker or thinner")) # type: ignore
     el_sHeight: FloatProperty(name= _("Road Height"), default = 0.4, min=0.0, description = _("Height of road geometry above terrain")) # type: ignore
     el_sCutTolerance: FloatProperty(name= _("Road Cutout Tolerance"), default = 0.2, min=0.0, description = _("Extra clearance added around roads when cutting their footprint out of terrain/elements in SEPARATE/SingleColorMode, so the printed road piece seats without an overly tight fit. Same idea as Tolerance Elements, but for roads.")) # type: ignore
 

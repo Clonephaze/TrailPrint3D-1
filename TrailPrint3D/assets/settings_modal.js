@@ -110,7 +110,7 @@ var COMPOSITE_ELEMENTS = {
         ],
         numberFields: [
             { key: 'colWArea', label: 'Lake/Pond Threshold', step: 0.1, min: 0 },
-            { key: 'colWStreamWidth', label: 'River Width', step: 0.1, min: 0.1, max: 10 },
+            { key: 'colWStreamWidth', label: 'River Width', step: 0.1, min: 0.1, max: 100 },
             { key: 'elOMinIslandArea', label: 'Min Island Area', step: 0.5, min: 0 },
             { key: 'elORdpEpsilon', label: 'Coastline Simplify', step: 0.01, min: 0, max: 2 }
         ]
