@@ -2498,6 +2498,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             bpy.data.objects.remove(buildings_obj, do_unlink=True)
         from .utils.osm import buildings as _bld_utils
         buildings_data = getattr(_bld_utils, '_puzzle_buildings_data', None)
+        from .utils.osm import gen as _osm_gen
 
         # Snap trails against the continuous tile before cutting — avoids raycasting misses in the inter-piece gaps.
         trails = []
@@ -2532,7 +2533,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             overlay.update(0.85, "Merging trails into pieces…", f"{len(trails)} trail(s)…")
             for trail_obj in trails:
                 for piece_obj in piece_objs:
-                    if utils.osm.gen.is_bbox_overlapping(trail_obj, piece_obj):
+                    if _osm_gen.is_bbox_overlapping(trail_obj, piece_obj):
                         utils.merge_active_with_map(piece_obj, trail_obj)
             # merge_active_with_map only hides each original whole trail (hide_set(True))
             # rather than removing it -- fine for the regular single-tile flow where that
@@ -2852,9 +2853,10 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         utils.createTerrainFromSelected(manage_overlay=False, skip_bottom_recess=True)
 
         if gpx_paths:
+            from .utils.osm import gen as _osm_gen
             trails = _generate_trails(context, gpx_paths, overlay, 0.95, 0.99)
             for trail_obj in trails:
-                if utils.osm.gen.is_bbox_overlapping(trail_obj, blank):
+                if _osm_gen.is_bbox_overlapping(trail_obj, blank):
                     utils.merge_active_with_map(blank, trail_obj)
             if not bpy.app.debug:
                 utils.remove_objects(trails)
