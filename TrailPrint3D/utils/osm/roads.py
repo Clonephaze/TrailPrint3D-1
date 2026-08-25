@@ -410,32 +410,36 @@ def _build_variable_extruded_mesh(
 # ---------------------------------------------------------------------------
 
 
-def compute_full_depth_bottom_z(
+def compute_flush_bottom_z(
     terrain_tris: list,
-    road_polygon,
-    el_sHeight: float,
+    cut_depth: float,
 ) -> float | None:
-    """Compute the flat printable-base Z for full-depth roads (SEPARATE /
-    SINGLECOLORMODE*), the road equivalent of how single-color-mode elements
-    get their own recess depth (see single_color_mode_mesh_remesh: bottom_z =
-    min(v.z) of the element's OWN geometry, not the map floor).
+    """Compute the single flat bottom Z shared by the ENTIRE road object in
+    full-depth modes (SEPARATE / SINGLECOLORMODE*) -- every network on the
+    map, not one flat plane per network and not a value derived from any one
+    road's own local footprint.
 
-    A road's top surface follows terrain_z(x, y) + el_sHeight across its
-    footprint. Placing the flat bottom at the LOWEST point that surface
-    reaches, minus el_sHeight, guarantees the slab is at least el_sHeight
-    thick everywhere along the road while sinking into the terrain/elements
-    below only as deep as this specific road actually needs -- not all the
-    way down to the map's own base the way a full elevation column would.
+    The road's top surface always follows terrain_z(x, y) + el_sHeight, so
+    it stays flush with the ground everywhere regardless of relief. The
+    bottom is anchored to the single LOWEST point of the terrain anywhere on
+    the map (every upward-facing triangle in terrain_tris, not just the ones
+    under a road), minus a small controllable depth below that one point.
+    Because that reference point is the terrain's own global minimum, this
+    floor sits at or below every terrain point on the map by construction --
+    a road crossing a valley and a road crossing a hill both cut down to the
+    exact same Z, and every road piece can be printed on its own with the
+    same flat foot.
 
-    Returns None if the polygon/tris yield no geometry under the footprint
-    (caller should treat this the same as "no road here").
+    `cut_depth` must already be clamped by the caller (min(user value,
+    minThickness / 2)) so the floor never reaches into the model's own base
+    plate -- this function does not re-check that here.
+
+    Returns None if terrain_tris is empty.
     """
-    top_verts, _top_tris = g2d.clip_triangles_to_polygon(
-        terrain_tris, road_polygon, el_sHeight
-    )
-    if not top_verts:
+    if not terrain_tris:
         return None
-    return min(z for _x, _y, z in top_verts) - el_sHeight
+    lowest_z = min(p[2] for tri in terrain_tris for p in tri)
+    return lowest_z - cut_depth
 
 
 def finalize_roads(
@@ -444,6 +448,7 @@ def finalize_roads(
     road_polygon,
     el_sHeight: float,
     full_depth: bool,
+    bottom_z: float | None = None,
     map_polygon=None,
 ) -> None:
     """Rebuild the road mesh's top surface from the terrain's own triangulated
@@ -460,14 +465,15 @@ def finalize_roads(
     coarse mesh's own vertices, so it doesn't matter that they no longer
     exist by the time this runs.
 
-    full_depth=True (SEPARATE/SINGLECOLORMODE*): bottom cap is flat, matching
-    the same flush-bottom-into-a-recess pattern single-color-mode elements
-    use -- see compute_full_depth_bottom_z. It's computed from the road's OWN
-    footprint here (not passed in), so it always matches whatever recess the
-    caller cut for it.
-    full_depth=False (PAINT): bottom cap mirrors the top, offset down by
-    2*el_sHeight, giving a thin slab that hugs the terrain surface on both
-    faces instead of reaching down to a base at all.
+    full_depth=True (SEPARATE/SINGLECOLORMODE*): bottom cap is flat at
+    ``bottom_z`` -- the SAME single value for the whole road object,
+    computed once by the caller via compute_flush_bottom_z and also used to
+    build the matching cutter, so the mesh built here always matches
+    whatever recess was actually cut. Required (not None) whenever
+    full_depth is True.
+    full_depth=False (PAINT): ``bottom_z`` is ignored; bottom cap mirrors the
+    top, offset down by 2*el_sHeight, giving a thin slab that hugs the
+    terrain surface on both faces instead of reaching down to a base at all.
     """
     _t0 = 0
     _t1 = 0
@@ -478,12 +484,14 @@ def finalize_roads(
         return
     if not terrain_tris or road_polygon is None or road_polygon.is_empty:
         return
-    
+
     # --- CLIP ROAD FOOTPRINT TO MAP BOUNDARY & HOLES ---
     if map_polygon is not None and not map_polygon.is_empty:
         road_polygon = road_polygon.intersection(map_polygon)
         if road_polygon.is_empty:
-            print("[TP3D roads] finalize_roads: road footprint sits entirely outside map boundary")
+            print(
+                "[TP3D roads] finalize_roads: road footprint sits entirely outside map boundary"
+            )
             return
 
     dbg = bpy.app.debug_events
@@ -498,10 +506,11 @@ def finalize_roads(
         return
 
     if full_depth:
-        # Same footprint/tris/el_sHeight that just produced top_verts, so this
-        # is guaranteed consistent with the surface actually being built here
-        # -- no separately-passed-in value that could drift out of sync.
-        bottom_z = min(z for _x, _y, z in top_verts) - el_sHeight
+        if bottom_z is None:
+            print(
+                "[TP3D roads] finalize_roads: full_depth requested but bottom_z is None"
+            )
+            return
         bottom_zs = [bottom_z] * len(top_verts)
     else:
         # top = terrain_z + el_sHeight; bottom = terrain_z (slab sits on surface, not inside it)
@@ -622,7 +631,7 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize=1, full_depth=Fal
     # This mesh only ever gets used as a placeholder / last-resort fallback
     # cutter -- for full_depth modes (SEPARATE/SINGLECOLORMODE*), the caller
     # (see generation.py's road-cutting step) rebuilds a properly bounded
-    # cutter from compute_full_depth_bottom_z before actually cutting
+    # cutter from compute_flush_bottom_z before actually cutting
     # terrain/elements, since the real flush-bottom depth depends on terrain
     # height under the road footprint, which isn't available yet at this
     # point (map hasn't been triangulated/cached). Reaching to the map floor

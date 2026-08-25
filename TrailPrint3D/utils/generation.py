@@ -1014,7 +1014,7 @@ def _rg_build_terrain_elements(
                 from .mesh_ops import recalculateNormals as _rg_recalc_normals
                 from .osm.roads import (
                     _triangulated_terrain_faces,
-                    compute_full_depth_bottom_z,
+                    compute_flush_bottom_z,
                 )
 
                 _rg_recalc_normals(obj)
@@ -1031,8 +1031,14 @@ def _rg_build_terrain_elements(
                     tp3d.elementMode not in ("PAINT", "CREATE_TEXTURE")
                     and roads_polygon is not None
                 ):
-                    terrain["roads_bottom_z"] = compute_full_depth_bottom_z(
-                        terrain["_terrain_tris_cache"], roads_polygon, tp3d.el_sHeight
+                    # One flat bottom for the WHOLE road object (every network
+                    # on the map), anchored to the terrain's own global lowest
+                    # point -- see compute_flush_bottom_z. Clamp here, not
+                    # inside that function, so the clamp stays visible at the
+                    # single call site that also drives the UI warning.
+                    _cut_depth = min(0.3, tp3d.minThickness / 2)
+                    terrain["roads_bottom_z"] = compute_flush_bottom_z(
+                        terrain["_terrain_tris_cache"], _cut_depth
                     )
                 if (
                     tp3d.elementMode == "CREATE_TEXTURE"
@@ -1287,23 +1293,23 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         "SINGLECOLORMODE",
         "SINGLECOLORMODE_REMESH",
     ):
-        # MANIFOLD requires BOTH operands to be watertight -- roads is the
-        # known carrier of a small residual non-manifold defect (see osm.py's
-        # create_roads notes), so it must be checked here too, not just the
-        # element being cut. Checking only elem_obj (as an earlier version of
-        # this fix did) let the solver stay MANIFOLD and silently no-op on
-        # every single cut whenever roads itself was the non-manifold side.
-        roads_manifold = is_mesh_manifold(
-            roads_obj
-        )  # For the boolean cuts, build a cutter from the Shapely road polygon
+        # MANIFOLD requires BOTH operands to be watertight. The actual cutter
+        # used below may be roads_obj (last-resort fallback) OR the properly
+        # bounded _cutter_tmp built just below -- checked AFTER roads_cutter
+        # is finalized, not before, since checking roads_obj here regardless
+        # of which one actually gets used meant the solver decision could be
+        # made against a completely different mesh than the one being cut
+        # with.
+        # For the boolean cuts, build a cutter from the Shapely road polygon
         # (optionally buffered outward by el_sCutTolerance for a clean,
         # uniform XY expansion -- vertex-normal dilation is unreliable on
-        # slab geometry with walls), extruded only from this road's own
-        # flush-bottom depth (see compute_full_depth_bottom_z) up past the
-        # terrain top. Falling back to raw roads_obj here would cut all the
-        # way down to the map floor, leaving no matching recess for the
-        # element to actually sit flush in -- always build the properly
-        # bounded cutter instead, regardless of the tolerance setting.
+        # slab geometry with walls), extruded only from the road object's
+        # own flush-bottom depth (see compute_flush_bottom_z -- one shared Z
+        # for every network on the map) up past the terrain top. Falling
+        # back to raw roads_obj here would cut all the way down to the map
+        # floor, leaving no matching recess for the element to actually sit
+        # flush in -- always build the properly bounded cutter instead,
+        # regardless of the tolerance setting.
         cut_tolerance = bpy.context.scene.tp3d.el_sCutTolerance
         roads_cutter = roads_obj
         _cutter_tmp = None
@@ -1349,6 +1355,10 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         # coloring elements -- otherwise the terrain piece and the roads
         # piece occupy the same 3D space wherever a road runs, leaving no
         # matching recess for the roads piece to sit in when assembled.
+        # Checked here, now that roads_cutter is finalized (roads_obj
+        # fallback or _cutter_tmp), not from roads_obj regardless of which
+        # one is actually about to be used -- see note above.
+        roads_manifold = is_mesh_manifold(roads_cutter)
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
             _ov.update(message="Cutting road from Terrain…")
@@ -1415,7 +1425,21 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             _roads_poly,
             el_sHeight,
             full_depth,
-            map_polygon=_g2d.get_map_polygon(obj),
+            bottom_z=terrain.get("roads_bottom_z"),
+            # Recomputed live from obj's CURRENT mesh + matrix_world, not the
+            # WKT cached on obj["map_polygon_wkt"] at object creation time --
+            # that cache is written once by primitives.build_mesh_from_polygon
+            # before elevation/shift/repositioning happen, so anything that
+            # moves or reshapes obj afterward leaves it describing a map
+            # outline that no longer matches obj's actual current position.
+            # road_polygon is always built from CURRENT world-space
+            # coordinates, so intersecting it against a stale outline can
+            # come back empty even when they visually overlap. create_roads()
+            # already uses this same live function for the equivalent
+            # road-union-to-map-shape clip, so this keeps both clips
+            # consistent with each other instead of mixing a live source
+            # with a cached one.
+            map_polygon=_g2d.map_footprint_polygon(obj),
         )
 
         # Repair non-manifold boundary edges left by the terrain-grid clip and
