@@ -92,7 +92,15 @@ def appendCollection():
 
                 return_obj = obj
             if "objSize" in obj:
-                scaleFactor = 1/100 * bpy.context.scene.tp3d.objSize
+                from ..props import (
+                    get_effective_footprint_size,  # deferred to avoid circular import at load time
+                )
+
+                # Shapes with a plate (medal/hexagon/octagon backplates) are
+                # bigger than the bare objSize by the outer border -- scale the
+                # holder to that actual footprint so the plate fits inside it.
+                footprint = get_effective_footprint_size(bpy.context.scene.tp3d)
+                scaleFactor = footprint / 100
                 obj.scale = (scaleFactor, scaleFactor, scaleFactor)
 
         scene_col.children.unlink(col)

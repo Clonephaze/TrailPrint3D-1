@@ -163,6 +163,24 @@ def get_effective_shape(tp3d):
     return base
 
 
+# Effective shapes that add a backplate with an outer border around the map
+# (see the "outersize = size * (1 + outerBorderSize/100)" calc duplicated in
+# HexagonOuterText/HexagonFrontText/OctagonOuterText/MedalText in
+# text_objects.py, and the same set gating plateBevel/handleStyle in
+# panels.py's TP3D_PT_shapes). "... INNER TEXT" has no border, so it's not here.
+PLATE_SHAPES = {"HEXAGON OUTER TEXT", "HEXAGON FRONT TEXT", "OCTAGON OUTER TEXT", "CIRCLE OUTER TEXT"}
+
+
+def get_effective_footprint_size(tp3d):
+    """The actual outer footprint size (mm) of the generated model. Shapes
+    with a plate (see PLATE_SHAPES) are larger than objSize by the outer
+    border, so anything scaled to fit the map (e.g. an imported holder) needs
+    this instead of the bare objSize."""
+    if get_effective_shape(tp3d) in PLATE_SHAPES:
+        return tp3d.objSize * (1 + tp3d.outerBorderSize / 100)
+    return tp3d.objSize
+
+
 def repair_invalid_shape(scene):
     """Files/sessions saved before the "... TEXT" shape variants were split
     out into shapeTextStyle may still have `shape` stored as one of those
