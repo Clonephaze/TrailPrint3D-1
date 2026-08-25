@@ -262,6 +262,9 @@ class TP3D_PT_advanced(bpy.types.Panel):
             row.prop(props, "yTerrainOffset", text=_("Y-Offset"))
             col.prop(props, "overwritePathElevation", text=_("Snap Trail to Terrain"))
             col.prop(props, "fixedElevationScale")
+            col.prop(props, "smoothTerrainTop")
+            if props.smoothTerrainTop:
+                col.prop(props, "smoothTerrainStrength")
 
             tol_box = box.box()
             tol_box.label(text=_("Single-Color-mode Tolerances"), icon='SNAP_MIDPOINT')

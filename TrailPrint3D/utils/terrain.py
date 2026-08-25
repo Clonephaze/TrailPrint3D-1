@@ -13,6 +13,154 @@ _COLORING_EMPTY = object()
 _COLORING_PAINTED = object()
 _COLORING_FILTERED = object()
 
+
+def _edt_1d_with_index(f, np):
+    """Exact squared Euclidean distance transform of a 1-D cost array
+    (0 at source positions, a large sentinel elsewhere). Returns
+    (squared_distance, source_index), both length len(f).
+
+    Felzenszwalt & Huttenlocher lower-envelope-of-parabolas algorithm --
+    the standard exact O(n) 1-D EDT, applied twice (once per axis) by
+    _nearest_fill to build a full 2-D exact transform.
+    """
+    n = len(f)
+    d = np.empty(n)
+    src = np.empty(n, dtype=np.intp)
+    v = np.empty(n, dtype=np.intp)
+    z = np.empty(n + 1)
+    k = 0
+    v[0] = 0
+    z[0] = -np.inf
+    z[1] = np.inf
+    for q in range(1, n):
+        while True:
+            vk = v[k]
+            s = ((f[q] + q * q) - (f[vk] + vk * vk)) / (2 * q - 2 * vk)
+            if s <= z[k]:
+                k -= 1
+            else:
+                break
+        k += 1
+        v[k] = q
+        z[k] = s
+        z[k + 1] = np.inf
+    k = 0
+    for q in range(n):
+        while z[k + 1] < q:
+            k += 1
+        vk = v[k]
+        d[q] = (q - vk) ** 2 + f[vk]
+        src[q] = vk
+    return d, src
+
+
+def _nearest_fill(grid, filled):
+    """Fill grid cells where filled==False with the value of the nearest
+    filled cell, via an exact separable 2-D Euclidean distance transform.
+
+    Pass 1 runs _edt_1d_with_index down every column (nearest filled row
+    within that column); pass 2 runs it across every row using pass 1's
+    squared distances as the new cost function (nearest column, combining
+    the vertical distance already found). The source row from pass 1 is
+    then looked up at the source column pass 2 landed on to reconstruct
+    the true nearest (row, col) for every cell.
+    """
+    import numpy as np  # type: ignore
+
+    res = grid.shape[0]
+    BIG = 1e18
+    cost = np.where(filled, 0.0, BIG)
+
+    d_col = np.empty((res, res))
+    src_row = np.empty((res, res), dtype=np.intp)
+    for c in range(res):
+        d, src = _edt_1d_with_index(cost[:, c], np)
+        d_col[:, c] = d
+        src_row[:, c] = src
+
+    src_col = np.empty((res, res), dtype=np.intp)
+    for r in range(res):
+        _, src = _edt_1d_with_index(d_col[r, :], np)
+        src_col[r, :] = src
+
+    rows_idx = np.arange(res)[:, None]
+    final_src_row = src_row[rows_idx, src_col]
+    return grid[final_src_row, src_col]
+
+
+def smooth_terrain_top_z(x, y, z, iterations=2):
+    """Smooth per-vertex terrain heights: rasterize -> nearest-fill ->
+    box-blur -> resample, pure numpy (no external dependencies).
+
+    The map mesh's top surface isn't a regular grid for every shape (hexagon,
+    circle, etc. are fan/remesh topology, not rows/columns), so the scattered
+    (x, y, z) vertex data is rasterized onto a small regular grid first, gaps
+    outside the shape's footprint (but inside its bounding box) are filled
+    from the nearest real value (_nearest_fill), the grid is box-blurred
+    (each pass averages the 8 edge-clamped neighbours of every cell), and
+    the smoothed grid is resampled back to each vertex's exact fractional
+    grid position via bilinear interpolation.
+
+    x, y, z    : 1-D numpy arrays of equal length, one entry per mesh vertex.
+    iterations : number of box-blur passes -- higher smooths more aggressively.
+    Returns a new Z array, same shape/order as z.
+    """
+    import numpy as np  # type: ignore
+
+    n = len(z)
+    if n < 4:
+        return z
+
+    x_min, x_max = x.min(), x.max()
+    y_min, y_max = y.min(), y.max()
+    if x_max <= x_min or y_max <= y_min:
+        return z
+
+    res = int(np.clip(round(math.sqrt(n)), 16, 256))
+
+    col = (x - x_min) / (x_max - x_min) * (res - 1)
+    row = (y - y_min) / (y_max - y_min) * (res - 1)
+    col_i = np.clip(col.round().astype(np.intp), 0, res - 1)
+    row_i = np.clip(row.round().astype(np.intp), 0, res - 1)
+
+    # Rasterize: average every vertex Z that lands in each grid cell.
+    sums = np.zeros((res, res), dtype=np.float64)
+    counts = np.zeros((res, res), dtype=np.float64)
+    np.add.at(sums, (row_i, col_i), z)
+    np.add.at(counts, (row_i, col_i), 1.0)
+    filled = counts > 0
+    grid = np.zeros((res, res), dtype=np.float64)
+    grid[filled] = sums[filled] / counts[filled]
+
+    if not filled.all():
+        grid = _nearest_fill(grid, filled)
+
+    # Box-blur via edge-padded shifts: pad the grid by 1 cell (replicating
+    # the border) so every cell's 8 neighbours are defined, then average
+    # the 9 shifted copies of the grid.
+    for _ in range(iterations):
+        padded = np.pad(grid, 1, mode='edge')
+        acc = np.zeros_like(grid)
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                acc += padded[1 + dy:1 + dy + res, 1 + dx:1 + dx + res]
+        grid = acc / 9.0
+
+    # Resample back to each vertex's fractional grid position via bilinear
+    # interpolation.
+    row_c = np.clip(row, 0, res - 1)
+    col_c = np.clip(col, 0, res - 1)
+    r0 = np.floor(row_c).astype(np.intp)
+    c0 = np.floor(col_c).astype(np.intp)
+    r1 = np.clip(r0 + 1, 0, res - 1)
+    c1 = np.clip(c0 + 1, 0, res - 1)
+    fr = row_c - r0
+    fc = col_c - c0
+    top = grid[r0, c0] * (1 - fc) + grid[r0, c1] * fc
+    bot = grid[r1, c0] * (1 - fc) + grid[r1, c1] * fc
+    return top * (1 - fr) + bot * fr
+
+
 # Material name override for kinds whose material name differs from the kind string.
 KIND_MATERIAL_OVERRIDE = {
     "SCREE": "MOUNTAIN",

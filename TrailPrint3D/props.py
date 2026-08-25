@@ -456,6 +456,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     rescaleMultiplier: FloatProperty(name = _("scale"), default = 1, min = 0, max = 10000) # type: ignore
     thickenValue: FloatProperty(name= _("thickenValue"), default = 1, description = _("Makes your Map 1mm thicker")) # type: ignore
     fixedElevationScale: BoolProperty(name= _("FixedElevationScale(10mm)"), default=False, description = _("Force the elevation to be 10mm High from highest to lowest point (ElevationScale still applies after that)")) # type: ignore
+    smoothTerrainTop: BoolProperty(name= _("Smooth Terrain"), default=False, description = _("Smooth the Terrain. Useful if your Terrain looks blocky or has weird Grid lines")) # type: ignore
+    smoothTerrainStrength: IntProperty(name= _("Smoothing Strength"), default=2, min=1, max=10, description = _("Number of smoothing passes applied to the terrain top surface. Higher = smoother but less detailed")) # type: ignore
     singleColorMode: BoolProperty(name= _("SingleColorMode Trail"), default = False, description = _("Enable this if you don't have a Multicolor printer")) # type: ignore
     singleColorModeHeight: FloatProperty(name= _("Trail Height"), default = 0.4, min=0.0, max=10.0, description = _("How far the SCM trail strip rises above the terrain surface (mm). 0 = flush with terrain. Works the same as Road Height.")) # type: ignore
     tolerance: FloatProperty(name= _("SingleColorMode Tolerance"), default = 0.2, description=_("Tolerance of the Trail for the SingleColorMode")) # type: ignore

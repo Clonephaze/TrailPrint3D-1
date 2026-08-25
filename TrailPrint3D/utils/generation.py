@@ -62,6 +62,8 @@ def _rg_validate_inputs(flags):
     api                = tp3d.api
     selfHosted         = tp3d.get("selfHosted", "")
     fixedElevScale     = tp3d.get('fixedElevationScale', False)
+    smoothTerrainTop   = tp3d.get('smoothTerrainTop', False)
+    smoothTerrainStrength = tp3d.get('smoothTerrainStrength', 2)
     minThickness       = tp3d.get("minThickness", 2)
     xTerrainOffset     = tp3d.get("xTerrainOffset", 0)
     yTerrainOffset     = tp3d.get("yTerrainOffset", 0)
@@ -196,6 +198,8 @@ def _rg_validate_inputs(flags):
         'api':                   api,
         'selfHosted':            selfHosted,
         'fixedElevationScale':   fixedElevScale,
+        'smoothTerrainTop':      smoothTerrainTop,
+        'smoothTerrainStrength': smoothTerrainStrength,
         'minThickness':          minThickness,
         'xTerrainOffset':        xTerrainOffset,
         'yTerrainOffset':        yTerrainOffset,
@@ -1886,10 +1890,12 @@ def runGeneration(type, locked_scale=None):
     mesh.vertices.foreach_get("co", co_flat)
     co = co_flat.reshape((_total_verts, 3))
 
-    # Transform local coords to world space and extract world Y for Mercator correction
+    # Transform local coords to world space and extract world X/Y (X for the
+    # optional terrain-smoothing pass below, Y for the Mercator correction)
     m = np.array(MapObject.matrix_world, dtype=np.float64)
     co_h = np.hstack([co, np.ones((_total_verts, 1), dtype=np.float64)])
-    world_y = (m @ co_h.T).T[:, 1]
+    world_xy = (m @ co_h.T).T[:, :2]
+    world_x, world_y = world_xy[:, 0], world_xy[:, 1]
 
     # Mercator latitude correction: stay in radians — skip the degrees roundtrip
     # convert_to_geo: lat_deg = degrees(2*atan(exp(y/(R*scaleHor))) - pi/2)
@@ -1899,6 +1905,15 @@ def runGeneration(type, locked_scale=None):
 
     # Compute new Z for all vertices at once and write back
     new_z = np.array(tileVerts, dtype=np.float64) / 1000.0 * props['scaleElevation'] * autoScale * merc
+
+    if props['smoothTerrainTop']:
+        from .terrain import smooth_terrain_top_z  # deferred to avoid circular import at load time
+        _pre_z = new_z
+        new_z = smooth_terrain_top_z(world_x, world_y, new_z, iterations=props['smoothTerrainStrength'])
+        _delta = np.abs(new_z - _pre_z)
+        print(f"[TrailPrint3D] Smooth Terrain Top: applied to {len(new_z)} verts "
+              f"(max Δz={_delta.max():.4f}, mean Δz={_delta.mean():.4f})")
+
     co[:, 2] = new_z
     mesh.vertices.foreach_set("co", co.ravel())
     mesh.update()
