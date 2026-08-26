@@ -166,13 +166,15 @@ def shape_update(self, context):
         self.shapeTextStyle = "NONE"
 
 
-def get_effective_shape(tp3d):
+def get_effective_shape(tp3d) -> str:
     """The full shape identifier generation.py/metadata.py operate on
     (e.g. "HEXAGON OUTER TEXT"), composed from the base shape dropdown and
     the text-style dropdown. Falls back to the bare base shape if no style
     is selected, or if the stored style isn't valid for the current base
     shape (e.g. left over from a different shape)."""
-    base = tp3d.shape
+    base = "HEXAGON"
+    if tp3d.shape != "":
+        base = tp3d.shape
     style = tp3d.shapeTextStyle
     if style == "SHELL" and not temp.PREMIUMVERSION:
         # Guards against a SHELL value left over from a Premium session/preset

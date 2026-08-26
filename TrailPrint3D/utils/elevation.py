@@ -13,6 +13,7 @@ import requests  # type: ignore
 
 from .. import constants as const
 from .. import progress as _progress
+from ..utils.generation import GenerationContext
 
 
 def load_counter():
@@ -842,7 +843,7 @@ def fix_invalid_elevations(elevations):
     return fixed, count
 
 
-def compute_and_store_tile_bounds(obj):
+def compute_and_store_tile_bounds(ctx: GenerationContext):
     """Compute geographic bounds from obj's mesh and write them to tp3d.
 
     Returns (world_verts, num_subdivisions, disable_cache, minLat, maxLat, minLon, maxLon).
@@ -851,7 +852,7 @@ def compute_and_store_tile_bounds(obj):
         convert_to_geo,
         haversine,
     )
-
+    obj = ctx.mapObject
     mesh = obj.data
     vertices = list(mesh.vertices)
     obj_matrix = obj.matrix_world
@@ -877,11 +878,11 @@ def compute_and_store_tile_bounds(obj):
     realdist1 = haversine(minLat, minLon, maxLat, maxLon)
     realdist2 = haversine(minLat, minLon, maxLat, maxLon)
 
-    bpy.context.scene.tp3d["sMapInKm"] = max(realdist1, realdist2)
-    bpy.context.scene.tp3d.minLat = minLat
-    bpy.context.scene.tp3d.maxLat = maxLat
-    bpy.context.scene.tp3d.minLon = minLon
-    bpy.context.scene.tp3d.maxLon = maxLon
+    ctx.mapKm = max(realdist1, realdist2)
+    ctx.tbMinLat = minLat
+    ctx.tbMaxLat = maxLat
+    ctx.tbMinLon = minLon
+    ctx.tbMaxLon = maxLon
 
     return world_verts, num_subdivisions, disable_cache, minLat, maxLat, minLon, maxLon
 

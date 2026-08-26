@@ -220,7 +220,7 @@ def subtract(geom, neg_geom):
     return geom.difference(neg_geom)
 
 
-def smooth_polygon_taubin(geom, outline=None, pin_tolerance=1e-3, **taubin_kwargs):
+def smooth_polygon_taubin(geom, pin_tolerance=1e-3, **taubin_kwargs):
     """Smooth a Shapely Polygon or MultiPolygon using Taubin smoothing
     (shapelysmooth), preserving vertex count/order so outline-touching
     vertices can be pinned back to their exact original position afterward.

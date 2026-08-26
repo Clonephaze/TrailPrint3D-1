@@ -3,11 +3,13 @@ import os
 import platform
 import threading
 import time
+from dataclasses import dataclass, field
 
 import bpy  # type: ignore
 import numpy as np  # type: ignore
 from bpy.app.translations import pgettext as _
 from mathutils import Vector  # type: ignore
+from shapely.geometry import MultiPolygon, Polygon
 
 from .. import addon_preferences
 from .. import constants as const
@@ -19,17 +21,95 @@ from .terrain import _ColoringTextureResult
 # geometry per piece without re-running the road pipeline.
 _puzzle_roads_data: tuple | None = None
 
+
+@dataclass
+class GPXStats:
+    start_time: str | None = ""
+    length: float = 0
+    elevation: float = 0
+    time: float = 0
+    avg_speed: float = 0
+    date: str | None = None
+
+
+@dataclass
+class GenerationContext:
+    flags: frozenset[str]
+    gpx_file_path: str
+    gpx_chain_path: str
+    exportPath: str
+    shape: str
+    name: str
+    modelname: str
+    size: int
+    scaleElevation: float
+    scalemode: str
+    scaleLon1: float
+    scaleLat1: float
+    scaleLon2: float
+    scaleLat2: float
+    shapeRotation: int
+    overwritePathElevation: bool
+    api: str
+    selfHosted: str
+    fixedElevationScale: bool
+    minThickness: float
+    xTerrainOffset: float
+    yTerrainOffset: float
+    singleColorMode: bool
+    elementMode: int
+    disableCache: bool
+    num_subdivisions: int
+    textFont: str
+    plateThickness: float
+    col_wActive: bool
+    col_fActive: bool
+    col_cActive: bool
+    col_grActive: bool
+    col_glActive: bool
+    el_bActive: bool
+    el_sActive: bool
+    jMapLat: float
+    jMapLon: float
+    jMapRadius: float
+    jMapLat1: float
+    jMapLon1: float
+    jMapLat2: float
+    jMapLon2: float
+    mapObject: object
+    mapOutline: Polygon | MultiPolygon
+    tbMinLat: float = 0
+    tbMaxLat: float = 0
+    tbMinLon: float = 0
+    tbMaxLon: float = 0
+    mapKm: float | None = None
+    pathCoordinates: list[tuple[float, float, float, float]] | None = None
+    flatCoordinates: list[tuple[float, float, float, float]] | None = None
+    pathSegs: list[list[tuple[float, float, float, float]]] | None = None
+    pathSegsByFile: list[list[list[tuple[float, float, float, float]]]] | None = None
+    blenderPathSegs: list[list[tuple[float, float, float]]] | None = None
+    blenderPathSegsByFile: list[list[list[tuple[float, float, float]]]] | None = None
+    gpx_stats: GPXStats = field(default_factory=GPXStats)
+    start_time: float = field(default_factory=time.time)
+    curve_objs: list | None = None
+    sScaleHor: float | None = None
+    centerX: float | None = None
+    centerY: float | None = None
+
+
 # ---------------------------------------------------------------------------
 # runGeneration sub-phase helpers
 # ---------------------------------------------------------------------------
 
 
 def _rg_validate_inputs(flags):
-    """Load all scene properties, validate inputs, and open the console.
+    """Load all scene properties, and validate the inputs for the requested generation type.
 
     Returns a props dict on success, or None if validation fails (console
     is toggled closed before returning None).
     """
+    from bpy.types import Scene
+
     from ..props import (
         get_effective_shape,  # deferred to avoid circular import at load time
     )
@@ -41,46 +121,46 @@ def _rg_validate_inputs(flags):
     for i in range(30):
         print(" ")
     print("------------------------------------------------")
-    print("SCRIPT STARTED - DO NOT CLOSE THIS WINDOW")
+    print("SCRIPT STARTED")
     print("------------------------------------------------")
     print(" ")
 
-    tp3d = bpy.context.scene.tp3d
-    gpx_file_path = tp3d.get("file_path", None)
-    gpx_chain_path = tp3d.get("chain_path", None)
-    exportPath = tp3d.get("export_path", None)
-    shape = get_effective_shape(tp3d)
-    name = tp3d.get("trailName", "")
-    size = tp3d.get("objSize", 100)
-    scaleElevation = tp3d.get("scaleElevation", 1)
-    scalemode = tp3d.scalemode
-    scaleLon1 = tp3d.get("scaleLon1", 0)
-    scaleLat1 = tp3d.get("scaleLat1", 0)
-    scaleLon2 = tp3d.get("scaleLon2", 0)
-    scaleLat2 = tp3d.get("scaleLat2", 0)
-    shapeRotation = tp3d.get("shapeRotation", 0)
-    overwritePathElev = tp3d.get("overwritePathElevation", True)
-    api = tp3d.api
-    selfHosted = tp3d.get("selfHosted", "")
-    fixedElevScale = tp3d.get("fixedElevationScale", False)
-    minThickness = tp3d.get("minThickness", 2)
-    xTerrainOffset = tp3d.get("xTerrainOffset", 0)
-    yTerrainOffset = tp3d.get("yTerrainOffset", 0)
-    singleColorMode = tp3d.get("singleColorMode", 0)
-    elementMode = tp3d.elementMode
-    disableCache = tp3d.get("disableCache", 0)
-    num_subdivisions = tp3d.num_subdivisions
-    textFont = tp3d.get("textFont", "")
-    plateThickness = tp3d.get("plateThickness", 5)
-    col_wActive = any(
+    tp3d: Scene = bpy.context.scene.tp3d
+    gpx_file_path: str = tp3d.get("file_path", None)
+    gpx_chain_path: str = tp3d.get("chain_path", None)
+    exportPath: str = tp3d.get("export_path", None)
+    shape: str = get_effective_shape(tp3d)
+    name: str = tp3d.get("trailName", "")
+    size: int = tp3d.get("objSize", 100)
+    scaleElevation: float = tp3d.get("scaleElevation", 1)
+    scalemode: str = tp3d.get("scaleMode", "FACTOR")
+    scaleLon1: float = tp3d.get("scaleLon1", 0)
+    scaleLat1: float = tp3d.get("scaleLat1", 0)
+    scaleLon2: float = tp3d.get("scaleLon2", 0)
+    scaleLat2: float = tp3d.get("scaleLat2", 0)
+    shapeRotation: int = tp3d.get("shapeRotation", 0)
+    overwritePathElev: bool = tp3d.get("overwritePathElevation", True)
+    api: str = tp3d.get("api", "MAPTERHORN")
+    selfHosted: str = tp3d.get("selfHosted", "")
+    fixedElevScale: bool = tp3d.get("fixedElevationScale", False)
+    minThickness: float = tp3d.get("minThickness", 2)
+    xTerrainOffset: float = tp3d.get("xTerrainOffset", 0)
+    yTerrainOffset: float = tp3d.get("yTerrainOffset", 0)
+    singleColorMode: bool = tp3d.get("singleColorMode", 0)
+    elementMode: int = tp3d.get("elementMode", 0)
+    disableCache: bool = tp3d.get("disableCache", "False")
+    num_subdivisions: int = tp3d.get("num_subdivisions", 8)
+    textFont: str = tp3d.get("textFont", "")
+    plateThickness: float = tp3d.get("plateThickness", 5)
+    col_wActive: bool = any(
         [tp3d.col_wPondsActive, tp3d.col_wSmallRiversActive, tp3d.col_wBigRiversActive]
     )
-    col_fActive = tp3d.col_fActive
-    col_cActive = tp3d.col_cActive
-    col_grActive = tp3d.col_grActive
-    col_glActive = tp3d.col_glActive
-    el_bActive = tp3d.el_bActive
-    el_sActive = any(
+    col_fActive: bool = tp3d.col_fActive
+    col_cActive: bool = tp3d.col_cActive
+    col_grActive: bool = tp3d.col_grActive
+    col_glActive: bool = tp3d.col_glActive
+    el_bActive: bool = tp3d.el_bActive
+    el_sActive: bool = any(
         [
             tp3d.el_sBigActive,
             tp3d.el_sMedActive,
@@ -89,15 +169,15 @@ def _rg_validate_inputs(flags):
             tp3d.el_sFootwaysActive,
         ]
     )
-    jMapLat = tp3d.get("jMapLat", 49)
-    jMapLon = tp3d.get("jMapLon", 9)
-    jMapRadius = tp3d.get("jMapRadius", 50)
-    jMapLat1 = tp3d.get("jMapLat1", 48)
-    jMapLon1 = tp3d.get("jMapLon1", 8)
-    jMapLat2 = tp3d.get("jMapLat2", 49)
-    jMapLon2 = tp3d.get("jMapLon2", 9)
+    jMapLat: float = tp3d.get("jMapLat", 49)
+    jMapLon: float = tp3d.get("jMapLon", 9)
+    jMapRadius: float = tp3d.get("jMapRadius", 200)
+    jMapLat1: float = tp3d.get("jMapLat1", 48)
+    jMapLon1: float = tp3d.get("jMapLon1", 8)
+    jMapLat2: float = tp3d.get("jMapLat2", 49)
+    jMapLon2: float = tp3d.get("jMapLon2", 9)
 
-    opentopoAdress = "https://api.opentopodata.org/v1/"
+    opentopoAdress: str = "https://api.opentopodata.org/v1/"
     if selfHosted != "" and selfHosted is not None and api == "OPENTOPODATA":
         opentopoAdress = selfHosted
         print(f"!!using {opentopoAdress} instead of Opentopodata!!")
@@ -122,10 +202,6 @@ def _rg_validate_inputs(flags):
             "Get a free key at portal.opentopography.org and set it in the addon preferences."
         )
         return None
-
-    # if singleColorMode and elementMode == "SEPARATE":
-    #    show_message_box("Single Color Mode and Separate Element Mode cannot be used together. either disable Single-color Mode for the trail or switch to SingleColorMode for elements.")
-    #    return None
 
     if "gpx_file" in flags:
         if not gpx_file_path or gpx_file_path == "":
@@ -191,56 +267,57 @@ def _rg_validate_inputs(flags):
         if "gpx_file" not in flags and "gpx_chain" not in flags:
             name = "Terrain"
 
-    modelname = name
+    modelname: str = name
     tp3d.modelname = modelname
 
-    return {
-        "start_time": start_time,
-        "gpx_file_path": gpx_file_path,
-        "gpx_chain_path": gpx_chain_path,
-        "exportPath": exportPath,
-        "shape": shape,
-        "name": name,
-        "modelname": modelname,
-        "size": size,
-        "scaleElevation": scaleElevation,
-        "scalemode": scalemode,
-        "scaleLon1": scaleLon1,
-        "scaleLat1": scaleLat1,
-        "scaleLon2": scaleLon2,
-        "scaleLat2": scaleLat2,
-        "shapeRotation": shapeRotation,
-        "overwritePathElevation": overwritePathElev,
-        "api": api,
-        "selfHosted": selfHosted,
-        "fixedElevationScale": fixedElevScale,
-        "minThickness": minThickness,
-        "xTerrainOffset": xTerrainOffset,
-        "yTerrainOffset": yTerrainOffset,
-        "singleColorMode": singleColorMode,
-        "elementMode": elementMode,
-        "disableCache": disableCache,
-        "num_subdivisions": num_subdivisions,
-        "textFont": textFont,
-        "plateThickness": plateThickness,
-        "col_wActive": col_wActive,
-        "col_fActive": col_fActive,
-        "col_cActive": col_cActive,
-        "col_grActive": col_grActive,
-        "col_glActive": col_glActive,
-        "el_bActive": el_bActive,
-        "el_sActive": el_sActive,
-        "jMapLat": jMapLat,
-        "jMapLon": jMapLon,
-        "jMapRadius": jMapRadius,
-        "jMapLat1": jMapLat1,
-        "jMapLon1": jMapLon1,
-        "jMapLat2": jMapLat2,
-        "jMapLon2": jMapLon2,
-    }
+    return GenerationContext(
+        flags=flags,
+        start_time=start_time,
+        gpx_file_path=gpx_file_path,
+        gpx_chain_path=gpx_chain_path,
+        exportPath=exportPath,
+        shape=shape,
+        name=name,
+        modelname=modelname,
+        size=size,
+        scaleElevation=scaleElevation,
+        scalemode=scalemode,
+        scaleLon1=scaleLon1,
+        scaleLat1=scaleLat1,
+        scaleLon2=scaleLon2,
+        scaleLat2=scaleLat2,
+        shapeRotation=shapeRotation,
+        overwritePathElevation=overwritePathElev,
+        api=api,
+        selfHosted=selfHosted,
+        fixedElevationScale=fixedElevScale,
+        minThickness=minThickness,
+        xTerrainOffset=xTerrainOffset,
+        yTerrainOffset=yTerrainOffset,
+        singleColorMode=singleColorMode,
+        elementMode=elementMode,
+        disableCache=disableCache,
+        num_subdivisions=num_subdivisions,
+        textFont=textFont,
+        plateThickness=plateThickness,
+        col_wActive=col_wActive,
+        col_fActive=col_fActive,
+        col_cActive=col_cActive,
+        col_grActive=col_grActive,
+        col_glActive=col_glActive,
+        el_bActive=el_bActive,
+        el_sActive=el_sActive,
+        jMapLat=jMapLat,
+        jMapLon=jMapLon,
+        jMapRadius=jMapRadius,
+        jMapLat1=jMapLat1,
+        jMapLon1=jMapLon1,
+        jMapLat2=jMapLat2,
+        jMapLon2=jMapLon2,
+    )
 
 
-def _rg_load_coordinates(flags, props):
+def _rg_load_coordinates(ctx: GenerationContext):
     """Load GPX / synthetic coordinate data based on generation type.
 
     Returns (coordinates, separate_paths, coordinates2) or None on error.
@@ -256,22 +333,22 @@ def _rg_load_coordinates(flags, props):
 
     setupColors()
 
-    if props["disableCache"] == 1:
+    if ctx.disableCache == 1:
         print("INFO: Cache Disabled (in Advanced Settings)")
-    if not props["overwritePathElevation"] and not props["singleColorMode"]:
+    if not ctx.overwritePathElevation and not ctx.singleColorMode:
         print(
             "INFO: Overwrite Path Elevation disabled: Path Elevation wont be Adjusted to Map elevation"
         )
-    if "gpx_file" in flags or (
-        "gpx_chain" in flags and "append_collection" not in flags
+    if "gpx_file" in ctx.flags or (
+        "gpx_chain" in ctx.flags and "append_collection" not in ctx.flags
     ):
-        if props["xTerrainOffset"] > 0:
+        if ctx.xTerrainOffset > 0:
             print(
-                f"INFO: Map will be moved in X by {props['xTerrainOffset']} (Advanced Settings -> Map -> xTerrainOffset)"
+                f"INFO: Map will be moved in X by {ctx.xTerrainOffset} (Advanced Settings -> Map -> xTerrainOffset)"
             )
-        if props["yTerrainOffset"] > 0:
+        if ctx.yTerrainOffset > 0:
             print(
-                f"INFO: Map will be moved in Y by {props['yTerrainOffset']} (Advanced Settings -> Map -> yTerrainOffset)"
+                f"INFO: Map will be moved in Y by {ctx.yTerrainOffset} (Advanced Settings -> Map -> yTerrainOffset)"
             )
 
     if bpy.context.object and bpy.context.object.mode == "EDIT":
@@ -282,49 +359,43 @@ def _rg_load_coordinates(flags, props):
     separate_paths = []
     separate_paths_by_file = []  # segments grouped by source file (gpx_chain only)
     try:
-        if "gpx_file" in flags and "trail_map" not in flags:
+        if "gpx_file" in ctx.flags and "trail_map" not in ctx.flags:
             separate_paths = read_gpx_file()
-        if "gpx_chain" in flags:
-            separate_paths_by_file = read_gpx_directory(props["gpx_chain_path"])
+        if "gpx_chain" in ctx.flags:
+            separate_paths_by_file = read_gpx_directory(ctx.gpx_chain_path)
             separate_paths = [
                 seg for file_segs in separate_paths_by_file for seg in file_segs
             ]
-        if "jmap" in flags:
-            nlat, nlon = move_coordinates(
-                props["jMapLat"], props["jMapLon"], props["jMapRadius"], "e"
-            )
+        if "jmap" in ctx.flags:
+            nlat, nlon = move_coordinates(ctx.jMapLat, ctx.jMapLon, ctx.jMapRadius, "e")
             separate_paths.append([(nlat, nlon, 0, 0)])
-            nlat, nlon = move_coordinates(
-                props["jMapLat"], props["jMapLon"], props["jMapRadius"], "s"
-            )
+            nlat, nlon = move_coordinates(ctx.jMapLat, ctx.jMapLon, ctx.jMapRadius, "s")
             separate_paths.append([(nlat, nlon, 0, 0)])
-            nlat, nlon = move_coordinates(
-                props["jMapLat"], props["jMapLon"], props["jMapRadius"], "w"
-            )
+            nlat, nlon = move_coordinates(ctx.jMapLat, ctx.jMapLon, ctx.jMapRadius, "w")
             separate_paths.append([(nlat, nlon, 0, 0)])
-            nlat, nlon = move_coordinates(
-                props["jMapLat"], props["jMapLon"], props["jMapRadius"], "n"
-            )
+            nlat, nlon = move_coordinates(ctx.jMapLat, ctx.jMapLon, ctx.jMapRadius, "n")
             separate_paths.append([(nlat, nlon, 0, 0)])
-            if "trail_map" in flags:
+            if "trail_map" in ctx.flags:
                 tempcoordinates = read_gpx_file()
                 coordinates2 = [item for sublist in tempcoordinates for item in sublist]
-        if "jmap_bbox" in flags:
-            separate_paths.append([(props["jMapLat1"], props["jMapLon1"], 0, 0)])
-            separate_paths.append([(props["jMapLat2"], props["jMapLon2"], 0, 0)])
+        if "jmap_bbox" in ctx.flags:
+            separate_paths.append([(ctx.jMapLat1, ctx.jMapLon1, 0, 0)])
+            separate_paths.append([(ctx.jMapLat2, ctx.jMapLon2, 0, 0)])
     except Exception:  # noqa: BLE001 — GPX/IGC parsing can raise many unpredictable types
         # show_message_box(f"Something went Wrong reading the GPX. Type {type}")
         _progress.WarningsOverlay.add_warning(
             "Something went Wrong reading the GPX file", "error"
         )
-        return None
 
     coordinates = [item for sublist in separate_paths for item in sublist]
 
-    return (coordinates, separate_paths, coordinates2, separate_paths_by_file)
+    ctx.pathCoordinates = coordinates
+    ctx.flatCoordinates = coordinates2
+    ctx.pathSegs = separate_paths
+    ctx.pathSegsByFile = separate_paths_by_file
 
 
-def _rg_compute_trail_stats(flags, coordinates):
+def _rg_compute_trail_stats(ctx: GenerationContext):
     """Calculate trail statistics and store them in scene properties."""
     from .geo import (  # deferred to avoid circular import at load time
         calculate_date,
@@ -333,34 +404,124 @@ def _rg_compute_trail_stats(flags, coordinates):
         calculate_total_time,
     )
 
-    total_length = 0
-    total_elevation = 0
-    total_time = 0
-    average_speed = 0
-    trail_date = ""
-    if "stats" in flags:
-        total_length = calculate_total_length(coordinates)
-        total_elevation = calculate_total_elevation(coordinates)
-        total_time = calculate_total_time(coordinates)
-        trail_date = calculate_date(coordinates)
-        if total_time is not None and total_time > 0:
-            average_speed = total_length / total_time
+    if "stats" not in ctx.flags:
+        return
 
-    if total_time is not None and total_time > 0:
-        hours = int(total_time)
-        minutes = int((total_time - hours) * 60)
+    stats = ctx.gpx_stats
+    stats.length = calculate_total_length(ctx.pathCoordinates)
+    stats.elevation = calculate_total_elevation(ctx.pathCoordinates)
+    stats.time = calculate_total_time(ctx.pathCoordinates)
+    stats.date = calculate_date(ctx.pathCoordinates)
+
+    if stats.time is not None and stats.time > 0:
+        stats.avg_speed = stats.length / stats.time
+
+        # TODO: Remove this block, blender context should not be the source of truth for stats, but rather the GPXStats object itself. This is a temporary measure to maintain compatibility with existing code that relies on scene properties.
+        hours = int(stats.time)
+        minutes = int((stats.time - hours) * 60)
         time_str = f"{hours}h {minutes}m"
         tp3d = bpy.context.scene.tp3d
         tp3d.sTime_str = time_str
-        tp3d.total_length = total_length
-        tp3d.total_elevation = total_elevation
-        tp3d.total_time = total_time
-        tp3d.average_speed = average_speed
-        tp3d.trail_date = trail_date
+        tp3d.total_length = stats.length
+        tp3d.total_elevation = stats.elevation
+        tp3d.total_time = stats.time
+        tp3d.average_speed = stats.avg_speed
+        tp3d.trail_date = stats.date
 
 
-def _rg_create_map_object(flags, props, modelname, centerx, centery):
+def _rg_interpolate_path_curve(ctx: GenerationContext):
+    if ctx.pathCoordinates is None:
+        return
+    while (
+        len(ctx.pathCoordinates) < 300
+        and len(ctx.pathCoordinates) > 1
+        and "trail" in ctx.flags
+    ):
+        n = len(ctx.pathCoordinates)
+        xyz = np.array(
+            [(c[0], c[1], c[2]) for c in ctx.pathCoordinates], dtype=np.float64
+        )
+        mids = (xyz[:-1] + xyz[1:]) / 2.0
+        # Interleave originals and midpoints: [orig0, mid0, orig1, mid1, ..., origN]
+        interleaved: list[tuple[float, float, float, float]] = []
+        for i in range(n - 1):
+            interleaved.append(ctx.pathCoordinates[i])
+            interleaved.append(
+                (mids[i, 0], mids[i, 1], mids[i, 2], ctx.pathCoordinates[i][3])
+            )
+        interleaved.append(ctx.pathCoordinates[-1])
+        ctx.pathCoordinates = interleaved
+
+
+def _rg_calculate_horizontal_scale(ctx: GenerationContext):
+    from .geo import calculate_scale
+
+    scalecoords = ctx.coordinates
+    if ctx.scalemode == "COORDINATES" and "gpx_scale" in ctx.flags:
+        scalecoords = (
+            (ctx.scaleLon1, ctx.scaleLat1),
+            (ctx.scaleLon2, ctx.scaleLat2),
+        )
+    scaleHor = calculate_scale(ctx.size, scalecoords, type, diagonal=True)
+    bpy.context.scene.tp3d["sScaleHor"] = scaleHor
+    ctx.sScaleHor = scaleHor
+
+
+def _rg_convert_then_center_coordinates(ctx: GenerationContext):
+    from .geo import convert_to_blender_coordinates_batch
+
+    blender_coords = convert_to_blender_coordinates_batch(ctx.pathCoordinates)
+    if "separate_paths" in ctx.flags or len(ctx.pathSegs or []) > 1:
+        ctx.blenderPathSegs = [
+            convert_to_blender_coordinates_batch(path) for path in ctx.separate_paths
+        ]
+    if ctx.separate_paths_by_file:
+        ctx.blenderPathSegsByFile = [
+            [convert_to_blender_coordinates_batch(seg) for seg in file_segs]
+            for file_segs in ctx.pathSegsByFile
+        ]
+    min_x = min(p[0] for p in blender_coords)
+    max_x = max(p[0] for p in blender_coords)
+    min_y = min(p[1] for p in blender_coords)
+    max_y = max(p[1] for p in blender_coords)
+    centerx = (max_x - min_x) / 2 + min_x
+    centery = (max_y - min_y) / 2 + min_y
+    bpy.context.scene.tp3d["o_centerx"] = centerx
+    bpy.context.scene.tp3d["o_centery"] = centery
+    ctx.centerX = centerx
+    ctx.centerY = centery
+
+
+def _cleanup_build_area(ctx: GenerationContext):
+    """Remove any existing objects in the build area before generating new geometry."""
+    xOff = ctx.xTerrainOffset
+    yOff = ctx.yTerrainOffset
+    target_2d = Vector((ctx.centerX or 0.0, ctx.centerY or 0.0))
+    target_2d_offset = Vector((ctx.centerX or 0.0 + xOff, ctx.centerY or 0.0 + yOff))
+    for obs in bpy.data.objects:
+        obj_2d = Vector((obs.location.x, obs.location.y))
+        obj_2d_offset = obj_2d
+        if "xTerrainOffset" in obs or "yTerrainOffset" in obs:
+            obj_2d_offset = Vector(
+                (
+                    obs.location.x - obs["xTerrainOffset"],
+                    obs.location.y - obs["yTerrainOffset"],
+                )
+            )
+        if (
+            (obj_2d - target_2d).length <= 0.2
+            or (obj_2d - target_2d_offset).length <= 0.2
+            or (obj_2d_offset - target_2d).length <= 0.2
+            or (obj_2d_offset - target_2d_offset).length <= 0.2
+        ):
+            bpy.data.objects.remove(obs, do_unlink=True)
+    bpy.ops.object.select_all(action="DESELECT")
+
+
+def _rg_create_map_object(ctx: GenerationContext):
     """Create, rotate, and position the base map shape object."""
+    from shapely.wkt import loads
+
     from .geo import (  # deferred to avoid circular import at load time
         convert_to_blender_coordinates,
         midpoint_spherical,
@@ -385,79 +546,88 @@ def _rg_create_map_object(flags, props, modelname, centerx, centery):
         transform_MapObject,  # deferred to avoid circular import at load time
     )
 
-    shape = props["shape"]
-    size = props["size"]
-    num_subdivisions = props["num_subdivisions"]
-    shapeRotation = props["shapeRotation"]
-    scalemode = props["scalemode"]
-    xTerrainOffset = props["xTerrainOffset"]
-    yTerrainOffset = props["yTerrainOffset"]
-
     MapObject = None
 
-    if "append_collection" not in flags and "use_active_object" not in flags:
-        print(f"[map_object] creating '{shape}' N={num_subdivisions} size={size:.1f}…")
+    if "append_collection" not in ctx.flags and "use_active_object" not in ctx.flags:
+        print(
+            f"[map_object] creating '{ctx.shape}' N={ctx.num_subdivisions} size={ctx.size:.1f}…"
+        )
         _t_shape = time.time()
-        if shape in {"SQUARE", "SQUARE SHELL"}:
+        if ctx.shape in {"SQUARE", "SQUARE SHELL"}:
             rHeight = bpy.context.scene.tp3d.rectangleHeight
-            MapObject = create_rectangle(size, rHeight, num_subdivisions, modelname)
-        elif shape in {
+            MapObject = create_rectangle(
+                ctx.size, rHeight, ctx.num_subdivisions, ctx.modelname
+            )
+        elif ctx.shape in {
             "HEXAGON",
             "HEXAGON SHELL",
             "HEXAGON INNER TEXT",
             "HEXAGON OUTER TEXT",
             "HEXAGON FRONT TEXT",
         }:
-            MapObject = create_hexagon(size / 2, num_subdivisions, modelname)
-        elif shape == "HEART":
-            MapObject = create_heart(size / 2, num_subdivisions, modelname)
-        elif shape in {"OCTAGON", "OCTAGON SHELL", "OCTAGON OUTER TEXT"}:
-            MapObject = create_octagon(size / 2, num_subdivisions, modelname)
-        elif shape in {"CIRCLE", "CIRCLE SHELL", "CIRCLE OUTER TEXT"}:
-            MapObject = create_circle(size / 2, num_subdivisions, modelname)
-        elif shape in {"ELLIPSE", "ELLIPSE SHELL"}:
+            MapObject = create_hexagon(
+                ctx.size / 2, ctx.num_subdivisions, ctx.modelname
+            )
+        elif ctx.shape == "HEART":
+            MapObject = create_heart(ctx.size / 2, ctx.num_subdivisions, ctx.modelname)
+        elif ctx.shape in {"OCTAGON", "OCTAGON SHELL", "OCTAGON OUTER TEXT"}:
+            MapObject = create_octagon(
+                ctx.size / 2, ctx.num_subdivisions, ctx.modelname
+            )
+        elif ctx.shape in {"CIRCLE", "CIRCLE SHELL", "CIRCLE OUTER TEXT"}:
+            MapObject = create_circle(ctx.size / 2, ctx.num_subdivisions, ctx.modelname)
+        elif ctx.shape in {"ELLIPSE", "ELLIPSE SHELL"}:
             ratio = bpy.context.scene.tp3d.ellipseRatio
-            MapObject = create_ellipse(size / 2, num_subdivisions, modelname, ratio)
-        elif shape == "GEOJSON":
+            MapObject = create_ellipse(
+                ctx.size / 2, ctx.num_subdivisions, ctx.modelname, ratio
+            )
+        elif ctx.shape == "GEOJSON":
             filepath = bpy.path.abspath(bpy.context.scene.tp3d.customFilePath)
             MapObject = create_custom_geojson(
-                filepath, size / 2, num_subdivisions, modelname
+                filepath, ctx.size / 2, ctx.num_subdivisions, ctx.modelname
             )
-        elif shape == "SVG":
+        elif ctx.shape == "SVG":
             filepath = bpy.path.abspath(bpy.context.scene.tp3d.customFilePath)
             MapObject = create_custom_svg(
-                filepath, size / 2, num_subdivisions, modelname
+                filepath, ctx.size / 2, ctx.num_subdivisions, ctx.modelname
             )
         else:
-            MapObject = create_hexagon(size / 2, num_subdivisions, modelname)
+            MapObject = create_hexagon(
+                ctx.size / 2, ctx.num_subdivisions, ctx.modelname
+            )
         print(f"[map_object] shape created in {time.time() - _t_shape:.3f}s")
-    if "append_collection" in flags:
+    if "append_collection" in ctx.flags:
         appendCollection()
         MapObject = bpy.context.view_layer.objects.active
         MapObject.location = Vector((0, 0, 0))
-    if "use_active_object" in flags:
+    if "use_active_object" in ctx.flags:
         MapObject = bpy.context.view_layer.objects.active
         return MapObject
 
     recalculateNormals(MapObject)
 
-    MapObject.rotation_euler[2] += shapeRotation * (3.14159265 / 180)
+    MapObject.rotation_euler[2] += ctx.shapeRotation * (3.14159265 / 180)
     MapObject.select_set(True)
     bpy.context.view_layer.objects.active = MapObject
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
 
-    targetx = centerx + xTerrainOffset
-    targety = centery + yTerrainOffset
-    if scalemode == "COORDINATES" and "chain_coords_center" in flags:
+    targetx = ctx.centerx + ctx.xTerrainOffset
+    targety = ctx.centery + ctx.yTerrainOffset
+    if ctx.scalemode == "COORDINATES" and "chain_coords_center" in ctx.flags:
         midLat, midLon = midpoint_spherical(
-            props["scaleLat1"],
-            props["scaleLon1"],
-            props["scaleLat2"],
-            props["scaleLon2"],
+            ctx.scaleLat1,
+            ctx.scaleLon1,
+            ctx.scaleLat2,
+            ctx.scaleLon2,
         )
         targetx, targety, _el = convert_to_blender_coordinates(midLat, midLon, 0, 0)
 
     transform_MapObject(MapObject, targetx, targety)
+    if MapObject and "map_polygon_wkt" in MapObject:
+        outline = loads(MapObject["map_polygon_wkt"])
+        ctx.mapOutline = outline
+        ctx.mapObject = MapObject
+        bpy.context.scene.tp3d.currentMap = MapObject
     return MapObject
 
 
@@ -515,7 +685,7 @@ COLORING_ELEMENTS = [
 ]
 
 
-def _rg_start_osm_prefetch(tp3d, map_km):
+def _rg_start_osm_prefetch(ctx: GenerationContext):
     """Snapshot all bpy values on the main thread and launch a daemon thread
     that pre-fetches every active OSM coloring kind before mesh-building begins.
 
@@ -529,8 +699,8 @@ def _rg_start_osm_prefetch(tp3d, map_km):
         _fetch_all_kinds_parallel,  # deferred to avoid circular import at load time
     )
 
-    _lat_span = tp3d.maxLat - tp3d.minLat
-    _lon_span = tp3d.maxLon - tp3d.minLon
+    _lat_span = ctx.tbMaxLat - ctx.tbMinLat
+    _lon_span = ctx.tbMaxLon - ctx.tbMinLon
     if _lat_span <= 0 or _lon_span <= 0:
         return None, {}
     _lat_step = min(2.0, _lat_span)
@@ -539,10 +709,10 @@ def _rg_start_osm_prefetch(tp3d, map_km):
     _tile_lons = math.ceil(_lon_span / _lon_step)
     _tile_tasks = [
         (
-            tp3d.minLat + k * _lat_step,
-            tp3d.minLon + l * _lon_step,
-            tp3d.minLat + k * _lat_step + _lat_step,
-            tp3d.minLon + l * _lon_step + _lon_step,
+            ctx.tbMinLat + k * _lat_step,
+            ctx.tbMinLon + l * _lon_step,
+            ctx.tbMinLat + k * _lat_step + _lat_step,
+            ctx.tbMinLon + l * _lon_step + _lon_step,
         )
         for k in range(_tile_lats)
         for l in range(_tile_lons)
@@ -550,6 +720,7 @@ def _rg_start_osm_prefetch(tp3d, map_km):
     _semaphore = threading.Semaphore(
         1
     )  # max 1 concurrent live Overpass request (avoid 429s on the public instance)
+    tp3d = bpy.context.scene.tp3d
     _fetch_settings = OsmFetchSettings(
         disable_cache=tp3d.disableCache,
         api_retries=tp3d.apiRetries,
@@ -564,6 +735,7 @@ def _rg_start_osm_prefetch(tp3d, map_km):
         road_footways=bool(tp3d.el_sFootwaysActive),
         road_service=bool(tp3d.el_sServiceActive),
     )
+    map_km = ctx.mapKm if ctx.mapKm is not None else tp3d.sMapInKm
     _active_kind_tasks = [
         (key.upper(), _tile_tasks)
         for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS
@@ -611,7 +783,6 @@ def _rg_build_terrain_elements(
     phase_end=0.95,
     prefetched_osm=None,
     tile_label=None,
-    outline=None,
 ):
     """Create water, forest, city, glacier, building and road overlay meshes.
 
@@ -858,8 +1029,7 @@ def _rg_build_terrain_elements(
                 _result = coloring_main(
                     obj,
                     key.upper(),
-                    prefetched_tiles=_all_prefetched.get(key.upper(), {}),
-                    outline=outline,
+                    prefetched_tiles=_all_prefetched.get(key.upper(), {})
                 )
                 if key == "water":
                     _water_result = _result
@@ -1720,7 +1890,7 @@ _GEN_FLAGS = {
     4: frozenset({"gpx_file", "jmap", "trail", "trail_map"}),
     10: frozenset({"gpx_file", "stats", "gpx_scale"}),
     11: frozenset(
-        {"gpx_chain", "stats", "gpx_scale", "separate_path", "chain_coords_center"}
+        {"gpx_chain", "stats", "gpx_scale", "separate_paths", "chain_coords_center"}
     ),
     20: frozenset({"gpx_file", "trail", "stats", "gpx_scale", "append_collection"}),
     21: frozenset(
@@ -2119,7 +2289,6 @@ def runGeneration(type, locked_scale=None):
     from .mesh_ops import (  # deferred to avoid circular import at load time
         RaycastCurveToMesh,
         merge_with_map,
-        recalculateNormals,
         splitCurves,
     )
 
@@ -2160,20 +2329,20 @@ def runGeneration(type, locked_scale=None):
 
     # --- Phase 1: Validate inputs and load all scene settings ---
     overlay.update(0.03, "Initializing", "Validating inputs…")
-    props = _rg_validate_inputs(flags)
-    if props is None:
+    ctx = _rg_validate_inputs(flags)
+    if ctx is None:
         overlay.finish()
         return
-    start_time = props["start_time"]
+    start_time = ctx.start_time
     buggyDataset = 0
     # PAINT mode bakes terrain-element colors as per-face materials on a single
     # mesh; STL cannot store material data at all, so PAINT-mode maps must be
     # exported as OBJ to keep the colors. Mirrors the equivalent computation in
     # terrain.coloring_main().
     # CREATE_TEXTURE: 3MF is the primary export; STL serves as no-addon fallback.
-    if props["elementMode"] == "PAINT":
+    if ctx.elementMode == "PAINT":
         exportformat = "OBJ"
-    elif props["elementMode"] == "CREATE_TEXTURE":
+    elif ctx.elementMode == "CREATE_TEXTURE":
         exportformat = "STL"  # fallback only; 3MF addon handles the real export
     else:
         exportformat = "STL"
@@ -2182,131 +2351,50 @@ def runGeneration(type, locked_scale=None):
 
     # --- Phase 2: Load coordinate data from GPX / synthetic source ---
     overlay.update(0.08, "Loading Data", "Reading GPX file…")
-    coord_data = _rg_load_coordinates(flags, props)
+    coord_data = _rg_load_coordinates(ctx)
     if coord_data is None:
         overlay.finish()
         return
-    coordinates, separate_paths, coordinates2, separate_paths_by_file = coord_data
 
     # --- Phase 3: Calculate and store trail statistics ---
     overlay.update(0.12, "Trail Statistics", "Computing distances & elevation gain…")
-    _rg_compute_trail_stats(flags, coordinates)
+    _rg_compute_trail_stats(ctx)
 
     # --- Phase 4: Interpolate path to at least 300 points for a smooth curve ---
     overlay.update(0.16, "Path Interpolation", "Smoothing trail curve…")
-    while len(coordinates) < 300 and len(coordinates) > 1 and "trail" in flags:
-        n = len(coordinates)
-        xyz = np.array([(c[0], c[1], c[2]) for c in coordinates], dtype=np.float64)
-        mids = (xyz[:-1] + xyz[1:]) / 2.0
-        # Interleave originals and midpoints: [orig0, mid0, orig1, mid1, ..., origN]
-        interleaved: list = []
-        for i in range(n - 1):
-            interleaved.append(coordinates[i])
-            interleaved.append((mids[i, 0], mids[i, 1], mids[i, 2], coordinates[i][3]))
-        interleaved.append(coordinates[-1])
-        coordinates = interleaved
+    _rg_interpolate_path_curve(ctx)
 
     # --- Phase 5: Calculate horizontal scale factor ---
     overlay.update(0.20, "Scale Calculation", "Computing horizontal scale…")
-    scalecoords = coordinates
-    if props["scalemode"] == "COORDINATES" and "gpx_scale" in flags:
-        scalecoords = (
-            (props["scaleLon1"], props["scaleLat1"]),
-            (props["scaleLon2"], props["scaleLat2"]),
-        )
-    scaleHor = (
-        locked_scale
-        if locked_scale is not None
-        else calculate_scale(props["size"], scalecoords, type, diagonal=True)
-    )
-    bpy.context.scene.tp3d["sScaleHor"] = scaleHor
+    _rg_calculate_horizontal_scale(ctx)
 
     # --- Phase 6: Convert to Blender coordinates and find map center ---
     overlay.update(0.24, "Coordinate Conversion", "Converting to Blender space…")
-    blender_coords = convert_to_blender_coordinates_batch(coordinates)
-    blender_coords_separate = []
-    if "separate_paths" in flags or len(separate_paths) > 1:
-        blender_coords_separate = [
-            convert_to_blender_coordinates_batch(path) for path in separate_paths
-        ]
-    blender_coords_by_file = []
-    if separate_paths_by_file:
-        blender_coords_by_file = [
-            [convert_to_blender_coordinates_batch(seg) for seg in file_segs]
-            for file_segs in separate_paths_by_file
-        ]
-    min_x = min(p[0] for p in blender_coords)
-    max_x = max(p[0] for p in blender_coords)
-    min_y = min(p[1] for p in blender_coords)
-    max_y = max(p[1] for p in blender_coords)
-    centerx = (max_x - min_x) / 2 + min_x
-    centery = (max_y - min_y) / 2 + min_y
-    bpy.context.scene.tp3d["o_centerx"] = centerx
-    bpy.context.scene.tp3d["o_centery"] = centery
+    _rg_convert_then_center_coordinates(ctx)
 
     # --- Phase 7: Remove previously generated objects at the same location ---
     overlay.update(0.28, "Scene Cleanup", "Removing previous objects…")
-    xOff = props["xTerrainOffset"]
-    yOff = props["yTerrainOffset"]
-    target_2d = Vector((centerx, centery))
-    target_2d_offset = Vector((centerx + xOff, centery + yOff))
-    for obs in bpy.data.objects:
-        obj_2d = Vector((obs.location.x, obs.location.y))
-        obj_2d_offset = obj_2d
-        if "xTerrainOffset" in obs or "yTerrainOffset" in obs:
-            obj_2d_offset = Vector(
-                (
-                    obs.location.x - obs["xTerrainOffset"],
-                    obs.location.y - obs["yTerrainOffset"],
-                )
-            )
-        if (
-            (obj_2d - target_2d).length <= 0.2
-            or (obj_2d - target_2d_offset).length <= 0.2
-            or (obj_2d_offset - target_2d).length <= 0.2
-            or (obj_2d_offset - target_2d_offset).length <= 0.2
-        ):
-            bpy.data.objects.remove(obs, do_unlink=True)
-    bpy.ops.object.select_all(action="DESELECT")
+    _cleanup_build_area(ctx)
 
-    _tp3d = bpy.context.scene.tp3d
-    if "stats" in flags and _tp3d.total_length > 0:
+    if "stats" in flags and ctx.gpx_stats.length > 0:
         overlay.add_completed_step(
-            f"GPX loaded  —  {_tp3d.total_length:.1f} km, {int(_tp3d.total_elevation)} m gain"
+            f"GPX loaded  —  {ctx.gpx_stats.length:.1f} km, {int(ctx.gpx_stats.elevation)} m gain"
         )
     else:
         overlay.add_completed_step("GPX data loaded")
 
     # --- Phase 8: Create base map shape ---
     overlay.update(0.33, "Building Map Shape", "Creating base mesh…")
-    MapObject = _rg_create_map_object(
-        flags, props, props["modelname"], centerx, centery
-    )
-
-    props["currentMap"] = MapObject
-    bpy.context.scene.tp3d.currentMap = MapObject
-
-    zoom_camera_to_selected(MapObject)
-
-    # Swap in trail_map GPX coordinates after the shape is positioned
-    if "trail_map" in flags:
-        coordinates = coordinates2
-
-    map_outline = map_footprint_polygon(MapObject)
-
-    compute_and_store_tile_bounds(MapObject)
-
-    _map_km = round(bpy.context.scene.tp3d.get("sMapInKm", 0), 1)
+    _rg_create_map_object(ctx)
+    zoom_camera_to_selected(ctx.mapObject)
+    compute_and_store_tile_bounds(ctx)
     overlay.add_completed_step(
-        f"Map shape created  ({props['shape'].capitalize()}, {_map_km} km)"
+        f"Map shape created  ({ctx.shape.capitalize()}, {round(ctx.mapKm or 0, 1)} km)"
     )
-
-    # Build the fetch-item strip
-    overlay.set_fetch_items(build_fetch_items(_map_km))
+    overlay.set_fetch_items(build_fetch_items(ctx.mapKm))
 
     # --- OSM background prefetch: start now so Overpass requests overlap with elevation download ---
-    _tp3d_snap = bpy.context.scene.tp3d
-    _osm_prefetch_thread, _osm_prefetched = _rg_start_osm_prefetch(_tp3d_snap, _map_km)
+    _osm_prefetch_thread, _osm_prefetched = _rg_start_osm_prefetch(ctx)
     if _osm_prefetch_thread is not None:
         print("OSM prefetch started (overlapping elevation download)")
 
@@ -2314,10 +2402,9 @@ def runGeneration(type, locked_scale=None):
     overlay.update(
         0.38, "Fetching Elevation Data", "Querying API — this may take a moment…"
     )
-    print("------------------------------------------------")
-    print("FETCHING ELEVATION DATA FOR THE MAP")
-    print("------------------------------------------------")
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+    print("------------------------------------------------",
+          "FETCHING ELEVATION DATA FOR THE MAP",
+          "------------------------------------------------",)
 
     def _elevation_progress(pct):
         t = pct / 100.0
@@ -2330,7 +2417,7 @@ def runGeneration(type, locked_scale=None):
             sub_label="Tiles processed",
         )
 
-    tileVerts, diff = get_tile_elevation(MapObject, progress_cb=_elevation_progress)
+    tileVerts, diff = get_tile_elevation(ctx.mapObject, progress_cb=_elevation_progress)
     print("Elevation Data fetched")
     overlay.sub_percent = None  # hide sub-bar now that elevation is done
     overlay.set_fetch_done("elevation", success=True)
@@ -2342,14 +2429,14 @@ def runGeneration(type, locked_scale=None):
             f"Mesh has only {len(tileVerts)} Points. Increase Resolution for higher Quality",
             "warn",
         )
-    if props["fixedElevationScale"]:
+    if ctx.fixedElevationScale:
         autoScale = 10 / (diff / 1000) if diff > 0 else 10
     else:
-        autoScale = scaleHor
+        autoScale = ctx.sScaleHor
     bpy.context.scene.tp3d.sAutoScale = autoScale
 
-    if not props["fixedElevationScale"] and (
-        diff == 0 or (diff / 1000) * autoScale * props["scaleElevation"] < 2
+    if not ctx.fixedElevationScale and (
+        diff == 0 or (diff / 1000) * autoScale * ctx.scaleElevation < 2
     ):
         _progress.WarningsOverlay.add_warning(
             "Terrain seems to be really flat. If not intended, increase Elevation scale",
@@ -2357,6 +2444,10 @@ def runGeneration(type, locked_scale=None):
         )
 
     # Recalculate blender coords with elevation applied, simplify, deduplicate
+    # Swap in trail_map GPX coordinates after the shape is positioned
+    coordinates = ctx.coordinates
+    if "trail_map" in flags:
+        coordinates = ctx.flatCoordinates
     blender_coords = convert_to_blender_coordinates_batch(coordinates)
     if bpy.app.debug:
         _g_slopes = []
@@ -2781,7 +2872,6 @@ def runGeneration(type, locked_scale=None):
         scaleHor,
         curveObj=curveObjs[0] if curveObjs else None,
         prefetched_osm=_osm_prefetched,
-        outline=map_outline,
     )
 
     # --- Phase 15: Single color mode processing ---
