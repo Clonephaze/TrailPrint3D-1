@@ -491,6 +491,45 @@ def _rg_start_osm_prefetch(tp3d, map_km):
     return t, result
 
 
+def _rg_start_satellite_prefetch(tp3d):
+    """Launch a daemon thread that downloads the land-cover reference image
+    (if elementSource is WORLDCOVER) so the network fetch overlaps
+    elevation/OSM download.
+
+    The caller must call thread.join() before consuming the result dict.
+    Returns (None, {}) immediately if the feature is disabled. In Blender
+    debug mode, also fetches the real satellite photo for side-by-side
+    comparison -- skipped otherwise to avoid the extra network round-trip.
+    """
+    if tp3d.elementSource != 'WORLDCOVER':
+        return None, {}
+
+    from .satellite import (  # deferred to avoid circular import at load time
+        get_cached_landcover_image,
+        get_cached_photo_image,
+    )
+
+    min_lat, max_lat = tp3d.minLat, tp3d.maxLat
+    min_lon, max_lon = tp3d.minLon, tp3d.maxLon
+    disable_cache = bool(tp3d.disableCache)
+    debug = bool(bpy.app.debug)
+
+    result = {}
+
+    def _run():
+        result["landcover_tiled"] = get_cached_landcover_image(
+            min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache
+        )
+        if debug:
+            result["photo_tiled"] = get_cached_photo_image(
+                min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache
+            )
+
+    t = threading.Thread(target=_run, daemon=True, name="satellite-prefetch")
+    t.start()
+    return t, result
+
+
 def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, phase_end=0.95,
                                prefetched_osm=None, tile_label=None):
     """Create water, forest, city, glacier, building and road overlay meshes.
@@ -1744,6 +1783,11 @@ def runGeneration(type, locked_scale=None):
     if _osm_prefetch_thread is not None:
         print("OSM prefetch started (overlapping elevation download)")
 
+    # --- Satellite reference image prefetch: same overlap trick ---
+    _sat_prefetch_thread, _sat_prefetched = _rg_start_satellite_prefetch(_tp3d_snap)
+    if _sat_prefetch_thread is not None:
+        print("Satellite imagery prefetch started (overlapping elevation download)")
+
     # --- Phase 9: Fetch terrain elevation data ---
     overlay.update(0.38, "Fetching Elevation Data", "Querying API — this may take a moment…")
     print("------------------------------------------------")
@@ -2071,6 +2115,38 @@ def runGeneration(type, locked_scale=None):
     _lo = bpy.context.scene.tp3d.lowestZ
     _hi = bpy.context.scene.tp3d.highestZ
     overlay.add_completed_step(f"Terrain applied  —  z {_lo:.1f} to {_hi:.1f}")
+
+    # --- Satellite reference plane: join the prefetch and build it on the main thread ---
+    if _sat_prefetch_thread is not None:
+        _sat_prefetch_thread.join()
+        _landcover_tiled = _sat_prefetched.get("landcover_tiled")
+        if _landcover_tiled:
+            try:
+                from .satellite import (  # deferred to avoid circular import at load time
+                    create_satellite_plane,
+                    paint_terrain_from_landcover,
+                )
+                create_satellite_plane(
+                    _landcover_tiled,
+                    _tp3d_snap.minLat, _tp3d_snap.maxLat,
+                    _tp3d_snap.minLon, _tp3d_snap.maxLon,
+                    z_height=_hi + 10.0,  # fixed gap above the terrain's highest point
+                    debug_photo_tiled=_sat_prefetched.get("photo_tiled"),
+                )
+                overlay.add_completed_step("Satellite reference plane placed")
+
+                if bpy.context.scene.tp3d.elementMode == "PAINT":
+                    paint_terrain_from_landcover(
+                        obj,
+                        _tp3d_snap.minLat, _tp3d_snap.maxLat,
+                        _tp3d_snap.minLon, _tp3d_snap.maxLon,
+                    )
+                    overlay.add_completed_step("Terrain painted from land cover")
+            except Exception as e:  # noqa: BLE001 - satellite plane is a non-fatal reference aid
+                print(f"Satellite plane creation failed: {e}")
+                _progress.WarningsOverlay.add_warning("Satellite imagery unavailable", "warn")
+        else:
+            _progress.WarningsOverlay.add_warning("Satellite imagery unavailable", "warn")
 
     if type == 20:
         for i, crv in enumerate(curveObjs):

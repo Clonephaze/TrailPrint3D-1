@@ -144,6 +144,16 @@ def shape_update(self, context):
         self.shapeTextStyle = "NONE"
 
 
+def element_source_update(self, context):
+    # ESA WorldCover face-painting (paint_terrain_from_landcover) only runs
+    # in PAINT elementMode -- the "Element handling" control is hidden
+    # whenever WorldCover is selected (panels.py), so force the stored value
+    # to match what that hidden state implies, rather than silently doing
+    # nothing if elementMode was last left on SEPARATE/SINGLECOLORMODE_REMESH.
+    if self.elementSource == 'WORLDCOVER':
+        self.elementMode = 'PAINT'
+
+
 def get_effective_shape(tp3d):
     """The full shape identifier generation.py/metadata.py operate on
     (e.g. "HEXAGON OUTER TEXT"), composed from the base shape dropdown and
@@ -478,6 +488,16 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default='PAINT'
     )# type: ignore
     elementModeInset: FloatProperty(name=_("Clip Inset"), default=2.0, min=0.0, description=_("Thickness of solid frame for SCM-elements"))# type: ignore
+
+    elementSource: EnumProperty(
+        name=_("Element Source"),
+        items=[
+            ('OSM', _("OSM"), _("Fetch water, forests, farmland, and other elements from OpenStreetMap/Overpass")),
+            ('WORLDCOVER', _("ESA WorldCover"), _("Color the terrain from ESA WorldCover's land-cover classification instead of individual OSM element toggles. Roads and Buildings still come from OSM.")),
+        ],
+        default='OSM',
+        update=element_source_update
+    )# type: ignore
 
 
     col_wArea: FloatProperty(name= _("Water Threshold"), default = 1, description = _("Lakes smaller than the threshold won't be included")) # type: ignore
