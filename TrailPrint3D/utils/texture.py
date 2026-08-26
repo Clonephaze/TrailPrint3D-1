@@ -19,6 +19,8 @@ Coordinate conventions
 import bpy
 import numpy as np
 
+from .generation import GenerationContext
+
 # ── Palette definition ────────────────────────────────────────────────────────
 # Each colour is expressed as sRGB uint8 (R, G, B).  These values are used
 # for *both* the image pixels and the hex strings in 3mf_paint_extruder_colors,
@@ -154,7 +156,7 @@ def _rasterize_geometry(geom, arr, color_float, bg_float,
         return
 
     try:
-        from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
+        from shapely.geometry import GeometryCollection, MultiPolygon
     except ImportError:
         print("[TP3D texture] Shapely not available — skipping rasterization")
         return
@@ -184,7 +186,7 @@ def _rasterize_geometry(geom, arr, color_float, bg_float,
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-def setup_paint_texture(terrain_obj, polygons_by_kind, resolution=2048):
+def setup_paint_texture(ctx: GenerationContext, resolution=2048):
     """Rasterize OSM polygons into a texture and configure terrain_obj for 3MF paint export.
 
     Parameters
@@ -204,6 +206,7 @@ def setup_paint_texture(terrain_obj, polygons_by_kind, resolution=2048):
       3mf_paint_extruder_colors — triggering the 3MF addon's paint-segmentation
       export when use_orca_format="AUTO" or "PAINT".
     """
+    terrain_obj = ctx.mapObject
     mesh = terrain_obj.data
     cursor = bpy.context.scene.cursor.location
     cursor_x = float(cursor.x)
@@ -213,7 +216,7 @@ def setup_paint_texture(terrain_obj, polygons_by_kind, resolution=2048):
     if width <= 0 or height <= 0:
         print("[TP3D texture] degenerate terrain bbox — skipping texture setup")
         return
-
+    polygons_by_kind = ctx.elements.get("_osm_polygons", {})
     present_kinds = {k.upper() for k, v in polygons_by_kind.items() if v is not None}
     palette, _kind_to_index = _build_palette(present_kinds)
 
@@ -287,7 +290,7 @@ def setup_paint_texture(terrain_obj, polygons_by_kind, resolution=2048):
         bpy.data.images.remove(bpy.data.images[img_name])
     image = bpy.data.images.new(img_name, width=resolution, height=resolution, alpha=True)
     image.colorspace_settings.name = 'sRGB'
-    image.pixels.foreach_set(arr.ravel())
+    image.pixels.foreach_set(arr.ravel()) # type: ignore - Blender api accepts the numpy array
     image.pack()
 
     # ── Material ──────────────────────────────────────────────────────────────
@@ -441,7 +444,7 @@ def crop_paint_texture_to_piece(piece_obj, source_image):
         bpy.data.images.remove(bpy.data.images[img_name])
     new_img = bpy.data.images.new(img_name, width=crop_w, height=crop_h, alpha=True)
     new_img.colorspace_settings.name = 'sRGB'
-    new_img.pixels.foreach_set(crop_arr.ravel())
+    new_img.pixels.foreach_set(crop_arr.ravel()) # type: ignore - Blender api accepts the numpy array
     new_img.pack()
 
     # Remap top-face UVs into the new [0, 1] crop space.
