@@ -838,11 +838,11 @@ def fix_invalid_elevations(elevations):
     return fixed, count
 
 
-def compute_and_store_tile_bounds(ctx_or_obj):
+def compute_and_store_tile_bounds(gen_or_obj):
     """Compute geographic bounds from obj's mesh and write them to tp3d.
 
     Accepts either a GenerationContext (preferred) or a bare bpy Object for
-    backward compatibility with callers that predate the ctx refactor.
+    backward compatibility with callers that predate the gen refactor.
 
     Returns (world_verts, num_subdivisions, disable_cache, minLat, maxLat, minLon, maxLon).
     """
@@ -850,8 +850,8 @@ def compute_and_store_tile_bounds(ctx_or_obj):
         convert_to_geo,
         haversine,
     )
-    ctx = ctx_or_obj if isinstance(ctx_or_obj, GenerationContext) else None
-    obj = ctx.mapObject if ctx is not None else ctx_or_obj
+    gen = gen_or_obj if isinstance(gen_or_obj, GenerationContext) else None
+    obj = gen.mapObject if gen is not None else gen_or_obj
     mesh = obj.data
     vertices = list(mesh.vertices)
     obj_matrix = obj.matrix_world
@@ -877,19 +877,19 @@ def compute_and_store_tile_bounds(ctx_or_obj):
     realdist1 = haversine(minLat, minLon, maxLat, maxLon)
     realdist2 = haversine(minLat, minLon, maxLat, maxLon)
 
-    if ctx is not None:
-        ctx.mapKm = max(realdist1, realdist2)
-        ctx.tbMinLat = minLat
-        ctx.tbMaxLat = maxLat
-        ctx.tbMinLon = minLon
-        ctx.tbMaxLon = maxLon
+    if gen is not None:
+        gen.mapKm = max(realdist1, realdist2)
+        gen.tbMinLat = minLat
+        gen.tbMaxLat = maxLat
+        gen.tbMinLon = minLon
+        gen.tbMaxLon = maxLon
 
     return world_verts, num_subdivisions, disable_cache, minLat, maxLat, minLon, maxLon
 
 
-def get_tile_elevation(ctx: GenerationContext, progress_cb=None):
+def get_tile_elevation(gen: GenerationContext, progress_cb=None):
 
-    obj = ctx.mapObject
+    obj = gen.mapObject
     mesh = obj.data
     api = bpy.context.scene.tp3d.api
 
@@ -923,7 +923,7 @@ def get_tile_elevation(ctx: GenerationContext, progress_cb=None):
                     _fixed_count = 0
                 if _fixed_count > 0:
                     print(f"Fixed {_fixed_count} invalid cached elevation value(s)")
-                    ctx.buggyData = 1
+                    gen.buggyData = 1
                 lowestElevation = min(elevations)
                 highestElevation = max(elevations)
                 additionalExtrusion = lowestElevation
@@ -968,7 +968,7 @@ def get_tile_elevation(ctx: GenerationContext, progress_cb=None):
         _fixed_count = 0
     if _fixed_count > 0:
         print(f"Fixed {_fixed_count} invalid elevation value(s)")
-        ctx.buggyData = 1
+        gen.buggyData = 1
 
     save_elevation_cache()
 
@@ -997,7 +997,7 @@ def get_tile_elevation(ctx: GenerationContext, progress_cb=None):
     bpy.context.scene.tp3d.lowestElevation = lowestElevation
     bpy.context.scene.tp3d.highestElevation = highestElevation
     bpy.context.scene.tp3d.sAdditionalExtrusion = additionalExtrusion
-    ctx.tileVerts = elevations
-    ctx.elDiff = diff
+    gen.tileVerts = elevations
+    gen.elDiff = diff
 
     return elevations, diff

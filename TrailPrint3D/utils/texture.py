@@ -186,7 +186,7 @@ def _rasterize_geometry(geom, arr, color_float, bg_float,
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-def setup_paint_texture(ctx: GenerationContext, resolution=2048):
+def setup_paint_texture(gen: GenerationContext, resolution=2048):
     """Rasterize OSM polygons into a texture and configure terrain_obj for 3MF paint export.
 
     Parameters
@@ -206,7 +206,7 @@ def setup_paint_texture(ctx: GenerationContext, resolution=2048):
       3mf_paint_extruder_colors — triggering the 3MF addon's paint-segmentation
       export when use_orca_format="AUTO" or "PAINT".
     """
-    terrain_obj = ctx.mapObject
+    terrain_obj = gen.mapObject
     mesh = terrain_obj.data
     cursor = bpy.context.scene.cursor.location
     cursor_x = float(cursor.x)
@@ -216,7 +216,7 @@ def setup_paint_texture(ctx: GenerationContext, resolution=2048):
     if width <= 0 or height <= 0:
         print("[TP3D texture] degenerate terrain bbox — skipping texture setup")
         return
-    polygons_by_kind = ctx.elements.get("_osm_polygons", {})
+    polygons_by_kind = gen.elements.get("_osm_polygons", {})
     present_kinds = {k.upper() for k, v in polygons_by_kind.items() if v is not None}
     palette, _kind_to_index = _build_palette(present_kinds)
 

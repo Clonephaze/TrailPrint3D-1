@@ -4,7 +4,7 @@ import platform
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 import bpy  # type: ignore
 import numpy as np  # type: ignore
@@ -343,7 +343,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
     )
 
 
-def _rg_load_coordinates(ctx: GenerationContext):
+def _rg_load_coordinates(gen: GenerationContext):
     """Load GPX / synthetic coordinate data based on generation type.
 
     Returns (coordinates, separate_paths, coordinates2) or None on error.
@@ -359,22 +359,22 @@ def _rg_load_coordinates(ctx: GenerationContext):
 
     setupColors()
 
-    if ctx.disableCache == 1:
+    if gen.disableCache == 1:
         print("INFO: Cache Disabled (in Advanced Settings)")
-    if not ctx.overwritePathElevation and not ctx.singleColorMode:
+    if not gen.overwritePathElevation and not gen.singleColorMode:
         print(
             "INFO: Overwrite Path Elevation disabled: Path Elevation wont be Adjusted to Map elevation"
         )
-    if "gpx_file" in ctx.flags or (
-        "gpx_chain" in ctx.flags and "append_collection" not in ctx.flags
+    if "gpx_file" in gen.flags or (
+        "gpx_chain" in gen.flags and "append_collection" not in gen.flags
     ):
-        if ctx.xTerrainOffset > 0:
+        if gen.xTerrainOffset > 0:
             print(
-                f"INFO: Map will be moved in X by {ctx.xTerrainOffset} (Advanced Settings -> Map -> xTerrainOffset)"
+                f"INFO: Map will be moved in X by {gen.xTerrainOffset} (Advanced Settings -> Map -> xTerrainOffset)"
             )
-        if ctx.yTerrainOffset > 0:
+        if gen.yTerrainOffset > 0:
             print(
-                f"INFO: Map will be moved in Y by {ctx.yTerrainOffset} (Advanced Settings -> Map -> yTerrainOffset)"
+                f"INFO: Map will be moved in Y by {gen.yTerrainOffset} (Advanced Settings -> Map -> yTerrainOffset)"
             )
 
     if bpy.context.object and bpy.context.object.mode == "EDIT":
@@ -385,28 +385,28 @@ def _rg_load_coordinates(ctx: GenerationContext):
     separate_paths = []
     separate_paths_by_file = []  # segments grouped by source file (gpx_chain only)
     try:
-        if "gpx_file" in ctx.flags and "trail_map" not in ctx.flags:
+        if "gpx_file" in gen.flags and "trail_map" not in gen.flags:
             separate_paths = read_gpx_file()
-        if "gpx_chain" in ctx.flags:
-            separate_paths_by_file = read_gpx_directory(ctx.gpx_chain_path)
+        if "gpx_chain" in gen.flags:
+            separate_paths_by_file = read_gpx_directory(gen.gpx_chain_path)
             separate_paths = [
                 seg for file_segs in separate_paths_by_file for seg in file_segs
             ]
-        if "jmap" in ctx.flags:
-            nlat, nlon = move_coordinates(ctx.jMapLat, ctx.jMapLon, ctx.jMapRadius, "e")
+        if "jmap" in gen.flags:
+            nlat, nlon = move_coordinates(gen.jMapLat, gen.jMapLon, gen.jMapRadius, "e")
             separate_paths.append([(nlat, nlon, 0, 0)])
-            nlat, nlon = move_coordinates(ctx.jMapLat, ctx.jMapLon, ctx.jMapRadius, "s")
+            nlat, nlon = move_coordinates(gen.jMapLat, gen.jMapLon, gen.jMapRadius, "s")
             separate_paths.append([(nlat, nlon, 0, 0)])
-            nlat, nlon = move_coordinates(ctx.jMapLat, ctx.jMapLon, ctx.jMapRadius, "w")
+            nlat, nlon = move_coordinates(gen.jMapLat, gen.jMapLon, gen.jMapRadius, "w")
             separate_paths.append([(nlat, nlon, 0, 0)])
-            nlat, nlon = move_coordinates(ctx.jMapLat, ctx.jMapLon, ctx.jMapRadius, "n")
+            nlat, nlon = move_coordinates(gen.jMapLat, gen.jMapLon, gen.jMapRadius, "n")
             separate_paths.append([(nlat, nlon, 0, 0)])
-            if "trail_map" in ctx.flags:
+            if "trail_map" in gen.flags:
                 tempcoordinates = read_gpx_file()
                 coordinates2 = [item for sublist in tempcoordinates for item in sublist]
-        if "jmap_bbox" in ctx.flags:
-            separate_paths.append([(ctx.jMapLat1, ctx.jMapLon1, 0, 0)])
-            separate_paths.append([(ctx.jMapLat2, ctx.jMapLon2, 0, 0)])
+        if "jmap_bbox" in gen.flags:
+            separate_paths.append([(gen.jMapLat1, gen.jMapLon1, 0, 0)])
+            separate_paths.append([(gen.jMapLat2, gen.jMapLon2, 0, 0)])
     except Exception:  # noqa: BLE001 — GPX/IGC parsing can raise many unpredictable types
         # show_message_box(f"Something went Wrong reading the GPX. Type {type}")
         _progress.WarningsOverlay.add_warning(
@@ -415,13 +415,13 @@ def _rg_load_coordinates(ctx: GenerationContext):
 
     coordinates = [item for sublist in separate_paths for item in sublist]
 
-    ctx.pathCoordinates = coordinates
-    ctx.flatCoordinates = coordinates2
-    ctx.pathSegs = separate_paths
-    ctx.pathSegsByFile = separate_paths_by_file
+    gen.pathCoordinates = coordinates
+    gen.flatCoordinates = coordinates2
+    gen.pathSegs = separate_paths
+    gen.pathSegsByFile = separate_paths_by_file
 
 
-def _rg_compute_trail_stats(ctx: GenerationContext):
+def _rg_compute_trail_stats(gen: GenerationContext):
     """Calculate trail statistics and store them in scene properties."""
     from .geo import (  # deferred to avoid circular import at load time
         calculate_date,
@@ -430,14 +430,14 @@ def _rg_compute_trail_stats(ctx: GenerationContext):
         calculate_total_time,
     )
 
-    if "stats" not in ctx.flags:
+    if "stats" not in gen.flags:
         return
 
-    stats = ctx.gpx_stats
-    stats.length = calculate_total_length(ctx.pathCoordinates)
-    stats.elevation = calculate_total_elevation(ctx.pathCoordinates)
-    stats.time = calculate_total_time(ctx.pathCoordinates)
-    stats.date = calculate_date(ctx.pathCoordinates)
+    stats = gen.gpx_stats
+    stats.length = calculate_total_length(gen.pathCoordinates)
+    stats.elevation = calculate_total_elevation(gen.pathCoordinates)
+    stats.time = calculate_total_time(gen.pathCoordinates)
+    stats.date = calculate_date(gen.pathCoordinates)
 
     if stats.time is not None and stats.time > 0:
         stats.avg_speed = stats.length / stats.time
@@ -455,61 +455,61 @@ def _rg_compute_trail_stats(ctx: GenerationContext):
         tp3d.trail_date = stats.date
 
 
-def _rg_interpolate_path_curve(ctx: GenerationContext):
-    if ctx.pathCoordinates is None:
+def _rg_interpolate_path_curve(gen: GenerationContext):
+    if gen.pathCoordinates is None:
         return
     while (
-        len(ctx.pathCoordinates) < 300
-        and len(ctx.pathCoordinates) > 1
-        and "trail" in ctx.flags
+        len(gen.pathCoordinates) < 300
+        and len(gen.pathCoordinates) > 1
+        and "trail" in gen.flags
     ):
-        n = len(ctx.pathCoordinates)
+        n = len(gen.pathCoordinates)
         xyz = np.array(
-            [(c[0], c[1], c[2]) for c in ctx.pathCoordinates], dtype=np.float64
+            [(c[0], c[1], c[2]) for c in gen.pathCoordinates], dtype=np.float64
         )
         mids = (xyz[:-1] + xyz[1:]) / 2.0
         # Interleave originals and midpoints: [orig0, mid0, orig1, mid1, ..., origN]
         interleaved: list[tuple[float, float, float, float]] = []
         for i in range(n - 1):
-            interleaved.append(ctx.pathCoordinates[i])
+            interleaved.append(gen.pathCoordinates[i])
             interleaved.append(
-                (mids[i, 0], mids[i, 1], mids[i, 2], ctx.pathCoordinates[i][3])
+                (mids[i, 0], mids[i, 1], mids[i, 2], gen.pathCoordinates[i][3])
             )
-        interleaved.append(ctx.pathCoordinates[-1])
-        ctx.pathCoordinates = interleaved
+        interleaved.append(gen.pathCoordinates[-1])
+        gen.pathCoordinates = interleaved
 
 
-def _rg_calculate_horizontal_scale(ctx: GenerationContext):
+def _rg_calculate_horizontal_scale(gen: GenerationContext):
     from .geo import calculate_scale
 
-    if ctx.lockedScale is not None:
-        ctx.sScaleHor = ctx.lockedScale
-        bpy.context.scene.tp3d["sScaleHor"] = ctx.lockedScale
+    if gen.lockedScale is not None:
+        gen.sScaleHor = gen.lockedScale
+        bpy.context.scene.tp3d["sScaleHor"] = gen.lockedScale
         return
 
-    scalecoords = ctx.pathCoordinates
-    if ctx.scalemode == "COORDINATES" and "gpx_scale" in ctx.flags:
+    scalecoords = gen.pathCoordinates
+    if gen.scalemode == "COORDINATES" and "gpx_scale" in gen.flags:
         scalecoords = (
-            (ctx.scaleLon1, ctx.scaleLat1),
-            (ctx.scaleLon2, ctx.scaleLat2),
+            (gen.scaleLon1, gen.scaleLat1),
+            (gen.scaleLon2, gen.scaleLat2),
         )
-    scaleHor = calculate_scale(ctx.size, scalecoords, ctx.genType, diagonal=True)
+    scaleHor = calculate_scale(gen.size, scalecoords, gen.genType, diagonal=True)
     bpy.context.scene.tp3d["sScaleHor"] = scaleHor
-    ctx.sScaleHor = scaleHor
+    gen.sScaleHor = scaleHor
 
 
-def _rg_convert_then_center_coordinates(ctx: GenerationContext):
+def _rg_convert_then_center_coordinates(gen: GenerationContext):
     from .geo import convert_to_blender_coordinates_batch
 
-    blender_coords = convert_to_blender_coordinates_batch(ctx.pathCoordinates)
-    if "separate_paths" in ctx.flags or len(ctx.pathSegs or []) > 1:
-        ctx.blenderPathSegs = [
-            convert_to_blender_coordinates_batch(path) for path in ctx.pathSegs or []
+    blender_coords = convert_to_blender_coordinates_batch(gen.pathCoordinates)
+    if "separate_paths" in gen.flags or len(gen.pathSegs or []) > 1:
+        gen.blenderPathSegs = [
+            convert_to_blender_coordinates_batch(path) for path in gen.pathSegs or []
         ]
-    if ctx.pathSegsByFile:
-        ctx.blenderPathSegsByFile = [
+    if gen.pathSegsByFile:
+        gen.blenderPathSegsByFile = [
             [convert_to_blender_coordinates_batch(seg) for seg in file_segs]
-            for file_segs in (ctx.pathSegsByFile or [])
+            for file_segs in (gen.pathSegsByFile or [])
         ]
     min_x = min(p[0] for p in blender_coords)
     max_x = max(p[0] for p in blender_coords)
@@ -519,16 +519,16 @@ def _rg_convert_then_center_coordinates(ctx: GenerationContext):
     centery = (max_y - min_y) / 2 + min_y
     bpy.context.scene.tp3d["o_centerx"] = centerx
     bpy.context.scene.tp3d["o_centery"] = centery
-    ctx.centerX = centerx
-    ctx.centerY = centery
+    gen.centerX = centerx
+    gen.centerY = centery
 
 
-def _cleanup_build_area(ctx: GenerationContext):
+def _cleanup_build_area(gen: GenerationContext):
     """Remove any existing objects in the build area before generating new geometry."""
-    xOff = ctx.xTerrainOffset
-    yOff = ctx.yTerrainOffset
-    target_2d = Vector((ctx.centerX or 0.0, ctx.centerY or 0.0))
-    target_2d_offset = Vector((ctx.centerX or 0.0 + xOff, ctx.centerY or 0.0 + yOff))
+    xOff = gen.xTerrainOffset
+    yOff = gen.yTerrainOffset
+    target_2d = Vector((gen.centerX or 0.0, gen.centerY or 0.0))
+    target_2d_offset = Vector((gen.centerX or 0.0 + xOff, gen.centerY or 0.0 + yOff))
     for obs in bpy.data.objects:
         obj_2d = Vector((obs.location.x, obs.location.y))
         obj_2d_offset = obj_2d
@@ -549,7 +549,7 @@ def _cleanup_build_area(ctx: GenerationContext):
     bpy.ops.object.select_all(action="DESELECT")
 
 
-def _rg_create_map_object(ctx: GenerationContext):
+def _rg_create_map_object(gen: GenerationContext):
     """Create, rotate, and position the base map shape object."""
     from shapely.wkt import loads
 
@@ -579,17 +579,17 @@ def _rg_create_map_object(ctx: GenerationContext):
 
     MapObject = None
 
-    if "append_collection" not in ctx.flags and "use_active_object" not in ctx.flags:
+    if "append_collection" not in gen.flags and "use_active_object" not in gen.flags:
         print(
-            f"[map_object] creating '{ctx.shape}' N={ctx.num_subdivisions} size={ctx.size:.1f}…"
+            f"[map_object] creating '{gen.shape}' N={gen.num_subdivisions} size={gen.size:.1f}…"
         )
         _t_shape = time.time()
-        if ctx.shape in {"SQUARE", "SQUARE SHELL"}:
+        if gen.shape in {"SQUARE", "SQUARE SHELL"}:
             rHeight = bpy.context.scene.tp3d.rectangleHeight
             MapObject = create_rectangle(
-                ctx.size, rHeight, ctx.num_subdivisions, ctx.modelname
+                gen.size, rHeight, gen.num_subdivisions, gen.modelname
             )
-        elif ctx.shape in {
+        elif gen.shape in {
             "HEXAGON",
             "HEXAGON SHELL",
             "HEXAGON INNER TEXT",
@@ -597,72 +597,72 @@ def _rg_create_map_object(ctx: GenerationContext):
             "HEXAGON FRONT TEXT",
         }:
             MapObject = create_hexagon(
-                ctx.size / 2, ctx.num_subdivisions, ctx.modelname
+                gen.size / 2, gen.num_subdivisions, gen.modelname
             )
-        elif ctx.shape == "HEART":
-            MapObject = create_heart(ctx.size / 2, ctx.num_subdivisions, ctx.modelname)
-        elif ctx.shape in {"OCTAGON", "OCTAGON SHELL", "OCTAGON OUTER TEXT"}:
+        elif gen.shape == "HEART":
+            MapObject = create_heart(gen.size / 2, gen.num_subdivisions, gen.modelname)
+        elif gen.shape in {"OCTAGON", "OCTAGON SHELL", "OCTAGON OUTER TEXT"}:
             MapObject = create_octagon(
-                ctx.size / 2, ctx.num_subdivisions, ctx.modelname
+                gen.size / 2, gen.num_subdivisions, gen.modelname
             )
-        elif ctx.shape in {"CIRCLE", "CIRCLE SHELL", "CIRCLE OUTER TEXT"}:
-            MapObject = create_circle(ctx.size / 2, ctx.num_subdivisions, ctx.modelname)
-        elif ctx.shape in {"ELLIPSE", "ELLIPSE SHELL"}:
+        elif gen.shape in {"CIRCLE", "CIRCLE SHELL", "CIRCLE OUTER TEXT"}:
+            MapObject = create_circle(gen.size / 2, gen.num_subdivisions, gen.modelname)
+        elif gen.shape in {"ELLIPSE", "ELLIPSE SHELL"}:
             ratio = bpy.context.scene.tp3d.ellipseRatio
             MapObject = create_ellipse(
-                ctx.size / 2, ctx.num_subdivisions, ctx.modelname, ratio
+                gen.size / 2, gen.num_subdivisions, gen.modelname, ratio
             )
-        elif ctx.shape == "GEOJSON":
+        elif gen.shape == "GEOJSON":
             filepath = bpy.path.abspath(bpy.context.scene.tp3d.customFilePath)
             MapObject = create_custom_geojson(
-                filepath, ctx.size / 2, ctx.num_subdivisions, ctx.modelname
+                filepath, gen.size / 2, gen.num_subdivisions, gen.modelname
             )
-        elif ctx.shape == "SVG":
+        elif gen.shape == "SVG":
             filepath = bpy.path.abspath(bpy.context.scene.tp3d.customFilePath)
             MapObject = create_custom_svg(
-                filepath, ctx.size / 2, ctx.num_subdivisions, ctx.modelname
+                filepath, gen.size / 2, gen.num_subdivisions, gen.modelname
             )
         else:
             MapObject = create_hexagon(
-                ctx.size / 2, ctx.num_subdivisions, ctx.modelname
+                gen.size / 2, gen.num_subdivisions, gen.modelname
             )
         print(f"[map_object] shape created in {time.time() - _t_shape:.3f}s")
-    if "append_collection" in ctx.flags:
+    if "append_collection" in gen.flags:
         appendCollection()
         MapObject = bpy.context.view_layer.objects.active
         MapObject.location = Vector((0, 0, 0))
-    if "use_active_object" in ctx.flags:
+    if "use_active_object" in gen.flags:
         MapObject = bpy.context.view_layer.objects.active
         return MapObject
 
     recalculateNormals(MapObject)
 
-    MapObject.rotation_euler[2] += ctx.shapeRotation * (3.14159265 / 180)
+    MapObject.rotation_euler[2] += gen.shapeRotation * (3.14159265 / 180)
     MapObject.select_set(True)
     bpy.context.view_layer.objects.active = MapObject
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
 
-    targetx = (ctx.centerX or 0.0) + ctx.xTerrainOffset
-    targety = (ctx.centerY or 0.0) + ctx.yTerrainOffset
-    if ctx.scalemode == "COORDINATES" and "chain_coords_center" in ctx.flags:
+    targetx = (gen.centerX or 0.0) + gen.xTerrainOffset
+    targety = (gen.centerY or 0.0) + gen.yTerrainOffset
+    if gen.scalemode == "COORDINATES" and "chain_coords_center" in gen.flags:
         midLat, midLon = midpoint_spherical(
-            ctx.scaleLat1,
-            ctx.scaleLon1,
-            ctx.scaleLat2,
-            ctx.scaleLon2,
+            gen.scaleLat1,
+            gen.scaleLon1,
+            gen.scaleLat2,
+            gen.scaleLon2,
         )
         targetx, targety, _el = convert_to_blender_coordinates(midLat, midLon, 0, 0)
 
     transform_MapObject(MapObject, targetx, targety)
     if MapObject and "map_polygon_wkt" in MapObject:
         outline = loads(MapObject["map_polygon_wkt"])
-        ctx.mapOutline = outline
-        ctx.mapObject = MapObject
+        gen.mapOutline = outline
+        gen.mapObject = MapObject
         bpy.context.scene.tp3d.currentMap = MapObject
     return MapObject
 
 
-def _rg_start_osm_prefetch(ctx: GenerationContext):
+def _rg_start_osm_prefetch(gen: GenerationContext):
     """Snapshot all bpy values on the main thread and launch a daemon thread
     that pre-fetches every active OSM coloring kind before mesh-building begins.
 
@@ -676,8 +676,8 @@ def _rg_start_osm_prefetch(ctx: GenerationContext):
         _fetch_all_kinds_parallel,  # deferred to avoid circular import at load time
     )
 
-    _lat_span = ctx.tbMaxLat - ctx.tbMinLat
-    _lon_span = ctx.tbMaxLon - ctx.tbMinLon
+    _lat_span = gen.tbMaxLat - gen.tbMinLat
+    _lon_span = gen.tbMaxLon - gen.tbMinLon
     if _lat_span <= 0 or _lon_span <= 0:
         return None, {}
     _lat_step = min(2.0, _lat_span)
@@ -686,10 +686,10 @@ def _rg_start_osm_prefetch(ctx: GenerationContext):
     _tile_lons = math.ceil(_lon_span / _lon_step)
     _tile_tasks = [
         (
-            ctx.tbMinLat + k * _lat_step,
-            ctx.tbMinLon + l * _lon_step,
-            ctx.tbMinLat + k * _lat_step + _lat_step,
-            ctx.tbMinLon + l * _lon_step + _lon_step,
+            gen.tbMinLat + k * _lat_step,
+            gen.tbMinLon + l * _lon_step,
+            gen.tbMinLat + k * _lat_step + _lat_step,
+            gen.tbMinLon + l * _lon_step + _lon_step,
         )
         for k in range(_tile_lats)
         for l in range(_tile_lons)
@@ -712,7 +712,7 @@ def _rg_start_osm_prefetch(ctx: GenerationContext):
         road_footways=bool(tp3d.el_sFootwaysActive),
         road_service=bool(tp3d.el_sServiceActive),
     )
-    map_km = ctx.mapKm if ctx.mapKm is not None else tp3d.sMapInKm
+    map_km = gen.mapKm if gen.mapKm is not None else tp3d.sMapInKm
     _active_kind_tasks = [
         (key.upper(), _tile_tasks)
         for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS
@@ -752,15 +752,15 @@ def _rg_start_osm_prefetch(ctx: GenerationContext):
     return t, result
 
 
-def _rg_prepare_trail_coords(ctx: GenerationContext):
+def _rg_prepare_trail_coords(gen: GenerationContext):
     """Convert GPX coordinates to Blender space and prepare all trail geometry arrays.
 
     Selects the correct coordinate set for the generation type, converts to Blender
     coordinates, simplifies, removes duplicates, and subdivides long segments to
-    prevent trail clipping through terrain.  Stores results back into ctx:
-      ctx.blenderCoords         — processed main path
-      ctx.blenderPathSegs       — processed per-segment paths (replaces Phase-6 raw version)
-      ctx.blenderPathSegsByFile — processed per-file paths   (replaces Phase-6 raw version)
+    prevent trail clipping through terrain.  Stores results back into gen:
+      gen.blenderCoords         — processed main path
+      gen.blenderPathSegs       — processed per-segment paths (replaces Phase-6 raw version)
+      gen.blenderPathSegsByFile — processed per-file paths   (replaces Phase-6 raw version)
     Also writes the real-world map scale to the scene property store.
     """
     from .geo import (
@@ -775,7 +775,7 @@ def _rg_prepare_trail_coords(ctx: GenerationContext):
 
     # Select coordinate set: trail_map uses the flat/synthetic path, not the GPX trail
     coordinates = (
-        ctx.flatCoordinates if "trail_map" in ctx.flags else ctx.pathCoordinates
+        gen.flatCoordinates if "trail_map" in gen.flags else gen.pathCoordinates
     ) or []
 
     # --- Main path: convert → simplify → deduplicate → subdivide ---
@@ -783,7 +783,7 @@ def _rg_prepare_trail_coords(ctx: GenerationContext):
 
     if bpy.app.debug:
         # Log average slope using the pre-processed per-segment coords when available
-        _pre_segs = ctx.blenderPathSegs or [blender_coords]
+        _pre_segs = gen.blenderPathSegs or [blender_coords]
         _g_slopes = []
         for _seg in _pre_segs:
             for _i in range(len(_seg) - 1):
@@ -801,15 +801,15 @@ def _rg_prepare_trail_coords(ctx: GenerationContext):
     blender_coords = simplify_curve(blender_coords, 0.12)
     print("Removing duplicates")
     blender_coords = separate_duplicate_xy(blender_coords, 0.05)
-    ctx.blenderCoords = _subdivide_long_segments(
+    gen.blenderCoords = _subdivide_long_segments(
         blender_coords, _MAX_TRAIL_SEG_BU, _depsgraph
     )
 
     # --- Per-segment paths ---
     if (
-        "separate_paths" in ctx.flags or len(ctx.pathSegs or []) > 1
-    ) and "trail_map" not in ctx.flags:
-        ctx.blenderPathSegs = [
+        "separate_paths" in gen.flags or len(gen.pathSegs or []) > 1
+    ) and "trail_map" not in gen.flags:
+        gen.blenderPathSegs = [
             _subdivide_long_segments(
                 separate_duplicate_xy(
                     simplify_curve(convert_to_blender_coordinates_batch(path), 0.12),
@@ -818,14 +818,14 @@ def _rg_prepare_trail_coords(ctx: GenerationContext):
                 _MAX_TRAIL_SEG_BU,
                 _depsgraph,
             )
-            for path in (ctx.pathSegs or [])
+            for path in (gen.pathSegs or [])
         ]
     else:
-        ctx.blenderPathSegs = None
+        gen.blenderPathSegs = None
 
     # --- Per-file paths ---
-    if ctx.pathSegsByFile and "trail_map" not in ctx.flags:
-        ctx.blenderPathSegsByFile = [
+    if gen.pathSegsByFile and "trail_map" not in gen.flags:
+        gen.blenderPathSegsByFile = [
             [
                 _subdivide_long_segments(
                     separate_duplicate_xy(
@@ -837,36 +837,36 @@ def _rg_prepare_trail_coords(ctx: GenerationContext):
                 )
                 for seg in file_segs
             ]
-            for file_segs in ctx.pathSegsByFile
+            for file_segs in gen.pathSegsByFile
         ]
     else:
-        ctx.blenderPathSegsByFile = None
+        gen.blenderPathSegsByFile = None
 
     # --- Store real-world map scale ---
     if len(coordinates) >= 2:
         lat1, lon1 = coordinates[0][0], coordinates[0][1]
         lat2, lon2 = coordinates[-1][0], coordinates[-1][1]
         tdist = haversine(lat1, lon1, lat2, lon2)
-        mscale = (tdist / ctx.size) * 1_000_000
+        mscale = (tdist / gen.size) * 1_000_000
         bpy.context.scene.tp3d["o_mapScale"] = f"{mscale:.0f}"
 
 
-def _rg_build_trail_curves(ctx: GenerationContext) -> bool:
+def _rg_build_trail_curves(gen: GenerationContext) -> bool:
     """Create Blender curve objects from the processed trail coordinate arrays.
 
-    Uses ctx.blenderCoords, ctx.blenderPathSegs, and ctx.blenderPathSegsByFile
-    (populated by _rg_prepare_trail_coords) and ctx.flags to pick the right
-    curve-creation strategy.  On success stores the result list in ctx.curve_objs
+    Uses gen.blenderCoords, gen.blenderPathSegs, and gen.blenderPathSegsByFile
+    (populated by _rg_prepare_trail_coords) and gen.flags to pick the right
+    curve-creation strategy.  On success stores the result list in gen.curve_objs
     and returns True.  Returns False on RuntimeError so the caller can abort cleanly.
     """
     from .mesh_ops import splitCurves
     from .primitives import create_curve_from_coordinates
     from .scene import show_message_box
 
-    blender_coords = ctx.blenderCoords or []
-    blender_coords_separate = ctx.blenderPathSegs or []
-    blender_coords_by_file = ctx.blenderPathSegsByFile or []
-    flags = ctx.flags
+    blender_coords = gen.blenderCoords or []
+    blender_coords_separate = gen.blenderPathSegs or []
+    blender_coords_by_file = gen.blenderPathSegsByFile or []
+    flags = gen.flags
 
     curveObj = None
     curveObjs = None
@@ -880,7 +880,7 @@ def _rg_build_trail_curves(ctx: GenerationContext) -> bool:
             # Single segment or trail_map: one curve directly
             create_curve_from_coordinates(blender_coords)
             curveObj = bpy.context.view_layer.objects.active
-            ctx.curveObj = curveObj
+            gen.curveObj = curveObj
         elif (
             "gpx_chain" in flags
             and blender_coords_by_file
@@ -919,14 +919,14 @@ def _rg_build_trail_curves(ctx: GenerationContext) -> bool:
         curveObjs = splitCurves(curveObj)
     bpy.ops.object.select_all(action="DESELECT")
 
-    ctx.curveObjs = curveObjs
+    gen.curveObjs = curveObjs
     return True
 
 
-def _rg_displace_terrain_with_curve(ctx: GenerationContext):
+def _rg_displace_terrain_with_curve(gen: GenerationContext):
     from ..utils.mesh_ops import RaycastCurveToMesh
 
-    mesh = ctx.mapObject.data
+    mesh = gen.mapObject.data
     _total_verts = len(mesh.vertices)
 
     # Bulk-read vertex coords into numpy array
@@ -935,24 +935,24 @@ def _rg_displace_terrain_with_curve(ctx: GenerationContext):
     co = co_flat.reshape((_total_verts, 3))
 
     # Transform local coords to world space and extract world Y for Mercator correction
-    m = np.array(ctx.mapObject.matrix_world, dtype=np.float64)
+    m = np.array(gen.mapObject.matrix_world, dtype=np.float64)
     co_h = np.hstack([co, np.ones((_total_verts, 1), dtype=np.float64)])
     world_y = (m @ co_h.T).T[:, 1]
 
     # Mercator latitude correction: stay in radians — skip the degrees roundtrip
     # convert_to_geo: lat_deg = degrees(2*atan(exp(y/(R*scaleHor))) - pi/2)
     # We need cos(radians(lat_deg)) = cos(lat_rad), so compute lat_rad directly
-    lat_rad = 2.0 * np.arctan(np.exp(world_y / (const.R * ctx.sScaleHor))) - (
+    lat_rad = 2.0 * np.arctan(np.exp(world_y / (const.R * gen.sScaleHor))) - (
         np.pi / 2.0
     )
     merc = 1.0 / np.cos(lat_rad)
 
     # Compute new Z for all vertices at once and write back
     new_z = (
-        np.array(ctx.tileVerts, dtype=np.float64)
+        np.array(gen.tileVerts, dtype=np.float64)
         / 1000.0
-        * ctx.scaleElevation
-        * ctx.autoScale
+        * gen.scaleElevation
+        * gen.autoScale
         * merc
     )
     co[:, 2] = new_z
@@ -962,7 +962,7 @@ def _rg_displace_terrain_with_curve(ctx: GenerationContext):
     lowestZ = float(new_z.min())
     highestZ = float(new_z.max())
     additionalExtrusion = lowestZ
-    ctx.addExtrusion = additionalExtrusion
+    gen.addExtrusion = additionalExtrusion
     bpy.context.scene.tp3d.sAdditionalExtrusion = additionalExtrusion
     bpy.context.scene.tp3d.lowestZ = lowestZ
     bpy.context.scene.tp3d.highestZ = highestZ
@@ -986,14 +986,14 @@ def _rg_displace_terrain_with_curve(ctx: GenerationContext):
             )
 
     # Snap trail curves onto terrain surface
-    if ctx.overwritePathElevation and ctx.curveObj is not None:
-        RaycastCurveToMesh(ctx.curveObj, ctx.mapObject)
-    if ctx.overwritePathElevation and ctx.curveObjs is not None:
-        for tcrv in ctx.curveObjs:
-            RaycastCurveToMesh(tcrv, ctx.mapObject)
+    if gen.overwritePathElevation and gen.curveObj is not None:
+        RaycastCurveToMesh(gen.curveObj, gen.mapObject)
+    if gen.overwritePathElevation and gen.curveObjs is not None:
+        for tcrv in gen.curveObjs:
+            RaycastCurveToMesh(tcrv, gen.mapObject)
 
 
-def _rg_extrude_terrain(ctx: GenerationContext):
+def _rg_extrude_terrain(gen: GenerationContext):
     # Extrude ONLY outer boundary down to form walls + single bottom cap
     import bmesh
     import shapely.geometry as sg
@@ -1002,17 +1002,17 @@ def _rg_extrude_terrain(ctx: GenerationContext):
 
     from . import geometry2d as g2d
 
-    obj = ctx.mapObject
+    obj = gen.mapObject
     if obj.mode != "OBJECT":
         bpy.ops.object.mode_set(mode="OBJECT")
 
     bm = bmesh.new()
     bm.from_mesh(obj.data)
 
-    if ctx.addExtrusion is None:
+    if gen.addExtrusion is None:
         return
-    target_bottom_z = ctx.addExtrusion - ctx.minThickness
-    shift_z = -ctx.addExtrusion + ctx.minThickness
+    target_bottom_z = gen.addExtrusion - gen.minThickness
+    shift_z = -gen.addExtrusion + gen.minThickness
 
     # Extrude boundary edges downward
     top_boundary_edges = [e for e in bm.edges if e.is_boundary]
@@ -1124,20 +1124,20 @@ def _rg_extrude_terrain(ctx: GenerationContext):
     obj.data.materials.append(mat)
 
     # Shift curve objects in Python space
-    if ctx.curveObjs:
-        for tcrv in ctx.curveObjs:
+    if gen.curveObjs:
+        for tcrv in gen.curveObjs:
             tcrv.location.z += shift_z
 
     # Set object origin to cursor position
     location = obj.location
     bpy.context.scene.cursor.location = location
-    if ctx.curveObjs:
-        for tcrv in ctx.curveObjs:
+    if gen.curveObjs:
+        for tcrv in gen.curveObjs:
             tcrv.select_set(True)
             bpy.ops.object.origin_set(type="ORIGIN_CURSOR")
 
 
-def _rg_create_text_and_overlays(ctx: GenerationContext):
+def _rg_create_text_and_overlays(gen: GenerationContext):
     from math import pi
 
     from .scene import set_origin_to_3d_cursor, transform_MapObject
@@ -1165,24 +1165,24 @@ def _rg_create_text_and_overlays(ctx: GenerationContext):
     shellobj = None
     bpy.ops.object.select_all(action="DESELECT")
 
-    if "append_collection" not in ctx.flags:
-        if ctx.shape == "HEXAGON INNER TEXT":
-            textobj = HexagonInnerText(ctx.mapObject)
-        elif ctx.shape == "HEXAGON OUTER TEXT":
+    if "append_collection" not in gen.flags:
+        if gen.shape == "HEXAGON INNER TEXT":
+            textobj = HexagonInnerText(gen.mapObject)
+        elif gen.shape == "HEXAGON OUTER TEXT":
             textobj, plateobj = HexagonOuterText()
-            ctx.mapObject.location.z += ctx.plateThickness
-        elif ctx.shape == "OCTAGON OUTER TEXT":
+            gen.mapObject.location.z += gen.plateThickness
+        elif gen.shape == "OCTAGON OUTER TEXT":
             textobj, plateobj = OctagonOuterText()
-            ctx.mapObject.location.z += ctx.plateThickness
-        elif ctx.shape == "HEXAGON FRONT TEXT":
+            gen.mapObject.location.z += gen.plateThickness
+        elif gen.shape == "HEXAGON FRONT TEXT":
             textobj, plateobj = HexagonFrontText()
-            ctx.mapObject.location.z += ctx.plateThickness
-        elif ctx.shape == "CIRCLE OUTER TEXT":
+            gen.mapObject.location.z += gen.plateThickness
+        elif gen.shape == "CIRCLE OUTER TEXT":
             textobj, plateobj = MedalText()
-            ctx.mapObject.location.z += ctx.plateThickness
-        elif ctx.shape.endswith(" SHELL"):
+            gen.mapObject.location.z += gen.plateThickness
+        elif gen.shape.endswith(" SHELL"):
             shellobj = build_map_shell(
-                ctx.mapObject,
+                gen.mapObject,
                 bpy.context.scene.tp3d.tolerance,
                 wall=bpy.context.scene.tp3d.shellWallThickness,
                 bottom_wall=1.0,
@@ -1194,18 +1194,18 @@ def _rg_create_text_and_overlays(ctx: GenerationContext):
             pass  # BottomText() — currently disabled
 
     if (
-        "TEXT" in ctx.shape
-        and ctx.curveObjs is not None
-        and "INNER TEXT" not in ctx.shape
-    ) or (ctx.shape == "CIRCLE OUTER TEXT" and ctx.curveObjs is not None):
-        for tcrv in ctx.curveObjs:
-            tcrv.location.z += ctx.plateThickness
+        "TEXT" in gen.shape
+        and gen.curveObjs is not None
+        and "INNER TEXT" not in gen.shape
+    ) or (gen.shape == "CIRCLE OUTER TEXT" and gen.curveObjs is not None):
+        for tcrv in gen.curveObjs:
+            tcrv.location.z += gen.plateThickness
 
     # Plate insert
     bpy.ops.object.select_all(action="DESELECT")
     dist = bpy.context.scene.tp3d.plateInsertValue
     if (
-        ctx.shape
+        gen.shape
         in {
             "HEXAGON OUTER TEXT",
             "OCTAGON OUTER TEXT",
@@ -1215,23 +1215,23 @@ def _rg_create_text_and_overlays(ctx: GenerationContext):
         and plateobj
         and textobj
     ):
-        transform_MapObject(plateobj, ctx.xTerrainOffset, ctx.yTerrainOffset)
-        transform_MapObject(textobj, ctx.xTerrainOffset, ctx.yTerrainOffset)
+        transform_MapObject(plateobj, gen.xTerrainOffset, gen.yTerrainOffset)
+        transform_MapObject(textobj, gen.xTerrainOffset, gen.yTerrainOffset)
         set_origin_to_3d_cursor(plateobj)
         set_origin_to_3d_cursor(textobj)
         if dist > 0:
-            plateInsert(plateobj, ctx.mapObject)
+            plateInsert(plateobj, gen.mapObject)
             textobj.location.z += dist
-        if ctx.shapeRotation != 0:
-            textobj.rotation_euler[2] += ctx.shapeRotation * (pi / 180)
+        if gen.shapeRotation != 0:
+            textobj.rotation_euler[2] += gen.shapeRotation * (pi / 180)
 
-    ctx.textObj = textobj
-    ctx.plateObj = plateobj
-    ctx.shellObj = shellobj
+    gen.textObj = textobj
+    gen.plateObj = plateobj
+    gen.shellObj = shellobj
 
 
 def _rg_build_terrain_elements(
-    ctx,
+    gen,
     phase_start=0.83,
     phase_end=0.95,
     prefetched_osm=None,
@@ -1264,7 +1264,7 @@ def _rg_build_terrain_elements(
     )
 
     tp3d = bpy.context.scene.tp3d
-    map_km = ctx.mapKm
+    map_km = gen.mapKm
     _ov = _progress.ProgressOverlay.get()
 
     # --------------------------------------------------
@@ -1355,8 +1355,8 @@ def _rg_build_terrain_elements(
             else []
         )
     )
-    obj = ctx.mapObject
-    scaleHor = ctx.sScaleHor
+    obj = gen.mapObject
+    scaleHor = gen.sScaleHor
     _total_active = max(len(_active_elem_flags), 1)
     _elem_step = (_ELEM_PHASE_END - _ELEM_PHASE_START) / _total_active
     _elem_idx = [0]  # mutable counter
@@ -1686,12 +1686,12 @@ def _rg_build_terrain_elements(
             print("INFO: MAP IS TOO BIG FOR STREETS (< 100Km Map size Required)")
             _progress.WarningsOverlay.add_warning("Map too big for Roads.", "warn")
 
-    ctx.elements = terrain
+    gen.elements = terrain
 
     return terrain
 
 
-def _rg_apply_single_color_mode(ctx: GenerationContext):
+def _rg_apply_single_color_mode(gen: GenerationContext):
     """Apply single-color-mode boolean projection between terrain layers and curves.
 
     Terrain elements are processed in priority order: each element subtracts
@@ -1724,17 +1724,17 @@ def _rg_apply_single_color_mode(ctx: GenerationContext):
         "ocean",
     ]
 
-    _effective_scm_trail = ctx.singleColorMode or ctx.elementMode in (
+    _effective_scm_trail = gen.singleColorMode or gen.elementMode in (
         "SINGLECOLORMODE",
         "SINGLECOLORMODE_REMESH",
     )
-    obj = ctx.mapObject
-    terrain = ctx.elements
+    obj = gen.mapObject
+    terrain = gen.elements
     assert terrain is not None
     thickerCurves = []
     trail_thick_ribbons = []
     print("SCM-----")
-    if _effective_scm_trail and ctx.curveObjs:
+    if _effective_scm_trail and gen.curveObjs:
         dpt = 1
         dup = obj.copy()
         dup.data = obj.data.copy()
@@ -1743,7 +1743,7 @@ def _rg_apply_single_color_mode(ctx: GenerationContext):
             for coll in obj.users_collection:
                 coll.objects.link(dup)
         survivingCurveObjs = []
-        for tcrv in ctx.curveObjs:
+        for tcrv in gen.curveObjs:
             result = single_color_mode_curve(tcrv, obj, True, dpt, dup)
             if result is not None:
                 if result[1] is not None:
@@ -1801,14 +1801,15 @@ def _rg_apply_single_color_mode(ctx: GenerationContext):
 
     # In CREATE_TEXTURE mode, store trail ribbon union for texture rasterisation.
     if (
-        ctx.elementMode == "CREATE_TEXTURE"
+        gen.elementMode == "CREATE_TEXTURE"
         and bpy.context.scene.tp3d.tex_include_trail
         and trail_thick_ribbons
     ):
         osm_polygons: dict[str, Any] = terrain.get("_osm_polygons")
         osm_polygons["TRAIL"] = _g2d.union(trail_thick_ribbons)
 
-    if ctx.elementMode == "SEPARATE" and False:
+    # TODO: clean this out when separate mode is gone
+    if gen.elementMode == "SEPARATE" and False:  # noqa: SIM223
         for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
             elem_obj = terrain.get(key)
 
@@ -1830,10 +1831,10 @@ def _rg_apply_single_color_mode(ctx: GenerationContext):
             bpy.ops.object.mode_set(mode="OBJECT")
 
             if _effective_scm_trail:
-                for tcrv in ctx.curveObjs:
+                for tcrv in gen.curveObjs:
                     boolean_operation(elem_obj, tcrv)
 
-    if ctx.elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
+    if gen.elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
             _ov.update(message="Applying Single-color Mode…")
@@ -1842,7 +1843,7 @@ def _rg_apply_single_color_mode(ctx: GenerationContext):
 
         _scm_fn = (
             single_color_mode_mesh_remesh
-            if ctx.elementMode == "SINGLECOLORMODE_REMESH"
+            if gen.elementMode == "SINGLECOLORMODE_REMESH"
             else single_color_mode_mesh_wireframe
         )
 
@@ -1882,14 +1883,14 @@ def _rg_apply_single_color_mode(ctx: GenerationContext):
             _scm_done += 1
 
         if bpy.app.debug:
-            obj_size = ctx.size
+            obj_size = gen.size
             for thicker in thicker_by_key.values():
                 thicker.location.x += obj_size
         else:
             for thicker in thicker_by_key.values():
                 remove_objects(thicker)
 
-    if ctx.elementMode == "SEPARATE" and thickerCurves:
+    if gen.elementMode == "SEPARATE" and thickerCurves:
         for key in TERRAIN_PRIORITY_ORDER:
             elem_obj = terrain.get(key)
             if not elem_obj:
@@ -1912,7 +1913,7 @@ def _rg_apply_single_color_mode(ctx: GenerationContext):
     # and BEFORE the trail-groove step below, which stays the true last
     # boolean of the whole pipeline.
     roads_obj = terrain.get("roads")
-    if roads_obj is not None and ctx.elementMode in (
+    if roads_obj is not None and gen.elementMode in (
         "SEPARATE",
         "SINGLECOLORMODE",
         "SINGLECOLORMODE_REMESH",
@@ -2029,7 +2030,7 @@ def _rg_apply_single_color_mode(ctx: GenerationContext):
         from .osm.roads import finalize_roads  # deferred — only needed here
 
         el_sHeight = bpy.context.scene.tp3d.el_sHeight
-        full_depth = ctx.elementMode not in ("PAINT", "CREATE_TEXTURE")
+        full_depth = gen.elementMode not in ("PAINT", "CREATE_TEXTURE")
         # Subtract the trail 2D footprint from roads_polygon before finalize_roads
         # builds the mesh -- avoids a post-build 3D boolean on a non-manifold mesh.
         _roads_poly = terrain.get("roads_polygon")
@@ -2084,25 +2085,25 @@ def _rg_apply_single_color_mode(ctx: GenerationContext):
 
     if thickerCurves:
         if bpy.app.debug:
-            obj_size = ctx.size
+            obj_size = gen.size
             for tcrv in thickerCurves:
                 tcrv.location.x += obj_size
         else:
             remove_objects(thickerCurves)
 
 
-def _rg_assign_materials(ctx: GenerationContext):
+def _rg_assign_materials(gen: GenerationContext):
     """Write metadata and assign materials to all generated objects."""
     from .metadata import (
         writeMetadata,  # deferred to avoid circular import at load time
     )
 
-    obj = ctx.mapObject
-    curveObjs = ctx.curveObjs
-    textobj = ctx.textObj
-    plateobj = ctx.plateObj
-    shellobj = ctx.shellObj
-    shape = ctx.shape
+    obj = gen.mapObject
+    curveObjs = gen.curveObjs
+    textobj = gen.textObj
+    plateobj = gen.plateObj
+    shellobj = gen.shellObj
+    shape = gen.shape
 
     bpy.ops.object.select_all(action="DESELECT")
 
@@ -2167,7 +2168,7 @@ def _rg_assign_materials(ctx: GenerationContext):
         writeMetadata(shellobj, type="SHELL")
 
 
-def _rg_export(ctx: GenerationContext):
+def _rg_export(gen: GenerationContext):
     """Export all geometry, update API counters, and zoom camera."""
     from ..export import (  # deferred to avoid circular import at load time
         export_selected_to_3mf,
@@ -2181,31 +2182,43 @@ def _rg_export(ctx: GenerationContext):
         zoom_camera_to_selected,  # deferred to avoid circular import at load time
     )
 
-    shape = ctx.shape
-    elements = ctx.elements
-    curveObjs = ctx.curveObjs
-    textobj = ctx.textObj
-    shellobj = ctx.shellObj
-    plateobj = ctx.plateObj
-    exportformat = ctx.exportFormat
+    shape = gen.shape
+    elements = gen.elements
+    curveObjs = gen.curveObjs
+    textobj = gen.textObj
+    shellobj = gen.shellObj
+    plateobj = gen.plateObj
+    exportformat = gen.exportFormat
+    
+    # PAINT mode bakes terrain-element colors as per-face materials on a single
+    # mesh; STL cannot store material data at all, so PAINT-mode maps must be
+    # exported as OBJ to keep the colors. Mirrors the equivalent computation in
+    # terrain.coloring_main().
+    # CREATE_TEXTURE: 3MF is the primary export; STL serves as no-addon fallback.
+    if gen.elementMode == "PAINT":
+        exportformat = "OBJ"
+    elif gen.elementMode == "CREATE_TEXTURE":
+        exportformat = "STL"  # fallback only; 3MF addon handles the real export
+    else:
+        exportformat = "STL"
 
-    if ctx.autoExport:
+    if gen.autoExport:
         print("Auto export disabled, skipping export")
         return
 
-    if is_3mf_extension_installed() and not ctx.autoExport:
+    if is_3mf_extension_installed() and not gen.autoExport:
         print("Exporting to 3mf")
-        if ctx.curveObjs and (ctx.elementMode != "CREATE_TEXTURE" or not ctx.texTrail):
+        if gen.curveObjs and (gen.elementMode != "CREATE_TEXTURE" or not gen.texTrail):
             for tcrv in curveObjs:
                 try:
                     if tcrv and tcrv.name in bpy.data.objects:
                         tcrv.select_set(True)
                 except ReferenceError:
                     pass
-        ctx.mapObject.select_set(True)
+        gen.mapObject.select_set(True)
 
         if elements and (
-            ctx.elementMode == "SEPARATE" or "SINGLECOLORMODE" in ctx.elementMode
+            gen.elementMode == "SEPARATE" or "SINGLECOLORMODE" in gen.elementMode
         ):
             for elem_obj in elements.values():
                 if (
@@ -2214,7 +2227,7 @@ def _rg_export(ctx: GenerationContext):
                     and elem_obj.name in bpy.data.objects
                 ):
                     elem_obj.select_set(True)
-        elif elements and ctx.elementMode in ("PAINT", "CREATE_TEXTURE"):
+        elif elements and gen.elementMode in ("PAINT", "CREATE_TEXTURE"):
             for key in ("roads", "buildings"):
                 elem_obj = elements.get(key)
                 if elem_obj and elem_obj.name in bpy.data.objects:
@@ -2251,13 +2264,13 @@ def _rg_export(ctx: GenerationContext):
         export_selected_to_3mf(is_auto=True)
     else:
         print("exporting as STL/OBJ")
-        if curveObjs and (ctx.elementMode != "CREATE_TEXTURE" or not ctx.texTrail):
+        if curveObjs and (gen.elementMode != "CREATE_TEXTURE" or not gen.texTrail):
             for tcrv in curveObjs:
                 export_to_STL(tcrv, exportformat)
-        export_to_STL(ctx.mapObject, exportformat)
+        export_to_STL(gen.mapObject, exportformat)
 
         if elements and (
-            ctx.elementMode == "SEPARATE" or "SINGLECOLORMODE" in ctx.elementMode
+            gen.elementMode == "SEPARATE" or "SINGLECOLORMODE" in gen.elementMode
         ):
             for elem_obj in elements.values():
                 if (
@@ -2308,12 +2321,12 @@ def _rg_export(ctx: GenerationContext):
         else f"API Limit: {count_openElevation:.0f}/1000 (Monthly limit reached. might cause problems)"
     )
 
-    if ctx.buggyData != 0:
+    if gen.buggyData != 0:
         _progress.WarningsOverlay.add_warning(
             "API might have faulty DATA. Maybe try diffrent Resolution or API", "warn"
         )
 
-    zoom_camera_to_selected(ctx.mapObject)
+    zoom_camera_to_selected(gen.mapObject)
 
 
 # ---------------------------------------------------------------------------
@@ -2797,52 +2810,41 @@ def runGeneration(type, locked_scale=None):
 
     # --- Phase 1: Validate inputs and load all scene settings ---
     overlay.update(0.03, "Initializing", "Validating inputs…")
-    ctx = _rg_validate_inputs(flags, gen_type=type, locked_scale=locked_scale)
-    if ctx is None:
+    gen = _rg_validate_inputs(flags, gen_type=type, locked_scale=locked_scale)
+    if gen is None:
         overlay.finish()
         return
-    start_time = ctx.start_time
-    # PAINT mode bakes terrain-element colors as per-face materials on a single
-    # mesh; STL cannot store material data at all, so PAINT-mode maps must be
-    # exported as OBJ to keep the colors. Mirrors the equivalent computation in
-    # terrain.coloring_main().
-    # CREATE_TEXTURE: 3MF is the primary export; STL serves as no-addon fallback.
-    if ctx.elementMode == "PAINT":
-        exportformat = "OBJ"
-    elif ctx.elementMode == "CREATE_TEXTURE":
-        exportformat = "STL"  # fallback only; 3MF addon handles the real export
-    else:
-        exportformat = "STL"
+    start_time = gen.start_time
 
     overlay.add_completed_step("Inputs validated")
 
     # --- Phase 2: Load coordinate data from GPX / synthetic source ---
     overlay.update(0.08, "Loading Data", "Reading GPX file…")
-    _rg_load_coordinates(ctx)
+    _rg_load_coordinates(gen)
 
     # --- Phase 3: Calculate and store trail statistics ---
     overlay.update(0.12, "Trail Statistics", "Computing distances & elevation gain…")
-    _rg_compute_trail_stats(ctx)
+    _rg_compute_trail_stats(gen)
 
     # --- Phase 4: Interpolate path to at least 300 points for a smooth curve ---
     overlay.update(0.16, "Path Interpolation", "Smoothing trail curve…")
-    _rg_interpolate_path_curve(ctx)
+    _rg_interpolate_path_curve(gen)
 
     # --- Phase 5: Calculate horizontal scale factor ---
     overlay.update(0.20, "Scale Calculation", "Computing horizontal scale…")
-    _rg_calculate_horizontal_scale(ctx)
+    _rg_calculate_horizontal_scale(gen)
 
     # --- Phase 6: Convert to Blender coordinates and find map center ---
     overlay.update(0.24, "Coordinate Conversion", "Converting to Blender space…")
-    _rg_convert_then_center_coordinates(ctx)
+    _rg_convert_then_center_coordinates(gen)
 
     # --- Phase 7: Remove previously generated objects at the same location ---
     overlay.update(0.28, "Scene Cleanup", "Removing previous objects…")
-    _cleanup_build_area(ctx)
+    _cleanup_build_area(gen)
 
-    if "stats" in flags and ctx.gpx_stats.length > 0:
+    if "stats" in flags and gen.gpx_stats.length > 0:
         overlay.add_completed_step(
-            f"GPX loaded  —  {ctx.gpx_stats.length:.1f} km, {int(ctx.gpx_stats.elevation)} m gain"
+            f"GPX loaded  —  {gen.gpx_stats.length:.1f} km, {int(gen.gpx_stats.elevation)} m gain"
         )
     else:
         overlay.add_completed_step("GPX data loaded")
@@ -2850,17 +2852,17 @@ def runGeneration(type, locked_scale=None):
     # --- Phase 8: Create base map shape ---
     overlay.update(0.33, "Building Map Shape", "Creating base mesh…")
 
-    _rg_create_map_object(ctx)
-    zoom_camera_to_selected(ctx.mapObject)
-    compute_and_store_tile_bounds(ctx)
+    _rg_create_map_object(gen)
+    zoom_camera_to_selected(gen.mapObject)
+    compute_and_store_tile_bounds(gen)
 
     overlay.add_completed_step(
-        f"Map shape created  ({ctx.shape.capitalize()}, {round(ctx.mapKm or 0, 1)} km)"
+        f"Map shape created  ({gen.shape.capitalize()}, {round(gen.mapKm or 0, 1)} km)"
     )
-    overlay.set_fetch_items(build_fetch_items(ctx.mapKm))
+    overlay.set_fetch_items(build_fetch_items(gen.mapKm))
 
     # --- OSM background prefetch: start now so Overpass requests overlap with elevation download ---
-    _osm_prefetch_thread, _osm_prefetched = _rg_start_osm_prefetch(ctx)
+    _osm_prefetch_thread, _osm_prefetched = _rg_start_osm_prefetch(gen)
     if _osm_prefetch_thread is not None:
         print("OSM prefetch started (overlapping elevation download)")
 
@@ -2885,32 +2887,32 @@ def runGeneration(type, locked_scale=None):
             sub_label="Tiles processed",
         )
 
-    get_tile_elevation(ctx, progress_cb=_elevation_progress)
+    get_tile_elevation(gen, progress_cb=_elevation_progress)
 
     print("Elevation Data fetched")
     overlay.sub_percent = None  # hide sub-bar now that elevation is done
     overlay.set_fetch_done("elevation", success=True)
-    overlay.add_completed_step(f"Elevation fetched  ({len(ctx.tileVerts or [])} pts)")
+    overlay.add_completed_step(f"Elevation fetched  ({len(gen.tileVerts or [])} pts)")
     overlay.update(
-        0.65, "Elevation Data Ready", f"{len(ctx.tileVerts or [])} points fetched"
+        0.65, "Elevation Data Ready", f"{len(gen.tileVerts or [])} points fetched"
     )
 
-    if ctx.tileVerts and len(ctx.tileVerts) < 1000:
+    if gen.tileVerts and len(gen.tileVerts) < 1000:
         _progress.WarningsOverlay.add_warning(
-            f"Mesh has only {len(ctx.tileVerts)} Points. Increase Resolution for higher Quality",
+            f"Mesh has only {len(gen.tileVerts)} Points. Increase Resolution for higher Quality",
             "warn",
         )
-    if ctx.elDiff is None:
+    if gen.elDiff is None:
         return
-    if ctx.fixedElevationScale:
-        autoScale = 10 / (ctx.elDiff / 1000) if ctx.elDiff > 0 else 10
+    if gen.fixedElevationScale:
+        autoScale = 10 / (gen.elDiff / 1000) if gen.elDiff > 0 else 10
     else:
-        autoScale = ctx.sScaleHor
+        autoScale = gen.sScaleHor
     bpy.context.scene.tp3d.sAutoScale = autoScale
-    ctx.autoScale = autoScale
+    gen.autoScale = autoScale
 
-    if not ctx.fixedElevationScale and (
-        ctx.elDiff == 0 or (ctx.elDiff / 1000) * autoScale * ctx.scaleElevation < 2
+    if not gen.fixedElevationScale and (
+        gen.elDiff == 0 or (gen.elDiff / 1000) * autoScale * gen.scaleElevation < 2
     ):
         _progress.WarningsOverlay.add_warning(
             "Terrain seems to be really flat. If not intended, increase Elevation scale",
@@ -2919,20 +2921,20 @@ def runGeneration(type, locked_scale=None):
 
     # --- Phase 10a: Prepare trail Blender coordinates ---
     overlay.update(0.67, "Preparing Trail", "Converting and simplifying coordinates…")
-    _rg_prepare_trail_coords(ctx)
+    _rg_prepare_trail_coords(gen)
 
     # --- Phase 10b: Build trail curves ---
     overlay.update(0.70, "Building Trail", "Creating curve objects…")
-    if not _rg_build_trail_curves(ctx):
+    if not _rg_build_trail_curves(gen):
         overlay.finish()
         return
 
-    curveObjs = ctx.curve_objs
+    curveObjs = gen.curveObjs
     if curveObjs:
         bpy.context.scene.tp3d.currentTrail = curveObjs[0]
 
     _n_segs = len(curveObjs) if curveObjs else 0
-    _n_pts = len(ctx.blenderCoords) if ctx.blenderCoords else 0
+    _n_pts = len(gen.blenderCoords) if gen.blenderCoords else 0
     overlay.add_completed_step(
         f"Trail built  —  {_n_segs} seg{'s' if _n_segs != 1 else ''}, {_n_pts} pts"
     )
@@ -2940,17 +2942,17 @@ def runGeneration(type, locked_scale=None):
     # --- Phase 11: Apply terrain elevation to mesh vertices ---
     overlay.update(0.75, "Applying Terrain", "Displacing mesh vertices…")
 
-    _rg_displace_terrain_with_curve(ctx)
+    _rg_displace_terrain_with_curve(gen)
 
     overlay.update(0.80, "Terrain Ready", "Vertices displaced…")
     overlay.sub_percent = None
 
-    _rg_extrude_terrain(ctx)
+    _rg_extrude_terrain(gen)
 
     # --- Phase 12-13: Create text / plate overlays for text-based shapes ---
     overlay.update(0.82, "Shape Overlays", "Adding text and plate elements…")
 
-    _rg_create_text_and_overlays(ctx)
+    _rg_create_text_and_overlays(gen)
 
     # --- Material preview mode ---
     for area in bpy.context.screen.areas:
@@ -2964,37 +2966,37 @@ def runGeneration(type, locked_scale=None):
     if _osm_prefetch_thread is not None:
         _osm_prefetch_thread.join()
     _rg_build_terrain_elements(
-        ctx,
+        gen,
         prefetched_osm=_osm_prefetched,
     )
 
     # --- Phase 15: Single color mode processing ---
     overlay.update(0.95, "Coloring", "Applying single-color mode…")
-    _rg_apply_single_color_mode(ctx)
+    _rg_apply_single_color_mode(gen)
 
     # --- Phase 15b: CREATE_TEXTURE — rasterise OSM polygons into UV texture ---
-    if ctx.elementMode == "CREATE_TEXTURE":
+    if gen.elementMode == "CREATE_TEXTURE":
         from .texture import setup_paint_texture
 
         overlay.update(0.96, "Texture", "Rasterising OSM texture…")
-        elements: dict[str, Any] = ctx.elements
-        _mmu_palette = setup_paint_texture(ctx)
+        elements: dict[str, Any] = gen.elements
+        _mmu_palette = setup_paint_texture(gen)
         elements["_mmu_palette"] = _mmu_palette
         # When SCM trail is on, curveObjs hold the converted trail-strip meshes
         # (single_color_mode_curve converts in-place); keep them as 3D geometry.
         # When tex_include_trail is off, keep curveObjs as PAINT-style overlay objects.
         _tex_trail = bpy.context.scene.tp3d.tex_include_trail
-        if ctx.curveObjs and not ctx.singleColorMode and _tex_trail:
-            for tcrv in list(ctx.curveObjs):
+        if gen.curveObjs and not gen.singleColorMode and _tex_trail:
+            for tcrv in list(gen.curveObjs):
                 if tcrv and tcrv.name in bpy.data.objects:
                     bpy.data.objects.remove(tcrv, do_unlink=True)
-            ctx.curveObjs.clear()
+            gen.curveObjs.clear()
 
-    if ctx.curveObjs and type == 20:
-        for i, crv in enumerate(ctx.curveObjs):
-            tmp: Object = merge_with_map(ctx.mapObject, crv)
+    if gen.curveObjs and type == 20:
+        for i, crv in enumerate(gen.curveObjs):
+            tmp: Object = merge_with_map(gen.mapObject, crv)
             remove_objects(crv)
-            ctx.curveObjs[i] = tmp
+            gen.curveObjs[i] = tmp
 
     _lo = bpy.context.scene.tp3d.lowestZ
     _hi = bpy.context.scene.tp3d.highestZ
@@ -3002,13 +3004,13 @@ def runGeneration(type, locked_scale=None):
 
     # --- Phases 16-18: Assign materials, export, and finalize ---
     overlay.update(0.97, "Finalizing", "Exporting files...")
-    _rg_assign_materials(ctx)
+    _rg_assign_materials(gen)
 
     # --- Phase 15c: Tag companion objects with solid-colour paint textures ---
     # Without this the Orca exporter sees no paint data on these objects and
     # the slicer defaults them to extruder 1 regardless of material colour.
-    if ctx.elementMode == "CREATE_TEXTURE":
-        _mmu_palette = ctx.elements.get("_mmu_palette")
+    if gen.elementMode == "CREATE_TEXTURE":
+        _mmu_palette = gen.elements.get("_mmu_palette")
         if _mmu_palette:
             from .texture import (
                 _ROADS_SRGB,
@@ -3017,13 +3019,13 @@ def runGeneration(type, locked_scale=None):
             )
 
             for _cobj, _ccol in [
-                (ctx.textObj, _WHITE_SRGB),
-                (ctx.plateObj, _ROADS_SRGB),
-                (ctx.shellObj, _ROADS_SRGB),
+                (gen.textObj, _WHITE_SRGB),
+                (gen.plateObj, _ROADS_SRGB),
+                (gen.shellObj, _ROADS_SRGB),
             ]:
                 tag_solid_color_for_paint_export(_cobj, _ccol, _mmu_palette)
     # Finish and Export
-    _rg_export(ctx)
+    _rg_export(gen)
     
     # Calculate script durations for prints and overlay updates
     end_time = time.time()
@@ -3039,8 +3041,8 @@ def runGeneration(type, locked_scale=None):
     save_generation_counter(_total_maps)
     bpy.context.scene.tp3d["o_mapsGenerated"] = f"Maps Generated: {_total_maps}"
 
-    if ctx.mapObject:
-        ctx.mapObject.GenerationTime = round(duration)
+    if gen.mapObject:
+        gen.mapObject.GenerationTime = round(duration)
 
     print(f"Finished. Generating Map took {duration:.0f} seconds")
     print("----------------------------------------------------------------")
@@ -3656,6 +3658,8 @@ def generateJustTrail(material="TRAIL"):
     # PREVENT CLIPPING OF IDENTICAL COORDINATES
     blender_coords = separate_duplicate_xy(blender_coords, 0.05)
 
+    if separate_paths is None:
+        return
     print(len(separate_paths))
 
     if (type == 1 or len(separate_paths) > 1) and type != 4:
