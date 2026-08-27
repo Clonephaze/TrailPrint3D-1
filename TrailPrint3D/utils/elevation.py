@@ -13,7 +13,7 @@ import requests  # type: ignore
 
 from .. import constants as const
 from .. import progress as _progress
-from ..utils.generation import GenerationContext
+from ..utils.dataclasses import GenerationContext
 
 
 def load_counter():
@@ -326,6 +326,8 @@ def parse_png_rgb_data(png_bytes):
     rgb_array = []
     prev_row = bytearray(stride)
 
+    if height is None:
+        return
     for y in range(height):
         i = y * (stride + 1)
         filter_type = raw[i]
@@ -414,7 +416,7 @@ def get_elevation_TerrainTiles(coords, lenv=0, pointsDone=0, zoom=10, progress_c
                 progress_cb(percent_complete)
         try:
             png_bytes = fetch_terrarium_tile_raw(zoom, xtile, ytile)
-            rgb_array = parse_png_rgb_data(png_bytes)
+            rgb_array:list[list[tuple[int, int]]] = parse_png_rgb_data(png_bytes)
         except (requests.RequestException, OSError, AssertionError, ValueError, struct.error, zlib.error) as e:
             print(f"Failed to fetch or parse tile {zoom}/{xtile}/{ytile}: {e}")
             for idx, _, _ in idx_lat_lon_list:
