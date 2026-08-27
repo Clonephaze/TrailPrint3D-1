@@ -375,6 +375,14 @@ def _triangulated_terrain_faces(map_obj: bpy.types.Object) -> list:
     return tris
 
 
+def terrain_surface_min_z(terrain_tris: list) -> float:
+    """Lowest Z among a terrain's upward-facing surface triangles (see
+    ``_triangulated_terrain_faces``) -- the actual relief's lowest point,
+    not the Z of the solid's flat bottom face (which sits further down to
+    give every point minThickness of material)."""
+    return min(pt[2] for tri in terrain_tris for pt in tri)
+
+
 def _bary_z(tri: tuple, x: float, y: float) -> float:
     """Interpolate Z at (x, y) inside a flat 3-D triangle via barycentric coords."""
     (x0, y0, z0), (x1, y1, z1), (x2, y2, z2) = tri
@@ -617,7 +625,7 @@ def roads_geometry_for_polygon(
     return all_verts, faces
 
 
-def create_roads(map, default_height=10, scaleHor=1.0, mapsize=1, full_depth=False):
+def create_roads(map, default_height=10, scaleHor=1.0, mapsize=1, full_depth=False, terrain_tris=None):
     _t_setup = time.time()
     _ov = _progress.ProgressOverlay.get()
     if _ov.active:
@@ -672,7 +680,15 @@ def create_roads(map, default_height=10, scaleHor=1.0, mapsize=1, full_depth=Fal
 
     # --- Z bounds from terrain ------------------------------------------
     mc = [map.matrix_world @ Vector(c) for c in map.bound_box]
-    bottom_z = min(v.z for v in mc) - 1.0
+    # A full_depth cutter only needs to reach exactly as deep as the road
+    # piece it will later stand in for (see finalize_roads, which sits
+    # 0.6mm below the terrain surface's lowest point) -- not all the way
+    # down to the model's own base. This cutter is never booleaned against
+    # that final piece itself, so matching its depth exactly is safe.
+    if terrain_tris:
+        bottom_z = terrain_surface_min_z(terrain_tris) - 0.6
+    else:
+        bottom_z = min(v.z for v in mc) - 1.0
     top_z = max(v.z for v in mc) + default_height
 
     # --- 2-D map clip ---------------------------------------------------

@@ -769,26 +769,33 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
             _advance_elem_progress("Roads", "Fetching road data…")
             _ov.set_fetch_progress('roads', 0.0)
             _ov.set_fetch_ready('roads')
-            # PAINT mode: roads is fused visually onto a single-piece terrain,
-            # never printed standalone -- a thin raised strip is fine. Every
-            # other mode (SEPARATE / SINGLECOLORMODE*) needs roads to stand on
-            # its own as a base-to-top piece, like the coloring elements and
-            # the SCM trail groove insert, so it can be printed/assembled
-            # separately instead of being a sliver with nothing to sit on.
+            # Cache the terrain's own triangulated surface grid NOW, while
+            # terrain is still pristine (no boolean cuts yet) -- both
+            # create_roads (so its full_depth cutter stops at the terrain
+            # surface's lowest point instead of the model's own base) and
+            # finalize_roads (later, after roads is used as the cheap
+            # boolean cutter) need this original height data, which a cut
+            # would otherwise destroy.
+            from .mesh_ops import recalculateNormals as _rg_recalc_normals
+            from .osm.roads import _triangulated_terrain_faces
+            _rg_recalc_normals(obj)
+            _terrain_tris_cache = _triangulated_terrain_faces(obj)
+
+            # PAINT and SEPARATE modes: roads is just a thin raised strip
+            # sitting on top of the terrain surface (or on top of a coloring
+            # element's own surface where one exists), never printed
+            # standalone as a base-to-top piece -- SEPARATE just keeps it as
+            # its own object instead of baking it into terrain materials.
+            # Only SINGLECOLORMODE* needs roads to stand on its own as a
+            # base-to-top piece, like the coloring elements and the SCM
+            # trail groove insert, so it can be printed/assembled separately.
             result = create_roads(obj, tp3d.el_sHeight, scaleHor, map_km,
-                                   full_depth=(tp3d.elementMode != "PAINT"))
+                                   full_depth=(tp3d.elementMode not in ("PAINT", "SEPARATE")),
+                                   terrain_tris=_terrain_tris_cache)
             if result is not None:
                 roads, roads_polygon = result
-                # Cache the terrain's own triangulated grid + the road footprint
-                # NOW, while terrain is still pristine (no boolean cuts yet) --
-                # finalize_roads() (called later, after roads is used as the
-                # cheap boolean cutter) needs the original height data under
-                # the road footprint, which a cut would otherwise destroy.
-                from .mesh_ops import recalculateNormals as _rg_recalc_normals
-                from .osm.roads import _triangulated_terrain_faces
-                _rg_recalc_normals(obj)
                 terrain['roads_polygon'] = roads_polygon
-                terrain['_terrain_tris_cache'] = _triangulated_terrain_faces(obj)
+                terrain['_terrain_tris_cache'] = _terrain_tris_cache
                 global _puzzle_roads_data
                 _puzzle_roads_data = (roads_polygon, terrain['_terrain_tris_cache'], tp3d.el_sHeight)
                 set_origin_to_3d_cursor(roads)
@@ -988,16 +995,18 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
     # Cut roads out of every finalized terrain element (element = element -
     # road), so a road crossing water/forest/city/etc. leaves a continuous
     # raised strip with the element notched around it instead of the two
-    # objects silently overlapping. Only meaningful once elements exist as
-    # real separate solids (SEPARATE / SINGLECOLORMODE / SINGLECOLORMODE_
-    # REMESH) -- in PAINT mode elements are baked as terrain face materials,
-    # there's no separate mesh to cut. Buildings are intentionally excluded
-    # -- they sit on top of both terrain and elements untouched. This must
-    # run AFTER every element's own cross-element cuts above are finished,
-    # and BEFORE the trail-groove step below, which stays the true last
-    # boolean of the whole pipeline.
+    # objects silently overlapping. Only meaningful for a full_depth roads
+    # piece (SINGLECOLORMODE / SINGLECOLORMODE_REMESH) that reaches all the
+    # way down and would otherwise collide with the element's own volume --
+    # in PAINT and SEPARATE, roads is just a thin raised strip sitting on
+    # top of whatever surface is below it, so it never overlaps the element
+    # in the first place and there's nothing to cut. Buildings are
+    # intentionally excluded -- they sit on top of both terrain and elements
+    # untouched. This must run AFTER every element's own cross-element cuts
+    # above are finished, and BEFORE the trail-groove step below, which
+    # stays the true last boolean of the whole pipeline.
     roads_obj = terrain.get('roads')
-    if roads_obj is not None and props['elementMode'] in ("SEPARATE", "SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
+    if roads_obj is not None and props['elementMode'] in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
         # MANIFOLD requires BOTH operands to be watertight -- roads is the
         # known carrier of a small residual non-manifold defect (see osm.py's
         # create_roads notes), so it must be checked here too, not just the
@@ -1016,7 +1025,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         if cut_tolerance > 0:
             _road_poly = terrain.get('roads_polygon')
             if _road_poly is not None and not _road_poly.is_empty:
-                from .osm.roads import _build_extruded_mesh
+                from .osm.roads import _build_extruded_mesh, terrain_surface_min_z
                 from . import geometry2d as _g2d
                 from shapely.geometry.polygon import orient as _orient
                 _buffered = _road_poly.buffer(cut_tolerance, join_style='mitre')
@@ -1033,8 +1042,20 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                             _all_v2d.extend(_v2)
                             _all_tris += [(a + _base, b + _base, c + _base) for a, b, c in _t2]
                     if _all_v2d and _all_tris:
+                        # Stop the cutter at exactly the same depth as the
+                        # actual roads piece finalize_roads will later build
+                        # (0.6mm below the terrain surface's lowest point) --
+                        # this cutter is a standalone temp object, never
+                        # booleaned against the final roads piece itself, so
+                        # there's no coincident-face risk from matching it
+                        # exactly; any deeper and the recess floor sits
+                        # visibly below the road piece that fills it.
                         _mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
-                        _bz = min(v.z for v in _mc) - 2.0
+                        _terrain_tris_for_cut = terrain.get('_terrain_tris_cache')
+                        if _terrain_tris_for_cut:
+                            _bz = terrain_surface_min_z(_terrain_tris_for_cut) - 0.6
+                        else:
+                            _bz = min(v.z for v in _mc) - 2.0
                         _tz = max(v.z for v in _mc) + 20.0
                         _cutter_tmp = _build_extruded_mesh(_all_v2d, _all_tris, _bz, _tz)
                         recalculateNormals(_cutter_tmp)
@@ -1084,11 +1105,22 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
             _ov.update(message="Roads: adding terrain detail…")
-        from .osm.roads import finalize_roads  # deferred — only needed here
+        from .osm.roads import finalize_roads, terrain_surface_min_z  # deferred — only needed here
         el_sHeight = bpy.context.scene.tp3d.el_sHeight
-        full_depth = props['elementMode'] != 'PAINT'
-        mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
-        bottom_z = min(v.z for v in mc) - 1.0
+        full_depth = props['elementMode'] not in ('PAINT', 'SEPARATE')
+        # Full-depth roads' flat bottom cap sits 0.6mm below the terrain
+        # SURFACE's lowest point (its relief/heightmap) -- not 0.6mm below
+        # the solid's own bottom face. The base plate normally extends well
+        # below the lowest terrain elevation for minThickness/structural
+        # support, and the road piece shouldn't reach nearly that deep.
+        # _terrain_tris_cache holds only the upward-facing (surface) tris,
+        # captured pristine before any cuts -- see _triangulated_terrain_faces.
+        _terrain_tris = terrain.get('_terrain_tris_cache')
+        if _terrain_tris:
+            bottom_z = terrain_surface_min_z(_terrain_tris) - 0.6
+        else:
+            _mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+            bottom_z = min(v.z for v in _mc) - 0.6
         # Subtract the trail 2D footprint from roads_polygon before finalize_roads
         # builds the mesh -- avoids a post-build 3D boolean on a non-manifold mesh.
         _roads_poly = terrain.get('roads_polygon')
