@@ -1227,7 +1227,7 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
 
         if elements and (props.get('elementMode') == "SEPARATE" or "SINGLECOLORMODE" in props.get('elementMode')):
             for elem_obj in elements.values():
-                if elem_obj and elem_obj.name in bpy.data.objects:
+                if isinstance(elem_obj, bpy.types.Object) and elem_obj.name in bpy.data.objects:
                     elem_obj.select_set(True)
         elif elements and props.get('elementMode') == "PAINT":
             for key in ("roads", "buildings"):
@@ -1254,7 +1254,7 @@ def _rg_export(obj, curveObjs, textobj, plateobj, props, buggyDataset, start_tim
 
         if elements and (props.get('elementMode') == "SEPARATE" or "SINGLECOLORMODE" in props.get('elementMode')):
             for elem_obj in elements.values():
-                if elem_obj and elem_obj.name in bpy.data.objects:
+                if isinstance(elem_obj, bpy.types.Object) and elem_obj.name in bpy.data.objects:
                     export_to_STL(elem_obj, exportformat)
 
         if shape in {"HEXAGON INNER TEXT", "HEXAGON OUTER TEXT", "OCTAGON OUTER TEXT", "HEXAGON FRONT TEXT", "CIRCLE OUTER TEXT"} and textobj:
