@@ -10,7 +10,6 @@ import numpy as np  # type: ignore
 from bpy.app.translations import pgettext as _
 from bpy.types import Object
 from mathutils import Vector  # type: ignore
-from shapely.geometry import MultiPolygon, Polygon
 
 from .. import addon_preferences
 from .. import constants as const
@@ -38,17 +37,15 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
     from ..props import (
         get_effective_shape,  # deferred to avoid circular import at load time
     )
-    from .scene import (
-        show_message_box,  # deferred to avoid circular import at load time
-    )
 
     start_time = time.time()
-    for i in range(30):
-        print(" ")
-    print("------------------------------------------------")
-    print("SCRIPT STARTED")
-    print("------------------------------------------------")
-    print(" ")
+    print("\n" * 30, end="")
+    print(
+        "------------------------------------------------",
+        "SCRIPT STARTED",
+        "------------------------------------------------",
+        " ",
+    )
 
     tp3d: Scene = bpy.context.scene.tp3d
     gpx_file_path: str = tp3d.get("file_path", None)
@@ -115,63 +112,53 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
     _ot_api_key = get_prefs().openTopographyApiKey
 
     if elementMode == "PAINT" and el_sActive and tp3d.el_sHeight == 0:
-        show_message_box(
+        raise ValidationError(
             "Road Height is 0 in Paint mode — this produces degenerate geometry. "
             "Set Road Height above 0 or disable roads."
         )
-        return None
 
     if api == "OPENTOPOGRAPHY" and not _ot_api_key:
         print("No OPENTOPOGRAPHY API key entered")
-        show_message_box(
+        raise ValidationError(
             "OpenTopography requires an API key. "
             "Get a free key at portal.opentopography.org and set it in the addon preferences."
         )
-        return None
 
     if "gpx_file" in flags:
         if not gpx_file_path or gpx_file_path == "":
-            show_message_box("File path is empty! Please select a valid file.")
-            return None
+            raise ValidationError("File path is empty! Please select a valid file.")
         if not os.path.isfile(gpx_file_path):
-            show_message_box(
+            raise ValidationError(
                 f"Invalid file path: {gpx_file_path}. Please select a valid file."
             )
-            return None
         gpx_file_path = bpy.path.abspath(gpx_file_path)
         file_extension = os.path.splitext(gpx_file_path)[1].lower()
         if file_extension != ".gpx" and file_extension != ".igc":
-            show_message_box("Invalid file format. Please Use a .GPX file")
-            return None
+            raise ValidationError("Invalid file format. Please Use a .GPX file")
     if "gpx_chain" in flags:
         if not gpx_chain_path or gpx_chain_path == "":
-            show_message_box("CHAIN path is empty! Please select a valid folder.")
-            return None
+            raise ValidationError("CHAIN path is empty! Please select a valid folder.")
         gpx_chain_path = bpy.path.abspath(gpx_chain_path)
     if not exportPath:
         exportPath = addon_preferences.get_prefs().default_export_folder
     if not exportPath:
-        show_message_box("Export path cant be empty")
-        return None
+        raise ValidationError("Export path cant be empty")
     exportPath = bpy.path.abspath(exportPath)
     if not exportPath or exportPath == "":
-        show_message_box("Export path is empty! Please select a valid folder.")
-        return None
+        raise ValidationError("Export path is empty! Please select a valid folder.")
     if not os.path.isdir(exportPath):
-        show_message_box(
+        raise ValidationError(
             f"Invalid export Directory: {exportPath}. Please select a valid Directory."
         )
-        return None
     try:
         test_path = os.path.join(exportPath, ".tp3d_write_test")
         with open(test_path, "w") as f:
             f.write("")
         os.remove(test_path)
     except OSError:
-        show_message_box(
+        raise ValidationError(
             f"No write permission for export folder: {exportPath}. Please select a different folder."
         )
-        return None
 
     # --- Default font ---
     if textFont == "":
@@ -179,8 +166,6 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
             textFont = "C:/WINDOWS/FONTS/ariblk.ttf"
         elif platform.system() == "Darwin":
             textFont = "/System/Library/Fonts/Supplemental/Arial Black.ttf"
-        else:
-            textFont = ""
 
     # --- Default model name from file/folder ---
     if name == "":
@@ -483,6 +468,7 @@ def _rg_create_map_object(gen: GenerationContext):
     )
     from .scene import (
         transform_MapObject,  # deferred to avoid circular import at load time
+        zoom_camera_to_selected,
     )
 
     MapObject = None
@@ -567,6 +553,9 @@ def _rg_create_map_object(gen: GenerationContext):
         gen.mapOutline = outline
         gen.mapObject = MapObject
         bpy.context.scene.tp3d.currentMap = MapObject
+
+    zoom_camera_to_selected(MapObject)
+    compute_and_store_tile_bounds(gen)
     return MapObject
 
 
@@ -657,7 +646,57 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
 
     t = threading.Thread(target=_run, daemon=True, name="osm-prefetch")
     t.start()
-    return t, result
+    gen.fetchThread = t
+    gen.fetchResult = result
+
+
+def _rg_fetch_elevation(gen: GenerationContext):
+    from ..progress import ProgressOverlay, WarningsOverlay
+    from .elevation import get_tile_elevation
+
+    overlay = ProgressOverlay.get()
+    warning = WarningsOverlay.get()
+
+    def _elevation_progress(pct):
+        t = pct / 100.0
+        overlay.set_fetch_progress("elevation", t)
+        overlay.update(
+            0.38 + t * (0.65 - 0.38),
+            "Fetching Elevation Data",
+            "Querying elevation API…",
+            sub_percent=t,
+            sub_label="Tiles processed",
+        )
+
+    print(
+        "------------------------------------------------",
+        "FETCHING ELEVATION DATA FOR THE MAP",
+        "------------------------------------------------",
+    )
+
+    get_tile_elevation(gen, progress_cb=_elevation_progress)
+
+    if gen.elDiff is None:
+        return
+    if gen.fixedElevationScale:
+        autoScale = 10 / (gen.elDiff / 1000) if gen.elDiff > 0 else 10
+    else:
+        autoScale = gen.sScaleHor
+    bpy.context.scene.tp3d.sAutoScale = autoScale
+    gen.autoScale = autoScale
+
+    if gen.tileVerts and len(gen.tileVerts) < 1000:
+        warning.add_warning(
+            f"Mesh has only {len(gen.tileVerts)} Points. Increase Resolution for higher Quality",
+            "warn",
+        )
+    if not gen.fixedElevationScale and (
+        gen.elDiff == 0 or (gen.elDiff / 1000) * autoScale * gen.scaleElevation < 2
+    ):
+        warning.add_warning(
+            "Terrain seems to be really flat. If not intended, increase Elevation scale",
+            icon="warn",
+        )
 
 
 def _rg_prepare_trail_coords(gen: GenerationContext):
@@ -759,13 +798,14 @@ def _rg_prepare_trail_coords(gen: GenerationContext):
         bpy.context.scene.tp3d["o_mapScale"] = f"{mscale:.0f}"
 
 
-def _rg_build_trail_curves(gen: GenerationContext) -> bool:
+def _rg_build_trail_curves(gen: GenerationContext):
     """Create Blender curve objects from the processed trail coordinate arrays.
 
     Uses gen.blenderCoords, gen.blenderPathSegs, and gen.blenderPathSegsByFile
     (populated by _rg_prepare_trail_coords) and gen.flags to pick the right
-    curve-creation strategy.  On success stores the result list in gen.curve_objs
-    and returns True.  Returns False on RuntimeError so the caller can abort cleanly.
+    curve-creation strategy.
+
+    Raises Exception on Runtime error
     """
     from .mesh_ops import splitCurves
     from .primitives import create_curve_from_coordinates
@@ -819,7 +859,7 @@ def _rg_build_trail_curves(gen: GenerationContext) -> bool:
         show_message_box(
             "Bad Response from API while creating the curve. If this happens everytime contact dev"
         )
-        return False
+        raise
 
     print(f"Curve objects created: {len(curveObjs) if curveObjs else 0}")
 
@@ -828,7 +868,6 @@ def _rg_build_trail_curves(gen: GenerationContext) -> bool:
     bpy.ops.object.select_all(action="DESELECT")
 
     gen.curveObjs = curveObjs
-    return True
 
 
 def _rg_displace_terrain_with_curve(gen: GenerationContext):
@@ -2097,7 +2136,7 @@ def _rg_export(gen: GenerationContext):
     shellobj = gen.shellObj
     plateobj = gen.plateObj
     exportformat = gen.exportFormat
-    
+
     # PAINT mode bakes terrain-element colors as per-face materials on a single
     # mesh; STL cannot store material data at all, so PAINT-mode maps must be
     # exported as OBJ to keep the colors. Mirrors the equivalent computation in
@@ -2699,269 +2738,244 @@ def _subdivide_long_segments(coords, max_xy_dist, depsgraph=None):
 
 def runGeneration(type, locked_scale=None):
     """Orchestrate the full 3D map generation pipeline."""
-    from .elevation import (
-        get_tile_elevation,  # deferred to avoid circular import at load time
-    )
     from .mesh_ops import (  # deferred to avoid circular import at load time
         merge_with_map,
     )
     from .scene import (  # deferred to avoid circular import at load time
         remove_objects,
-        zoom_camera_to_selected,
     )
 
     flags = _GEN_FLAGS[type]
-
     overlay = _progress.ProgressOverlay.get()
-    overlay.start()
-    _progress.WarningsOverlay.clear()
 
-    # --- Phase 1: Validate inputs and load all scene settings ---
-    overlay.update(0.03, "Initializing", "Validating inputs…")
-    gen = _rg_validate_inputs(flags, gen_type=type, locked_scale=locked_scale)
-    if gen is None:
-        overlay.finish()
-        return
-    start_time = gen.start_time
+    try:
+        gen: GenerationContext = _rg_validate_inputs(
+            flags, gen_type=type, locked_scale=locked_scale
+        )
+        overlay.start()
+        _progress.WarningsOverlay.clear()
+        # --- Phase 1: Validate inputs and load all scene settings ---
+        overlay.update(0.03, "Initializing", "Validating inputs…")
 
-    overlay.add_completed_step("Inputs validated")
+        start_time = gen.start_time
 
-    # --- Phase 2: Load coordinate data from GPX / synthetic source ---
-    overlay.update(0.08, "Loading Data", "Reading GPX file…")
-    _rg_load_coordinates(gen)
+        overlay.add_completed_step("Inputs validated")
 
-    # --- Phase 3: Calculate and store trail statistics ---
-    overlay.update(0.12, "Trail Statistics", "Computing distances & elevation gain…")
-    _rg_compute_trail_stats(gen)
+        # --- Phase 2: Load coordinate data from GPX / synthetic source ---
+        overlay.update(0.08, "Loading Data", "Reading GPX file…")
+        _rg_load_coordinates(gen)
 
-    # --- Phase 4: Interpolate path to at least 300 points for a smooth curve ---
-    overlay.update(0.16, "Path Interpolation", "Smoothing trail curve…")
-    _rg_interpolate_path_curve(gen)
+        # --- Phase 3: Calculate and store trail statistics ---
+        overlay.update(
+            0.12, "Trail Statistics", "Computing distances & elevation gain…"
+        )
+        _rg_compute_trail_stats(gen)
 
-    # --- Phase 5: Calculate horizontal scale factor ---
-    overlay.update(0.20, "Scale Calculation", "Computing horizontal scale…")
-    _rg_calculate_horizontal_scale(gen)
+        # --- Phase 4: Interpolate path to at least 300 points for a smooth curve ---
+        overlay.update(0.16, "Path Interpolation", "Smoothing trail curve…")
+        _rg_interpolate_path_curve(gen)
 
-    # --- Phase 6: Convert to Blender coordinates and find map center ---
-    overlay.update(0.24, "Coordinate Conversion", "Converting to Blender space…")
-    _rg_convert_then_center_coordinates(gen)
+        # --- Phase 5: Calculate horizontal scale factor ---
+        overlay.update(0.20, "Scale Calculation", "Computing horizontal scale…")
+        _rg_calculate_horizontal_scale(gen)
 
-    # --- Phase 7: Remove previously generated objects at the same location ---
-    overlay.update(0.28, "Scene Cleanup", "Removing previous objects…")
-    _cleanup_build_area(gen)
+        # --- Phase 6: Convert to Blender coordinates and find map center ---
+        overlay.update(0.24, "Coordinate Conversion", "Converting to Blender space…")
+        _rg_convert_then_center_coordinates(gen)
 
-    if "stats" in flags and gen.gpx_stats.length > 0:
+        # --- Phase 7: Remove previously generated objects at the same location ---
+        overlay.update(0.28, "Scene Cleanup", "Removing previous objects…")
+        _cleanup_build_area(gen)
+
         overlay.add_completed_step(
             f"GPX loaded  —  {gen.gpx_stats.length:.1f} km, {int(gen.gpx_stats.elevation)} m gain"
+            if "stats" in flags and gen.gpx_stats.length > 0
+            else "GPX data loaded"
         )
-    else:
-        overlay.add_completed_step("GPX data loaded")
 
-    # --- Phase 8: Create base map shape ---
-    overlay.update(0.33, "Building Map Shape", "Creating base mesh…")
+        # --- Phase 8: Create base map shape ---
+        overlay.update(0.33, "Building Map Shape", "Creating base mesh…")
 
-    _rg_create_map_object(gen)
-    zoom_camera_to_selected(gen.mapObject)
-    compute_and_store_tile_bounds(gen)
+        _rg_create_map_object(gen)
 
-    overlay.add_completed_step(
-        f"Map shape created  ({gen.shape.capitalize()}, {round(gen.mapKm or 0, 1)} km)"
-    )
-    overlay.set_fetch_items(build_fetch_items(gen.mapKm))
+        overlay.add_completed_step(
+            f"Map shape created  ({gen.shape.capitalize()}, {round(gen.mapKm or 0, 1)} km)"
+        )
+        overlay.set_fetch_items(build_fetch_items(gen.mapKm))
 
-    # --- OSM background prefetch: start now so Overpass requests overlap with elevation download ---
-    _osm_prefetch_thread, _osm_prefetched = _rg_start_osm_prefetch(gen)
-    if _osm_prefetch_thread is not None:
-        print("OSM prefetch started (overlapping elevation download)")
+        # --- OSM background prefetch: start now so Overpass requests overlap with elevation download ---
+        _rg_start_osm_prefetch(gen)
 
-    # --- Phase 9: Fetch terrain elevation data ---
-    overlay.update(
-        0.38, "Fetching Elevation Data", "Querying API — this may take a moment…"
-    )
-    print(
-        "------------------------------------------------",
-        "FETCHING ELEVATION DATA FOR THE MAP",
-        "------------------------------------------------",
-    )
+        if gen.fetchThread is not None:
+            print("OSM prefetch started (overlapping elevation download)")
 
-    def _elevation_progress(pct):
-        t = pct / 100.0
-        overlay.set_fetch_progress("elevation", t)
+        # --- Phase 9: Fetch terrain elevation data ---
         overlay.update(
-            0.38 + t * (0.65 - 0.38),
-            "Fetching Elevation Data",
-            "Querying elevation API…",
-            sub_percent=t,
-            sub_label="Tiles processed",
+            0.38, "Fetching Elevation Data", "Querying API — this may take a moment…"
         )
 
-    get_tile_elevation(gen, progress_cb=_elevation_progress)
+        _rg_fetch_elevation(gen)
 
-    print("Elevation Data fetched")
-    overlay.sub_percent = None  # hide sub-bar now that elevation is done
-    overlay.set_fetch_done("elevation", success=True)
-    overlay.add_completed_step(f"Elevation fetched  ({len(gen.tileVerts or [])} pts)")
-    overlay.update(
-        0.65, "Elevation Data Ready", f"{len(gen.tileVerts or [])} points fetched"
-    )
+        print("Elevation Data fetched")
+        overlay.sub_percent = None  # hide sub-bar now that elevation is done
+        overlay.set_fetch_done("elevation", success=True)
+        overlay.add_completed_step(
+            f"Elevation fetched  ({len(gen.tileVerts or [])} pts)"
+        )
+        overlay.update(
+            0.65, "Elevation Data Ready", f"{len(gen.tileVerts or [])} points fetched"
+        )
 
-    if gen.tileVerts and len(gen.tileVerts) < 1000:
+        # --- Phase 10a: Prepare trail Blender coordinates ---
+        overlay.update(
+            0.67, "Preparing Trail", "Converting and simplifying coordinates…"
+        )
+        _rg_prepare_trail_coords(gen)
+
+        # --- Phase 10b: Build trail curves ---
+        overlay.update(0.70, "Building Trail", "Creating curve objects…")
+        if not _rg_build_trail_curves(gen):
+            overlay.finish()
+            return
+
+        curveObjs = gen.curveObjs
+        if curveObjs:
+            bpy.context.scene.tp3d.currentTrail = curveObjs[0]
+
+        _n_segs = len(curveObjs) if curveObjs else 0
+        _n_pts = len(gen.blenderCoords) if gen.blenderCoords else 0
+        overlay.add_completed_step(
+            f"Trail built  —  {_n_segs} seg{'s' if _n_segs != 1 else ''}, {_n_pts} pts"
+        )
+
+        # --- Phase 11: Apply terrain elevation to mesh vertices ---
+        overlay.update(0.75, "Applying Terrain", "Displacing mesh vertices…")
+
+        _rg_displace_terrain_with_curve(gen)
+
+        overlay.update(0.80, "Terrain Ready", "Vertices displaced…")
+        overlay.sub_percent = None
+
+        _rg_extrude_terrain(gen)
+
+        # --- Phase 12-13: Create text / plate overlays for text-based shapes ---
+        overlay.update(0.82, "Shape Overlays", "Adding text and plate elements…")
+
+        _rg_create_text_and_overlays(gen)
+
+        # --- Material preview mode ---
+        for area in bpy.context.screen.areas:
+            if area.type == "VIEW_3D":
+                for space in area.spaces:
+                    if space.type == "VIEW_3D":
+                        space.shading.type = "MATERIAL"
+
+        # --- Phase 14: Create terrain overlay elements ---
+        overlay.update(0.83, "Terrain Elements", "Adding elements…")
+        if gen.fetchThread is not None:
+            gen.fetchThread.join()
+        _rg_build_terrain_elements(
+            gen,
+            prefetched_osm=gen.fetchResult,
+        )
+
+        # --- Phase 15: Single color mode processing ---
+        overlay.update(0.95, "Coloring", "Applying single-color mode…")
+        _rg_apply_single_color_mode(gen)
+
+        # --- Phase 15b: CREATE_TEXTURE — rasterise OSM polygons into UV texture ---
+        if gen.elementMode == "CREATE_TEXTURE":
+            from .texture import setup_paint_texture
+
+            overlay.update(0.96, "Texture", "Rasterising OSM texture…")
+            elements: dict[str, Any] = gen.elements
+            _mmu_palette = setup_paint_texture(gen)
+            elements["_mmu_palette"] = _mmu_palette
+            # When SCM trail is on, curveObjs hold the converted trail-strip meshes
+            # (single_color_mode_curve converts in-place); keep them as 3D geometry.
+            # When tex_include_trail is off, keep curveObjs as PAINT-style overlay objects.
+            _tex_trail = bpy.context.scene.tp3d.tex_include_trail
+            if gen.curveObjs and not gen.singleColorMode and _tex_trail:
+                for tcrv in list(gen.curveObjs):
+                    if tcrv and tcrv.name in bpy.data.objects:
+                        bpy.data.objects.remove(tcrv, do_unlink=True)
+                gen.curveObjs.clear()
+
+        if gen.curveObjs and type == 20:
+            for i, crv in enumerate(gen.curveObjs):
+                tmp: Object = merge_with_map(gen.mapObject, crv)
+                remove_objects(crv)
+                gen.curveObjs[i] = tmp
+
+        _lo = bpy.context.scene.tp3d.lowestZ
+        _hi = bpy.context.scene.tp3d.highestZ
+        overlay.add_completed_step(f"Terrain applied  —  z {_lo:.1f} to {_hi:.1f}")
+
+        # --- Phases 16-18: Assign materials, export, and finalize ---
+        overlay.update(0.97, "Finalizing", "Exporting files...")
+        _rg_assign_materials(gen)
+
+        # --- Phase 15c: Tag companion objects with solid-colour paint textures ---
+        # Without this the Orca exporter sees no paint data on these objects and
+        # the slicer defaults them to extruder 1 regardless of material colour.
+        if gen.elementMode == "CREATE_TEXTURE":
+            _mmu_palette = gen.elements.get("_mmu_palette")
+            if _mmu_palette:
+                from .texture import (
+                    _ROADS_SRGB,
+                    _WHITE_SRGB,
+                    tag_solid_color_for_paint_export,
+                )
+
+                for _cobj, _ccol in [
+                    (gen.textObj, _WHITE_SRGB),
+                    (gen.plateObj, _ROADS_SRGB),
+                    (gen.shellObj, _ROADS_SRGB),
+                ]:
+                    tag_solid_color_for_paint_export(_cobj, _ccol, _mmu_palette)
+        # Finish and Export
+        _rg_export(gen)
+
+        # Calculate script durations for prints and overlay updates
+        end_time = time.time()
+        duration = end_time - start_time
+        bpy.context.scene.tp3d.sRunDuration = round(duration)
+        bpy.context.scene.tp3d["o_time"] = _("Script ran for {} seconds").format(
+            round(duration)
+        )
+
+        from .elevation import load_generation_counter, save_generation_counter
+
+        _total_maps = load_generation_counter() + 1
+        save_generation_counter(_total_maps)
+        bpy.context.scene.tp3d["o_mapsGenerated"] = f"Maps Generated: {_total_maps}"
+
+        if gen.mapObject:
+            gen.mapObject.GenerationTime = round(duration)
+
+        print(
+            f"Finished. Generating Map took {duration:.0f} seconds"
+            "----------------------------------------------------------------"
+            " "
+        )
+
+        _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
+        _m, _s = divmod(_elapsed, 60)
+        overlay.update(1.0, "Done", "")
+        overlay.add_completed_step(f"Done  —  {_m:02d}:{_s:02d} total")
+    except ValidationError as e:
+        print(f"Validation Failed: {e}")
+        _progress.WarningsOverlay.add_warning(f"Error: {e}")
+
+    except Exception as e:  # noqa: BLE001 - runGeneration could raise many kinds of errors, for now I don't have a concrete list so.. bare exception.
+        print(f"Generation failed: {e}")
         _progress.WarningsOverlay.add_warning(
-            f"Mesh has only {len(gen.tileVerts)} Points. Increase Resolution for higher Quality",
-            "warn",
-        )
-    if gen.elDiff is None:
-        return
-    if gen.fixedElevationScale:
-        autoScale = 10 / (gen.elDiff / 1000) if gen.elDiff > 0 else 10
-    else:
-        autoScale = gen.sScaleHor
-    bpy.context.scene.tp3d.sAutoScale = autoScale
-    gen.autoScale = autoScale
-
-    if not gen.fixedElevationScale and (
-        gen.elDiff == 0 or (gen.elDiff / 1000) * autoScale * gen.scaleElevation < 2
-    ):
-        _progress.WarningsOverlay.add_warning(
-            "Terrain seems to be really flat. If not intended, increase Elevation scale",
-            icon="warn",
+            "Generation failed, check console for details"
         )
 
-    # --- Phase 10a: Prepare trail Blender coordinates ---
-    overlay.update(0.67, "Preparing Trail", "Converting and simplifying coordinates…")
-    _rg_prepare_trail_coords(gen)
-
-    # --- Phase 10b: Build trail curves ---
-    overlay.update(0.70, "Building Trail", "Creating curve objects…")
-    if not _rg_build_trail_curves(gen):
+    finally:
         overlay.finish()
-        return
-
-    curveObjs = gen.curveObjs
-    if curveObjs:
-        bpy.context.scene.tp3d.currentTrail = curveObjs[0]
-
-    _n_segs = len(curveObjs) if curveObjs else 0
-    _n_pts = len(gen.blenderCoords) if gen.blenderCoords else 0
-    overlay.add_completed_step(
-        f"Trail built  —  {_n_segs} seg{'s' if _n_segs != 1 else ''}, {_n_pts} pts"
-    )
-
-    # --- Phase 11: Apply terrain elevation to mesh vertices ---
-    overlay.update(0.75, "Applying Terrain", "Displacing mesh vertices…")
-
-    _rg_displace_terrain_with_curve(gen)
-
-    overlay.update(0.80, "Terrain Ready", "Vertices displaced…")
-    overlay.sub_percent = None
-
-    _rg_extrude_terrain(gen)
-
-    # --- Phase 12-13: Create text / plate overlays for text-based shapes ---
-    overlay.update(0.82, "Shape Overlays", "Adding text and plate elements…")
-
-    _rg_create_text_and_overlays(gen)
-
-    # --- Material preview mode ---
-    for area in bpy.context.screen.areas:
-        if area.type == "VIEW_3D":
-            for space in area.spaces:
-                if space.type == "VIEW_3D":
-                    space.shading.type = "MATERIAL"
-
-    # --- Phase 14: Create terrain overlay elements ---
-    overlay.update(0.83, "Terrain Elements", "Adding elements…")
-    if _osm_prefetch_thread is not None:
-        _osm_prefetch_thread.join()
-    _rg_build_terrain_elements(
-        gen,
-        prefetched_osm=_osm_prefetched,
-    )
-
-    # --- Phase 15: Single color mode processing ---
-    overlay.update(0.95, "Coloring", "Applying single-color mode…")
-    _rg_apply_single_color_mode(gen)
-
-    # --- Phase 15b: CREATE_TEXTURE — rasterise OSM polygons into UV texture ---
-    if gen.elementMode == "CREATE_TEXTURE":
-        from .texture import setup_paint_texture
-
-        overlay.update(0.96, "Texture", "Rasterising OSM texture…")
-        elements: dict[str, Any] = gen.elements
-        _mmu_palette = setup_paint_texture(gen)
-        elements["_mmu_palette"] = _mmu_palette
-        # When SCM trail is on, curveObjs hold the converted trail-strip meshes
-        # (single_color_mode_curve converts in-place); keep them as 3D geometry.
-        # When tex_include_trail is off, keep curveObjs as PAINT-style overlay objects.
-        _tex_trail = bpy.context.scene.tp3d.tex_include_trail
-        if gen.curveObjs and not gen.singleColorMode and _tex_trail:
-            for tcrv in list(gen.curveObjs):
-                if tcrv and tcrv.name in bpy.data.objects:
-                    bpy.data.objects.remove(tcrv, do_unlink=True)
-            gen.curveObjs.clear()
-
-    if gen.curveObjs and type == 20:
-        for i, crv in enumerate(gen.curveObjs):
-            tmp: Object = merge_with_map(gen.mapObject, crv)
-            remove_objects(crv)
-            gen.curveObjs[i] = tmp
-
-    _lo = bpy.context.scene.tp3d.lowestZ
-    _hi = bpy.context.scene.tp3d.highestZ
-    overlay.add_completed_step(f"Terrain applied  —  z {_lo:.1f} to {_hi:.1f}")
-
-    # --- Phases 16-18: Assign materials, export, and finalize ---
-    overlay.update(0.97, "Finalizing", "Exporting files...")
-    _rg_assign_materials(gen)
-
-    # --- Phase 15c: Tag companion objects with solid-colour paint textures ---
-    # Without this the Orca exporter sees no paint data on these objects and
-    # the slicer defaults them to extruder 1 regardless of material colour.
-    if gen.elementMode == "CREATE_TEXTURE":
-        _mmu_palette = gen.elements.get("_mmu_palette")
-        if _mmu_palette:
-            from .texture import (
-                _ROADS_SRGB,
-                _WHITE_SRGB,
-                tag_solid_color_for_paint_export,
-            )
-
-            for _cobj, _ccol in [
-                (gen.textObj, _WHITE_SRGB),
-                (gen.plateObj, _ROADS_SRGB),
-                (gen.shellObj, _ROADS_SRGB),
-            ]:
-                tag_solid_color_for_paint_export(_cobj, _ccol, _mmu_palette)
-    # Finish and Export
-    _rg_export(gen)
-    
-    # Calculate script durations for prints and overlay updates
-    end_time = time.time()
-    duration = end_time - start_time
-    bpy.context.scene.tp3d.sRunDuration = round(duration)
-    bpy.context.scene.tp3d["o_time"] = _("Script ran for {} seconds").format(
-        round(duration)
-    )
-
-    from .elevation import load_generation_counter, save_generation_counter
-
-    _total_maps = load_generation_counter() + 1
-    save_generation_counter(_total_maps)
-    bpy.context.scene.tp3d["o_mapsGenerated"] = f"Maps Generated: {_total_maps}"
-
-    if gen.mapObject:
-        gen.mapObject.GenerationTime = round(duration)
-
-    print(f"Finished. Generating Map took {duration:.0f} seconds")
-    print("----------------------------------------------------------------")
-    print(" ")
-
-    _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
-    _m, _s = divmod(_elapsed, 60)
-    overlay.update(1.0, "Done", "")
-    overlay.add_completed_step(f"Done  —  {_m:02d}:{_s:02d} total")
-    overlay.finish()
-    _progress.WarningsOverlay.get().show()
+        _progress.WarningsOverlay.get().show()
 
 
 # ---------------------------------------------------------------------------
