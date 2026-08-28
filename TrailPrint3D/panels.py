@@ -304,6 +304,9 @@ class TP3D_PT_advanced(bpy.types.Panel):
                     if props.el_oActive:
                         col.prop(props, "el_oMinIslandArea")
                         col.prop(props, "el_oRdpEpsilon")
+                    flatten_row = col.row()
+                    flatten_row.enabled = props.elementMode != "PAINT"
+                    flatten_row.prop(props, "col_wFlattenTop")
 
                 sub = box.box()
                 sub.label(text=_("Forests"), icon='FORCE_WIND')

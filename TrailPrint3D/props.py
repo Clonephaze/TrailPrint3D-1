@@ -502,6 +502,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
 
     col_wArea: FloatProperty(name= _("Water Threshold"), default = 1, description = _("Lakes smaller than the threshold won't be included")) # type: ignore
     col_wStreamWidth: FloatProperty(name= _("River Width"), default = 1.0, min=0.1, max=100.0, description = _("Adjusts the thickness of rivers and streams")) # type: ignore
+    col_wFlattenTop: BoolProperty(name= _("Flatten Water Surface"), default=True, description = _("Flatten each water body's top surface to its own median height, giving it a flat bottom instead of following every terrain bump. Only applies in Separate Objects and Single-Color mode -- has no effect in Paint on Map mode")) # type: ignore
     col_wPondsActive: BoolProperty(name= _("Water"), default=False, description = _("Include ponds and lakes (natural=water)")) # type: ignore
     col_wSmallRiversActive: BoolProperty(name= _("Small Rivers"), default=False, description = _("smaller Streams, canals, ditches and other minor waterways are not included in default water setting")) # type: ignore
     col_wBigRiversActive: BoolProperty(name= _("Big Rivers"), default=False, description = _("Major named rivers (waterway with wikidata tag. Usually already part of water setting)")) # type: ignore

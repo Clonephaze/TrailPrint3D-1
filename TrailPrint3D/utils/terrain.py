@@ -1,4 +1,5 @@
 import math
+import statistics
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -360,6 +361,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
         col_Area = 0.0
 
     elementMode = (bpy.context.scene.tp3d.elementMode)
+    flatten_water_top = bpy.context.scene.tp3d.col_wFlattenTop
     exportformat = "STL"
     if elementMode == "PAINT":
         exportformat = "OBJ"
@@ -851,6 +853,20 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
                 lowest_face = face
         if lowest_face and lowest_face.normal.dot(DOWN) <= 0:
             bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
+
+        if kind == "WATER" and elementMode != "PAINT" and flatten_water_top:
+            # Flatten this water body's top (terrain-conforming) surface to its
+            # own median height, giving it a flat bottom instead of following
+            # every terrain bump. Applies in both SEPARATE (flows straight into
+            # the top-face extrusion below) and SINGLECOLORMODE* (flattens the
+            # visible top surface ahead of that branch's separate bottom-leveling).
+            bm.normal_update()
+            top_verts = {v for f in bm.faces if f.normal.z > 0.087 for v in f.verts}
+            if top_verts:
+                median_z = statistics.median(v.co.z for v in top_verts)
+                for v in top_verts:
+                    v.co.z = median_z
+
         bm.to_mesh(zmesh)
         bm.free()
         surviving.append(zobj)
