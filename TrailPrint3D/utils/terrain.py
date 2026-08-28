@@ -11,6 +11,7 @@ from shapely import clip_by_rect
 from shapely.geometry import LineString, Point, Polygon, box
 
 from .. import progress as _progress
+from .dataclasses import GenerationContext
 from .geometry2d import polygonize, union_all
 
 _COLORING_EMPTY = object()
@@ -157,7 +158,7 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
     return results
 
 
-def coloring_main(map, kind="WATER", prefetched_tiles=None):
+def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None):
     from . import geometry2d as _g2d  # Shapely-based 2D geometry helpers
     from .geo import (
         convert_to_blender_coordinates,  # deferred to avoid circular import at load time
@@ -180,10 +181,10 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     _t_color = time.time()  # master timer: whole coloring_main
     _t_tiles_total = 0.0  # accumulated OSM fetch + Shapely ring building
 
-    minLat = bpy.context.scene.tp3d.minLat
-    minLon = bpy.context.scene.tp3d.minLon
-    maxLat = bpy.context.scene.tp3d.maxLat
-    maxLon = bpy.context.scene.tp3d.maxLon
+    minLat = gen.tbMinLat
+    minLon = gen.tbMinLon
+    maxLat = gen.tbMaxLat
+    maxLon = gen.tbMaxLon
 
     # Overpass returns a relation's FULL membership once any one of its ways
     # matches the bbox filter -- for a relation tagged along an entire river's
@@ -234,7 +235,7 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
         exportformat = "OBJ"
 
     bpy.context.scene.tp3d.exportformat = exportformat
-
+    map = gen.mapObject
     name = map.name
 
     lat_step = 2

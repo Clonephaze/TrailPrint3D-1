@@ -6,6 +6,7 @@ from mathutils import Vector  # type: ignore
 from shapely import wkt
 
 from . import geometry2d as g2d  # deferred-safe: pure-Python, no bpy-time side effects
+from .dataclasses import GenerationContext
 
 
 def _setup_material(name, color):
@@ -50,7 +51,7 @@ def setupColors():
     _setup_material("FARMLAND", (0.3, 0.5, 0.1, 1.0))
 
 
-def create_curve_from_coordinates(coordinates):
+def create_curve_from_coordinates(gen: GenerationContext, coordinates):
     """
     Create a curve in Blender based on a list of (x, y, z) coordinates.
     """

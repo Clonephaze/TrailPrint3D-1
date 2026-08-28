@@ -44,7 +44,7 @@ class GenerationContext:
     xTerrainOffset: float
     yTerrainOffset: float
     singleColorMode: bool
-    elementMode: int
+    elementMode: str
     disableCache: bool
     num_subdivisions: int
     textFont: str
@@ -56,6 +56,7 @@ class GenerationContext:
     col_glActive: bool
     el_bActive: bool
     el_sActive: bool
+    el_sHeight: float
     jMapLat: float
     jMapLon: float
     jMapRadius: float
@@ -65,7 +66,7 @@ class GenerationContext:
     jMapLon2: float
     genType: int = 0
     lockedScale: float | None = None
-    mapObject: object | None = None
+    mapObject: Object | None = None
     mapOutline: Polygon | MultiPolygon | None = None
     tbMinLat: float = 0
     tbMaxLat: float = 0
@@ -95,10 +96,20 @@ class GenerationContext:
     textObj: Object | None = None
     plateObj: Object | None = None
     shellObj: Object | None = None
+    roadObj: Object | None = None
+    roadUnion: Object | None = None
     texTrail: bool = True
     fetchThread: threading.Thread | None = None
     fetchResult: dict[str, dict[Any, tuple[dict, bool]]] | None = None
 
 
 class ValidationError(Exception):
-    """Raised when input validation fails."""
+    """Raised when input validation fails before generation starts."""
+
+
+class GenerationError(Exception):
+    """Raised by _rg_* helpers when a non-recoverable phase failure occurs.
+
+    Caught by runGeneration's outer try/except and surfaced as a named warning
+    rather than the generic 'check console' fallback.
+    """

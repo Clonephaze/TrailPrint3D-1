@@ -10,6 +10,7 @@ from mathutils.bvhtree import BVHTree  # type: ignore
 from ... import constants as const
 from ... import progress as _progress
 from .. import geometry2d as g2d
+from ..dataclasses import GenerationContext
 from ..mesh_ops import recalculateNormals
 from ..scene import remove_objects
 from .fetch_solo import fetch_osm_data
@@ -542,7 +543,7 @@ def buildings_geometry_for_polygon(piece_polygon, buildings_data):
     return b_verts, b_faces
 
 
-def create_buildings(map, default_height=10, scaleHor=1.0):
+def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
 
     # Mercator scale used by convert_to_blender_coordinates (it reads sScaleHor
     # from the scene). Read once so the vectorized node conversion matches.
@@ -550,6 +551,7 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
     _t_setup = time.time()
 
     # Copy map and extrude vertical faces outward
+    map = gen.mapObject
     wall_obj = map.copy()
     wall_obj.data = map.data.copy()
     bpy.context.collection.objects.link(wall_obj)
@@ -595,10 +597,10 @@ def create_buildings(map, default_height=10, scaleHor=1.0):
         terrain_bvh, _x_min, _x_max, _y_min, _y_max, _z_cast, minThickness
     )
 
-    minLat = bpy.context.scene.tp3d.minLat
-    minLon = bpy.context.scene.tp3d.minLon
-    maxLat = bpy.context.scene.tp3d.maxLat
-    maxLon = bpy.context.scene.tp3d.maxLon
+    minLat = gen.tbMinLat
+    minLon = gen.tbMinLon
+    maxLat = gen.tbMaxLat
+    maxLon = gen.tbMaxLon
 
     # Geometry for ALL buildings across every tile is accumulated here and built
     # into one mesh at the very end.

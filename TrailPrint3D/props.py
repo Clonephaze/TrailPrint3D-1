@@ -502,9 +502,14 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
 
     elementMode: EnumProperty(
         name="Element handling",
-        items=_element_mode_items,
-        default=0
-    )# type: ignore
+        items=[
+            ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
+            ('CREATE_TEXTURE', _("Create Texture"), _("Rasterize OSM elements into a UV texture for multi-filament 3MF export")),
+            ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
+            ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')")),
+        ],
+        default='PAINT'
+    )
     tex_include_roads: BoolProperty(  # type: ignore
         name=_("Roads in texture"),
         default=True,

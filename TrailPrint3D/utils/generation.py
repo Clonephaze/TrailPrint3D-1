@@ -14,7 +14,7 @@ from mathutils import Vector  # type: ignore
 from .. import addon_preferences
 from .. import constants as const
 from .. import progress as _progress
-from .dataclasses import GenerationContext, ValidationError
+from .dataclasses import GenerationContext, GenerationError, ValidationError
 from .elevation import compute_and_store_tile_bounds
 from .terrain import _ColoringTextureResult
 
@@ -70,7 +70,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
     xTerrainOffset: float = tp3d.get("xTerrainOffset", 0)
     yTerrainOffset: float = tp3d.get("yTerrainOffset", 0)
     singleColorMode: bool = tp3d.get("singleColorMode", 0)
-    elementMode: int = tp3d.get("elementMode", 0)
+    elementMode: str = tp3d.get("elementMode", "PAINT")
     disableCache: bool = tp3d.get("disableCache", "False")
     num_subdivisions: int = tp3d.get("num_subdivisions", 8)
     textFont: str = tp3d.get("textFont", "")
@@ -92,6 +92,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
             tp3d.el_sFootwaysActive,
         ]
     )
+    el_sHeight: float = tp3d.get("el_sHeight", 1.0)
     jMapLat: float = tp3d.get("jMapLat", 49)
     jMapLon: float = tp3d.get("jMapLon", 9)
     jMapRadius: float = tp3d.get("jMapRadius", 200)
@@ -111,7 +112,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
 
     _ot_api_key = get_prefs().openTopographyApiKey
 
-    if elementMode == "PAINT" and el_sActive and tp3d.el_sHeight == 0:
+    if elementMode and el_sActive and el_sHeight == 0:
         raise ValidationError(
             "Road Height is 0 in Paint mode — this produces degenerate geometry. "
             "Set Road Height above 0 or disable roads."
@@ -183,7 +184,6 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
 
     texTrail: bool = tp3d.tex_include_trail
     exportFormat: str = tp3d.exportformat
-
     return GenerationContext(
         flags=flags,
         genType=gen_type,
@@ -225,6 +225,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         col_glActive=col_glActive,
         el_bActive=el_bActive,
         el_sActive=el_sActive,
+        el_sHeight=el_sHeight,
         jMapLat=jMapLat,
         jMapLon=jMapLon,
         jMapRadius=jMapRadius,
@@ -677,7 +678,9 @@ def _rg_fetch_elevation(gen: GenerationContext):
     get_tile_elevation(gen, progress_cb=_elevation_progress)
 
     if gen.elDiff is None:
-        return
+        raise GenerationError(
+            "Elevation fetch returned no data — check your API settings and connection"
+        )
     if gen.fixedElevationScale:
         autoScale = 10 / (gen.elDiff / 1000) if gen.elDiff > 0 else 10
     else:
@@ -809,7 +812,6 @@ def _rg_build_trail_curves(gen: GenerationContext):
     """
     from .mesh_ops import splitCurves
     from .primitives import create_curve_from_coordinates
-    from .scene import show_message_box
 
     blender_coords = gen.blenderCoords or []
     blender_coords_separate = gen.blenderPathSegs or []
@@ -826,9 +828,7 @@ def _rg_build_trail_curves(gen: GenerationContext):
             and len(blender_coords_separate) <= 1
         ) or "trail_map" in flags:
             # Single segment or trail_map: one curve directly
-            create_curve_from_coordinates(blender_coords)
-            curveObj = bpy.context.view_layer.objects.active
-            gen.curveObj = curveObj
+            curveObj = create_curve_from_coordinates(gen, blender_coords)
         elif (
             "gpx_chain" in flags
             and blender_coords_by_file
@@ -840,10 +840,11 @@ def _rg_build_trail_curves(gen: GenerationContext):
             for file_segs in blender_coords_by_file:
                 bpy.ops.object.select_all(action="DESELECT")
                 for crds in file_segs:
-                    create_curve_from_coordinates(crds)
+                    create_curve_from_coordinates(gen, crds)
                 if len(file_segs) > 1:
                     bpy.ops.object.join()
                 curveObjs.append(bpy.context.view_layer.objects.active)
+                gen.curveObjs = curveObjs
         elif (
             ("separate_paths" in flags or len(blender_coords_separate) > 1)
             and "trail_map" not in flags
@@ -852,92 +853,161 @@ def _rg_build_trail_curves(gen: GenerationContext):
             # Single file with multiple segments: join all into one object
             bpy.ops.object.select_all(action="DESELECT")
             for crds in blender_coords_separate:
-                create_curve_from_coordinates(crds)
+                create_curve_from_coordinates(gen, crds)
             bpy.ops.object.join()
             curveObjs = [bpy.context.view_layer.objects.active]
     except RuntimeError:
-        show_message_box(
+        raise GenerationError(
             "Bad Response from API while creating the curve. If this happens everytime contact dev"
         )
-        raise
 
-    print(f"Curve objects created: {len(curveObjs) if curveObjs else 0}")
+    if curveObj is None and curveObjs is None:
+        raise GenerationError("No trail curves created")
+
+    if curveObj is not None and curveObjs is None:
+        curveObjs = splitCurves(curveObj)
 
     if curveObjs is None:
-        curveObjs = splitCurves(curveObj)
-    bpy.ops.object.select_all(action="DESELECT")
+        raise GenerationError("Failed to split curveObj")
 
     gen.curveObjs = curveObjs
+    print(f"Curve objects created: {len(curveObjs) or 'unknown'}")
+
+    bpy.ops.object.select_all(action="DESELECT")
 
 
 def _rg_displace_terrain_with_curve(gen: GenerationContext):
+    """Displace terrain mesh vertices using Mercator‑corrected elevation data,
+    then snap trail curves onto the displaced surface.
+
+    Raises GenerationError if input data is missing or invalid.
+    """
+    import math
+
+    import numpy as np
+
     from ..utils.mesh_ops import RaycastCurveToMesh
+
+    # --- Validate input ---
+    if gen.mapObject is None:
+        raise GenerationError("No map object assigned; cannot displace terrain.")
+    if gen.mapObject.type != "MESH":
+        raise GenerationError(f"Map object '{gen.mapObject.name}' is not a mesh.")
+    if (
+        not hasattr(gen, "tileVerts")
+        or gen.tileVerts is None
+        or len(gen.tileVerts) == 0
+    ):
+        raise GenerationError(
+            "Missing or empty 'tileVerts' – elevation data not available."
+        )
 
     mesh = gen.mapObject.data
     _total_verts = len(mesh.vertices)
+    if _total_verts == 0:
+        raise GenerationError("Map object has no vertices.")
 
-    # Bulk-read vertex coords into numpy array
+    print(f"Displacing terrain: {mesh.name} ({_total_verts} vertices)")
+
+    # --- Bulk read vertex coordinates ---
     co_flat = np.empty(_total_verts * 3, dtype=np.float64)
     mesh.vertices.foreach_get("co", co_flat)
     co = co_flat.reshape((_total_verts, 3))
 
-    # Transform local coords to world space and extract world Y for Mercator correction
-    m = np.array(gen.mapObject.matrix_world, dtype=np.float64)
-    co_h = np.hstack([co, np.ones((_total_verts, 1), dtype=np.float64)])
-    world_y = (m @ co_h.T).T[:, 1]
+    # --- World‑space Y for Mercator correction ---
+    try:
+        m = np.array(gen.mapObject.matrix_world, dtype=np.float64)
+        co_h = np.hstack([co, np.ones((_total_verts, 1), dtype=np.float64)])
+        world_y = (m @ co_h.T).T[:, 1]
+    except Exception as e:  # noqa: BLE001
+        raise GenerationError(f"Failed to transform vertex coordinates: {e}")
 
-    # Mercator latitude correction: stay in radians — skip the degrees roundtrip
-    # convert_to_geo: lat_deg = degrees(2*atan(exp(y/(R*scaleHor))) - pi/2)
-    # We need cos(radians(lat_deg)) = cos(lat_rad), so compute lat_rad directly
-    lat_rad = 2.0 * np.arctan(np.exp(world_y / (const.R * gen.sScaleHor))) - (
-        np.pi / 2.0
-    )
-    merc = 1.0 / np.cos(lat_rad)
+    # --- Mercator latitude correction ---
+    try:
+        lat_rad = 2.0 * np.arctan(np.exp(world_y / (const.R * gen.sScaleHor))) - (
+            np.pi / 2.0
+        )
+        merc = 1.0 / np.cos(lat_rad)
+    except Exception as e:  # noqa: BLE001
+        raise GenerationError(f"Mercator correction failed: {e}")
 
-    # Compute new Z for all vertices at once and write back
-    new_z = (
-        np.array(gen.tileVerts, dtype=np.float64)
-        / 1000.0
-        * gen.scaleElevation
-        * gen.autoScale
-        * merc
-    )
-    co[:, 2] = new_z
-    mesh.vertices.foreach_set("co", co.ravel())
-    mesh.update()
+    # --- Compute new Z for all vertices ---
+    try:
+        tile_verts = np.array(gen.tileVerts, dtype=np.float64)
+        if tile_verts.shape != (_total_verts,):
+            # if tileVerts is a list of lists? adapt as needed – here assume flat array
+            raise ValueError(
+                f"tileVerts length {len(tile_verts)} doesn't match vertices {_total_verts}"
+            )
+        new_z = (tile_verts / 1000.0) * gen.scaleElevation * gen.autoScale * merc
+        co[:, 2] = new_z
+        mesh.vertices.foreach_set("co", co.ravel())
+        mesh.update()
+    except Exception as e:  # noqa: BLE001
+        raise GenerationError(f"Failed to apply elevation displacement: {e}")
 
+    # --- Store min/max and extrusion offset ---
     lowestZ = float(new_z.min())
     highestZ = float(new_z.max())
     additionalExtrusion = lowestZ
     gen.addExtrusion = additionalExtrusion
-    bpy.context.scene.tp3d.sAdditionalExtrusion = additionalExtrusion
-    bpy.context.scene.tp3d.lowestZ = lowestZ
-    bpy.context.scene.tp3d.highestZ = highestZ
+
+    # Update scene properties if they exist (with fallback)
+    try:
+        bpy.context.scene.tp3d.sAdditionalExtrusion = additionalExtrusion
+        bpy.context.scene.tp3d.lowestZ = lowestZ
+        bpy.context.scene.tp3d.highestZ = highestZ
+    except AttributeError:
+        # Property group may not be registered yet; warn but continue
+        print(
+            "Warning: tp3d property group not found; elevation stats not saved to scene."
+        )
 
     print(f"additionalExtrusion: {additionalExtrusion}")
-    print(f"Lowest z: {lowestZ}")
-    print(f"Highest z: {highestZ}")
-    if bpy.app.debug:
-        _t_slopes = []
-        for edge in mesh.edges:
-            verts = tuple(edge.vertices)
-            v1 = mesh.vertices[verts[0]].co
-            v2 = mesh.vertices[verts[1]].co
-            _h = math.sqrt((v2.x - v1.x) ** 2 + (v2.y - v1.y) ** 2)
-            if _h > 0:
-                _t_slopes.append(abs(v2.z - v1.z) / _h)
-        if _t_slopes:
-            _avg_t = sum(_t_slopes) / len(_t_slopes)
-            print(
-                f"[DEBUG] Terrain avg slope: {_avg_t:.4f}  ({math.degrees(math.atan(_avg_t)):.2f}°)"
-            )
+    print(f"Lowest Z: {lowestZ}")
+    print(f"Highest Z: {highestZ}")
 
-    # Snap trail curves onto terrain surface
-    if gen.overwritePathElevation and gen.curveObj is not None:
-        RaycastCurveToMesh(gen.curveObj, gen.mapObject)
-    if gen.overwritePathElevation and gen.curveObjs is not None:
-        for tcrv in gen.curveObjs:
-            RaycastCurveToMesh(tcrv, gen.mapObject)
+    # --- Optional debug: slope statistics ---
+    if bpy.app.debug:
+        try:
+            _t_slopes = []
+            for edge in mesh.edges:
+                v1 = mesh.vertices[edge.vertices[0]].co
+                v2 = mesh.vertices[edge.vertices[1]].co
+                _h = math.sqrt((v2.x - v1.x) ** 2 + (v2.y - v1.y) ** 2)
+                if _h > 0:
+                    _t_slopes.append(abs(v2.z - v1.z) / _h)
+            if _t_slopes:
+                _avg_t = sum(_t_slopes) / len(_t_slopes)
+                print(
+                    f"[DEBUG] Terrain avg slope: {_avg_t:.4f}  ({math.degrees(math.atan(_avg_t)):.2f}°)"
+                )
+        except Exception as e:  # noqa: BLE001
+            raise GenerationError(f"[DEBUG] Slope computation failed: {e}")
+
+    # --- Snap trail curves to the displaced surface ---
+    if gen.overwritePathElevation:
+        curves_to_snap = []
+        if gen.curveObj is not None:
+            curves_to_snap.append(gen.curveObj)
+        if gen.curveObjs is not None:
+            curves_to_snap.extend(gen.curveObjs)
+
+        if not curves_to_snap:
+            print(
+                "No trail curves to snap (overwritePathElevation is True but no curves found)."
+            )
+        else:
+            for curve in curves_to_snap:
+                if curve is not None and curve.type == "CURVE":
+                    try:
+                        RaycastCurveToMesh(curve, gen.mapObject)
+                    except Exception as e:  # noqa: BLE001
+                        raise GenerationError(
+                            f"Failed to snap curve '{curve.name}' to terrain: {e}"
+                        )
+                else:
+                    print(f"Skipping invalid curve object: {curve}")
 
 
 def _rg_extrude_terrain(gen: GenerationContext):
@@ -1176,9 +1246,16 @@ def _rg_create_text_and_overlays(gen: GenerationContext):
     gen.plateObj = plateobj
     gen.shellObj = shellobj
 
+    # --- Material preview mode ---
+    for area in bpy.context.screen.areas:
+        if area.type == "VIEW_3D":
+            for space in area.spaces:
+                if space.type == "VIEW_3D":
+                    space.shading.type = "MATERIAL"
+
 
 def _rg_build_terrain_elements(
-    gen,
+    gen: GenerationContext,
     phase_start=0.83,
     phase_end=0.95,
     prefetched_osm=None,
@@ -1211,7 +1288,7 @@ def _rg_build_terrain_elements(
     )
 
     tp3d = bpy.context.scene.tp3d
-    map_km = gen.mapKm
+    map_km: float | None = gen.mapKm
     _ov = _progress.ProgressOverlay.get()
 
     # --------------------------------------------------
@@ -1270,6 +1347,8 @@ def _rg_build_terrain_elements(
     # Count total active elements (coloring + optional ocean/buildings/roads) for progress spread
     _ELEM_PHASE_START = phase_start
     _ELEM_PHASE_END = phase_end
+    if map_km is None:
+        raise GenerationError("map_km value not set properly.")
     _active_elem_flags = (
         [
             flag
@@ -1328,16 +1407,16 @@ def _rg_build_terrain_elements(
     # started before elevation (prefetched_osm != None means data is ready).
     # --------------------------------------------------
     if prefetched_osm is None:
-        _lat_step = min(2.0, tp3d.maxLat - tp3d.minLat)
-        _lon_step = min(2.0, tp3d.maxLon - tp3d.minLon)
-        _tile_lats = math.ceil((tp3d.maxLat - tp3d.minLat) / _lat_step)
-        _tile_lons = math.ceil((tp3d.maxLon - tp3d.minLon) / _lon_step)
+        _lat_step = min(2.0, gen.tbMaxLat - gen.tbMinLat)
+        _lon_step = min(2.0, gen.tbMaxLon - gen.tbMinLon)
+        _tile_lats = math.ceil((gen.tbMaxLat - gen.tbMinLat) / _lat_step)
+        _tile_lons = math.ceil((gen.tbMaxLon - gen.tbMinLon) / _lon_step)
         _tile_tasks = [
             (
-                tp3d.minLat + k * _lat_step,
-                tp3d.minLon + l * _lon_step,
-                tp3d.minLat + k * _lat_step + _lat_step,
-                tp3d.minLon + l * _lon_step + _lon_step,
+                gen.tbMaxLat + k * _lat_step,
+                gen.tbMinLon + l * _lon_step,
+                gen.tbMinLat + k * _lat_step + _lat_step,
+                gen.tbMinLon + l * _lon_step + _lon_step,
             )
             for k in range(_tile_lats)
             for l in range(_tile_lons)
@@ -1429,7 +1508,7 @@ def _rg_build_terrain_elements(
             if map_km <= max_size:
                 _advance_elem_progress(phase, msg)
                 _result = coloring_main(
-                    obj,
+                    gen,
                     key.upper(),
                     prefetched_tiles=_all_prefetched.get(key.upper(), {}),
                 )
@@ -1508,22 +1587,6 @@ def _rg_build_terrain_elements(
     print("Base elements Created")
 
     # --------------------------------------------------
-    # Warn if buildings or roads are used together with any singleColorMode.
-    # --------------------------------------------------
-    _roads_active = any(
-        [
-            tp3d.el_sBigActive,
-            tp3d.el_sMedActive,
-            tp3d.el_sSmallActive,
-            tp3d.el_sServiceActive,
-            tp3d.el_sFootwaysActive,
-        ]
-    )
-    _any_scm = tp3d.singleColorMode or "SINGLECOLORMODE" in tp3d.elementMode
-    # if (tp3d.el_bActive == 1 or _roads_active) and _any_scm:
-    #    _progress.WarningsOverlay.add_warning("3D Elements (Buildings/Roads) are not compatible with SingleColorMode", "warn")
-
-    # --------------------------------------------------
     # Buildings — own creation function + intersection post-processing.
     # --------------------------------------------------
     terrain["buildings"] = None
@@ -1532,7 +1595,7 @@ def _rg_build_terrain_elements(
             _advance_elem_progress("Buildings", "Fetching building data…")
             _ov.set_fetch_progress("buildings", 0.0)
             _ov.set_fetch_ready("buildings")
-            buildings = create_buildings(obj, 10, scaleHor)
+            buildings = create_buildings(gen, 10, gen.sScaleHor or 1)
 
             if buildings is not None:
                 # Buildings are already clipped to the map shape in 2D inside
@@ -1563,6 +1626,8 @@ def _rg_build_terrain_elements(
             _advance_elem_progress("Roads", "Fetching road data…")
             _ov.set_fetch_progress("roads", 0.0)
             _ov.set_fetch_ready("roads")
+            if gen.sScaleHor is None:
+                raise GenerationError("ScaleHor not Set")
             # PAINT mode: roads is fused visually onto a single-piece terrain,
             # never printed standalone -- a thin raised strip is fine. Every
             # other mode (SEPARATE / SINGLECOLORMODE*) needs roads to stand on
@@ -1570,11 +1635,9 @@ def _rg_build_terrain_elements(
             # the SCM trail groove insert, so it can be printed/assembled
             # separately instead of being a sliver with nothing to sit on.
             result = create_roads(
-                obj,
-                tp3d.el_sHeight,
-                scaleHor,
-                map_km,
-                full_depth=(tp3d.elementMode not in ("PAINT", "CREATE_TEXTURE")),
+                gen,
+                gen.el_sHeight,
+                gen.sScaleHor,
             )
             if result is not None:
                 roads, roads_polygon = result
@@ -1596,7 +1659,7 @@ def _rg_build_terrain_elements(
                 _puzzle_roads_data = (
                     roads_polygon,
                     terrain["_terrain_tris_cache"],
-                    tp3d.el_sHeight,
+                    gen.el_sHeight,
                 )
                 terrain["roads_bottom_z"] = None
                 if (
@@ -1604,7 +1667,7 @@ def _rg_build_terrain_elements(
                     and roads_polygon is not None
                 ):
                     terrain["roads_bottom_z"] = compute_full_depth_bottom_z(
-                        terrain["_terrain_tris_cache"], roads_polygon, tp3d.el_sHeight
+                        terrain["_terrain_tris_cache"], roads_polygon, gen.el_sHeight
                     )
                 if (
                     tp3d.elementMode == "CREATE_TEXTURE"
@@ -1680,7 +1743,6 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
     assert terrain is not None
     thickerCurves = []
     trail_thick_ribbons = []
-    print("SCM-----")
     if _effective_scm_trail and gen.curveObjs:
         dpt = 1
         dup = obj.copy()
@@ -1969,24 +2031,25 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
 
     # Rebuild the road top surface from the terrain-grid cache captured before
     # any of the cuts above, so it shares the exact terrain/element resolution.
-    roads_obj = terrain.get("roads")
+    roads_obj = gen.roadObj
     if roads_obj is not None:
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
             _ov.update(message="Roads: adding terrain detail…")
         from .osm.roads import finalize_roads  # deferred — only needed here
 
-        el_sHeight = bpy.context.scene.tp3d.el_sHeight
+        el_sHeight = gen.el_sHeight
         full_depth = gen.elementMode not in ("PAINT", "CREATE_TEXTURE")
         # Subtract the trail 2D footprint from roads_polygon before finalize_roads
         # builds the mesh -- avoids a post-build 3D boolean on a non-manifold mesh.
-        _roads_poly = terrain.get("roads_polygon")
+        _roads_poly = gen.roadUnion
         if trail_thick_ribbons and _roads_poly is not None:
             _trail_union = _g2d.union(trail_thick_ribbons)
             _roads_poly = _roads_poly.difference(_trail_union)
             print(
                 f"[TP3D roads] subtracted {len(trail_thick_ribbons)} trail ribbon(s) from roads_polygon in 2D"
             )
+        print(f"Full depth value before finallizing roads: {full_depth}")
         finalize_roads(
             roads_obj,
             terrain.get("_terrain_tris_cache"),
@@ -2037,6 +2100,53 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                 tcrv.location.x += obj_size
         else:
             remove_objects(thickerCurves)
+
+
+def _rg_apply_texture(gen: GenerationContext):
+    from .mesh_ops import (  # deferred to avoid circular import at load time
+        merge_with_map,
+    )
+    from .scene import (  # deferred to avoid circular import at load time
+        remove_objects,
+    )
+    from .texture import setup_paint_texture
+
+    elements: dict[str, Any] = gen.elements
+    _mmu_palette = setup_paint_texture(gen)
+    elements["_mmu_palette"] = _mmu_palette
+    # When SCM trail is on, curveObjs hold the converted trail-strip meshes
+    # (single_color_mode_curve converts in-place); keep them as 3D geometry.
+    # When tex_include_trail is off, keep curveObjs as PAINT-style overlay objects.
+    _tex_trail = bpy.context.scene.tp3d.tex_include_trail
+    if gen.curveObjs and not gen.singleColorMode and _tex_trail:
+        for tcrv in list(gen.curveObjs):
+            if tcrv and tcrv.name in bpy.data.objects:
+                bpy.data.objects.remove(tcrv, do_unlink=True)
+        gen.curveObjs.clear()
+
+    if gen.curveObjs and type == 20:
+        for i, crv in enumerate(gen.curveObjs):
+            tmp: Object = merge_with_map(gen.mapObject, crv)
+            remove_objects(crv)
+            gen.curveObjs[i] = tmp
+    # --- Phase 15c: Tag companion objects with solid-colour paint textures ---
+    # Without this the Orca exporter sees no paint data on these objects and
+    # the slicer defaults them to extruder 1 regardless of material colour.
+    if gen.elementMode == "CREATE_TEXTURE":
+        _mmu_palette = gen.elements.get("_mmu_palette")
+        if _mmu_palette:
+            from .texture import (
+                _ROADS_SRGB,
+                _WHITE_SRGB,
+                tag_solid_color_for_paint_export,
+            )
+
+            for _cobj, _ccol in [
+                (gen.textObj, _WHITE_SRGB),
+                (gen.plateObj, _ROADS_SRGB),
+                (gen.shellObj, _ROADS_SRGB),
+            ]:
+                tag_solid_color_for_paint_export(_cobj, _ccol, _mmu_palette)
 
 
 def _rg_assign_materials(gen: GenerationContext):
@@ -2738,23 +2848,17 @@ def _subdivide_long_segments(coords, max_xy_dist, depsgraph=None):
 
 def runGeneration(type, locked_scale=None):
     """Orchestrate the full 3D map generation pipeline."""
-    from .mesh_ops import (  # deferred to avoid circular import at load time
-        merge_with_map,
-    )
-    from .scene import (  # deferred to avoid circular import at load time
-        remove_objects,
-    )
 
     flags = _GEN_FLAGS[type]
     overlay = _progress.ProgressOverlay.get()
 
     try:
+        _progress.WarningsOverlay.clear()
+        # --- Phase 1: Validate inputs and load all scene settings ---
         gen: GenerationContext = _rg_validate_inputs(
             flags, gen_type=type, locked_scale=locked_scale
         )
         overlay.start()
-        _progress.WarningsOverlay.clear()
-        # --- Phase 1: Validate inputs and load all scene settings ---
         overlay.update(0.03, "Initializing", "Validating inputs…")
 
         start_time = gen.start_time
@@ -2834,9 +2938,7 @@ def runGeneration(type, locked_scale=None):
 
         # --- Phase 10b: Build trail curves ---
         overlay.update(0.70, "Building Trail", "Creating curve objects…")
-        if not _rg_build_trail_curves(gen):
-            overlay.finish()
-            return
+        _rg_build_trail_curves(gen)
 
         curveObjs = gen.curveObjs
         if curveObjs:
@@ -2863,21 +2965,11 @@ def runGeneration(type, locked_scale=None):
 
         _rg_create_text_and_overlays(gen)
 
-        # --- Material preview mode ---
-        for area in bpy.context.screen.areas:
-            if area.type == "VIEW_3D":
-                for space in area.spaces:
-                    if space.type == "VIEW_3D":
-                        space.shading.type = "MATERIAL"
-
         # --- Phase 14: Create terrain overlay elements ---
         overlay.update(0.83, "Terrain Elements", "Adding elements…")
         if gen.fetchThread is not None:
             gen.fetchThread.join()
-        _rg_build_terrain_elements(
-            gen,
-            prefetched_osm=gen.fetchResult,
-        )
+        _rg_build_terrain_elements(gen, prefetched_osm=gen.fetchResult)
 
         # --- Phase 15: Single color mode processing ---
         overlay.update(0.95, "Coloring", "Applying single-color mode…")
@@ -2885,54 +2977,15 @@ def runGeneration(type, locked_scale=None):
 
         # --- Phase 15b: CREATE_TEXTURE — rasterise OSM polygons into UV texture ---
         if gen.elementMode == "CREATE_TEXTURE":
-            from .texture import setup_paint_texture
-
+            _rg_apply_texture(gen)
+            _lo = bpy.context.scene.tp3d.lowestZ
+            _hi = bpy.context.scene.tp3d.highestZ
+            overlay.add_completed_step(f"Terrain applied  —  z {_lo:.1f} to {_hi:.1f}")
             overlay.update(0.96, "Texture", "Rasterising OSM texture…")
-            elements: dict[str, Any] = gen.elements
-            _mmu_palette = setup_paint_texture(gen)
-            elements["_mmu_palette"] = _mmu_palette
-            # When SCM trail is on, curveObjs hold the converted trail-strip meshes
-            # (single_color_mode_curve converts in-place); keep them as 3D geometry.
-            # When tex_include_trail is off, keep curveObjs as PAINT-style overlay objects.
-            _tex_trail = bpy.context.scene.tp3d.tex_include_trail
-            if gen.curveObjs and not gen.singleColorMode and _tex_trail:
-                for tcrv in list(gen.curveObjs):
-                    if tcrv and tcrv.name in bpy.data.objects:
-                        bpy.data.objects.remove(tcrv, do_unlink=True)
-                gen.curveObjs.clear()
-
-        if gen.curveObjs and type == 20:
-            for i, crv in enumerate(gen.curveObjs):
-                tmp: Object = merge_with_map(gen.mapObject, crv)
-                remove_objects(crv)
-                gen.curveObjs[i] = tmp
-
-        _lo = bpy.context.scene.tp3d.lowestZ
-        _hi = bpy.context.scene.tp3d.highestZ
-        overlay.add_completed_step(f"Terrain applied  —  z {_lo:.1f} to {_hi:.1f}")
-
         # --- Phases 16-18: Assign materials, export, and finalize ---
         overlay.update(0.97, "Finalizing", "Exporting files...")
         _rg_assign_materials(gen)
 
-        # --- Phase 15c: Tag companion objects with solid-colour paint textures ---
-        # Without this the Orca exporter sees no paint data on these objects and
-        # the slicer defaults them to extruder 1 regardless of material colour.
-        if gen.elementMode == "CREATE_TEXTURE":
-            _mmu_palette = gen.elements.get("_mmu_palette")
-            if _mmu_palette:
-                from .texture import (
-                    _ROADS_SRGB,
-                    _WHITE_SRGB,
-                    tag_solid_color_for_paint_export,
-                )
-
-                for _cobj, _ccol in [
-                    (gen.textObj, _WHITE_SRGB),
-                    (gen.plateObj, _ROADS_SRGB),
-                    (gen.shellObj, _ROADS_SRGB),
-                ]:
-                    tag_solid_color_for_paint_export(_cobj, _ccol, _mmu_palette)
         # Finish and Export
         _rg_export(gen)
 
@@ -2951,12 +3004,12 @@ def runGeneration(type, locked_scale=None):
         bpy.context.scene.tp3d["o_mapsGenerated"] = f"Maps Generated: {_total_maps}"
 
         if gen.mapObject:
-            gen.mapObject.GenerationTime = round(duration)
+            gen.mapObject["GenerationTime"] = round(duration)
 
         print(
-            f"Finished. Generating Map took {duration:.0f} seconds"
-            "----------------------------------------------------------------"
-            " "
+            f"Finished. Generating Map took {duration:.0f} seconds",
+            "----------------------------------------------------------------",
+            " ",
         )
 
         _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
@@ -2967,7 +3020,14 @@ def runGeneration(type, locked_scale=None):
         print(f"Validation Failed: {e}")
         _progress.WarningsOverlay.add_warning(f"Error: {e}")
 
+    except GenerationError as e:
+        print(f"Generation phase failed: {e}")
+        _progress.WarningsOverlay.add_warning(str(e), icon="error")
+
     except Exception as e:  # noqa: BLE001 - runGeneration could raise many kinds of errors, for now I don't have a concrete list so.. bare exception.
+        import traceback
+
+        traceback.print_exc()
         print(f"Generation failed: {e}")
         _progress.WarningsOverlay.add_warning(
             "Generation failed, check console for details"
