@@ -474,7 +474,7 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None):
     final_geom = _g2d.subtract(merged_pos, merged_neg)
     _pre_smooth_geom = final_geom if bpy.app.debug else None
     if _smooth_r > 0 and kind not in "WATER":
-        smoothed_geom = _g2d.smooth_polygon_taubin(
+        smoothed_geom = _g2d.smooth_polygon_taubin(gen,
             final_geom, steps=_smooth_r
         )
         print(f"  [smoothing steps] Taubin smoothing steps={_smooth_r}  ")
@@ -511,7 +511,7 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None):
         )
         return _COLORING_FILTERED
 
-    if elementMode == "CREATE_TEXTURE":
+    if gen.useTexture:
         return _ColoringTextureResult(kind=kind, polygon=final_geom)
 
     # Smooth raw OSM GPS-traced nodes so extruded solids have clean edges.
@@ -704,7 +704,7 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None):
         return _COLORING_PAINTED
         # ── end PAINT fast path ───────────────────────────────────────────────────────
 
-    # ── SEPARATE / SINGLECOLORMODE path ──────────────────────────────────────────────
+    # ── SINGLECOLORMODE path ──────────────────────────────────────────────
     # Extrude the unified flat mesh, run ONE MANIFOLD boolean-intersect with terrain,
     # then split loose parts (terrain edges can disconnect components) and re-merge.
     tol = 0.1
@@ -856,32 +856,19 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None):
     bm.from_mesh(merged_object.data)
     bm.normal_update()
 
-    if elementMode == "SEPARATE":
-        # Rebuild as a terrain-conforming 1 mm solid: keep only the upward-facing
-        # terrain surface (from the boolean INTERSECT result), delete the flat
-        # bottom cap and vertical side walls, then extrude downward 1 mm.
-        to_delete = [
-            f for f in bm.faces if f.normal.z <= 0.087
-        ]  # keep faces up to 85° from horizontal
-        bmesh.ops.delete(bm, geom=to_delete, context="FACES")
-        ret = bmesh.ops.extrude_face_region(bm, geom=bm.faces[:])
-        new_verts = [v for v in ret["geom"] if isinstance(v, bmesh.types.BMVert)]
-        bmesh.ops.translate(bm, verts=new_verts, vec=Vector((0, 0, -1)))
-        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
-    else:
-        # SINGLECOLORMODE: flatten the bottom to a consistent level so the cutter
-        # prism extends cleanly below the lowest terrain point in the element area.
-        min_z = min(v.co.z for v in bm.verts)
-        lowestVert = 100
-        for v in bm.verts:
-            if (
-                abs(v.co.z - min_z) > tol
-                and v.co.z >= bpy.context.scene.tp3d.minThickness
-            ):
-                lowestVert = min(lowestVert, v.co.z)
-        for v in bm.verts:
-            if abs(v.co.z - min_z) < tol:
-                v.co.z = lowestVert - 1
+    # SINGLECOLORMODE: flatten the bottom to a consistent level so the cutter
+    # prism extends cleanly below the lowest terrain point in the element area.
+    min_z = min(v.co.z for v in bm.verts)
+    lowestVert = 100
+    for v in bm.verts:
+        if (
+            abs(v.co.z - min_z) > tol
+            and v.co.z >= bpy.context.scene.tp3d.minThickness
+        ):
+            lowestVert = min(lowestVert, v.co.z)
+    for v in bm.verts:
+        if abs(v.co.z - min_z) < tol:
+            v.co.z = lowestVert - 1
 
     bm.to_mesh(merged_object.data)
     bm.free()
@@ -1695,7 +1682,7 @@ def createOcean(prefetched_coastline, scaleHor, tile):
 
     elementMode = bpy.context.scene.tp3d.elementMode
 
-    if elementMode == "CREATE_TEXTURE":
+    if gen.useTexture:
         # Skip building any Blender mesh — return the Shapely polygon so the
         # texture rasterizer can paint it like every other OSM element.
         rdp_eps = getattr(tp3d, "el_oRdpEpsilon", 0.1)
@@ -1744,16 +1731,6 @@ def createOcean(prefetched_coastline, scaleHor, tile):
         mat = bpy.data.materials.get("WATER")
         ocean_obj.data.materials.clear()
         ocean_obj.data.materials.append(mat)
-        return ocean_obj
-    elif elementMode == "SEPARATE":
-        _t_proj = time.time()
-        projection("separate", tile, ocean_obj)
-        print(f"  [ocean] projection (separate): {time.time() - _t_proj:.3f}s")
-        mat = bpy.data.materials.get("WATER")
-        ocean_obj.data.materials.clear()
-        ocean_obj.data.materials.append(mat)
-        print(f"  [ocean] total: {time.time() - _t_ocean:.3f}s")
-        recalculateNormals(ocean_obj)
         return ocean_obj
 
     return ocean_obj

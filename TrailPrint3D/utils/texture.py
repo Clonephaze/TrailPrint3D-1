@@ -1,5 +1,5 @@
 """
-OSM element texture rasterization for CREATE_TEXTURE element mode.
+OSM element texture rasterization, now controlled by a boolean in paint mode instead of being a whole generation type.
 
 Rasterizes Shapely polygons (OSM element areas) into a Blender Image,
 sets up planar UV coordinates on the terrain mesh, creates a single

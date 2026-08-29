@@ -202,7 +202,7 @@ class TP3D_PT_generate(bpy.types.Panel):
                 col.label(text=_("Auto-enabled with SCM Elements"), icon='LOCKED')
             if props.singleColorMode or _elem_scm:
                 col.prop(props, "singleColorModeHeight")
-            if props.elementMode == "CREATE_TEXTURE":
+            if props.tex_use_texture == True:
                 col.prop(props, "tex_include_trail", icon='CHECKBOX_HLT' if props.tex_include_trail else 'CHECKBOX_DEHLT')
 
             # Scale
@@ -249,8 +249,10 @@ class TP3D_PT_advanced(bpy.types.Panel):
             box.prop(props, "disable_auto_export")
             if temp.has3mf:
                 box.prop(props, "disable_3mf_export")
-                if not props.disable_3mf_export:
-                    box.prop(props, "slicer_profile_name")
+            if props.elementMode == "SINGLECOLORMODE_REMESH":
+                box.prop(props, "keep_positions")
+            if temp.has3mf and not props.disable_3mf_export:
+                box.prop(props, "slicer_profile_name")
 
         # --- MAP ---
         layout.prop(props, "show_map", icon="TRIA_DOWN" if props.show_map else "TRIA_RIGHT", emboss=False)
@@ -279,9 +281,9 @@ class TP3D_PT_advanced(bpy.types.Panel):
             box = layout.box()
             box.label(text=_("Terrain Elements"), icon='TEXTURE')
             box.prop(props, "elementMode")
+            if "PAINT" in props.elementMode:
+                box.prop(props, "tex_use_texture")
             box.prop(props, "col_osmSmoothing")
-            # if "SINGLECOLORMODE" in props.elementMode:
-            #     box.prop(props, "elementModeInset")
 
             sub = box.box()
             row = sub.row()
@@ -364,16 +366,16 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 col.prop(props, "el_sSmallActive", icon='CHECKBOX_HLT' if props.el_sSmallActive else 'CHECKBOX_DEHLT')
                 col.prop(props, "el_sServiceActive", icon='CHECKBOX_HLT' if props.el_sServiceActive else 'CHECKBOX_DEHLT')
                 col.prop(props, "el_sFootwaysActive", icon='CHECKBOX_HLT' if props.el_sFootwaysActive else 'CHECKBOX_DEHLT')
-                if props.elementMode in ("PAINT", "CREATE_TEXTURE") and _any_road and props.el_sHeight == 0:
+                if props.elementMode == "PAINT" and _any_road and props.el_sHeight == 0 and props.tex_include_roads == False:
                     row = sub.row()
                     row.alert = True
                     row.label(text=_("Road Height must be > 0 in Paint mode"), icon='ERROR')
                 row = sub.row(align=True)
                 row.prop(props, "el_sMultiplier")
                 row.prop(props, "el_sHeight")
-                if props.elementMode not in ("PAINT", "CREATE_TEXTURE"):
+                if props.elementMode != "PAINT":
                     sub.prop(props, "el_sCutTolerance")
-                if props.elementMode == "CREATE_TEXTURE":
+                if props.tex_use_texture:
                     sub.prop(props, "tex_include_roads", icon='CHECKBOX_HLT' if props.tex_include_roads else 'CHECKBOX_DEHLT')
                 if props.el_sServiceActive:
                     sub.prop(props, "el_sExcludeAlleys", icon='CHECKBOX_HLT' if props.el_sExcludeAlleys else 'CHECKBOX_DEHLT')

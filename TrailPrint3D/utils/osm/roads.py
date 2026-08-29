@@ -416,8 +416,7 @@ def compute_full_depth_bottom_z(
     road_polygon,
     el_sHeight: float,
 ) -> float | None:
-    """Compute the flat printable-base Z for full-depth roads (SEPARATE /
-    SINGLECOLORMODE*), the road equivalent of how single-color-mode elements
+    """Compute the flat printable-base Z for full-depth roads (SINGLECOLORMODE*), the road equivalent of how single-color-mode elements
     get their own recess depth (see single_color_mode_mesh_remesh: bottom_z =
     min(v.z) of the element's OWN geometry, not the map floor).
 
@@ -461,7 +460,7 @@ def finalize_roads(
     coarse mesh's own vertices, so it doesn't matter that they no longer
     exist by the time this runs.
 
-    full_depth=True (SEPARATE/SINGLECOLORMODE*): bottom cap is flat, matching
+    full_depth=True (SINGLECOLORMODE*): bottom cap is flat, matching
     the same flush-bottom-into-a-recess pattern single-color-mode elements
     use -- see compute_full_depth_bottom_z. It's computed from the road's OWN
     footprint here (not passed in), so it always matches whatever recess the
@@ -612,7 +611,7 @@ def create_roads(
 
     # --- Configuration ---------------------------------------------------
     try:
-        full_depth = gen.elementMode not in ("PAINT", "CREATE_TEXTURE")
+        full_depth = gen.elementMode != "PAINT"
         config = RoadConfig.from_scene(bpy.context.scene.tp3d, full_depth=full_depth)
     except Exception as e:
         raise GenerationError(f"Failed to load road configuration: {e}")

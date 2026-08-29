@@ -94,6 +94,9 @@ def export_selected_to_STL(force="STL"):
 
 def export_selected_to_3mf(is_auto: bool = False):
     from .utils import show_message_box
+    import os
+    import tempfile
+    from mathutils import Vector
 
     exportPath = bpy.context.scene.tp3d.get('export_path', "")
     if not exportPath:
@@ -101,24 +104,19 @@ def export_selected_to_3mf(is_auto: bool = False):
     if not exportPath:
         _progress.WarningsOverlay.add_warning("Export folder not set — please set an export path", "error")
         return {'FINISHED'}
-    selected_objects = bpy.context.selected_objects
 
+    selected_objects = bpy.context.selected_objects
     if not selected_objects:
         show_message_box("No objects selected")
         return {'FINISHED'}
 
-    # 1. Selection & Duplication (to avoid messing up the original scene)
-    # Note: We duplicate BEFORE generating the thumbnail so the thumbnail
-    # shows exactly what is being exported at 0,0,0
-
-    # Collect selected objects + all their children recursively
+    # 1. Duplicate all selected objects + children (preserve hierarchy)
     all_to_export = list(selected_objects)
     for obj in selected_objects:
         for child in obj.children_recursive:
             if child not in all_to_export:
                 all_to_export.append(child)
 
-    # Duplicate via data API — works regardless of visibility or collection state
     original_to_dup = {}
     duplicates = []
     scene_col = bpy.context.scene.collection
@@ -128,9 +126,8 @@ def export_selected_to_3mf(is_auto: bool = False):
         scene_col.objects.link(dup)
         original_to_dup[obj] = dup
         duplicates.append(dup)
-        print(f"Object to Export: {obj.name}")
 
-    # Re-establish parent relationships among duplicates
+    # Re-establish parent relationships
     for orig, dup in original_to_dup.items():
         if orig.parent in original_to_dup:
             dup.parent = original_to_dup[orig.parent]
@@ -139,14 +136,7 @@ def export_selected_to_3mf(is_auto: bool = False):
             dup.parent = None
             dup.matrix_world = orig.matrix_world.copy()
 
-    center = get_selection_center(duplicates)
-    offset = Vector((-center.x, -center.y, -center.z))
-
-    for obj in duplicates:
-        #if not obj.parent: # Only move the 'roots' to keep hierarchy intact
-        obj.location += offset
-
-    # Convert any curve objects to mesh (3mf exporter doesn't support curves)
+    # Convert curves to mesh
     for obj in duplicates:
         if obj.type == 'CURVE':
             bpy.ops.object.select_all(action='DESELECT')
@@ -154,47 +144,62 @@ def export_selected_to_3mf(is_auto: bool = False):
             bpy.context.view_layer.objects.active = obj
             bpy.ops.object.convert(target='MESH')
 
-    # 2. Sort duplicates into groups based on "ExportGroup"
-    groups = {} # Key: ID, Value: List of Objs
-    ungrouped = []
+    # ------------------------------------------------------------------
+    #  New grouping logic based on tp3d.keep_positions
+    # ------------------------------------------------------------------
+    temp_empties = []          # we'll delete these later
+    if bpy.context.scene.tp3d.keep_positions:
+        # Group ALL objects under one root, preserve world transforms
+        root_empty = bpy.data.objects.new("TP3D_Group", None)
+        bpy.context.collection.objects.link(root_empty)
+        temp_empties.append(root_empty)
 
-    for obj in duplicates:
-        group_id = obj.get("ExportGroup", 0)
-        if group_id > 0:
-            if group_id not in groups:
-                groups[group_id] = []
-            groups[group_id].append(obj)
-        else:
-            ungrouped.append(obj)
+        # Only top‑level objects get parented to the root; children keep their original parent
+        top_level = [obj for obj in duplicates if obj.parent is None]
+        for obj in top_level:
+            obj.parent = root_empty
+            # Adjust inverse matrix so world transform stays unchanged
+            obj.matrix_parent_inverse = root_empty.matrix_world.inverted() @ obj.matrix_world
 
-    GROUP_NAMES = ["Map", "Plate"]
+        export_roots = [root_empty]   # only one root object to export
 
-    # 3. Create Empties for Groups and center everything
-    export_roots = [] # These are the "Top Level" objects the exporter will see
-    temp_empties = []  # Track empties so we can delete them in cleanup
+    else:
+        # Original behaviour: center, group by "ExportGroup" custom property
+        center = get_selection_center(duplicates)
+        offset = Vector((-center.x, -center.y, -center.z))
+        for obj in duplicates:
+            obj.location += offset
 
-    # Handle Grouped Objects
-    for idx, (g_id, members) in enumerate(sorted(groups.items())):
-        # If only one member, no need for a group empty — add it directly
-        if len(members) == 1:
-            export_roots.append(members[0])
-            continue
+        groups = {}
+        ungrouped = []
+        for obj in duplicates:
+            group_id = obj.get("ExportGroup", 0)
+            if group_id > 0:
+                groups.setdefault(group_id, []).append(obj)
+            else:
+                ungrouped.append(obj)
 
-        group_name = GROUP_NAMES[idx] if idx < len(GROUP_NAMES) else f"Group_{g_id}"
-        empty = bpy.data.objects.new(group_name, None)
-        bpy.context.collection.objects.link(empty)
-        temp_empties.append(empty)
-        export_roots.append(empty)
+        GROUP_NAMES = ["Map", "Plate"]
+        export_roots = []
+        for idx, (g_id, members) in enumerate(sorted(groups.items())):
+            if len(members) == 1:
+                export_roots.append(members[0])
+                continue
+            empty = bpy.data.objects.new(
+                GROUP_NAMES[idx] if idx < len(GROUP_NAMES) else f"Group_{g_id}",
+                None
+            )
+            bpy.context.collection.objects.link(empty)
+            temp_empties.append(empty)
+            export_roots.append(empty)
+            for member in members:
+                member.parent = empty
 
-        for member in members:
-            member.parent = empty
-            # If you want the individual parts to also reset to 0 relative to the group:
-            # member.location = (0,0,0)
+        export_roots.extend(ungrouped)
 
-    # Handle Ungrouped Objects
-    export_roots.extend(ungrouped)
-
-    # 4. Thumbnail & Export
+    # ------------------------------------------------------------------
+    #  Thumbnail & export (unchanged)
+    # ------------------------------------------------------------------
     thumbnail_path = os.path.join(tempfile.gettempdir(), "tp3d_thumbnail.png")
     if not bpy.app.background:
         customThumbnail(duplicates, thumbnail_path)
@@ -208,12 +213,9 @@ def export_selected_to_3mf(is_auto: bool = False):
 
     try:
         tp3d = bpy.context.scene.tp3d
-
-        _is_texture_mode = tp3d.elementMode == 'CREATE_TEXTURE'
-
+        _is_texture_mode: bool = tp3d.tex_use_texture
         _on_progress = None
         if is_auto:
-            # Feed 3MF export progress (0–100) into the TP3D overlay's 0.97–1.0 tail.
             _overlay = _progress.ProgressOverlay.get()
             def _on_progress(percent: int, message: str) -> None:
                 _overlay.update(0.97 + (percent / 100.0) * 0.03, "3MF Export", message)
@@ -238,13 +240,11 @@ def export_selected_to_3mf(is_auto: bool = False):
         else:
             print("Export Error:\n" + "\n".join(result.warnings))
             _progress.WarningsOverlay.add_warning("Exporting as 3mf Failed", "error")
-    except Exception as e:  # noqa: BLE001 - Wide catch is purposeful, incase of a crash from the api itself
+    except Exception as e:
         print(f"Export Error: {e}")
         _progress.WarningsOverlay.add_warning("Exporting as 3mf Failed", "error")
 
-    # 5. Cleanup (Delete the duplicates and temporary empties)
-    # Use the data API directly — not affected by selection state or context
-
+    # 5. Cleanup (delete duplicates and temporary empties)
     for obj in duplicates + temp_empties:
         if obj is None:
             continue
@@ -253,7 +253,6 @@ def export_selected_to_3mf(is_auto: bool = False):
         bpy.data.objects.remove(obj)
 
     return {'FINISHED'}
-
 
 def customThumbnail(objects, output_path, resolution=256):
     scene = bpy.context.scene

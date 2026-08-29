@@ -981,7 +981,6 @@ class TP3D_OT_popup_merge(bpy.types.Operator):
         name="Type",
         items=[
             ("paint", "Paint on Surface", ""),
-            ("separate", "Separate Object", ""),
             ("singleColorMode_remesh","Single-Color-Mode (Remesh)",""),
             ("negative","Negative",""),
         ],
@@ -1156,7 +1155,6 @@ class TP3D_OT_popup_text(bpy.types.Operator):
         name="Type",
         items=[
             ("paint", "Paint on Surface", ""),
-            ("separate", "Separate Object", ""),
             ("singleColorMode_remesh","Single-Color-Mode (Remesh)",""),
             ("negative","Negative",""),
         ],
@@ -1398,7 +1396,6 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
         description= _("Choose how the SVG should be used"),
         items=[
             ("paint", "Paint on Surface", "Paints the SVG onto the surface"),
-            ("separate", "Separate Object", "SVG as Separate Object"),
             ("singleColorMode_remesh","Single-Color-Mode (Remesh)","Creates the SVG as a separate object using the remesh-based algorithm"),
             ("negative","Negative","Adds the SVG as a negative space"),
         ],
@@ -2223,10 +2220,10 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # never get sliced along the jigsaw lines. Roads and Buildings are
         # handled separately: cut_into_puzzle_pieces re-clips their generated
         # geometry per piece after terrain cutting.
-        if props.elementMode not in ('PAINT', 'CREATE_TEXTURE'):
+        if props.elementMode != 'PAINT':
             props.elementMode = 'PAINT'
             _progress.WarningsOverlay.add_warning(
-                "Puzzles only support \"Paint on Map\" or \"Create Texture\" element mode — switched automatically.", "warn"
+                "Puzzles only support \"Paint on Map\" element mode — switched automatically.", "warn"
             )
         if props.singleColorMode:
             # Single-Color Mode builds each trail decal as its own standalone

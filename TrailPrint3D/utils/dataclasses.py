@@ -29,6 +29,7 @@ class GenerationContext:
     modelname: str
     size: int
     autoExport: bool
+    keepPositions: bool
     scaleElevation: float
     scalemode: str
     scaleLon1: float
@@ -98,7 +99,9 @@ class GenerationContext:
     shellObj: Object | None = None
     roadObj: Object | None = None
     roadUnion: Object | None = None
-    texTrail: bool = True
+    useTexture: bool = False
+    texRoads: bool = False
+    texTrail: bool = False
     fetchThread: threading.Thread | None = None
     fetchResult: dict[str, dict[Any, tuple[dict, bool]]] | None = None
 

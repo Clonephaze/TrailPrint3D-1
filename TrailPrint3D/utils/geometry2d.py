@@ -20,6 +20,8 @@ import bmesh  # type: ignore
 import bpy  # type: ignore
 import numpy as np  # type: ignore
 
+from .dataclasses import GenerationContext
+
 # These values are overwritten by _load_shapely() on success.
 _HAS_SHAPELY: bool = False
 _SHAPELY_MAJOR: int = 0
@@ -220,7 +222,7 @@ def subtract(geom, neg_geom):
     return geom.difference(neg_geom)
 
 
-def smooth_polygon_taubin(geom, pin_tolerance=1e-3, **taubin_kwargs):
+def smooth_polygon_taubin(gen: GenerationContext, geom, pin_tolerance=1e-3, **taubin_kwargs):
     """Smooth a Shapely Polygon or MultiPolygon using Taubin smoothing
     (shapelysmooth), preserving vertex count/order so outline-touching
     vertices can be pinned back to their exact original position afterward.
@@ -238,7 +240,7 @@ def smooth_polygon_taubin(geom, pin_tolerance=1e-3, **taubin_kwargs):
     from shapelysmooth import taubin_smooth
 
     _require_shapely()
-
+    outline = gen.mapOutline
     pin_geom = (
         outline.boundary
         if outline is not None and hasattr(outline, "boundary")

@@ -18,27 +18,32 @@ from . import constants as const
 from . import temp, utils
 
 
-def _slicer_profile_items(self, context):
-    items = [("NONE", "Built-in defaults",
-              "Use the built-in Bambu A1 template. "
-              "Add your own profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced")]
-    try:
-        import importlib
-        from .threemf_discovery import get_threemf_api
-        _api = get_threemf_api()
-        if _api is None:
-            return items
-        # Use the resolved api module's package to avoid bl_ext prefix mismatch.
-        sp = importlib.import_module(".slicer_profiles", package=_api.__package__)
-        for p in sp.list_profiles():
-            detail = p.machine or p.vendor
-            items.append((p.name, p.name,
-                          f"{detail} (from {p.source_file}). "
-                          "Add more profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced"))
-    except Exception:
-        pass
-    return items
+def _slicer_profile_items(self, context) -> list[tuple[str, str, str]]:
+    # Combine the description parts into one string
+    desc = (
+        "Use the built-in Bambu A1 template. "
+        "Add your own profiles in Preferences → Add-ons → 3MF Format → Advanced"
+    )
+    items = [("NONE", "Built-in defaults", desc)]
 
+    import importlib
+
+    from .threemf_discovery import get_threemf_api
+
+    _api = get_threemf_api()
+    if _api is None:
+        return items
+
+    sp = importlib.import_module(".slicer_profiles", package=_api.__package__)
+    for p in sp.list_profiles():
+        detail = p.machine or p.vendor
+        desc = (
+            f"{detail} (from {p.source_file}). "
+            "Add more profiles in Preferences → Add-ons → 3MF Format → Advanced"
+        )
+        items.append((p.name, p.name, desc))
+
+    return items
 
 def shape_callback(self,context):
     #print(f"Shape: {self.shape}")
@@ -198,28 +203,6 @@ def repair_invalid_shape(scene):
     tp3d = getattr(scene, "tp3d", None)
     if tp3d is not None and not tp3d.shape:
         tp3d.shape = "HEXAGON"
-
-
-# Module-level lists keep items alive so Blender's enum cache never holds dangling pointers.
-_ELEMENT_MODE_ITEMS_BASE = [
-    ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
-    ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
-    # ('SINGLECOLORMODE', _("SingleColor (Alternative)"), "Use this SingleColorMode if the other one causes problems"),
-    ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')")),
-]
-_ELEMENT_MODE_ITEMS_WITH_TEXTURE = [
-    ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
-    ('CREATE_TEXTURE', _("Create Texture"), _("Rasterize OSM elements into a UV texture for multi-filament 3MF export")),
-    ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
-    # ('SINGLECOLORMODE', _("SingleColor (Alternative)"), "Use this SingleColorMode if the other one causes problems"),
-    ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')")),
-]
-
-
-def _element_mode_items(self, context):
-    from . import temp
-    return _ELEMENT_MODE_ITEMS_WITH_TEXTURE if temp.has3mf else _ELEMENT_MODE_ITEMS_BASE
-
 
 # Define a Property Group to store variables
 class TP3D_PG_properties(bpy.types.PropertyGroup):
@@ -504,11 +487,14 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name="Element handling",
         items=[
             ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
-            ('CREATE_TEXTURE', _("Create Texture"), _("Rasterize OSM elements into a UV texture for multi-filament 3MF export")),
             ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
-            ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')")),
         ],
         default='PAINT'
+    )
+    tex_use_texture: BoolProperty(
+        name=_("Create a texture"),
+               default=False,
+               description="Create a texture instead of painting individual faces."
     )
     tex_include_roads: BoolProperty(  # type: ignore
         name=_("Roads in texture"),
@@ -548,7 +534,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
 
     el_sMultiplier: FloatProperty(name= _("Road Width Multiplier"), default = 1, description = _("To make Roads thicker or thinner")) # type: ignore
     el_sHeight: FloatProperty(name= _("Road Height"), default = 0.4, min=0.0, description = _("Height of road geometry above terrain")) # type: ignore
-    el_sCutTolerance: FloatProperty(name= _("Road Cutout Tolerance"), default = 0.2, min=0.0, description = _("Extra clearance added around roads when cutting their footprint out of terrain/elements in SEPARATE/SingleColorMode, so the printed road piece seats without an overly tight fit. Same idea as Tolerance Elements, but for roads.")) # type: ignore
+    el_sCutTolerance: FloatProperty(name= _("Road Cutout Tolerance"), default = 0.2, min=0.0, description = _("Extra clearance added around roads when cutting their footprint out of terrain/elements in SingleColorMode, so the printed road piece seats without an overly tight fit. Same idea as Tolerance Elements, but for roads.")) # type: ignore
     el_sExcludeAlleys: BoolProperty(name= _("Exclude Alleys/Driveways"), default=True, description = _("Drops OSM highway=service ways explicitly tagged service=alley, service=driveway, service=parking_aisle, or service=drive-through -- the actual back-alley/driveway/parking-lot clutter -- while keeping plain service roads. Uses OSM's own tagging instead of guessing from geometry (a single street is often split into many short ways at every intersection, so filtering by length would wrongly cull real streets too).")) # type: ignore
 
     show_water: BoolProperty(name= _("Water & Ocean"), default=False) # type: ignore
@@ -583,6 +569,11 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     show_export: BoolProperty(name=_("Export"), default=True) # type: ignore
     disable_auto_export: BoolProperty(name=_("Disable Auto Export"), default=False, description=_("Don't automatically export files after generation")) # type: ignore
     disable_3mf_export: BoolProperty(name=_("Disable 3MF Export"), default=False, description=_("Don't use 3MF format even if the addon is installed")) # type: ignore
+    keep_positions: BoolProperty(
+        name= _("Keep positions during export"),
+        default= False,
+        description=_("Enable this if you want the every item to keep it's position, instead of letting each piece remain separate in the slicer.")
+    )
     slicer_profile_name: EnumProperty(  # type: ignore
         name=_("Slicer Profile"),
         items=_slicer_profile_items,

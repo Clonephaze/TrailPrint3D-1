@@ -3,7 +3,7 @@ import os
 import platform
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 
 import bpy  # type: ignore
 import numpy as np  # type: ignore
@@ -55,6 +55,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
     name: str = tp3d.get("trailName", "")
     size: int = tp3d.get("objSize", 100)
     autoExport: bool = tp3d.get("disable_auto_export", False)
+    keepPositions: bool = tp3d.get("keep_positions", False)
     scaleElevation: float = tp3d.get("scaleElevation", 1)
     scalemode: str = tp3d.get("scaleMode", "FACTOR")
     scaleLon1: float = tp3d.get("scaleLon1", 0)
@@ -100,6 +101,10 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
     jMapLon1: float = tp3d.get("jMapLon1", 8)
     jMapLat2: float = tp3d.get("jMapLat2", 49)
     jMapLon2: float = tp3d.get("jMapLon2", 9)
+
+    useTexture: bool = tp3d.get("tex_use_texture", False)
+    texRoads: bool = tp3d.get("tex_include_roads", False)
+    texTrail: bool = tp3d.get("tex_include_trail", False)
 
     opentopoAdress: str = "https://api.opentopodata.org/v1/"
     if selfHosted != "" and selfHosted is not None and api == "OPENTOPODATA":
@@ -182,7 +187,6 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
     modelname: str = name
     tp3d.modelname = modelname
 
-    texTrail: bool = tp3d.tex_include_trail
     exportFormat: str = tp3d.exportformat
     return GenerationContext(
         flags=flags,
@@ -198,6 +202,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         modelname=modelname,
         size=size,
         autoExport=autoExport,
+        keepPositions=keepPositions,
         scaleElevation=scaleElevation,
         scalemode=scalemode,
         scaleLon1=scaleLon1,
@@ -233,6 +238,8 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         jMapLon1=jMapLon1,
         jMapLat2=jMapLat2,
         jMapLon2=jMapLon2,
+        useTexture=useTexture,
+        texRoads=texRoads,
         texTrail=texTrail,
     )
 
@@ -1064,7 +1071,7 @@ def _rg_extrude_terrain(gen: GenerationContext):
     mesh_polygons = list(polygonize(rings))
 
     # Filter out empty space voids using original vector outline
-    map_polygon = g2d.get_map_polygon(obj)
+    map_polygon = gen.mapOutline
     if map_polygon:
         mesh_polygons = [
             p for p in mesh_polygons if map_polygon.covers(p.representative_point())
@@ -1500,7 +1507,7 @@ def _rg_build_terrain_elements(
             _ov.set_fetch_ready("water")
 
     terrain: dict[str, Any] = {}
-    terrain["_osm_polygons"] = {}  # populated only in CREATE_TEXTURE mode
+    terrain["_osm_polygons"] = {}  # populated only when creating a texture
     _water_result = None  # raw coloring_main() result for 'water' -- replayed below if ocean finds nothing
     for key, flag_attr, max_size, phase, msg in COLORING_ELEMENTS:
         terrain[key] = None
@@ -1630,7 +1637,7 @@ def _rg_build_terrain_elements(
                 raise GenerationError("ScaleHor not Set")
             # PAINT mode: roads is fused visually onto a single-piece terrain,
             # never printed standalone -- a thin raised strip is fine. Every
-            # other mode (SEPARATE / SINGLECOLORMODE*) needs roads to stand on
+            # other mode (SINGLECOLORMODE*) needs roads to stand on
             # its own as a base-to-top piece, like the coloring elements and
             # the SCM trail groove insert, so it can be printed/assembled
             # separately instead of being a sliver with nothing to sit on.
@@ -1662,20 +1669,13 @@ def _rg_build_terrain_elements(
                     gen.el_sHeight,
                 )
                 terrain["roads_bottom_z"] = None
-                if (
-                    tp3d.elementMode not in ("PAINT", "CREATE_TEXTURE")
-                    and roads_polygon is not None
-                ):
+                if tp3d.elementMode != "PAINT" and roads_polygon is not None:
                     terrain["roads_bottom_z"] = compute_full_depth_bottom_z(
                         terrain["_terrain_tris_cache"], roads_polygon, gen.el_sHeight
                     )
-                if (
-                    tp3d.elementMode == "CREATE_TEXTURE"
-                    and roads_polygon is not None
-                    and tp3d.tex_include_roads
-                ):
+                if gen.useTexture and roads_polygon is not None and gen.texRoads:
                     terrain["_osm_polygons"]["ROADS"] = roads_polygon
-                if tp3d.elementMode == "CREATE_TEXTURE" and tp3d.tex_include_roads:
+                if gen.useTexture and gen.texRoads:
                     # tex_include_roads on — polygon stored above; discard the mesh.
                     bpy.data.objects.remove(roads, do_unlink=True)
                     roads = None
@@ -1702,48 +1702,82 @@ def _rg_build_terrain_elements(
 
 
 def _rg_apply_single_color_mode(gen: GenerationContext):
-    """Apply single-color-mode boolean projection between terrain layers and curves.
+    """Apply all final boolean cuts: single‑color mode, roads, trails, and road finalisation.
 
-    Terrain elements are processed in priority order: each element subtracts
-    thicker versions of all higher-priority elements that were already processed.
-    To add a new terrain layer, append its key to TERRAIN_PRIORITY_ORDER and make
-    sure it is populated in the terrain dict passed by the caller.
+    This orchestrates the following steps:
+      1. Process curve objects for single‑color remesh (thicker curves and trail ribbons).
+      2. In PAINT mode, extract trail footprints from original trail curves.
+      3. Store trail union for texture rasterisation if needed.
+      4. Apply single‑color mode booleans between terrain elements and curves.
+      5. Cut roads out of terrain and terrain elements.
+      6. Subtract trail grooves from buildings.
+      7. Finalise roads (rebuild mesh, subtract trails in 2D, repair non‑manifold).
+      8. Clean up temporary thicker curve objects.
     """
-    from . import geometry2d as _g2d
-    from .mesh_ops import (  # deferred to avoid circular import at load time
-        boolean_operation,
-        is_mesh_manifold,
-        recalculateNormals,
-        selectBottomFaces,
-        single_color_mode_curve,
-        single_color_mode_mesh_remesh,
-        single_color_mode_mesh_wireframe,
-    )
-    from .scene import remove_objects  # deferred to avoid circular import at load time
-
-    # Priority order: index 0 = highest priority (subtracted from everything below it).
-    # Add new terrain keys here to include them automatically.
-    TERRAIN_PRIORITY_ORDER = [
-        "water",
-        "forest",
-        "scree",
-        "city",
-        "greenspace",
-        "farmland",
-        "glacier",
-        "ocean",
-    ]
-
-    _effective_scm_trail = gen.singleColorMode or gen.elementMode in (
-        "SINGLECOLORMODE",
-        "SINGLECOLORMODE_REMESH",
-    )
     obj = gen.mapObject
-    terrain = gen.elements
+    terrain: dict[str, Any] = cast(dict[str, Any], gen.elements)
     assert terrain is not None
+
+    # Initialize lists that will be filled by helpers
     thickerCurves = []
     trail_thick_ribbons = []
-    if _effective_scm_trail and gen.curveObjs:
+
+    # Step 1: Process curve projections (only for SINGLECOLORMODE_REMESH with curves)
+    if gen.elementMode == "SINGLECOLORMODE_REMESH" and gen.curveObjs:
+        thickerCurves, trail_thick_ribbons = _process_curve_projections(gen, obj)
+
+    # Step 2: In PAINT mode, collect trail ribbons from _Trail curves
+    if gen.elementMode == "PAINT":
+        paint_ribbons = _collect_paint_trail_ribbons(gen)
+        trail_thick_ribbons.extend(paint_ribbons)
+
+    # Step 3: Store trail union for texture rasterisation
+    if gen.useTexture and gen.texTrail and trail_thick_ribbons:
+        _store_trail_union_for_texture(gen, terrain, trail_thick_ribbons)
+
+    # Step 4: Apply single‑color mode booleans (only for SINGLECOLORMODE_REMESH)
+    if gen.elementMode == "SINGLECOLORMODE_REMESH":
+        _apply_single_color_mode_booleans(gen, obj, terrain, thickerCurves)
+
+    # Step 5: Cut roads out of terrain and elements
+    if gen.elementMode == "SINGLECOLORMODE_REMESH":
+        _cut_roads_from_terrain_and_elements(gen, obj, terrain)
+
+    # Step 6: Subtract trail grooves from buildings
+    if thickerCurves:
+        _subtract_trail_from_buildings(gen, thickerCurves, terrain)
+
+    # Step 7: Finalise roads
+    if gen.roadObj is not None:
+        _finalise_roads(gen, terrain, trail_thick_ribbons)
+
+    # Step 8: Clean up temporary thicker curves
+    _cleanup_thicker_curves(thickerCurves, bpy.app.debug, gen.size)
+
+
+# ----------------------------------------------------------------------
+# Helper functions (each raises GenerationError on failure)
+# ----------------------------------------------------------------------
+
+
+def _process_curve_projections(gen: GenerationContext, obj):
+    """Process curve objects for single-color remesh.
+
+    Returns:
+        (thickerCurves, trail_thick_ribbons) - both are lists of mesh objects.
+    """
+    from .mesh_ops import (
+        boolean_operation,
+        recalculateNormals,
+        single_color_mode_curve,
+    )
+    from .scene import remove_objects
+
+    thickerCurves = []
+    trail_thick_ribbons = []
+    survivingCurveObjs = []
+
+    try:
         dpt = 1
         dup = obj.copy()
         dup.data = obj.data.copy()
@@ -1751,7 +1785,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
         if obj.users_collection:
             for coll in obj.users_collection:
                 coll.objects.link(dup)
-        survivingCurveObjs = []
+
         for tcrv in gen.curveObjs:
             result = single_color_mode_curve(tcrv, obj, True, dpt, dup)
             if result is not None:
@@ -1760,11 +1794,16 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                     thickerCurves.append(result[1])
                 if result[2] is not None and not result[2].is_empty:
                     trail_thick_ribbons.append(result[2])
+
         remove_objects(dup)
+
+        # Select all thicker curves for subsequent operations
         for tcrv in thickerCurves:
             bpy.ops.object.select_all(action="DESELECT")
             tcrv.select_set(True)
             bpy.context.view_layer.objects.active = tcrv
+
+        # Boolean subtract among curves
         for i in range(len(thickerCurves)):
             recalculateNormals(thickerCurves[i])
             thickerCurves[i].location.z -= 0.001
@@ -1772,30 +1811,32 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                 recalculateNormals(survivingCurveObjs[j])
                 boolean_operation(survivingCurveObjs[j], thickerCurves[i])
 
-    else:
-        # PAINT mode: original _Trail curve objects are still in the scene; derive
-        # their 2D ribbon footprints to subtract from roads_polygon before finalize_roads.
-        _tol = bpy.context.scene.tp3d.tolerance
-        _pt = bpy.context.scene.tp3d.pathThickness
+        return thickerCurves, trail_thick_ribbons
 
-        def _tile_extents(o):
-            cs = [o.matrix_world @ Vector(c) for c in o.bound_box]
-            return (
-                min(c.x for c in cs),
-                max(c.x for c in cs),
-                min(c.y for c in cs),
-                max(c.y for c in cs),
-            )
+    except Exception as e:
+        raise GenerationError(f"Failed to process curve projections: {e}") from e
 
-        tx0, tx1, ty0, ty1 = _tile_extents(obj)
-        for _ob in bpy.context.view_layer.objects:
-            if _ob is None or "_Trail" not in _ob.name or _ob.type != "CURVE":
+
+def _collect_paint_trail_ribbons(gen: GenerationContext):
+    """In PAINT mode, derive 2D ribbon footprints from _Trail curve objects."""
+    from mathutils import Vector
+
+    from .geometry2d import polylines_to_ribbon
+
+    trail_thick_ribbons = []
+    _tol = bpy.context.scene.tp3d.tolerance
+    _pt = bpy.context.scene.tp3d.pathThickness
+
+    try:
+        # Use the pre-built trail objects from generation context
+        trail_objects = gen.curveObjs or []
+        for _ob in trail_objects:
+            if _ob is None or _ob.type != "CURVE":
                 continue
-            cx0, cx1, cy0, cy1 = _tile_extents(_ob)
-            if cx0 > tx1 or cx1 < tx0 or cy0 > ty1 or cy1 < ty0:
-                continue
+
             _mw = _ob.matrix_world
             _coords = []
+
             for _sp in _ob.data.splines:
                 _pts = _sp.points if len(_sp.points) > 0 else _sp.bezier_points
                 if len(_pts) >= 2:
@@ -1804,57 +1845,54 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                     )
             if not _coords:
                 continue
-            _r = _g2d.polylines_to_ribbon(_coords, _pt / 2 + _tol, quad_segs=4)
+            _r = polylines_to_ribbon(_coords, _pt / 2 + _tol, quad_segs=4)
             if _r and not _r.is_empty:
                 trail_thick_ribbons.append(_r)
+        return trail_thick_ribbons
 
-    # In CREATE_TEXTURE mode, store trail ribbon union for texture rasterisation.
-    if (
-        gen.elementMode == "CREATE_TEXTURE"
-        and bpy.context.scene.tp3d.tex_include_trail
-        and trail_thick_ribbons
-    ):
-        osm_polygons: dict[str, Any] = terrain.get("_osm_polygons")
+    except Exception as e:
+        raise GenerationError(f"Failed to collect paint trail ribbons: {e}") from e
+
+
+def _store_trail_union_for_texture(
+    gen: GenerationContext, terrain: dict, trail_thick_ribbons
+):
+    """Store the union of trail ribbons into the terrain's OSM polygon cache."""
+    from . import geometry2d as _g2d
+
+    try:
+        osm_polygons = gen.elements.get("_osm_polygons")
+        if osm_polygons is None:
+            osm_polygons = {}
+            terrain["_osm_polygons"] = osm_polygons
         osm_polygons["TRAIL"] = _g2d.union(trail_thick_ribbons)
+    except Exception as e:
+        raise GenerationError(f"Failed to store trail union for texture: {e}") from e
 
-    # TODO: clean this out when separate mode is gone
-    if gen.elementMode == "SEPARATE" and False:  # noqa: SIM223
-        for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
-            elem_obj = terrain.get(key)
 
-            if not elem_obj:
-                continue
-            _ov = _progress.ProgressOverlay.get()
-            if _ov.active:
-                _ov.update(message=f"Processing {key.capitalize()}…")
+def _apply_single_color_mode_booleans(
+    gen: GenerationContext, obj, terrain: dict, thickerCurves
+):
+    """Perform remesh/wireframe and boolean subtractions between terrain elements and curves."""
+    from .mesh_ops import (
+        boolean_operation,
+        single_color_mode_mesh_remesh,
+    )
 
-            recalculateNormals(elem_obj)
-
-            selectBottomFaces(elem_obj)
-            bpy.ops.mesh.select_more()
-            bpy.ops.mesh.delete(type="FACE")
-            bpy.ops.mesh.select_all(action="SELECT")
-            bpy.ops.mesh.extrude_region_move(
-                TRANSFORM_OT_translate={"value": (0, 0, -1)}
-            )
-            bpy.ops.object.mode_set(mode="OBJECT")
-
-            if _effective_scm_trail:
-                for tcrv in gen.curveObjs:
-                    boolean_operation(elem_obj, tcrv)
-
-    if gen.elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
+    try:
         _ov = _progress.ProgressOverlay.get()
-        if _ov.active:
-            _ov.update(message="Applying Single-color Mode…")
-        # Maps key -> thicker mesh object, filled as each element is processed.
         thicker_by_key = {}
 
-        _scm_fn = (
-            single_color_mode_mesh_remesh
-            if gen.elementMode == "SINGLECOLORMODE_REMESH"
-            else single_color_mode_mesh_wireframe
-        )
+        TERRAIN_PRIORITY_ORDER = [
+            "water",
+            "forest",
+            "scree",
+            "city",
+            "greenspace",
+            "farmland",
+            "glacier",
+            "ocean",
+        ]
 
         _active_scm_keys = [k for k in TERRAIN_PRIORITY_ORDER if terrain.get(k)]
         _n_scm = max(1, len(_active_scm_keys))
@@ -1871,7 +1909,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                     message=f"Single-color: remeshing {key.capitalize()} ({_scm_done + 1}/{_n_scm})…",
                 )
 
-            thicker = _scm_fn(elem_obj, obj)
+            thicker = single_color_mode_mesh_remesh(elem_obj, obj)
             thicker_by_key[key] = thicker
 
             if _ov.active:
@@ -1896,62 +1934,40 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
             for thicker in thicker_by_key.values():
                 thicker.location.x += obj_size
         else:
+            from .scene import remove_objects
+
             for thicker in thicker_by_key.values():
                 remove_objects(thicker)
 
-    if gen.elementMode == "SEPARATE" and thickerCurves:
-        for key in TERRAIN_PRIORITY_ORDER:
-            elem_obj = terrain.get(key)
-            if not elem_obj:
-                continue
-            _ov = _progress.ProgressOverlay.get()
-            if _ov.active:
-                _ov.update(message=f"Cutting trail from {key.capitalize()}…")
-            for tcrv in thickerCurves:
-                boolean_operation(elem_obj, tcrv)
+    except Exception as e:
+        raise GenerationError(f"Failed to apply single-color mode booleans: {e}") from e
 
-    # Cut roads out of every finalized terrain element (element = element -
-    # road), so a road crossing water/forest/city/etc. leaves a continuous
-    # raised strip with the element notched around it instead of the two
-    # objects silently overlapping. Only meaningful once elements exist as
-    # real separate solids (SEPARATE / SINGLECOLORMODE / SINGLECOLORMODE_
-    # REMESH) -- in PAINT mode elements are baked as terrain face materials,
-    # there's no separate mesh to cut. Buildings are intentionally excluded
-    # -- they sit on top of both terrain and elements untouched. This must
-    # run AFTER every element's own cross-element cuts above are finished,
-    # and BEFORE the trail-groove step below, which stays the true last
-    # boolean of the whole pipeline.
-    roads_obj = terrain.get("roads")
-    if roads_obj is not None and gen.elementMode in (
-        "SEPARATE",
-        "SINGLECOLORMODE",
-        "SINGLECOLORMODE_REMESH",
-    ):
-        # MANIFOLD requires BOTH operands to be watertight -- roads is the
-        # known carrier of a small residual non-manifold defect (see osm.py's
-        # create_roads notes), so it must be checked here too, not just the
-        # element being cut. Checking only elem_obj (as an earlier version of
-        # this fix did) let the solver stay MANIFOLD and silently no-op on
-        # every single cut whenever roads itself was the non-manifold side.
-        roads_manifold = is_mesh_manifold(
-            roads_obj
-        )  # For the boolean cuts, build a cutter from the Shapely road polygon
-        # (optionally buffered outward by el_sCutTolerance for a clean,
-        # uniform XY expansion -- vertex-normal dilation is unreliable on
-        # slab geometry with walls), extruded only from this road's own
-        # flush-bottom depth (see compute_full_depth_bottom_z) up past the
-        # terrain top. Falling back to raw roads_obj here would cut all the
-        # way down to the map floor, leaving no matching recess for the
-        # element to actually sit flush in -- always build the properly
-        # bounded cutter instead, regardless of the tolerance setting.
+
+def _cut_roads_from_terrain_and_elements(gen: GenerationContext, obj, terrain: dict):
+    """Cut roads out of the main terrain and all terrain elements."""
+    from mathutils import Vector
+
+    from . import geometry2d as _g2d
+    from .mesh_ops import (
+        boolean_operation,
+        is_mesh_manifold,
+        recalculateNormals,
+    )
+    from .osm.roads import _build_extruded_mesh
+    from .scene import remove_objects
+
+    try:
+        roads_obj = gen.roadObj
+        if roads_obj is None:
+            return
+
+        # Build a cutter from the Shapely road polygon, bounded properly.
         cut_tolerance = bpy.context.scene.tp3d.el_sCutTolerance
         roads_cutter = roads_obj
         _cutter_tmp = None
-        _road_poly = terrain.get("roads_polygon")
+        _road_poly = gen.roadUnion
         _roads_bz = terrain.get("roads_bottom_z")
         if _road_poly is not None and not _road_poly.is_empty and _roads_bz is not None:
-            from .osm.roads import _build_extruded_mesh
-
             _buffered = (
                 _road_poly.buffer(cut_tolerance, join_style="mitre")
                 if cut_tolerance > 0
@@ -1977,24 +1993,32 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                         ]
                 if _all_v2d and _all_tris:
                     _mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
-                    # Small safety margin below the road's own flush depth, purely
-                    # to guarantee boolean overlap -- not a return to map-floor depth.
                     _bz = _roads_bz - 0.05
                     _tz = max(v.z for v in _mc) + 20.0
                     _cutter_tmp = _build_extruded_mesh(_all_v2d, _all_tris, _bz, _tz)
                     recalculateNormals(_cutter_tmp)
                     roads_cutter = _cutter_tmp
 
-        # Cut roads out of the main terrain object too, not just the
-        # coloring elements -- otherwise the terrain piece and the roads
-        # piece occupy the same 3D space wherever a road runs, leaving no
-        # matching recess for the roads piece to sit in when assembled.
+        roads_manifold = is_mesh_manifold(roads_obj)
+
+        # Cut roads out of main terrain
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
             _ov.update(message="Cutting road from Terrain…")
         solver = "MANIFOLD" if (roads_manifold and is_mesh_manifold(obj)) else "EXACT"
         boolean_operation(obj, roads_cutter, solver=solver)
 
+        # Cut roads out of each terrain element
+        TERRAIN_PRIORITY_ORDER = [
+            "water",
+            "forest",
+            "scree",
+            "city",
+            "greenspace",
+            "farmland",
+            "glacier",
+            "ocean",
+        ]
         for key in TERRAIN_PRIORITY_ORDER:
             elem_obj = terrain.get(key)
             if not elem_obj:
@@ -2012,37 +2036,56 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
         if _cutter_tmp is not None:
             remove_objects(_cutter_tmp)
 
-    # Subtract the trail groove from buildings so it isn't blocked by 3D geometry.
-    # Roads are handled separately AFTER finalize_roads (which rebuilds roads.data
-    # from terrain cache -- any cut made here would be overwritten).
-    if thickerCurves:
-        elem_obj = terrain.get("buildings")
-        if elem_obj is not None:
-            _ov = _progress.ProgressOverlay.get()
-            if _ov.active:
-                _ov.update(message="Subtracting trail from Buildings…")
-            for tcrv in thickerCurves:
-                solver = (
-                    "MANIFOLD"
-                    if (is_mesh_manifold(elem_obj) and is_mesh_manifold(tcrv))
-                    else "EXACT"
-                )
-                boolean_operation(elem_obj, tcrv, solver=solver)
+    except Exception as e:
+        raise GenerationError(
+            f"Failed to cut roads from terrain and elements: {e}"
+        ) from e
 
-    # Rebuild the road top surface from the terrain-grid cache captured before
-    # any of the cuts above, so it shares the exact terrain/element resolution.
-    roads_obj = gen.roadObj
-    if roads_obj is not None:
+
+def _subtract_trail_from_buildings(
+    gen: GenerationContext, thickerCurves, terrain: dict
+):
+    """Subtract the trail groove from buildings so it isn't blocked by 3D geometry."""
+    from .mesh_ops import boolean_operation, is_mesh_manifold
+
+    try:
+        elem_obj = terrain.get("buildings")
+        if elem_obj is None:
+            return
+
+        _ov = _progress.ProgressOverlay.get()
+        if _ov.active:
+            _ov.update(message="Subtracting trail from Buildings…")
+        for tcrv in thickerCurves:
+            solver = (
+                "MANIFOLD"
+                if (is_mesh_manifold(elem_obj) and is_mesh_manifold(tcrv))
+                else "EXACT"
+            )
+            boolean_operation(elem_obj, tcrv, solver=solver)
+
+    except Exception as e:
+        raise GenerationError(f"Failed to subtract trail from buildings: {e}") from e
+
+
+def _finalise_roads(gen: GenerationContext, terrain: dict, trail_thick_ribbons):
+    """Rebuild the road top surface, subtract trails in 2D, and repair non‑manifold edges."""
+    from .osm.roads import finalize_roads
+    from . import geometry2d as _g2d
+
+    try:
+        roads_obj = gen.roadObj
+        if roads_obj is None:
+            return
+
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
             _ov.update(message="Roads: adding terrain detail…")
-        from .osm.roads import finalize_roads  # deferred — only needed here
 
         el_sHeight = gen.el_sHeight
-        full_depth = gen.elementMode not in ("PAINT", "CREATE_TEXTURE")
-        # Subtract the trail 2D footprint from roads_polygon before finalize_roads
-        # builds the mesh -- avoids a post-build 3D boolean on a non-manifold mesh.
+        full_depth = gen.elementMode != "PAINT"
         _roads_poly = gen.roadUnion
+        terrain_tris: list = terrain.get("_terrain_tris_cache")
         if trail_thick_ribbons and _roads_poly is not None:
             _trail_union = _g2d.union(trail_thick_ribbons)
             _roads_poly = _roads_poly.difference(_trail_union)
@@ -2052,24 +2095,18 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
         print(f"Full depth value before finallizing roads: {full_depth}")
         finalize_roads(
             roads_obj,
-            terrain.get("_terrain_tris_cache"),
+            terrain_tris,
             _roads_poly,
             el_sHeight,
             full_depth,
-            map_polygon=_g2d.get_map_polygon(obj),
+            map_polygon=gen.mapOutline,
         )
 
-        # Repair non-manifold boundary edges left by the terrain-grid clip and
-        # trail subtraction: select boundaries → limited dissolve → merge by
-        # distance → fill holes.  The four remaining "multiple face" issues are
-        # structural and ignored here.
+        # Repair non‑manifold boundary edges
         bpy.ops.object.select_all(action="DESELECT")
         roads_obj.select_set(True)
         bpy.context.view_layer.objects.active = roads_obj
         bpy.ops.object.mode_set(mode="EDIT")
-        # select_non_manifold's poll() requires vertex or edge select mode --
-        # fails silently as a Report: Error if mode was left on face-select
-        # (e.g. by a prior operator) instead of raising an exception.
         bpy.context.tool_settings.mesh_select_mode = (True, False, False)
         bpy.ops.mesh.select_all(action="DESELECT")
         bpy.ops.mesh.select_non_manifold(
@@ -2093,13 +2130,22 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
         bpy.ops.mesh.fill_holes(sides=0)
         bpy.ops.object.mode_set(mode="OBJECT")
 
-    if thickerCurves:
-        if bpy.app.debug:
-            obj_size = gen.size
+    except Exception as e:
+        raise GenerationError(f"Failed to finalise roads: {e}") from e
+
+
+def _cleanup_thicker_curves(thickerCurves, debug: bool, map_size: float):
+    """Either move thicker curves aside (debug) or delete them."""
+    try:
+        if debug:
             for tcrv in thickerCurves:
-                tcrv.location.x += obj_size
+                tcrv.location.x += map_size
         else:
+            from .scene import remove_objects
+
             remove_objects(thickerCurves)
+    except Exception as e:
+        raise GenerationError(f"Failed to clean up thicker curves: {e}") from e
 
 
 def _rg_apply_texture(gen: GenerationContext):
@@ -2117,7 +2163,7 @@ def _rg_apply_texture(gen: GenerationContext):
     # When SCM trail is on, curveObjs hold the converted trail-strip meshes
     # (single_color_mode_curve converts in-place); keep them as 3D geometry.
     # When tex_include_trail is off, keep curveObjs as PAINT-style overlay objects.
-    _tex_trail = bpy.context.scene.tp3d.tex_include_trail
+    _tex_trail = gen.texTrail
     if gen.curveObjs and not gen.singleColorMode and _tex_trail:
         for tcrv in list(gen.curveObjs):
             if tcrv and tcrv.name in bpy.data.objects:
@@ -2132,7 +2178,7 @@ def _rg_apply_texture(gen: GenerationContext):
     # --- Phase 15c: Tag companion objects with solid-colour paint textures ---
     # Without this the Orca exporter sees no paint data on these objects and
     # the slicer defaults them to extruder 1 regardless of material colour.
-    if gen.elementMode == "CREATE_TEXTURE":
+    if gen.useTexture:
         _mmu_palette = gen.elements.get("_mmu_palette")
         if _mmu_palette:
             from .texture import (
@@ -2251,10 +2297,10 @@ def _rg_export(gen: GenerationContext):
     # mesh; STL cannot store material data at all, so PAINT-mode maps must be
     # exported as OBJ to keep the colors. Mirrors the equivalent computation in
     # terrain.coloring_main().
-    # CREATE_TEXTURE: 3MF is the primary export; STL serves as no-addon fallback.
+    # When using a texture: 3MF is the primary export; STL serves as no-addon fallback.
     if gen.elementMode == "PAINT":
         exportformat = "OBJ"
-    elif gen.elementMode == "CREATE_TEXTURE":
+    elif gen.useTexture:
         exportformat = "STL"  # fallback only; 3MF addon handles the real export
     else:
         exportformat = "STL"
@@ -2265,7 +2311,7 @@ def _rg_export(gen: GenerationContext):
 
     if is_3mf_extension_installed() and not gen.autoExport:
         print("Exporting to 3mf")
-        if gen.curveObjs and (gen.elementMode != "CREATE_TEXTURE" or not gen.texTrail):
+        if gen.curveObjs and (not gen.useTexture or not gen.texTrail):
             for tcrv in curveObjs:
                 try:
                     if tcrv and tcrv.name in bpy.data.objects:
@@ -2274,9 +2320,7 @@ def _rg_export(gen: GenerationContext):
                     pass
         gen.mapObject.select_set(True)
 
-        if elements and (
-            gen.elementMode == "SEPARATE" or "SINGLECOLORMODE" in gen.elementMode
-        ):
+        if elements and gen.elementMode == "SINGLECOLORMODE":
             for elem_obj in elements.values():
                 if (
                     elem_obj
@@ -2284,7 +2328,7 @@ def _rg_export(gen: GenerationContext):
                     and elem_obj.name in bpy.data.objects
                 ):
                     elem_obj.select_set(True)
-        elif elements and gen.elementMode in ("PAINT", "CREATE_TEXTURE"):
+        elif elements and gen.elementMode == "PAINT":
             for key in ("roads", "buildings"):
                 elem_obj = elements.get(key)
                 if elem_obj and elem_obj.name in bpy.data.objects:
@@ -2321,14 +2365,12 @@ def _rg_export(gen: GenerationContext):
         export_selected_to_3mf(is_auto=True)
     else:
         print("exporting as STL/OBJ")
-        if curveObjs and (gen.elementMode != "CREATE_TEXTURE" or not gen.texTrail):
+        if curveObjs and (not gen.useTexture or not gen.texTrail):
             for tcrv in curveObjs:
                 export_to_STL(tcrv, exportformat)
         export_to_STL(gen.mapObject, exportformat)
 
-        if elements and (
-            gen.elementMode == "SEPARATE" or "SINGLECOLORMODE" in gen.elementMode
-        ):
+        if elements and gen.elementMode == "SINGLECOLORMODE":
             for elem_obj in elements.values():
                 if (
                     elem_obj
@@ -2975,16 +3017,17 @@ def runGeneration(type, locked_scale=None):
         overlay.update(0.95, "Coloring", "Applying single-color mode…")
         _rg_apply_single_color_mode(gen)
 
-        # --- Phase 15b: CREATE_TEXTURE — rasterise OSM polygons into UV texture ---
-        if gen.elementMode == "CREATE_TEXTURE":
+        # --- Phases 16-18: Assign materials, export, and finalize ---
+        overlay.update(0.97, "Finalizing", "Exporting files...")
+        _rg_assign_materials(gen)
+
+        # --- Phase 15b: Create a texture — rasterise OSM polygons into UV texture ---
+        if gen.useTexture:
             _rg_apply_texture(gen)
             _lo = bpy.context.scene.tp3d.lowestZ
             _hi = bpy.context.scene.tp3d.highestZ
             overlay.add_completed_step(f"Terrain applied  —  z {_lo:.1f} to {_hi:.1f}")
             overlay.update(0.96, "Texture", "Rasterising OSM texture…")
-        # --- Phases 16-18: Assign materials, export, and finalize ---
-        overlay.update(0.97, "Finalizing", "Exporting files...")
-        _rg_assign_materials(gen)
 
         # Finish and Export
         _rg_export(gen)
@@ -3511,7 +3554,7 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
         print(f"curveObjs: {curveObjs} ")
         _rg_apply_single_color_mode(zobj, curveObjs, terrain, props)
 
-        # CREATE_TEXTURE: rasterise OSM polygons into a UV paint texture.
+        # Create a texture: rasterise OSM polygons into a UV paint texture.
         # _rg_build_terrain_elements already populated terrain['_osm_polygons']
         # and discarded the road mesh; we just need to bake the texture here.
         if props["elementMode"] == "CREATE_TEXTURE":
