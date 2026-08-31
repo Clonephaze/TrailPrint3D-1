@@ -294,7 +294,7 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
     return results
 
 
-def coloring_main(map, kind="WATER", prefetched_tiles=None):
+def coloring_main(map, kind="WATER", prefetched_tiles=None, cutter_out=None):
     from . import geometry2d as _g2d  # Shapely-based 2D geometry helpers
     from .geo import (
         convert_to_blender_coordinates,  # deferred to avoid circular import at load time
@@ -332,8 +332,18 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     # union with a giant, mostly-irrelevant shape.
     _qbx1, _qby1, _ = convert_to_blender_coordinates(minLat, minLon, 0, 0)
     _qbx2, _qby2, _ = convert_to_blender_coordinates(maxLat, maxLon, 0, 0)
+    # minLat/minLon/maxLat/maxLon come from the terrain mesh's own bounding
+    # box (compute_and_store_tile_bounds), so this rectangle would otherwise
+    # touch the terrain's true edge exactly -- a 1mm outward margin on every
+    # side keeps this coarse pre-clip from ever being the binding boundary,
+    # leaving the real map-shape INTERSECT (against the actual terrain mesh,
+    # later) as the sole determinant of the final edge everywhere, including
+    # right at a non-rectangular shape's tangent points against its own bbox.
+    _qb_margin = 1.0
+    _qbx_lo, _qbx_hi = min(_qbx1, _qbx2) - _qb_margin, max(_qbx1, _qbx2) + _qb_margin
+    _qby_lo, _qby_hi = min(_qby1, _qby2) - _qb_margin, max(_qby1, _qby2) + _qb_margin
     _query_bbox_poly = _g2d.xy_ring_to_polygon([
-        (_qbx1, _qby1), (_qbx2, _qby1), (_qbx2, _qby2), (_qbx1, _qby2),
+        (_qbx_lo, _qby_lo), (_qbx_hi, _qby_lo), (_qbx_hi, _qby_hi), (_qbx_lo, _qby_hi),
     ])
 
     def _clip_to_query_bbox(poly):
@@ -749,6 +759,22 @@ def coloring_main(map, kind="WATER", prefetched_tiles=None):
     bm.to_mesh(merged_object.data)
     bm.free()
     merged_object.location.z -= 1
+
+    # SEPARATE mode wants to later cut this same footprint out of the
+    # terrain too (see separate_mode_recess_cutter_from_prism in
+    # mesh_ops.py). Hand the caller a copy of this tall prism BEFORE the
+    # upcoming INTERSECT mutates merged_object -- INTERSECT(map, prism) and
+    # DIFFERENCE(map, prism) are complementary halves of the same boolean
+    # computation against the same two meshes, so reusing this exact prism
+    # (instead of re-deriving a boundary from the already-intersected result)
+    # keeps the element's shape and the terrain recess bit-consistent at the
+    # map's outer edge, with no coincident-face precision drift.
+    if elementMode == "SEPARATE" and cutter_out is not None:
+        _prism = merged_object.copy()
+        _prism.data = merged_object.data.copy()
+        _prism.name = f"{name}_{kind}_prism"
+        bpy.context.collection.objects.link(_prism)
+        cutter_out['prism'] = _prism
 
     _t_bool = time.time()
 

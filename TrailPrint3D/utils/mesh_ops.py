@@ -2606,6 +2606,146 @@ def single_color_mode_mesh_remesh(original, map, tolerance = None):
     return obj
 
 
+def separate_mode_recess_cutter(original, map, tolerance=None):
+    """Build a terrain recess cutter from ORIGINAL's own bottom-face footprint
+    and subtract it from `map` -- for SEPARATE mode, which always wants an
+    exact, zero-tolerance recess.
+
+    Unlike single_color_mode_mesh_remesh, this does NOT reconstruct the 2D
+    footprint via Shapely. It reuses ORIGINAL's own boundary vertices
+    verbatim -- they were produced by a real MANIFOLD boolean-intersect with
+    the terrain in coloring_main, so they are already bit-exact with the
+    terrain's own edge. Reconstructing the footprint independently (even
+    with a tiny buffer) risks a hairline sliver of un-cut terrain wall at the
+    map's outer edge, from the mismatch between two independently
+    tessellated boundaries. `tolerance` is accepted only so this drops into
+    the same call signature as single_color_mode_mesh_remesh /
+    single_color_mode_mesh_wireframe; it is ignored.
+    """
+    if not original.data.vertices:
+        return None
+
+    mw = original.matrix_world.copy()
+    mw_inv = mw.inverted()
+
+    cutter = original.copy()
+    cutter.data = original.data.copy()
+    bpy.context.collection.objects.link(cutter)
+    cutter.name = f"{original.name}_cutter"
+
+    bm = bmesh.new()
+    bm.from_mesh(cutter.data)
+    bm.normal_update()
+    bottom_faces = [f for f in bm.faces if f.normal.z < -0.5]
+    if not bottom_faces:
+        bm.free()
+        bpy.data.objects.remove(cutter, do_unlink=True)
+        return None
+    keep = set(bottom_faces)
+    to_delete = [f for f in bm.faces if f not in keep]
+    bmesh.ops.delete(bm, geom=to_delete, context='FACES')
+    if not bm.verts:
+        bm.free()
+        bpy.data.objects.remove(cutter, do_unlink=True)
+        return None
+
+    # Flatten the cap onto its own lowest point (world space), then write
+    # back through the inverse matrix -- cheap in the plain-translation case
+    # these element objects actually use, and still correct if a future
+    # caller adds rotation/scale.
+    floor_z = min((mw @ v.co).z for v in bm.verts)
+    for v in bm.verts:
+        world_co = mw @ v.co
+        world_co.z = floor_z
+        v.co = mw_inv @ world_co
+
+    if map is not None and map.data.vertices:
+        mw_map = map.matrix_world
+        map_top_z = max((mw_map @ v.co).z for v in map.data.vertices)
+        prism_height = max(10.0, map_top_z - floor_z + 2.0)
+    else:
+        prism_height = 30.0
+
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    ret = bmesh.ops.extrude_face_region(bm, geom=bm.faces[:])
+    new_verts = [v for v in ret["geom"] if isinstance(v, bmesh.types.BMVert)]
+    local_up = mw_inv.to_3x3() @ Vector((0, 0, prism_height))
+    bmesh.ops.translate(bm, verts=new_verts, vec=local_up)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(cutter.data)
+    bm.free()
+    cutter.data.update()
+
+    boolean = map.modifiers.new(name="Boolean", type='BOOLEAN')
+    boolean.operation = 'DIFFERENCE'
+    boolean.object = cutter
+    boolean.solver = 'MANIFOLD'
+    applyModifier(map, boolean)
+
+    if "type" in original and original["type"] == "OTHER":
+        original["ExportGroup"] = 0
+
+    return cutter
+
+
+def separate_mode_recess_cutter_from_prism(prism, original, map):
+    """Build a terrain recess cutter by reusing PRISM -- the same tall cutter
+    that produced ORIGINAL via a boolean INTERSECT with `map` in
+    coloring_main -- instead of re-deriving a boundary from ORIGINAL itself
+    (that's what separate_mode_recess_cutter does, for callers that don't
+    have PRISM available, e.g. ocean).
+
+    INTERSECT(map, prism) and DIFFERENCE(map, prism) are complementary
+    halves of the identical boolean computation against the identical two
+    meshes, so reusing `prism` here keeps ORIGINAL's own shape and the
+    terrain recess bit-consistent at the map's outer edge -- no second-
+    generation boundary, no coincident-face drift, no hairline uncut sliver.
+
+    PRISM spans the model's full height (it's built to comfortably cut clean
+    through the terrain in coloring_main), so it can't be subtracted as-is --
+    that would punch a hole through the whole terrain slab down to the base
+    plate instead of a shallow recess. Only its flat bottom cap is raised up
+    to ORIGINAL's own current floor depth (so Insert-style Z shifts on
+    ORIGINAL are respected); PRISM is a straight vertical extrusion with a
+    constant cross-section, so raising the bottom leaves the remaining XY
+    boundary/side walls untouched and bit-identical to PRISM's own.
+    """
+    if prism is None or original is None or not original.data.vertices:
+        return None
+
+    floor_z = min((original.matrix_world @ v.co).z for v in original.data.vertices)
+
+    cutter = prism.copy()
+    cutter.data = prism.data.copy()
+    bpy.context.collection.objects.link(cutter)
+    cutter.name = f"{original.name}_cutter"
+
+    mw = prism.matrix_world.copy()
+    mw_inv = mw.inverted()
+
+    bm = bmesh.new()
+    bm.from_mesh(cutter.data)
+    bm.verts.ensure_lookup_table()
+    world_zs = [(mw @ v.co).z for v in bm.verts]
+    bottom_world_z = min(world_zs)
+    for v, wz in zip(bm.verts, world_zs):
+        if abs(wz - bottom_world_z) < 1e-4:
+            world_co = mw @ v.co
+            world_co.z = floor_z
+            v.co = mw_inv @ world_co
+    bm.to_mesh(cutter.data)
+    bm.free()
+    cutter.data.update()
+
+    boolean = map.modifiers.new(name="Boolean", type='BOOLEAN')
+    boolean.operation = 'DIFFERENCE'
+    boolean.object = cutter
+    boolean.solver = 'MANIFOLD'
+    applyModifier(map, boolean)
+
+    return cutter
+
+
 def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode = False,):
 
     if mergeobject == None:

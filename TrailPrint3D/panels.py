@@ -307,6 +307,9 @@ class TP3D_PT_advanced(bpy.types.Panel):
                     flatten_row = col.row()
                     flatten_row.enabled = props.elementMode != "PAINT"
                     flatten_row.prop(props, "col_wFlattenTop")
+                    insert_row = col.row()
+                    insert_row.enabled = "SINGLECOLORMODE" in props.elementMode or props.elementMode == "SEPARATE"
+                    insert_row.prop(props, "col_wInsert")
 
                 sub = box.box()
                 sub.label(text=_("Forests"), icon='FORCE_WIND')

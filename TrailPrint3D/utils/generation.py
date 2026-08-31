@@ -670,7 +670,8 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
         if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1):
             if map_km <= max_size:
                 _advance_elem_progress(phase, msg)
-                _result = coloring_main(obj, key.upper(), prefetched_tiles=_all_prefetched.get(key.upper(), {}))
+                _cutter_out = {}
+                _result = coloring_main(obj, key.upper(), prefetched_tiles=_all_prefetched.get(key.upper(), {}), cutter_out=_cutter_out)
                 if key == 'water':
                     _water_result = _result
                 if _result is _COLORING_EMPTY:
@@ -687,7 +688,16 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                     _ov.set_fetch_done(key, success=False)
                 else:
                     terrain[key] = _result
+                    if _cutter_out.get('prism') is not None:
+                        terrain[f'{key}_prism'] = _cutter_out['prism']
                     _ov.set_fetch_done(key, success=True)
+                # coloring_main hands back the SEPARATE-mode recess prism (see
+                # separate_mode_recess_cutter_from_prism) via cutter_out only
+                # on the success path above -- if the element ended up empty/
+                # filtered/painted/None instead, the prism it already built is
+                # an orphan nothing will use, so it needs cleaning up here.
+                if terrain.get(f'{key}_prism') is None and _cutter_out.get('prism') is not None:
+                    bpy.data.objects.remove(_cutter_out['prism'], do_unlink=True)
                 if key == 'water' and _water_ocean_combined:
                     # Ocean will complete this chip; hold at 50%
                     _ov.set_fetch_progress('water', 0.5)
@@ -831,6 +841,8 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         is_mesh_manifold,
         recalculateNormals,
         selectBottomFaces,
+        separate_mode_recess_cutter,
+        separate_mode_recess_cutter_from_prism,
         single_color_mode_curve,
         single_color_mode_mesh_remesh,
         single_color_mode_mesh_wireframe,
@@ -927,7 +939,22 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                 for tcrv in curveObjs:
                     boolean_operation(elem_obj, tcrv)
 
-    if props['elementMode'] in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
+    # SEPARATE mode reuses the same per-element cutter loop as SCM to
+    # subtract water/forest/scree/city/greenspace/farmland/glacier/ocean out
+    # of the terrain (roads and buildings stay excluded, same as SCM). It
+    # always wants an exact, zero-tolerance recess -- flush, not a printed
+    # clearance gap. Where coloring_main captured the tall prism it used to
+    # build the element (terrain[f'{key}_prism'] -- every COLORING_ELEMENTS
+    # kind except ocean, which doesn't go through coloring_main), that prism
+    # is reused directly as the terrain cutter via
+    # separate_mode_recess_cutter_from_prism: INTERSECT(map, prism) (which
+    # built the element) and DIFFERENCE(map, prism) (which cuts the recess)
+    # are complementary halves of the same computation against the same two
+    # meshes, so the recess and the element boundary stay bit-consistent at
+    # the map's outer edge -- no reconstructed boundary, no coincident-face
+    # drift. separate_mode_recess_cutter (deriving the boundary from the
+    # element's own mesh) is the fallback for keys without a captured prism.
+    if props['elementMode'] in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH", "SEPARATE"):
 
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
@@ -935,8 +962,8 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         # Maps key -> thicker mesh object, filled as each element is processed.
         thicker_by_key = {}
 
-
-        _scm_fn = single_color_mode_mesh_remesh if props['elementMode'] == "SINGLECOLORMODE_REMESH" else single_color_mode_mesh_wireframe
+        if props['elementMode'] != "SEPARATE":
+            _scm_fn = single_color_mode_mesh_remesh if props['elementMode'] == "SINGLECOLORMODE_REMESH" else single_color_mode_mesh_wireframe
 
         _active_scm_keys = [k for k in TERRAIN_PRIORITY_ORDER if terrain.get(k)]
         _n_scm = max(1, len(_active_scm_keys))
@@ -953,7 +980,35 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                     message=f"Single-color: remeshing {key.capitalize()} ({_scm_done + 1}/{_n_scm})…",
                 )
 
-            thicker = _scm_fn(elem_obj, obj)
+            # Water-only "Insert": sink the water piece down in Z before the
+            # cutter is built from its own geometry, so the terrain recess
+            # goes exactly as much deeper as the piece sinks -- the piece
+            # itself just translates rigidly, so its own thickness is
+            # unaffected. The captured prism (if any) has to move with it,
+            # since separate_mode_recess_cutter_from_prism reads the recess
+            # floor depth from elem_obj but the XY boundary from the prism.
+            if key == 'water':
+                _wInsert = bpy.context.scene.tp3d.col_wInsert
+                if _wInsert:
+                    elem_obj.location.z -= _wInsert
+                    _wPrism = terrain.get('water_prism')
+                    if _wPrism is not None:
+                        _wPrism.location.z -= _wInsert
+                    # matrix_world is not refreshed until the next depsgraph
+                    # update -- the cutter builder reads it immediately below
+                    # to place the cutter, so without this the recess would
+                    # still be built at the pre-shift height even though
+                    # elem_obj itself visibly moved.
+                    bpy.context.view_layer.update()
+
+            if props['elementMode'] == "SEPARATE":
+                _prism = terrain.get(f'{key}_prism')
+                if _prism is not None:
+                    thicker = separate_mode_recess_cutter_from_prism(_prism, elem_obj, obj)
+                else:
+                    thicker = separate_mode_recess_cutter(elem_obj, obj)
+            else:
+                thicker = _scm_fn(elem_obj, obj)
             thicker_by_key[key] = thicker
 
             if _ov.active:
@@ -981,16 +1036,20 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             for thicker in thicker_by_key.values():
                 remove_objects(thicker)
 
-    if props['elementMode'] == "SEPARATE" and thickerCurves:
-        for key in TERRAIN_PRIORITY_ORDER:
-            elem_obj = terrain.get(key)
-            if not elem_obj:
-                continue
-            _ov = _progress.ProgressOverlay.get()
-            if _ov.active:
-                _ov.update(message=f"Cutting trail from {key.capitalize()}…")
-            for tcrv in thickerCurves:
-                boolean_operation(elem_obj, tcrv)
+        # The captured prisms (terrain[f'{key}_prism']) are only consumed as
+        # a template inside separate_mode_recess_cutter_from_prism, which
+        # duplicates them rather than using them directly -- the originals
+        # are still sitting in the scene and need their own cleanup here.
+        if props['elementMode'] == "SEPARATE":
+            for key in TERRAIN_PRIORITY_ORDER:
+                _prism = terrain.pop(f'{key}_prism', None)
+                if _prism is None:
+                    continue
+                if bpy.app.debug:
+                    obj_size = props.get('size', 100)
+                    _prism.location.x += obj_size
+                else:
+                    remove_objects(_prism)
 
     # Cut roads out of every finalized terrain element (element = element -
     # road), so a road crossing water/forest/city/etc. leaves a continuous
