@@ -186,7 +186,7 @@ def _rasterize_geometry(geom, arr, color_float, bg_float,
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-def setup_paint_texture(gen: GenerationContext, resolution=2048):
+def setup_paint_texture(gen: GenerationContext):
     """Rasterize OSM polygons into a texture and configure terrain_obj for 3MF paint export.
 
     Parameters
@@ -206,6 +206,7 @@ def setup_paint_texture(gen: GenerationContext, resolution=2048):
       3mf_paint_extruder_colors — triggering the 3MF addon's paint-segmentation
       export when use_orca_format="AUTO" or "PAINT".
     """
+    resolution = gen.texResolution
     terrain_obj = gen.mapObject
     mesh = terrain_obj.data
     cursor = bpy.context.scene.cursor.location
@@ -305,6 +306,7 @@ def setup_paint_texture(gen: GenerationContext, resolution=2048):
 
     tex_node = nodes.new(type="ShaderNodeTexImage")
     tex_node.image = image
+    tex_node.interpolation = "Closest"
     tex_node.location = (-300, 0)
 
     bsdf = nodes.new(type="ShaderNodeBsdfPrincipled")
