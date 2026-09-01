@@ -30,9 +30,7 @@ COASTLINE_MAXSIZE = 1000
 STREETS_MAJOR_ONLY_THRESHOLD = 100   # above this mapsize: motorway+trunk only
 STREETS_PRIMARY_THRESHOLD = 40       # above this mapsize: + primary+secondary
 
-# Single-color element recess gap. The terrain recess cut for each color
-# is dilated outward by toleranceElements * this factor. Setting to 0 will disable.
-SCM_ELEMENT_GAP_FACTOR = 0.3
+
 
 _elevation_cache = {}
 specialCollection = []

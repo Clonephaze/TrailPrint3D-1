@@ -241,6 +241,13 @@ def smooth_polygon_taubin(gen: GenerationContext, geom, pin_tolerance=1e-3, **ta
 
     _require_shapely()
     outline = gen.mapOutline
+    # mapOutline is stored in the map object's LOCAL space (pre-transform); geom
+    # is in absolute Mercator space, so translate to match before pin-checking.
+    if outline is not None and gen.mapObject is not None:
+        from shapely.affinity import translate as _shp_translate
+        outline = _shp_translate(
+            outline, xoff=gen.mapObject.location.x, yoff=gen.mapObject.location.y
+        )
     pin_geom = (
         outline.boundary
         if outline is not None and hasattr(outline, "boundary")
@@ -574,12 +581,13 @@ def _cdt_triangulate(polygon, exterior_xy, holes_xy):
             verts2d.append((x, y))
         return vert_map[k]
 
-    # Register ring vertices first, in order, so wall index ranges are stable.
-    for x, y in exterior_xy:
-        _get(x, y)
+    # Register ring vertices first, in order, and record the actual indices
+    # (dedup may collapse coincident coords, so we can't assume linear offsets).
+    ring_idx_lists = []
+    ext_idxs = [_get(x, y) for x, y in exterior_xy]
+    ring_idx_lists.append(ext_idxs)
     for hole in holes_xy:
-        for x, y in hole:
-            _get(x, y)
+        ring_idx_lists.append([_get(x, y) for x, y in hole])
 
     tris = []
     for tri in tris_geom.geoms:
@@ -595,7 +603,7 @@ def _cdt_triangulate(polygon, exterior_xy, holes_xy):
             continue
         tris.append((ic, ib, ia))  # reverse CW→CCW to match earcut's convention
 
-    return (verts2d, tris) if tris else None
+    return (verts2d, tris, ring_idx_lists) if tris else None
 
 
 def polygon_to_mesh(name, polygon):
@@ -622,7 +630,7 @@ def polygon_to_mesh(name, polygon):
         ec = _cdt_triangulate(polygon, ext_xy, holes_xy)
         if ec is None:
             return None
-        verts2d, tris = ec
+        verts2d, tris, _ring_idx_lists = ec
         coords = [(x, y, 0.0) for x, y in verts2d]
         mesh = bpy.data.meshes.new(name)
         tobj = bpy.data.objects.new(name, mesh)
@@ -643,7 +651,7 @@ def polygon_to_mesh(name, polygon):
         bpy.context.collection.objects.link(tobj)
         if ec is None:
             return None
-        verts2d, tris = ec
+        verts2d, tris, _ = ec
         coords = [(x, y, 0.0) for x, y in verts2d]
         mesh.from_pydata(coords, [], tris)
         mesh.update()
@@ -1146,7 +1154,7 @@ def clip_triangles_to_polygon(
                 ec = _cdt_triangulate(part, ext, holes)
                 if ec is None:
                     continue
-                verts2d_part, tris_part = ec
+                verts2d_part, tris_part, _ = ec
                 local_idx = []
                 for vx, vy in verts2d_part:
                     vz = _bary_z(tri, vx, vy) + z_offset

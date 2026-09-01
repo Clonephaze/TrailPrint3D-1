@@ -55,6 +55,7 @@ class GenerationContext:
     col_cActive: bool
     col_grActive: bool
     col_glActive: bool
+    el_Smoothing: float
     el_bActive: bool
     el_sActive: bool
     el_sHeight: float
@@ -98,8 +99,9 @@ class GenerationContext:
     plateObj: Object | None = None
     shellObj: Object | None = None
     roadObj: Object | None = None
-    roadUnion: Object | None = None
+    roadUnion: Polygon | MultiPolygon | None = None
     useTexture: bool = False
+    texResolution: int = 2048
     texRoads: bool = False
     texTrail: bool = False
     fetchThread: threading.Thread | None = None

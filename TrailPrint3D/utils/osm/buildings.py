@@ -95,6 +95,12 @@ def _poly_rings(poly):
     return ext, holes
 
 
+def _ring_indices(ring_coords, verts2d):
+    """Return verts2d indices for each coord in ring_coords, using rounded lookup."""
+    vert_map = {(round(x, 8), round(y, 8)): i for i, (x, y) in enumerate(verts2d)}
+    return [vert_map[(round(x, 8), round(y, 8))] for x, y in ring_coords]
+
+
 def _extrude_prism(ext, holes, verts2d, cap_tris, z_bottom, z_top, b_verts, b_faces):
     """Shared plain prism: flat floor cap at z_bottom, flat roof cap at
     z_top, walls around the exterior ring and each hole. This is the flat-roof
@@ -109,16 +115,15 @@ def _extrude_prism(ext, holes, verts2d, cap_tris, z_bottom, z_top, b_verts, b_fa
     for ia, ib, ic in cap_tris:
         b_faces.append([base + ic, base + ib, base + ia])  # floor (down)
         b_faces.append([base + n2 + ia, base + n2 + ib, base + n2 + ic])  # roof (up)
-    start = 0
     for ring in [ext] + holes:
-        rn = len(ring)
+        ring_idxs = _ring_indices(ring, verts2d)
+        rn = len(ring_idxs)
         for i in range(rn):
-            a = base + start + i
-            b = base + start + (i + 1) % rn
-            c = base + n2 + start + (i + 1) % rn
-            d = base + n2 + start + i
+            a = base + ring_idxs[i]
+            b = base + ring_idxs[(i + 1) % rn]
+            c = base + n2 + ring_idxs[(i + 1) % rn]
+            d = base + n2 + ring_idxs[i]
             b_faces.append([a, b, c, d])
-        start += rn
 
 
 def _add_height_field_roof(
@@ -137,16 +142,15 @@ def _add_height_field_roof(
     for ia, ib, ic in cap_tris:
         b_faces.append([base + ic, base + ib, base + ia])
         b_faces.append([base + n2 + ia, base + n2 + ib, base + n2 + ic])
-    start = 0
     for ring in [ext] + holes:
-        rn = len(ring)
+        ring_idxs = _ring_indices(ring, verts2d)
+        rn = len(ring_idxs)
         for i in range(rn):
-            a = base + start + i
-            b = base + start + (i + 1) % rn
-            c = base + n2 + start + (i + 1) % rn
-            d = base + n2 + start + i
+            a = base + ring_idxs[i]
+            b = base + ring_idxs[(i + 1) % rn]
+            c = base + n2 + ring_idxs[(i + 1) % rn]
+            d = base + n2 + ring_idxs[i]
             b_faces.append([a, b, c, d])
-        start += rn
 
 
 def _skillion_heights(verts2d, z_eave, roof_height, roof_angle_deg, direction_deg):
@@ -342,7 +346,7 @@ def _add_stadium_bowl(
         ec = g2d._cdt_triangulate(_annulus_poly, ext_o, annulus_holes)
         if ec is None:
             return i > 0
-        verts2d_a, cap_tris_a = ec
+        verts2d_a, cap_tris_a, _ = ec
         _extrude_prism(
             ext_o, annulus_holes, verts2d_a, cap_tris_a, z_floor, z_top, b_verts, b_faces
         )
@@ -352,7 +356,7 @@ def _add_stadium_bowl(
     if ext_c is not None:
         ec = g2d._cdt_triangulate(rings[-1], ext_c, holes_c)
         if ec is not None:
-            verts2d_c, cap_tris_c = ec
+            verts2d_c, cap_tris_c, _ = ec
             _extrude_prism(
                 ext_c, holes_c, verts2d_c, cap_tris_c,
                 z_floor, z_floor + actual_tier_rise * 0.1,
@@ -394,7 +398,7 @@ def _append_building(
     ec = g2d._cdt_triangulate(poly, ext, holes or [])
     if ec is None:
         return
-    verts2d, cap_tris = ec
+    verts2d, cap_tris, _ = ec
     _vx = [v[0] for v in verts2d]
     _vy = [v[1] for v in verts2d]
     zs = sample_z(_vx, _vy)

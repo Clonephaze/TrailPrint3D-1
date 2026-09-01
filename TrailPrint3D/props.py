@@ -476,8 +476,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     fixedElevationScale: BoolProperty(name= _("FixedElevationScale(10mm)"), default=False, description = _("Force the elevation to be 10mm High from highest to lowest point (ElevationScale still applies after that)")) # type: ignore
     singleColorMode: BoolProperty(name= _("SingleColorMode Trail"), default = False, description = _("Enable this if you don't have a Multicolor printer")) # type: ignore
     singleColorModeHeight: FloatProperty(name= _("Trail Height"), default = 0.4, min=0.0, max=10.0, description = _("How far the SCM trail strip rises above the terrain surface (mm). 0 = flush with terrain. Works the same as Road Height.")) # type: ignore
-    tolerance: FloatProperty(name= _("SingleColorMode Tolerance"), default = 0.2, description=_("Tolerance of the Trail for the SingleColorMode")) # type: ignore
-    toleranceElements: FloatProperty(name= _("ToleranceElements"), default = 0.4, description= _("Tolerance of the Elements (Water, Forest) for the SingleColorMode")) # type: ignore
+    tolerance: FloatProperty(name= _("SingleColorMode Tolerance"), default = 0.2, description=_("Tolerance of the Trail for the SingleColorMode"), min=0) # type: ignore
+    toleranceElements: FloatProperty(name= _("ToleranceElements"), default = 0.12, description= _("Tolerance of the Elements (Water, Forest) for the SingleColorMode"), min=0) # type: ignore
     disableCache: BoolProperty(name= _("disableCache"), default = False, description = _("Disable cache if you encounter random holes in your mesh")) # type: ignore
     disableElevationOutlierFix: BoolProperty(name= _("Disable Buggy Elevation Fixes"), default = False, description = _("Disable automatic correction of statistically outlying elevation values. Enable this if a real peak/valley is being incorrectly flattened")) # type: ignore
     ccacheSize: IntProperty(name = _("Cache Size"), default = 50000, min = 0) # type: ignore
@@ -506,6 +506,14 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=True,
         description=_("Rasterize the trail footprint into the paint texture (terrain under trail coloured red)")
     )
+    tex_resolution: IntProperty(
+        name=_("Texture Resolution"),
+        description= "Customize the resolution used when creating the texture.",
+        step= 1024,
+        min= 1024,
+        default= 2048,
+        max= 8192,
+    )
     elementModeInset: FloatProperty(name=_("Clip Inset"), default=2.0, min=0.0, description=_("Thickness of solid frame for SCM-elements"))# type: ignore
     col_osmSmoothing: FloatProperty(name=_("Smoothing"), default=0.0, min=0.0, max=1.0, subtype='FACTOR', description=_("Rounds element polygons, ignores water. 0 = off, 0.5 = slight, 1.0 = heavy"))# type: ignore
 
@@ -516,17 +524,17 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_wSmallRiversActive: BoolProperty(name= _("Small Rivers"), default=False, description = _("smaller Streams, canals, ditches and other minor waterways are not included in default water setting")) # type: ignore
     col_wBigRiversActive: BoolProperty(name= _("Big Rivers"), default=False, description = _("Major named rivers (waterway with wikidata tag. Usually already part of water setting)")) # type: ignore
     col_fActive: BoolProperty(name= _("Include Forests"), default=False, description = _("For Maps < 50Km Recommended")) # type: ignore
-    col_fArea: FloatProperty(name= _("Threshold"), default = 10, description = _("Forests smaller than the threshold won't be included")) # type: ignore
+    col_fArea: FloatProperty(name= _("Threshold"), default = 10, description = _("Forests smaller than the threshold won't be included"), min=0) # type: ignore
     col_scrActive: BoolProperty(name= _("Include Scree"), default=False, description = _("Rocky/stony terrain. For Maps < 1000Km Recommended")) # type: ignore
-    col_scrArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Scree patches smaller than the threshold won't be included")) # type: ignore
+    col_scrArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Scree patches smaller than the threshold won't be included"), min=0) # type: ignore
     col_cActive: BoolProperty(name= _("Include City Boundaries"), default=False, description = _("For Maps < 100Km Recommended")) # type: ignore
-    col_cArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Cities smaller than the threshold won't be included")) # type: ignore
+    col_cArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Cities smaller than the threshold won't be included"), min=0) # type: ignore
     col_grActive: BoolProperty(name= _("Include Greenspaces"), default=False, description = _("Parks, gardens, grass and other urban green areas. For Maps < 100Km Recommended")) # type: ignore
-    col_grArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Greenspaces smaller than the threshold won't be included")) # type: ignore
+    col_grArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Greenspaces smaller than the threshold won't be included"), min=0) # type: ignore
     col_faActive: BoolProperty(name= _("Include Farmland"), default=False, description = _("Fetches landuse=farmland and landuse=farmyard. For Maps < 1000Km Recommended")) # type: ignore
-    col_faArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Farmland patches smaller than the threshold won't be included")) # type: ignore
+    col_faArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Farmland patches smaller than the threshold won't be included"), min=0) # type: ignore
     col_glActive: BoolProperty(name= _("Include Glaciers"), default=False, description = _("For Maps < 1000Km Recommended")) # type: ignore
-    col_glArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Glaciers smaller than the threshold won't be included")) # type: ignore
+    col_glArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Glaciers smaller than the threshold won't be included"), min=0) # type: ignore
     col_KeepManifold: BoolProperty(name= _("Keep Non-Manifold Objects"), default=False, description = _("Keep Broken/Non-Manifold objects")) # type: ignore
     el_bActive: BoolProperty(name= _("Include Buildings"), default=False, description = _("For Maps < 5Km Reccomended")) # type: ignore
     el_bHeightMultiplier: FloatProperty(name= _("Height Multiplier"), default=1.0, min=0.01, soft_max=10.0, description=_("Multiplies building height")) # type: ignore
@@ -535,6 +543,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     el_sMultiplier: FloatProperty(name= _("Road Width Multiplier"), default = 1, description = _("To make Roads thicker or thinner")) # type: ignore
     el_sHeight: FloatProperty(name= _("Road Height"), default = 0.4, min=0.0, description = _("Height of road geometry above terrain")) # type: ignore
     el_sCutTolerance: FloatProperty(name= _("Road Cutout Tolerance"), default = 0.2, min=0.0, description = _("Extra clearance added around roads when cutting their footprint out of terrain/elements in SingleColorMode, so the printed road piece seats without an overly tight fit. Same idea as Tolerance Elements, but for roads.")) # type: ignore
+    el_sCutDepth: FloatProperty(name= _("Road Cut Depth"), default = 0.05, min=0.0, description = _("Extra depth added below the road's bottom face when cutting its slot out of the terrain in SingleColorMode. Increase if the road piece binds vertically.")) # type: ignore
     el_sExcludeAlleys: BoolProperty(name= _("Exclude Alleys/Driveways"), default=True, description = _("Drops OSM highway=service ways explicitly tagged service=alley, service=driveway, service=parking_aisle, or service=drive-through -- the actual back-alley/driveway/parking-lot clutter -- while keeping plain service roads. Uses OSM's own tagging instead of guessing from geometry (a single street is often split into many short ways at every intersection, so filtering by length would wrongly cull real streets too).")) # type: ignore
 
     show_water: BoolProperty(name= _("Water & Ocean"), default=False) # type: ignore

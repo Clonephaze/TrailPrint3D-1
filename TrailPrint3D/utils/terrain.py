@@ -229,12 +229,13 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None):
     else:
         col_Area = 0.0
 
-    elementMode = bpy.context.scene.tp3d.elementMode
+    elementMode = gen.elementMode
     exportformat = "STL"
     if elementMode == "PAINT":
         exportformat = "OBJ"
 
     bpy.context.scene.tp3d.exportformat = exportformat
+    gen.exportFormat = exportformat
     map = gen.mapObject
     name = map.name
 
@@ -256,7 +257,7 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None):
     neg_geoms = []
     _dbg_filtered_small = []  # polygons dropped for being below col_Area (debug only)
 
-    scaleHor = bpy.context.scene.tp3d.sScaleHor
+    scaleHor = gen.sScaleHor
     streamWidthMultiplier = bpy.context.scene.tp3d.col_wStreamWidth
     half_width = 1.0 * scaleHor * 0.02 * streamWidthMultiplier
 
@@ -468,10 +469,25 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None):
 
     # ── Shapely: union all → subtract negatives → area-filter → ONE mesh ────────────
     _t_shapely = time.time()
-    _smooth_r = int(bpy.context.scene.tp3d.col_osmSmoothing * 20)
+    _smooth_r = int(gen.el_Smoothing * 20)
     merged_pos = _g2d.union(pos_geoms)
     merged_neg = _g2d.union(neg_geoms)
     final_geom = _g2d.subtract(merged_pos, merged_neg)
+    # Clip to the map outline so boundary vertices land exactly on mapOutline.boundary
+    # before smoothing — the Taubin pin check only works when vertices are precisely on
+    # that boundary, which the query-bbox clip above doesn't guarantee for non-rect maps.
+    # mapOutline is in local space (origin-centered); translate to absolute Mercator so
+    # it matches the coordinate space of final_geom (same space as convert_to_blender_coordinates).
+    if gen.mapOutline is not None and gen.mapObject is not None and final_geom is not None and not final_geom.is_empty:
+        from shapely.affinity import translate as _shp_translate
+        _map_outline_abs = _shp_translate(
+            gen.mapOutline,
+            xoff=gen.mapObject.location.x,
+            yoff=gen.mapObject.location.y,
+        )
+        _clipped = final_geom.intersection(_map_outline_abs)
+        if _clipped is not None and not _clipped.is_empty:
+            final_geom = _g2d.validate(_clipped)
     _pre_smooth_geom = final_geom if bpy.app.debug else None
     if _smooth_r > 0 and kind not in "WATER":
         smoothed_geom = _g2d.smooth_polygon_taubin(gen,
@@ -512,6 +528,9 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None):
         return _COLORING_FILTERED
 
     if gen.useTexture:
+        if col_Area > 0:
+            filtered_parts = [p for p in _g2d.iter_polygons(final_geom, min_area=col_Area)]
+            final_geom = _g2d.union(filtered_parts) if filtered_parts else final_geom
         return _ColoringTextureResult(kind=kind, polygon=final_geom)
 
     # Smooth raw OSM GPS-traced nodes so extruded solids have clean edges.
@@ -881,7 +900,7 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None):
     bpy.context.view_layer.objects.active = merged_object
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    if "SINGLECOLORMODE" not in elementMode:
+    if elementMode == "SINGLECOLORMODE":
         merged_object.location.z += 0.2
     merged_object.name = name + "_" + kind
 
@@ -1078,6 +1097,10 @@ def _polygonize_ocean_faces(open_chains, closed_loops, bbox_bl, rdp_eps=0.0):
     rdp_eps      -- simplification tolerance; 0 to skip
     """
     min_x, min_y, max_x, max_y = bbox_bl
+    if max_x <= min_x or max_y <= min_y:
+        # Degenerate bbox — scaleHor is 0, or min/max lat or lon are identical.
+        print(f"  [ocean] WARNING: degenerate bbox_bl {bbox_bl!r} — skipping ocean polygon")
+        return []
     tile_box = box(min_x, min_y, max_x, max_y)
 
     lines = []
@@ -1600,7 +1623,7 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
     return ocean_obj
 
 
-def createOcean(prefetched_coastline, scaleHor, tile):
+def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
     """Build the ocean layer mesh from pre-fetched coastline data.
 
     Uses the land-is-left OSM convention to construct the ocean polygon
@@ -1657,8 +1680,6 @@ def createOcean(prefetched_coastline, scaleHor, tile):
     # fetch_coastline_ways (inline Mercator with the same scaleHor).
     # We cannot use tile.bound_box in world space because the tile object may
     # have been translated by xTerrainOffset/yTerrainOffset.
-    tp3d = bpy.context.scene.tp3d
-
     def _ll_to_bl(lat, lon):
         x = _const.R * math.radians(lon) * scaleHor
         y = (
@@ -1668,8 +1689,8 @@ def createOcean(prefetched_coastline, scaleHor, tile):
         )
         return (x, y)
 
-    sw = _ll_to_bl(tp3d.minLat, tp3d.minLon)
-    ne = _ll_to_bl(tp3d.maxLat, tp3d.maxLon)
+    sw = _ll_to_bl(gen.tbMinLat, gen.tbMinLon)
+    ne = _ll_to_bl(gen.tbMaxLat, gen.tbMaxLon)
     bbox_bl = (
         min(sw[0], ne[0]),
         min(sw[1], ne[1]),
@@ -1685,7 +1706,7 @@ def createOcean(prefetched_coastline, scaleHor, tile):
     if gen.useTexture:
         # Skip building any Blender mesh — return the Shapely polygon so the
         # texture rasterizer can paint it like every other OSM element.
-        rdp_eps = getattr(tp3d, "el_oRdpEpsilon", 0.1)
+        rdp_eps = getattr(bpy.context.scene.tp3d, "el_oRdpEpsilon", 0.1)
         _ct_polys = _polygonize_ocean_faces(open_chains, closed_loops, bbox_bl, rdp_eps=rdp_eps)
         if not _ct_polys:
             _progress.WarningsOverlay.add_warning(

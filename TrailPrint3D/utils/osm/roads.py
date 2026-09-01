@@ -270,7 +270,7 @@ def _buffer_tiers_to_polygons(
         if ec is None:
             n_skipped += 1
             continue
-        verts2d_part, tris_part = ec
+        verts2d_part, tris_part, _ = ec
         base = len(all_verts_2d)
         all_verts_2d.extend(verts2d_part)
         for i, j, k in tris_part:
@@ -445,6 +445,7 @@ def finalize_roads(
     el_sHeight: float,
     full_depth: bool,
     map_polygon=None,
+    cut_depth: float = 0.05,
 ) -> None:
     """Rebuild the road mesh's top surface from the terrain's own triangulated
     grid, clipped to the road footprint, so it shares the exact same
@@ -500,10 +501,7 @@ def finalize_roads(
         return
 
     if full_depth:
-        # Same footprint/tris/el_sHeight that just produced top_verts, so this
-        # is guaranteed consistent with the surface actually being built here
-        # -- no separately-passed-in value that could drift out of sync.
-        bottom_z = min(z for _x, _y, z in top_verts) - el_sHeight
+        bottom_z = min(z for _x, _y, z in top_verts) - el_sHeight - cut_depth
         bottom_zs = [bottom_z] * len(top_verts)
     else:
         # top = terrain_z + el_sHeight; bottom = terrain_z (slab sits on surface, not inside it)

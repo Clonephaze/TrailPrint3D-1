@@ -1148,10 +1148,12 @@ def _clean_solid_mesh(mesh, dist=1e-6):
     manifold-check fallback), which looks like "the boolean just didn't
     happen". This is cheap insurance against that.
     """
+    mesh.validate(verbose=False)
     bm = bmesh.new()
     bm.from_mesh(mesh)
     bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=dist)
-    bmesh.ops.dissolve_degenerate(bm, dist=dist, edges=bm.edges[:])
+    if bm.edges:
+        bmesh.ops.dissolve_degenerate(bm, dist=dist, edges=bm.edges[:])
     bm.to_mesh(mesh)
     bm.free()
     mesh.update()
@@ -1192,7 +1194,7 @@ def _extrude_flat_polygon(g2d_mod, polygon, bottom_z, top_z, verts, faces):
     triangulate = g2d_mod._cdt_triangulate(polygon, ext, holes)
     if triangulate is None:
         return
-    verts2d, cap_tris = triangulate
+    verts2d, cap_tris, ring_idx_lists = triangulate
     n2 = len(verts2d)
     base = len(verts)
     for vx, vy in verts2d:
@@ -1202,16 +1204,14 @@ def _extrude_flat_polygon(g2d_mod, polygon, bottom_z, top_z, verts, faces):
     for ia, ib, ic in cap_tris:
         faces.append((base + ic, base + ib, base + ia))  # floor (down)
         faces.append((base + n2 + ia, base + n2 + ib, base + n2 + ic))  # roof (up)
-    start = 0
-    for ring in [ext] + holes:
-        rn = len(ring)
+    for ring_idxs in ring_idx_lists:
+        rn = len(ring_idxs)
         for i in range(rn):
-            a = base + start + i
-            b = base + start + (i + 1) % rn
-            c = base + n2 + start + (i + 1) % rn
-            d = base + n2 + start + i
+            a = base + ring_idxs[i]
+            b = base + ring_idxs[(i + 1) % rn]
+            c = base + n2 + ring_idxs[(i + 1) % rn]
+            d = base + n2 + ring_idxs[i]
             faces.append((a, b, c, d))
-        start += rn
 
 
 def _ensure_outward_normals(obj):
@@ -2003,9 +2003,7 @@ def single_color_mode_curve(
     if projectionObj == None:
         projectionObj = map
 
-    tol = (
-        bpy.context.scene.tp3d.tolerance
-    )  # Tolerance between Map and the Trail on each side (0.2 worked great so far)
+    tol = max(0.025, bpy.context.scene.tp3d.tolerance)
     minThickness = bpy.context.scene.tp3d.minThickness
     pathThickness = bpy.context.scene.tp3d.pathThickness
 
@@ -2216,6 +2214,7 @@ def single_color_mode_mesh_wireframe(original, map, tolerance=None):
     # Original = Element usually
     if tolerance == None:
         tolerance = bpy.context.scene.tp3d.toleranceElements
+    tolerance = max(0.025, tolerance)
 
     obj = original.copy()  # copy the object
     obj.data = obj.data.copy()  # copy the mesh (optional: if you want unique mesh)
@@ -2461,13 +2460,13 @@ def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
     recalculateNormals(obj)
 
 
-def single_color_mode_mesh_remesh(original, map, tolerance=None):
+def single_color_mode_mesh_remesh(original, map, tolerance=None, map_outline=None, shared_bottom_z=None):
 
     # Original = Element usually
 
     if tolerance == None:
         tolerance = bpy.context.scene.tp3d.toleranceElements
-
+    tolerance = max(0.025, tolerance)
     from . import geometry2d as _g2d  # deferred to avoid circular import at load time
     from .terrain import _count_non_manifold
 
@@ -2485,27 +2484,45 @@ def single_color_mode_mesh_remesh(original, map, tolerance=None):
         return None
 
     if tolerance > 0:
-        # Dilate the footprint OUTWARD by tolerance * SCM_ELEMENT_GAP_FACTOR.
-        # This makes the recess in the terrain slightly larger than the
-        # element, leaving a clean printed gap around it. Growing (not
-        # insetting) also: thickens thin rivers so they still cut instead of
-        # collapsing; shrinks the island holes by the same amount, giving a
-        # matching gap around enclosed land; and extends the cutter past the
-        # map edge at the boundary, so the terrain side walls get cut away too.
-        from .. import (
-            constants as _const,  # deferred to avoid circular import at load time
+        # Dilate the footprint OUTWARD by tolerance (mm) so the recess is
+        # slightly larger than the element, leaving a clean printed gap around
+        # it. Growing (not insetting) also: thickens thin rivers so they still
+        # cut instead of collapsing; shrinks island holes by the same amount,
+        # giving a matching gap around enclosed land; and extends the cutter
+        # past the map edge so terrain side walls are cut away too.
+        fp = fp.buffer(tolerance)
+        # unary_union merges self-overlapping regions produced when a
+        # curling-back peninsula's two expanded sides cross each other.
+        fp = _g2d.union([fp]) or fp
+        fp = _g2d.validate(fp)
+        if fp is None or fp.is_empty:
+            print(
+                "[single_color_mode_mesh_remesh] footprint empty after tolerance buffer -- skipping"
+            )
+            return None
+    elif map_outline is not None:
+        # tolerance == 0: fix coplanar-edge Boolean artifacts at the map
+        # boundary without introducing a visible interior gap. Buffer only the
+        # parts of the footprint that lie on the map outline by a sub-printable
+        # epsilon so the cutter always extends past the map's side wall there.
+        #
+        # map_outline is stored in the map's LOCAL space (pre-transform); the
+        # element footprint is in WORLD space.  Translate by map.location so
+        # both polygons share the same coordinate space before intersecting.
+        _EDGE_EPS = 0.02
+        from shapely.affinity import translate as _shp_translate
+        map_outline_ws = _shp_translate(
+            map_outline, xoff=map.location.x, yoff=map.location.y
         )
-
-        gap = tolerance * _const.SCM_ELEMENT_GAP_FACTOR
-        if gap > 0:
-            fp = fp.buffer(gap)
-            # unary_union merges self-overlapping regions produced when a
-            # curling-back peninsula's two expanded sides cross each other.
+        map_edge_zone = map_outline_ws.boundary.buffer(_EDGE_EPS)
+        boundary_part = fp.intersection(map_edge_zone)
+        if not boundary_part.is_empty:
+            fp = fp.union(boundary_part.buffer(_EDGE_EPS))
             fp = _g2d.union([fp]) or fp
             fp = _g2d.validate(fp)
             if fp is None or fp.is_empty:
                 print(
-                    "[single_color_mode_mesh_remesh] footprint empty after tolerance buffer -- skipping"
+                    "[single_color_mode_mesh_remesh] footprint empty after boundary epsilon -- skipping"
                 )
                 return None
 
@@ -2519,14 +2536,14 @@ def single_color_mode_mesh_remesh(original, map, tolerance=None):
         )
         return None
 
-    # World-space bottom of the element: the prism floor (recess depth) sits here.
     mw = original.matrix_world
-    bottom_z = min((mw @ v.co).z for v in original.data.vertices)
     if map is not None and map.data.vertices:
         mw_map = map.matrix_world
         map_top_z = max((mw_map @ v.co).z for v in map.data.vertices)
+        bottom_z = shared_bottom_z if shared_bottom_z is not None else min((mw @ v.co).z for v in original.data.vertices)
         PRISM_HEIGHT = max(10.0, map_top_z - bottom_z + 2.0)
     else:
+        bottom_z = shared_bottom_z if shared_bottom_z is not None else min((mw @ v.co).z for v in original.data.vertices)
         PRISM_HEIGHT = 30.0
 
     # Build each polygon part as its own mesh so _clean_solid_mesh only welds
@@ -2576,6 +2593,26 @@ def single_color_mode_mesh_remesh(original, map, tolerance=None):
     boolean.object = obj
     boolean.solver = "MANIFOLD"
     applyModifier(map, boolean)
+
+    # Pull the element's bottom vertices down to match the shared recess depth.
+    if shared_bottom_z is not None:
+        mw = original.matrix_world
+        elem_bottom_z = min((mw @ v.co).z for v in original.data.vertices)
+        if shared_bottom_z < elem_bottom_z - 1e-4:
+            # Scale z only: world_z = mw[2][0]*x + mw[2][1]*y + mw[2][2]*z + mw[2][3]
+            # For bottom verts x/y don't change, so solve: shared_bottom_z = mw[2][2]*v.co.z + offset
+            mw_inv = mw.inverted()
+            bm = bmesh.new()
+            bm.from_mesh(original.data)
+            threshold = elem_bottom_z + 1e-4
+            for v in bm.verts:
+                if (mw @ v.co).z <= threshold:
+                    world_co = mw @ v.co
+                    world_co.z = shared_bottom_z
+                    v.co = mw_inv @ world_co
+            bm.to_mesh(original.data)
+            bm.free()
+            original.data.update()
 
     if "type" in original and original["type"] == "OTHER":
         print("Setting ExportGroup to 0 for OTHER type")

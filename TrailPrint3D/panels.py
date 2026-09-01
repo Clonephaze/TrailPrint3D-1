@@ -282,7 +282,10 @@ class TP3D_PT_advanced(bpy.types.Panel):
             box.label(text=_("Terrain Elements"), icon='TEXTURE')
             box.prop(props, "elementMode")
             if "PAINT" in props.elementMode:
-                box.prop(props, "tex_use_texture")
+                tex_row = box.row()
+                tex_row.prop(props, "tex_use_texture")
+                if props.tex_use_texture == True:
+                    tex_row.prop(props, "tex_resolution")
             box.prop(props, "col_osmSmoothing")
 
             sub = box.box()
@@ -375,6 +378,7 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 row.prop(props, "el_sHeight")
                 if props.elementMode != "PAINT":
                     sub.prop(props, "el_sCutTolerance")
+                    sub.prop(props, "el_sCutDepth")
                 if props.tex_use_texture:
                     sub.prop(props, "tex_include_roads", icon='CHECKBOX_HLT' if props.tex_include_roads else 'CHECKBOX_DEHLT')
                 if props.el_sServiceActive:

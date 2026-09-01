@@ -46,66 +46,74 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         "------------------------------------------------",
         " ",
     )
+    try:
+        tp3d: Scene = bpy.context.scene.tp3d
+        gpx_file_path: str = tp3d.file_path
+        gpx_chain_path: str = tp3d.chain_path
+        exportPath: str = tp3d.export_path
+        shape: str = get_effective_shape(tp3d)
+        name: str = tp3d.trailName
+        size: int = tp3d.objSize
+        autoExport: bool = tp3d.disable_auto_export
+        keepPositions: bool = tp3d.keep_positions
+        scaleElevation: float = tp3d.scaleElevation
+        scalemode: str = tp3d.scalemode
+        scaleLon1: float = tp3d.scaleLon1
+        scaleLat1: float = tp3d.scaleLat1
+        scaleLon2: float = tp3d.scaleLon2
+        scaleLat2: float = tp3d.scaleLat2
+        shapeRotation: int = tp3d.shapeRotation
+        overwritePathElev: bool = tp3d.overwritePathElevation
+        api: str = tp3d.api
+        selfHosted: str = tp3d.selfHosted
+        fixedElevScale: bool = tp3d.fixedElevationScale
+        minThickness: float = tp3d.minThickness
+        xTerrainOffset: float = tp3d.xTerrainOffset
+        yTerrainOffset: float = tp3d.yTerrainOffset
+        singleColorMode: bool = tp3d.singleColorMode
+        elementMode: str = tp3d.elementMode
+        disableCache: bool = tp3d.disableCache
+        num_subdivisions: int = tp3d.num_subdivisions
+        textFont: str = tp3d.textFont
+        plateThickness: float = tp3d.plateThickness
+        col_wActive: bool = any(
+            [
+                tp3d.col_wPondsActive,
+                tp3d.col_wSmallRiversActive,
+                tp3d.col_wBigRiversActive,
+            ]
+        )
+        col_fActive: bool = tp3d.col_fActive
+        col_cActive: bool = tp3d.col_cActive
+        col_grActive: bool = tp3d.col_grActive
+        col_glActive: bool = tp3d.col_glActive
+        el_Smoothing: float = tp3d.col_osmSmoothing
+        el_bActive: bool = tp3d.el_bActive
+        el_sActive: bool = any(
+            [
+                tp3d.el_sBigActive,
+                tp3d.el_sMedActive,
+                tp3d.el_sSmallActive,
+                tp3d.el_sServiceActive,
+                tp3d.el_sFootwaysActive,
+            ]
+        )
+        el_sHeight: float = tp3d.el_sHeight
+        jMapLat: float = tp3d.jMapLat
+        jMapLon: float = tp3d.jMapLon
+        jMapRadius: float = tp3d.jMapRadius
+        jMapLat1: float = tp3d.jMapLat1
+        jMapLon1: float = tp3d.jMapLon1
+        jMapLat2: float = tp3d.jMapLat2
+        jMapLon2: float = tp3d.jMapLon2
 
-    tp3d: Scene = bpy.context.scene.tp3d
-    gpx_file_path: str = tp3d.get("file_path", None)
-    gpx_chain_path: str = tp3d.get("chain_path", None)
-    exportPath: str = tp3d.get("export_path", None)
-    shape: str = get_effective_shape(tp3d)
-    name: str = tp3d.get("trailName", "")
-    size: int = tp3d.get("objSize", 100)
-    autoExport: bool = tp3d.get("disable_auto_export", False)
-    keepPositions: bool = tp3d.get("keep_positions", False)
-    scaleElevation: float = tp3d.get("scaleElevation", 1)
-    scalemode: str = tp3d.get("scaleMode", "FACTOR")
-    scaleLon1: float = tp3d.get("scaleLon1", 0)
-    scaleLat1: float = tp3d.get("scaleLat1", 0)
-    scaleLon2: float = tp3d.get("scaleLon2", 0)
-    scaleLat2: float = tp3d.get("scaleLat2", 0)
-    shapeRotation: int = tp3d.get("shapeRotation", 0)
-    overwritePathElev: bool = tp3d.get("overwritePathElevation", True)
-    api: str = tp3d.get("api", "MAPTERHORN")
-    selfHosted: str = tp3d.get("selfHosted", "")
-    fixedElevScale: bool = tp3d.get("fixedElevationScale", False)
-    minThickness: float = tp3d.get("minThickness", 2)
-    xTerrainOffset: float = tp3d.get("xTerrainOffset", 0)
-    yTerrainOffset: float = tp3d.get("yTerrainOffset", 0)
-    singleColorMode: bool = tp3d.get("singleColorMode", 0)
-    elementMode: str = tp3d.get("elementMode", "PAINT")
-    disableCache: bool = tp3d.get("disableCache", "False")
-    num_subdivisions: int = tp3d.get("num_subdivisions", 8)
-    textFont: str = tp3d.get("textFont", "")
-    plateThickness: float = tp3d.get("plateThickness", 5)
-    col_wActive: bool = any(
-        [tp3d.col_wPondsActive, tp3d.col_wSmallRiversActive, tp3d.col_wBigRiversActive]
-    )
-    col_fActive: bool = tp3d.col_fActive
-    col_cActive: bool = tp3d.col_cActive
-    col_grActive: bool = tp3d.col_grActive
-    col_glActive: bool = tp3d.col_glActive
-    el_bActive: bool = tp3d.el_bActive
-    el_sActive: bool = any(
-        [
-            tp3d.el_sBigActive,
-            tp3d.el_sMedActive,
-            tp3d.el_sSmallActive,
-            tp3d.el_sServiceActive,
-            tp3d.el_sFootwaysActive,
-        ]
-    )
-    el_sHeight: float = tp3d.get("el_sHeight", 1.0)
-    jMapLat: float = tp3d.get("jMapLat", 49)
-    jMapLon: float = tp3d.get("jMapLon", 9)
-    jMapRadius: float = tp3d.get("jMapRadius", 200)
-    jMapLat1: float = tp3d.get("jMapLat1", 48)
-    jMapLon1: float = tp3d.get("jMapLon1", 8)
-    jMapLat2: float = tp3d.get("jMapLat2", 49)
-    jMapLon2: float = tp3d.get("jMapLon2", 9)
-
-    useTexture: bool = tp3d.get("tex_use_texture", False)
-    texRoads: bool = tp3d.get("tex_include_roads", False)
-    texTrail: bool = tp3d.get("tex_include_trail", False)
-
+        useTexture: bool = tp3d.tex_use_texture and elementMode == "PAINT"
+        texResolution: int = tp3d.tex_resolution
+        texRoads: bool = tp3d.tex_include_roads
+        texTrail: bool = tp3d.tex_include_trail
+        exportFormat: str = tp3d.exportformat
+    except AttributeError as e:
+        raise ValidationError(e)
     opentopoAdress: str = "https://api.opentopodata.org/v1/"
     if selfHosted != "" and selfHosted is not None and api == "OPENTOPODATA":
         opentopoAdress = selfHosted
@@ -187,7 +195,6 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
     modelname: str = name
     tp3d.modelname = modelname
 
-    exportFormat: str = tp3d.exportformat
     return GenerationContext(
         flags=flags,
         genType=gen_type,
@@ -231,6 +238,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         el_bActive=el_bActive,
         el_sActive=el_sActive,
         el_sHeight=el_sHeight,
+        el_Smoothing=el_Smoothing,
         jMapLat=jMapLat,
         jMapLon=jMapLon,
         jMapRadius=jMapRadius,
@@ -239,6 +247,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         jMapLat2=jMapLat2,
         jMapLon2=jMapLon2,
         useTexture=useTexture,
+        texResolution=texResolution,
         texRoads=texRoads,
         texTrail=texTrail,
     )
@@ -1026,7 +1035,7 @@ def _rg_extrude_terrain(gen: GenerationContext):
 
     from . import geometry2d as g2d
 
-    obj = gen.mapObject
+    obj: bpy.types.Mesh = gen.mapObject
     if obj.mode != "OBJECT":
         bpy.ops.object.mode_set(mode="OBJECT")
 
@@ -1114,7 +1123,7 @@ def _rg_extrude_terrain(gen: GenerationContext):
                     else:
                         bm.faces.new((v1, v2, v3))
         else:
-            verts2d, tris = cdt_res
+            verts2d, tris, _ = cdt_res
             bm_vert_list = []
 
             for x, y in verts2d:
@@ -1388,7 +1397,7 @@ def _rg_build_terrain_elements(
             else []
         )
     )
-    obj = gen.mapObject
+    obj: Object = gen.mapObject
     scaleHor = gen.sScaleHor
     _total_active = max(len(_active_elem_flags), 1)
     _elem_step = (_ELEM_PHASE_END - _ELEM_PHASE_START) / _total_active
@@ -1561,7 +1570,7 @@ def _rg_build_terrain_elements(
             _ov.set_fetch_progress("water", 0.5 if _water_feat_active else 0.0)
             print("Create Ocean")
             _coastline_tiles = _all_prefetched.get("COASTLINE", {})
-            terrain["ocean"] = createOcean(_coastline_tiles, scaleHor, obj)
+            terrain["ocean"] = createOcean(gen, _coastline_tiles, scaleHor, obj)
             if isinstance(terrain["ocean"], _ColoringTextureResult):
                 terrain["_osm_polygons"][terrain["ocean"].kind] = terrain[
                     "ocean"
@@ -1679,6 +1688,7 @@ def _rg_build_terrain_elements(
                     # tex_include_roads on — polygon stored above; discard the mesh.
                     bpy.data.objects.remove(roads, do_unlink=True)
                     roads = None
+                    gen.roadObj = None
                 # tex_include_roads off — fall through so roads is stored as a PAINT-style overlay
                 if roads is not None:
                     set_origin_to_3d_cursor(roads)
@@ -1687,6 +1697,8 @@ def _rg_build_terrain_elements(
                     terrain["roads"] = roads
                     roads.name = obj.name + "_" + "ROADS"
                     writeMetadata(roads, type="ROADS")
+                    gen.roadObj = roads
+                    gen.roadUnion = roads_polygon
                 _ov.set_fetch_done("roads", success=True)
             else:
                 print("INFO: No road data returned, skipping road processing.")
@@ -1714,6 +1726,429 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
       7. Finalise roads (rebuild mesh, subtract trails in 2D, repair non‑manifold).
       8. Clean up temporary thicker curve objects.
     """
+
+    # ----------------------------------------------------------------------
+    # Helper functions (each raises GenerationError on failure)
+    # ----------------------------------------------------------------------
+
+    def _process_curve_projections(gen: GenerationContext, obj):
+        """Process curve objects for single-color remesh.
+
+        Returns:
+            (thickerCurves, trail_thick_ribbons) - both are lists of mesh objects.
+        """
+        from .mesh_ops import (
+            boolean_operation,
+            recalculateNormals,
+            single_color_mode_curve,
+        )
+        from .scene import remove_objects
+
+        thickerCurves = []
+        trail_thick_ribbons = []
+        survivingCurveObjs = []
+
+        try:
+            dpt = 1
+            dup = obj.copy()
+            dup.data = obj.data.copy()
+            dup.name = f"{obj.name}_dup_for_projection"
+            if obj.users_collection:
+                for coll in obj.users_collection:
+                    coll.objects.link(dup)
+
+            for tcrv in gen.curveObjs:
+                result = single_color_mode_curve(tcrv, obj, True, dpt, dup)
+                if result is not None:
+                    if result[1] is not None:
+                        survivingCurveObjs.append(result[0])
+                        thickerCurves.append(result[1])
+                    if result[2] is not None and not result[2].is_empty:
+                        trail_thick_ribbons.append(result[2])
+
+            remove_objects(dup)
+
+            # Select all thicker curves for subsequent operations
+            for tcrv in thickerCurves:
+                bpy.ops.object.select_all(action="DESELECT")
+                tcrv.select_set(True)
+                bpy.context.view_layer.objects.active = tcrv
+
+            # Boolean subtract among curves
+            for i in range(len(thickerCurves)):
+                recalculateNormals(thickerCurves[i])
+                thickerCurves[i].location.z -= 0.001
+                for j in range(i + 1, len(survivingCurveObjs)):
+                    recalculateNormals(survivingCurveObjs[j])
+                    boolean_operation(survivingCurveObjs[j], thickerCurves[i])
+
+            return thickerCurves, trail_thick_ribbons
+
+        except Exception as e:
+            raise GenerationError(f"Failed to process curve projections: {e}") from e
+
+    def _collect_paint_trail_ribbons(gen: GenerationContext):
+        """In PAINT mode, derive 2D ribbon footprints from _Trail curve objects."""
+        from mathutils import Vector
+
+        from .geometry2d import polylines_to_ribbon
+
+        trail_thick_ribbons = []
+        _tol = bpy.context.scene.tp3d.tolerance
+        _pt = bpy.context.scene.tp3d.pathThickness
+
+        try:
+            # Use the pre-built trail objects from generation context
+            trail_objects = gen.curveObjs or []
+            for _ob in trail_objects:
+                if _ob is None or _ob.type != "CURVE":
+                    continue
+
+                _mw = _ob.matrix_world
+                _coords = []
+
+                for _sp in _ob.data.splines:
+                    _pts = _sp.points if len(_sp.points) > 0 else _sp.bezier_points
+                    if len(_pts) >= 2:
+                        _coords.append(
+                            [
+                                (_mw @ Vector((_p.co.x, _p.co.y, _p.co.z)))[:2]
+                                for _p in _pts
+                            ]
+                        )
+                if not _coords:
+                    continue
+                _r = polylines_to_ribbon(_coords, _pt / 2 + _tol, quad_segs=4)
+                if _r and not _r.is_empty:
+                    trail_thick_ribbons.append(_r)
+            return trail_thick_ribbons
+
+        except Exception as e:
+            raise GenerationError(f"Failed to collect paint trail ribbons: {e}") from e
+
+    def _store_trail_union_for_texture(
+        gen: GenerationContext, terrain: dict, trail_thick_ribbons
+    ):
+        """Store the union of trail ribbons into the terrain's OSM polygon cache."""
+        from . import geometry2d as _g2d
+
+        try:
+            osm_polygons = gen.elements.get("_osm_polygons")
+            if osm_polygons is None:
+                osm_polygons = {}
+                terrain["_osm_polygons"] = osm_polygons
+            osm_polygons["TRAIL"] = _g2d.union(trail_thick_ribbons)
+        except Exception as e:
+            raise GenerationError(
+                f"Failed to store trail union for texture: {e}"
+            ) from e
+
+    def _apply_single_color_mode_booleans(
+        gen: GenerationContext, obj, terrain: dict, thickerCurves
+    ):
+        """Perform remesh/wireframe and boolean subtractions between terrain elements and curves."""
+        from .mesh_ops import (
+            boolean_operation,
+            single_color_mode_mesh_remesh,
+        )
+
+        try:
+            _ov = _progress.ProgressOverlay.get()
+            thicker_by_key = {}
+
+            TERRAIN_PRIORITY_ORDER = [
+                "water",
+                "forest",
+                "scree",
+                "city",
+                "greenspace",
+                "farmland",
+                "glacier",
+                "ocean",
+            ]
+
+            _active_scm_keys = [k for k in TERRAIN_PRIORITY_ORDER if terrain.get(k)]
+            _n_scm = max(1, len(_active_scm_keys))
+            _scm_done = 0
+
+            # Shared bottom so every element piece and its recess slot to the same depth.
+            _scm_bottom_z = None
+            for _k in _active_scm_keys:
+                _e = terrain[_k]
+                _mw = _e.matrix_world
+                _z = min((_mw @ v.co).z for v in _e.data.vertices)
+                if _scm_bottom_z is None or _z < _scm_bottom_z:
+                    _scm_bottom_z = _z
+
+            for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
+                elem_obj = terrain.get(key)
+                if not elem_obj:
+                    continue
+                _ov = _progress.ProgressOverlay.get()
+                if _ov.active:
+                    _ov.update(
+                        percent=0.95 + 0.02 * (_scm_done / _n_scm),
+                        message=f"Single-color: remeshing {key.capitalize()} ({_scm_done + 1}/{_n_scm})…",
+                    )
+
+                thicker = single_color_mode_mesh_remesh(elem_obj, obj, map_outline=gen.mapOutline, shared_bottom_z=_scm_bottom_z)
+                thicker_by_key[key] = thicker
+
+                if _ov.active:
+                    _ov.update(
+                        percent=0.95 + 0.02 * ((_scm_done + 0.5) / _n_scm),
+                        message=f"Single-color: subtracting from {key.capitalize()}…",
+                    )
+
+                # Subtract all curve thicker-bodies
+                for tcrv in thickerCurves:
+                    boolean_operation(elem_obj, tcrv)
+
+                # Subtract every higher-priority element that was already processed
+                for prev_key in TERRAIN_PRIORITY_ORDER[:i]:
+                    if prev_key in thicker_by_key:
+                        boolean_operation(elem_obj, thicker_by_key[prev_key])
+
+                _scm_done += 1
+
+            if bpy.app.debug:
+                obj_size = gen.size
+                for thicker in thicker_by_key.values():
+                    thicker.location.x += obj_size
+            else:
+                from .scene import remove_objects
+
+                for thicker in thicker_by_key.values():
+                    remove_objects(thicker)
+
+        except Exception as e:
+            raise GenerationError(
+                f"Failed to apply single-color mode booleans: {e}"
+            ) from e
+
+    def _cut_roads_from_terrain_and_elements(
+        gen: GenerationContext, obj, terrain: dict
+    ):
+        """Cut roads out of the main terrain and all terrain elements."""
+        from mathutils import Vector
+
+        from . import geometry2d as _g2d
+        from .mesh_ops import (
+            boolean_operation,
+            is_mesh_manifold,
+            recalculateNormals,
+        )
+        from .osm.roads import _build_extruded_mesh
+        from .scene import remove_objects
+
+        try:
+            roads_obj = gen.roadObj
+            if roads_obj is None:
+                return
+
+            # Build a cutter from the Shapely road polygon, bounded properly.
+            cut_tolerance = bpy.context.scene.tp3d.el_sCutTolerance
+            roads_cutter = roads_obj
+            _cutter_tmp = None
+            _road_poly = gen.roadUnion
+            _roads_bz = terrain.get("roads_bottom_z")
+            if (
+                _road_poly is not None
+                and not _road_poly.is_empty
+                and _roads_bz is not None
+            ):
+                _buffered = (
+                    _road_poly.buffer(max(0.025, cut_tolerance), join_style="mitre")
+                    if cut_tolerance > 0
+                    else _road_poly.buffer(0.025, join_style="mitre")
+                )
+                if _buffered and not _buffered.is_empty:
+                    _all_v2d, _all_tris = [], []
+                    for _part in _g2d.iter_polygons(_buffered):
+                        _part = _g2d.orient(_part)
+                        _ext = list(_part.exterior.coords)[:-1]
+                        _holes = [
+                            list(r.coords)[:-1]
+                            for r in _part.interiors
+                            if len(r.coords) >= 4
+                        ]
+                        _ec = _g2d._cdt_triangulate(_part, _ext, _holes)
+                        if _ec:
+                            _v2, _t2, _ = _ec
+                            _base = len(_all_v2d)
+                            _all_v2d.extend(_v2)
+                            _all_tris += [
+                                (a + _base, b + _base, c + _base) for a, b, c in _t2
+                            ]
+                    if _all_v2d and _all_tris:
+                        _mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+                        _bz = _roads_bz - bpy.context.scene.tp3d.el_sCutDepth
+                        _tz = max(v.z for v in _mc) + 20.0
+                        _cutter_tmp = _build_extruded_mesh(
+                            _all_v2d, _all_tris, _bz, _tz
+                        )
+                        recalculateNormals(_cutter_tmp)
+                        roads_cutter = _cutter_tmp
+
+            roads_manifold = is_mesh_manifold(roads_obj)
+
+            # Cut roads out of main terrain
+            _ov = _progress.ProgressOverlay.get()
+            if _ov.active:
+                _ov.update(message="Cutting road from Terrain…")
+            solver = (
+                "MANIFOLD" if (roads_manifold and is_mesh_manifold(obj)) else "EXACT"
+            )
+            boolean_operation(obj, roads_cutter, solver=solver)
+
+            # Cut roads out of each terrain element
+            TERRAIN_PRIORITY_ORDER = [
+                "water",
+                "forest",
+                "scree",
+                "city",
+                "greenspace",
+                "farmland",
+                "glacier",
+                "ocean",
+            ]
+            for key in TERRAIN_PRIORITY_ORDER:
+                elem_obj = terrain.get(key)
+                if not elem_obj:
+                    continue
+                _ov = _progress.ProgressOverlay.get()
+                if _ov.active:
+                    _ov.update(message=f"Cutting road from {key.capitalize()}…")
+                solver = (
+                    "MANIFOLD"
+                    if (roads_manifold and is_mesh_manifold(elem_obj))
+                    else "EXACT"
+                )
+                boolean_operation(elem_obj, roads_cutter, solver=solver)
+
+            if _cutter_tmp is not None:
+                remove_objects(_cutter_tmp)
+
+        except Exception as e:
+            raise GenerationError(
+                f"Failed to cut roads from terrain and elements: {e}"
+            ) from e
+
+    def _subtract_trail_from_buildings(
+        gen: GenerationContext, thickerCurves, terrain: dict
+    ):
+        """Subtract the trail groove from buildings so it isn't blocked by 3D geometry."""
+        from .mesh_ops import boolean_operation, is_mesh_manifold
+
+        try:
+            elem_obj = terrain.get("buildings")
+            if elem_obj is None:
+                return
+
+            _ov = _progress.ProgressOverlay.get()
+            if _ov.active:
+                _ov.update(message="Subtracting trail from Buildings…")
+            for tcrv in thickerCurves:
+                solver = (
+                    "MANIFOLD"
+                    if (is_mesh_manifold(elem_obj) and is_mesh_manifold(tcrv))
+                    else "EXACT"
+                )
+                boolean_operation(elem_obj, tcrv, solver=solver)
+
+        except Exception as e:
+            raise GenerationError(
+                f"Failed to subtract trail from buildings: {e}"
+            ) from e
+
+    def _finalise_roads(gen: GenerationContext, terrain: dict, trail_thick_ribbons):
+        """Rebuild the road top surface, subtract trails in 2D, and repair non‑manifold edges."""
+        from . import geometry2d as _g2d
+        from .osm.roads import finalize_roads
+
+        try:
+            roads_obj = gen.roadObj
+            if roads_obj is None:
+                return
+
+            _ov = _progress.ProgressOverlay.get()
+            if _ov.active:
+                _ov.update(message="Roads: adding terrain detail…")
+
+            el_sHeight = gen.el_sHeight
+            full_depth = gen.elementMode != "PAINT"
+            _roads_poly = gen.roadUnion
+            terrain_tris: list = terrain.get("_terrain_tris_cache")
+            if trail_thick_ribbons and _roads_poly is not None:
+                _trail_union = _g2d.union(trail_thick_ribbons)
+                _roads_poly = _roads_poly.difference(_trail_union)
+                print(
+                    f"[TP3D roads] subtracted {len(trail_thick_ribbons)} trail ribbon(s) from roads_polygon in 2D"
+                )
+            print(f"Full depth value before finallizing roads: {full_depth}")
+            # mapOutline is in local object space; road polygon is in world space — translate to match.
+            _map_outline_world = None
+            if gen.mapOutline is not None and gen.mapObject is not None:
+                from shapely.affinity import translate as _shp_translate
+                _map_outline_world = _shp_translate(
+                    gen.mapOutline,
+                    xoff=gen.mapObject.location.x,
+                    yoff=gen.mapObject.location.y,
+                )
+            finalize_roads(
+                roads_obj,
+                terrain_tris,
+                _roads_poly,
+                el_sHeight,
+                full_depth,
+                map_polygon=_map_outline_world,
+                cut_depth=bpy.context.scene.tp3d.el_sCutDepth,
+            )
+
+            # Repair non‑manifold boundary edges
+            bpy.ops.object.select_all(action="DESELECT")
+            roads_obj.select_set(True)
+            bpy.context.view_layer.objects.active = roads_obj
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.context.tool_settings.mesh_select_mode = (True, False, False)
+            bpy.ops.mesh.select_all(action="DESELECT")
+            bpy.ops.mesh.select_non_manifold(
+                extend=False,
+                use_wire=False,
+                use_boundary=True,
+                use_multi_face=False,
+                use_non_contiguous=False,
+                use_verts=False,
+            )
+            bpy.ops.mesh.dissolve_limited(angle_limit=0.0872665)  # 5°
+            bpy.ops.mesh.remove_doubles(threshold=0.001)
+            bpy.ops.mesh.select_non_manifold(
+                extend=False,
+                use_wire=False,
+                use_boundary=True,
+                use_multi_face=False,
+                use_non_contiguous=False,
+                use_verts=False,
+            )
+            bpy.ops.mesh.fill_holes(sides=0)
+            bpy.ops.object.mode_set(mode="OBJECT")
+
+        except Exception as e:
+            raise GenerationError(f"Failed to finalise roads: {e}") from e
+
+    def _cleanup_thicker_curves(thickerCurves, debug: bool, map_size: float):
+        """Either move thicker curves aside (debug) or delete them."""
+        try:
+            if debug:
+                for tcrv in thickerCurves:
+                    tcrv.location.x += map_size
+            else:
+                from .scene import remove_objects
+
+                remove_objects(thickerCurves)
+        except Exception as e:
+            raise GenerationError(f"Failed to clean up thicker curves: {e}") from e
+
     obj = gen.mapObject
     terrain: dict[str, Any] = cast(dict[str, Any], gen.elements)
     assert terrain is not None
@@ -1753,399 +2188,6 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
 
     # Step 8: Clean up temporary thicker curves
     _cleanup_thicker_curves(thickerCurves, bpy.app.debug, gen.size)
-
-
-# ----------------------------------------------------------------------
-# Helper functions (each raises GenerationError on failure)
-# ----------------------------------------------------------------------
-
-
-def _process_curve_projections(gen: GenerationContext, obj):
-    """Process curve objects for single-color remesh.
-
-    Returns:
-        (thickerCurves, trail_thick_ribbons) - both are lists of mesh objects.
-    """
-    from .mesh_ops import (
-        boolean_operation,
-        recalculateNormals,
-        single_color_mode_curve,
-    )
-    from .scene import remove_objects
-
-    thickerCurves = []
-    trail_thick_ribbons = []
-    survivingCurveObjs = []
-
-    try:
-        dpt = 1
-        dup = obj.copy()
-        dup.data = obj.data.copy()
-        dup.name = f"{obj.name}_dup_for_projection"
-        if obj.users_collection:
-            for coll in obj.users_collection:
-                coll.objects.link(dup)
-
-        for tcrv in gen.curveObjs:
-            result = single_color_mode_curve(tcrv, obj, True, dpt, dup)
-            if result is not None:
-                if result[1] is not None:
-                    survivingCurveObjs.append(result[0])
-                    thickerCurves.append(result[1])
-                if result[2] is not None and not result[2].is_empty:
-                    trail_thick_ribbons.append(result[2])
-
-        remove_objects(dup)
-
-        # Select all thicker curves for subsequent operations
-        for tcrv in thickerCurves:
-            bpy.ops.object.select_all(action="DESELECT")
-            tcrv.select_set(True)
-            bpy.context.view_layer.objects.active = tcrv
-
-        # Boolean subtract among curves
-        for i in range(len(thickerCurves)):
-            recalculateNormals(thickerCurves[i])
-            thickerCurves[i].location.z -= 0.001
-            for j in range(i + 1, len(survivingCurveObjs)):
-                recalculateNormals(survivingCurveObjs[j])
-                boolean_operation(survivingCurveObjs[j], thickerCurves[i])
-
-        return thickerCurves, trail_thick_ribbons
-
-    except Exception as e:
-        raise GenerationError(f"Failed to process curve projections: {e}") from e
-
-
-def _collect_paint_trail_ribbons(gen: GenerationContext):
-    """In PAINT mode, derive 2D ribbon footprints from _Trail curve objects."""
-    from mathutils import Vector
-
-    from .geometry2d import polylines_to_ribbon
-
-    trail_thick_ribbons = []
-    _tol = bpy.context.scene.tp3d.tolerance
-    _pt = bpy.context.scene.tp3d.pathThickness
-
-    try:
-        # Use the pre-built trail objects from generation context
-        trail_objects = gen.curveObjs or []
-        for _ob in trail_objects:
-            if _ob is None or _ob.type != "CURVE":
-                continue
-
-            _mw = _ob.matrix_world
-            _coords = []
-
-            for _sp in _ob.data.splines:
-                _pts = _sp.points if len(_sp.points) > 0 else _sp.bezier_points
-                if len(_pts) >= 2:
-                    _coords.append(
-                        [(_mw @ Vector((_p.co.x, _p.co.y, _p.co.z)))[:2] for _p in _pts]
-                    )
-            if not _coords:
-                continue
-            _r = polylines_to_ribbon(_coords, _pt / 2 + _tol, quad_segs=4)
-            if _r and not _r.is_empty:
-                trail_thick_ribbons.append(_r)
-        return trail_thick_ribbons
-
-    except Exception as e:
-        raise GenerationError(f"Failed to collect paint trail ribbons: {e}") from e
-
-
-def _store_trail_union_for_texture(
-    gen: GenerationContext, terrain: dict, trail_thick_ribbons
-):
-    """Store the union of trail ribbons into the terrain's OSM polygon cache."""
-    from . import geometry2d as _g2d
-
-    try:
-        osm_polygons = gen.elements.get("_osm_polygons")
-        if osm_polygons is None:
-            osm_polygons = {}
-            terrain["_osm_polygons"] = osm_polygons
-        osm_polygons["TRAIL"] = _g2d.union(trail_thick_ribbons)
-    except Exception as e:
-        raise GenerationError(f"Failed to store trail union for texture: {e}") from e
-
-
-def _apply_single_color_mode_booleans(
-    gen: GenerationContext, obj, terrain: dict, thickerCurves
-):
-    """Perform remesh/wireframe and boolean subtractions between terrain elements and curves."""
-    from .mesh_ops import (
-        boolean_operation,
-        single_color_mode_mesh_remesh,
-    )
-
-    try:
-        _ov = _progress.ProgressOverlay.get()
-        thicker_by_key = {}
-
-        TERRAIN_PRIORITY_ORDER = [
-            "water",
-            "forest",
-            "scree",
-            "city",
-            "greenspace",
-            "farmland",
-            "glacier",
-            "ocean",
-        ]
-
-        _active_scm_keys = [k for k in TERRAIN_PRIORITY_ORDER if terrain.get(k)]
-        _n_scm = max(1, len(_active_scm_keys))
-        _scm_done = 0
-
-        for i, key in enumerate(TERRAIN_PRIORITY_ORDER):
-            elem_obj = terrain.get(key)
-            if not elem_obj:
-                continue
-            _ov = _progress.ProgressOverlay.get()
-            if _ov.active:
-                _ov.update(
-                    percent=0.95 + 0.02 * (_scm_done / _n_scm),
-                    message=f"Single-color: remeshing {key.capitalize()} ({_scm_done + 1}/{_n_scm})…",
-                )
-
-            thicker = single_color_mode_mesh_remesh(elem_obj, obj)
-            thicker_by_key[key] = thicker
-
-            if _ov.active:
-                _ov.update(
-                    percent=0.95 + 0.02 * ((_scm_done + 0.5) / _n_scm),
-                    message=f"Single-color: subtracting from {key.capitalize()}…",
-                )
-
-            # Subtract all curve thicker-bodies
-            for tcrv in thickerCurves:
-                boolean_operation(elem_obj, tcrv)
-
-            # Subtract every higher-priority element that was already processed
-            for prev_key in TERRAIN_PRIORITY_ORDER[:i]:
-                if prev_key in thicker_by_key:
-                    boolean_operation(elem_obj, thicker_by_key[prev_key])
-
-            _scm_done += 1
-
-        if bpy.app.debug:
-            obj_size = gen.size
-            for thicker in thicker_by_key.values():
-                thicker.location.x += obj_size
-        else:
-            from .scene import remove_objects
-
-            for thicker in thicker_by_key.values():
-                remove_objects(thicker)
-
-    except Exception as e:
-        raise GenerationError(f"Failed to apply single-color mode booleans: {e}") from e
-
-
-def _cut_roads_from_terrain_and_elements(gen: GenerationContext, obj, terrain: dict):
-    """Cut roads out of the main terrain and all terrain elements."""
-    from mathutils import Vector
-
-    from . import geometry2d as _g2d
-    from .mesh_ops import (
-        boolean_operation,
-        is_mesh_manifold,
-        recalculateNormals,
-    )
-    from .osm.roads import _build_extruded_mesh
-    from .scene import remove_objects
-
-    try:
-        roads_obj = gen.roadObj
-        if roads_obj is None:
-            return
-
-        # Build a cutter from the Shapely road polygon, bounded properly.
-        cut_tolerance = bpy.context.scene.tp3d.el_sCutTolerance
-        roads_cutter = roads_obj
-        _cutter_tmp = None
-        _road_poly = gen.roadUnion
-        _roads_bz = terrain.get("roads_bottom_z")
-        if _road_poly is not None and not _road_poly.is_empty and _roads_bz is not None:
-            _buffered = (
-                _road_poly.buffer(cut_tolerance, join_style="mitre")
-                if cut_tolerance > 0
-                else _road_poly
-            )
-            if _buffered and not _buffered.is_empty:
-                _all_v2d, _all_tris = [], []
-                for _part in _g2d.iter_polygons(_buffered):
-                    _part = _g2d.orient(_part)
-                    _ext = list(_part.exterior.coords)[:-1]
-                    _holes = [
-                        list(r.coords)[:-1]
-                        for r in _part.interiors
-                        if len(r.coords) >= 4
-                    ]
-                    _ec = _g2d._cdt_triangulate(_part, _ext, _holes)
-                    if _ec:
-                        _v2, _t2 = _ec
-                        _base = len(_all_v2d)
-                        _all_v2d.extend(_v2)
-                        _all_tris += [
-                            (a + _base, b + _base, c + _base) for a, b, c in _t2
-                        ]
-                if _all_v2d and _all_tris:
-                    _mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
-                    _bz = _roads_bz - 0.05
-                    _tz = max(v.z for v in _mc) + 20.0
-                    _cutter_tmp = _build_extruded_mesh(_all_v2d, _all_tris, _bz, _tz)
-                    recalculateNormals(_cutter_tmp)
-                    roads_cutter = _cutter_tmp
-
-        roads_manifold = is_mesh_manifold(roads_obj)
-
-        # Cut roads out of main terrain
-        _ov = _progress.ProgressOverlay.get()
-        if _ov.active:
-            _ov.update(message="Cutting road from Terrain…")
-        solver = "MANIFOLD" if (roads_manifold and is_mesh_manifold(obj)) else "EXACT"
-        boolean_operation(obj, roads_cutter, solver=solver)
-
-        # Cut roads out of each terrain element
-        TERRAIN_PRIORITY_ORDER = [
-            "water",
-            "forest",
-            "scree",
-            "city",
-            "greenspace",
-            "farmland",
-            "glacier",
-            "ocean",
-        ]
-        for key in TERRAIN_PRIORITY_ORDER:
-            elem_obj = terrain.get(key)
-            if not elem_obj:
-                continue
-            _ov = _progress.ProgressOverlay.get()
-            if _ov.active:
-                _ov.update(message=f"Cutting road from {key.capitalize()}…")
-            solver = (
-                "MANIFOLD"
-                if (roads_manifold and is_mesh_manifold(elem_obj))
-                else "EXACT"
-            )
-            boolean_operation(elem_obj, roads_cutter, solver=solver)
-
-        if _cutter_tmp is not None:
-            remove_objects(_cutter_tmp)
-
-    except Exception as e:
-        raise GenerationError(
-            f"Failed to cut roads from terrain and elements: {e}"
-        ) from e
-
-
-def _subtract_trail_from_buildings(
-    gen: GenerationContext, thickerCurves, terrain: dict
-):
-    """Subtract the trail groove from buildings so it isn't blocked by 3D geometry."""
-    from .mesh_ops import boolean_operation, is_mesh_manifold
-
-    try:
-        elem_obj = terrain.get("buildings")
-        if elem_obj is None:
-            return
-
-        _ov = _progress.ProgressOverlay.get()
-        if _ov.active:
-            _ov.update(message="Subtracting trail from Buildings…")
-        for tcrv in thickerCurves:
-            solver = (
-                "MANIFOLD"
-                if (is_mesh_manifold(elem_obj) and is_mesh_manifold(tcrv))
-                else "EXACT"
-            )
-            boolean_operation(elem_obj, tcrv, solver=solver)
-
-    except Exception as e:
-        raise GenerationError(f"Failed to subtract trail from buildings: {e}") from e
-
-
-def _finalise_roads(gen: GenerationContext, terrain: dict, trail_thick_ribbons):
-    """Rebuild the road top surface, subtract trails in 2D, and repair non‑manifold edges."""
-    from .osm.roads import finalize_roads
-    from . import geometry2d as _g2d
-
-    try:
-        roads_obj = gen.roadObj
-        if roads_obj is None:
-            return
-
-        _ov = _progress.ProgressOverlay.get()
-        if _ov.active:
-            _ov.update(message="Roads: adding terrain detail…")
-
-        el_sHeight = gen.el_sHeight
-        full_depth = gen.elementMode != "PAINT"
-        _roads_poly = gen.roadUnion
-        terrain_tris: list = terrain.get("_terrain_tris_cache")
-        if trail_thick_ribbons and _roads_poly is not None:
-            _trail_union = _g2d.union(trail_thick_ribbons)
-            _roads_poly = _roads_poly.difference(_trail_union)
-            print(
-                f"[TP3D roads] subtracted {len(trail_thick_ribbons)} trail ribbon(s) from roads_polygon in 2D"
-            )
-        print(f"Full depth value before finallizing roads: {full_depth}")
-        finalize_roads(
-            roads_obj,
-            terrain_tris,
-            _roads_poly,
-            el_sHeight,
-            full_depth,
-            map_polygon=gen.mapOutline,
-        )
-
-        # Repair non‑manifold boundary edges
-        bpy.ops.object.select_all(action="DESELECT")
-        roads_obj.select_set(True)
-        bpy.context.view_layer.objects.active = roads_obj
-        bpy.ops.object.mode_set(mode="EDIT")
-        bpy.context.tool_settings.mesh_select_mode = (True, False, False)
-        bpy.ops.mesh.select_all(action="DESELECT")
-        bpy.ops.mesh.select_non_manifold(
-            extend=False,
-            use_wire=False,
-            use_boundary=True,
-            use_multi_face=False,
-            use_non_contiguous=False,
-            use_verts=False,
-        )
-        bpy.ops.mesh.dissolve_limited(angle_limit=0.0872665)  # 5°
-        bpy.ops.mesh.remove_doubles(threshold=0.001)
-        bpy.ops.mesh.select_non_manifold(
-            extend=False,
-            use_wire=False,
-            use_boundary=True,
-            use_multi_face=False,
-            use_non_contiguous=False,
-            use_verts=False,
-        )
-        bpy.ops.mesh.fill_holes(sides=0)
-        bpy.ops.object.mode_set(mode="OBJECT")
-
-    except Exception as e:
-        raise GenerationError(f"Failed to finalise roads: {e}") from e
-
-
-def _cleanup_thicker_curves(thickerCurves, debug: bool, map_size: float):
-    """Either move thicker curves aside (debug) or delete them."""
-    try:
-        if debug:
-            for tcrv in thickerCurves:
-                tcrv.location.x += map_size
-        else:
-            from .scene import remove_objects
-
-            remove_objects(thickerCurves)
-    except Exception as e:
-        raise GenerationError(f"Failed to clean up thicker curves: {e}") from e
 
 
 def _rg_apply_texture(gen: GenerationContext):
@@ -2304,12 +2346,11 @@ def _rg_export(gen: GenerationContext):
         exportformat = "STL"  # fallback only; 3MF addon handles the real export
     else:
         exportformat = "STL"
-
     if gen.autoExport:
         print("Auto export disabled, skipping export")
         return
 
-    if is_3mf_extension_installed() and not gen.autoExport:
+    if is_3mf_extension_installed():
         print("Exporting to 3mf")
         if gen.curveObjs and (not gen.useTexture or not gen.texTrail):
             for tcrv in curveObjs:
@@ -2320,7 +2361,7 @@ def _rg_export(gen: GenerationContext):
                     pass
         gen.mapObject.select_set(True)
 
-        if elements and gen.elementMode == "SINGLECOLORMODE":
+        if elements and gen.elementMode == "SINGLECOLORMODE_REMESH":
             for elem_obj in elements.values():
                 if (
                     elem_obj
@@ -2813,6 +2854,12 @@ _ADVANCED_SETTINGS_FIELDS = [
         "group": "Roads",
     },
     {
+        "key": "elSCutDepth",
+        "attr": "el_sCutDepth",
+        "type": float,
+        "group": "Roads",
+    },
+    {
         "key": "elSExcludeAlleys",
         "attr": "el_sExcludeAlleys",
         "type": bool,
@@ -3017,19 +3064,20 @@ def runGeneration(type, locked_scale=None):
         overlay.update(0.95, "Coloring", "Applying single-color mode…")
         _rg_apply_single_color_mode(gen)
 
-        # --- Phases 16-18: Assign materials, export, and finalize ---
-        overlay.update(0.97, "Finalizing", "Exporting files...")
+        # --- Phase 16: Assign materials ---
+        overlay.update(0.95, "Finalizing", "Assigning materials…")
         _rg_assign_materials(gen)
 
-        # --- Phase 15b: Create a texture — rasterise OSM polygons into UV texture ---
+        # --- Phase 17: Rasterise OSM polygons into UV texture ---
         if gen.useTexture:
+            overlay.update(0.96, "Texture", "Rasterising OSM texture…")
             _rg_apply_texture(gen)
             _lo = bpy.context.scene.tp3d.lowestZ
             _hi = bpy.context.scene.tp3d.highestZ
             overlay.add_completed_step(f"Terrain applied  —  z {_lo:.1f} to {_hi:.1f}")
-            overlay.update(0.96, "Texture", "Rasterising OSM texture…")
 
-        # Finish and Export
+        # --- Phase 18: Export ---
+        overlay.update(0.97, "Exporting", "Exporting files…")
         _rg_export(gen)
 
         # Calculate script durations for prints and overlay updates
