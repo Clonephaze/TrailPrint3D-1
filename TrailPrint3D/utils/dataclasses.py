@@ -66,6 +66,15 @@ class GenerationContext:
     jMapLon1: float
     jMapLat2: float
     jMapLon2: float
+    rectangleHeight: int = 100
+    ellipseRatio: float = 0.75
+    customFilePath: str = ""
+    tolerance: float = 0.2
+    shellWallThickness: float = 2.0
+    plateInsertValue: float = 0.0
+    pathThickness: float = 1.2
+    el_sCutTolerance: float = 0.2
+    el_sCutDepth: float = 0.05
     genType: int = 0
     lockedScale: float | None = None
     mapObject: Object | None = None

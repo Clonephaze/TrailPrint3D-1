@@ -99,6 +99,15 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
             ]
         )
         el_sHeight: float = tp3d.el_sHeight
+        rectangleHeight: int = tp3d.rectangleHeight
+        ellipseRatio: float = tp3d.ellipseRatio
+        customFilePath: str = bpy.path.abspath(tp3d.customFilePath)
+        tolerance: float = tp3d.tolerance
+        shellWallThickness: float = tp3d.shellWallThickness
+        plateInsertValue: float = tp3d.plateInsertValue
+        pathThickness: float = tp3d.pathThickness
+        el_sCutTolerance: float = tp3d.el_sCutTolerance
+        el_sCutDepth: float = tp3d.el_sCutDepth
         jMapLat: float = tp3d.jMapLat
         jMapLon: float = tp3d.jMapLon
         jMapRadius: float = tp3d.jMapRadius
@@ -246,6 +255,15 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         jMapLon1=jMapLon1,
         jMapLat2=jMapLat2,
         jMapLon2=jMapLon2,
+        rectangleHeight=rectangleHeight,
+        ellipseRatio=ellipseRatio,
+        customFilePath=customFilePath,
+        tolerance=tolerance,
+        shellWallThickness=shellWallThickness,
+        plateInsertValue=plateInsertValue,
+        pathThickness=pathThickness,
+        el_sCutTolerance=el_sCutTolerance,
+        el_sCutDepth=el_sCutDepth,
         useTexture=useTexture,
         texResolution=texResolution,
         texRoads=texRoads,
@@ -496,9 +514,8 @@ def _rg_create_map_object(gen: GenerationContext):
         )
         _t_shape = time.time()
         if gen.shape in {"SQUARE", "SQUARE SHELL"}:
-            rHeight = bpy.context.scene.tp3d.rectangleHeight
             MapObject = create_rectangle(
-                gen.size, rHeight, gen.num_subdivisions, gen.modelname
+                gen.size, gen.rectangleHeight, gen.num_subdivisions, gen.modelname
             )
         elif gen.shape in {
             "HEXAGON",
@@ -519,19 +536,16 @@ def _rg_create_map_object(gen: GenerationContext):
         elif gen.shape in {"CIRCLE", "CIRCLE SHELL", "CIRCLE OUTER TEXT"}:
             MapObject = create_circle(gen.size / 2, gen.num_subdivisions, gen.modelname)
         elif gen.shape in {"ELLIPSE", "ELLIPSE SHELL"}:
-            ratio = bpy.context.scene.tp3d.ellipseRatio
             MapObject = create_ellipse(
-                gen.size / 2, gen.num_subdivisions, gen.modelname, ratio
+                gen.size / 2, gen.num_subdivisions, gen.modelname, gen.ellipseRatio
             )
         elif gen.shape == "GEOJSON":
-            filepath = bpy.path.abspath(bpy.context.scene.tp3d.customFilePath)
             MapObject = create_custom_geojson(
-                filepath, gen.size / 2, gen.num_subdivisions, gen.modelname
+                gen.customFilePath, gen.size / 2, gen.num_subdivisions, gen.modelname
             )
         elif gen.shape == "SVG":
-            filepath = bpy.path.abspath(bpy.context.scene.tp3d.customFilePath)
             MapObject = create_custom_svg(
-                filepath, gen.size / 2, gen.num_subdivisions, gen.modelname
+                gen.customFilePath, gen.size / 2, gen.num_subdivisions, gen.modelname
             )
         else:
             MapObject = create_hexagon(
@@ -729,6 +743,37 @@ def _rg_prepare_trail_coords(gen: GenerationContext):
       gen.blenderPathSegsByFile — processed per-file paths   (replaces Phase-6 raw version)
     Also writes the real-world map scale to the scene property store.
     """
+    def _subdivide_long_segments(coords, max_xy_dist, depsgraph=None):
+        """Split trail segments longer than max_xy_dist Blender units to prevent clipping through hills.
+
+        Inserts linearly-spaced intermediate points and raycasts downward against the
+        terrain mesh to get the correct Z for each one.  Falls back to linear Z if the
+        ray misses (e.g. point outside map bounds).
+        """
+        if len(coords) < 2:
+            return coords
+        result = [coords[0]]
+        for i in range(1, len(coords)):
+            x1, y1, z1 = result[-1]
+            x2, y2, z2 = coords[i]
+            dx, dy = x2 - x1, y2 - y1
+            dist_xy = math.sqrt(dx * dx + dy * dy)
+            if dist_xy > max_xy_dist:
+                n = math.ceil(dist_xy / max_xy_dist)
+                for j in range(1, n):
+                    t = j / n
+                    xi, yi = x1 + t * dx, y1 + t * dy
+                    zi = z1 + t * (z2 - z1)
+                    if depsgraph is not None:
+                        hit, loc, _, _, _, _ = bpy.context.scene.ray_cast(
+                            depsgraph, (xi, yi, zi + 500.0), (0.0, 0.0, -1.0)
+                        )
+                        if hit:
+                            zi = loc.z
+                    result.append((xi, yi, zi))
+            result.append(coords[i])
+        return result
+
     from .geo import (
         convert_to_blender_coordinates_batch,
         haversine,
@@ -1216,8 +1261,8 @@ def _rg_create_text_and_overlays(gen: GenerationContext):
         elif gen.shape.endswith(" SHELL"):
             shellobj = build_map_shell(
                 gen.mapObject,
-                bpy.context.scene.tp3d.tolerance,
-                wall=bpy.context.scene.tp3d.shellWallThickness,
+                gen.tolerance,
+                wall=gen.shellWallThickness,
                 bottom_wall=1.0,
             )
 
@@ -1236,7 +1281,7 @@ def _rg_create_text_and_overlays(gen: GenerationContext):
 
     # Plate insert
     bpy.ops.object.select_all(action="DESELECT")
-    dist = bpy.context.scene.tp3d.plateInsertValue
+    dist = gen.plateInsertValue
     if (
         gen.shape
         in {
@@ -1794,8 +1839,8 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
         from .geometry2d import polylines_to_ribbon
 
         trail_thick_ribbons = []
-        _tol = bpy.context.scene.tp3d.tolerance
-        _pt = bpy.context.scene.tp3d.pathThickness
+        _tol = gen.tolerance
+        _pt = gen.pathThickness
 
         try:
             # Use the pre-built trail objects from generation context
@@ -1947,7 +1992,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                 return
 
             # Build a cutter from the Shapely road polygon, bounded properly.
-            cut_tolerance = bpy.context.scene.tp3d.el_sCutTolerance
+            cut_tolerance = gen.el_sCutTolerance
             roads_cutter = roads_obj
             _cutter_tmp = None
             _road_poly = gen.roadUnion
@@ -1982,7 +2027,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                             ]
                     if _all_v2d and _all_tris:
                         _mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
-                        _bz = _roads_bz - bpy.context.scene.tp3d.el_sCutDepth
+                        _bz = _roads_bz - gen.el_sCutDepth
                         _tz = max(v.z for v in _mc) + 20.0
                         _cutter_tmp = _build_extruded_mesh(
                             _all_v2d, _all_tris, _bz, _tz
@@ -2102,7 +2147,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                 el_sHeight,
                 full_depth,
                 map_polygon=_map_outline_world,
-                cut_depth=bpy.context.scene.tp3d.el_sCutDepth,
+                cut_depth=gen.el_sCutDepth,
             )
 
             # Repair non‑manifold boundary edges
@@ -2891,43 +2936,6 @@ def apply_advanced_setting_update(tp3d, key, value):
         setattr(tp3d, field["attr"], field["type"](value))
     except (TypeError, ValueError):
         pass
-
-
-# ---------------------------------------------------------------------------
-# Trail segment subdivision helper
-# ---------------------------------------------------------------------------
-
-
-def _subdivide_long_segments(coords, max_xy_dist, depsgraph=None):
-    """Split trail segments longer than max_xy_dist Blender units to prevent clipping through hills.
-
-    Inserts linearly-spaced intermediate points and raycasts downward against the
-    terrain mesh to get the correct Z for each one.  Falls back to linear Z if the
-    ray misses (e.g. point outside map bounds).
-    """
-    if len(coords) < 2:
-        return coords
-    result = [coords[0]]
-    for i in range(1, len(coords)):
-        x1, y1, z1 = result[-1]
-        x2, y2, z2 = coords[i]
-        dx, dy = x2 - x1, y2 - y1
-        dist_xy = math.sqrt(dx * dx + dy * dy)
-        if dist_xy > max_xy_dist:
-            n = math.ceil(dist_xy / max_xy_dist)
-            for j in range(1, n):
-                t = j / n
-                xi, yi = x1 + t * dx, y1 + t * dy
-                zi = z1 + t * (z2 - z1)
-                if depsgraph is not None:
-                    hit, loc, _, _, _, _ = bpy.context.scene.ray_cast(
-                        depsgraph, (xi, yi, zi + 500.0), (0.0, 0.0, -1.0)
-                    )
-                    if hit:
-                        zi = loc.z
-                result.append((xi, yi, zi))
-        result.append(coords[i])
-    return result
 
 
 # ---------------------------------------------------------------------------
