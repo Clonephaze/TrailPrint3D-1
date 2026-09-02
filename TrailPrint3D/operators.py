@@ -2497,7 +2497,9 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         if roads_obj is not None:
             bpy.data.objects.remove(roads_obj, do_unlink=True)
         from .utils import generation as _gen_utils
-        # In CREATE_TEXTURE mode roads/trail are baked into the UV texture; skip 3D rebuilds.
+        # In CREATE_TEXTURE mode roads are already baked into the UV texture
+        # by createTerrainFromSelected above; skip the 3D per-piece rebuild.
+        # (Trail handling is separate -- see the gpx_paths block below.)
         _texture_mode = props.elementMode == 'CREATE_TEXTURE'
         roads_data = None if _texture_mode else getattr(_gen_utils, '_puzzle_roads_data', None)
 
@@ -2511,8 +2513,16 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         from .utils.osm import gen as _osm_gen
 
         # Snap trails against the continuous tile before cutting — avoids raycasting misses in the inter-piece gaps.
+        # Always run this, even in CREATE_TEXTURE mode: generateJustTrail()
+        # itself detects tex_include_trail and, when on, bakes the trail onto
+        # blank's already-baked MMU_Paint texture right here (before the cut
+        # below splits blank into pieces that each inherit their own UV-mapped
+        # slice of that same shared image) instead of returning a mergeable
+        # curve — trails then comes back empty and the per-piece merge loop
+        # below simply no-ops. With tex_include_trail off, curveObjs come back
+        # as normal and fall through to that same merge loop like PAINT mode.
         trails = []
-        if gpx_paths and not _texture_mode:
+        if gpx_paths:
             overlay.update(0.6, "Generating trails…", f"{len(gpx_paths)} trail(s)…")
             trails = _generate_trails(context, gpx_paths, overlay, 0.6, 0.75)
 
