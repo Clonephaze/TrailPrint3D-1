@@ -180,7 +180,7 @@ def writeMetadata(obj, type = "MAP"):
 
         obj["overwritePathElevation"] = bpy.context.scene.tp3d.overwritePathElevation
 
-        obj["ExportGroup"] = 0 if bpy.context.scene.tp3d.singleColorMode else 1
+        obj["ExportGroup"] = 0 if (bpy.context.scene.tp3d.singleColorMode or "SINGLECOLORMODE" in bpy.context.scene.tp3d.elementMode) else 1
 
     if type == "CITY" or type == "WATER" or type == "FOREST" or type == "GLACIER" or type == "FARMLAND" or type == "SCREE" or type == "GREENSPACE":
         obj["Object type"] = type

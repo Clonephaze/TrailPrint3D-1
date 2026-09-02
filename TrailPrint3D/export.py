@@ -11,7 +11,7 @@ from mathutils import Vector  # type: ignore
 
 from . import addon_preferences, temp
 from . import progress as _progress
-from .threemf_discovery import get_threemf_api, is_threemf_available
+from .threemf_discovery import get_threemf_api, has_threemf_capability, is_threemf_available
 
 
 def _sanitize_filename(name):
@@ -221,7 +221,7 @@ def export_selected_to_3mf(filename=None, is_auto: bool = False):
             def _on_progress(percent: int, message: str) -> None:
                 _overlay.update(0.97 + (percent / 100.0) * 0.03, "3MF Export", message)
 
-        result = _3mf_api.export_3mf(
+        export_kwargs = dict(
             filepath=full_path,
             objects=export_roots,
             use_mesh_modifiers=True,
@@ -231,10 +231,15 @@ def export_selected_to_3mf(filename=None, is_auto: bool = False):
             thumbnail_image=thumbnail_path if not bpy.app.background else "",
             thumbnail_resolution=256,
             use_orca_format="PAINT" if _is_texture_mode else "AUTO",
-            slicer_profile=tp3d.slicer_profile_name,
             progress_mode="NONE" if is_auto else "AUTO",
             on_progress=_on_progress,
         )
+        if has_threemf_capability("slicer_profile"):
+            export_kwargs["slicer_profile"] = tp3d.slicer_profile_name
+        else:
+            _progress.WarningsOverlay.add_warning("3MF Addon update available (slicer profiles)", "warn")
+
+        result = _3mf_api.export_3mf(**export_kwargs)
         if result.status == "FINISHED":
             print(f"Successfully exported to: {full_path}")
             _progress.WarningsOverlay.add_warning("Exported as 3mf", "ok")
