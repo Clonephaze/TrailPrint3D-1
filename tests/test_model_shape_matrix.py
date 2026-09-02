@@ -69,6 +69,7 @@ for _mod in _addon_utils.modules():
 
 from TrailPrint3D.export import is_3mf_extension_installed
 from TrailPrint3D.utils import elevation as _elevation_module
+from TrailPrint3D.utils.dataclasses import GenerationContext
 from TrailPrint3D.utils.generation import runGeneration
 
 # ---------------------------------------------------------------------------
@@ -77,7 +78,7 @@ from TrailPrint3D.utils.generation import runGeneration
 _original_get_tile_elevation = _elevation_module.get_tile_elevation
 
 
-def _fake_get_tile_elevation(obj, progress_cb=None):
+def _fake_get_tile_elevation(gen_or_obj, progress_cb=None):
     """Drop-in replacement for elevation.get_tile_elevation() that fabricates
     a smooth single-hill heightfield instead of calling MapTerhorn. Keeps
     real geographic-bounds bookkeeping (compute_and_store_tile_bounds is
@@ -85,8 +86,12 @@ def _fake_get_tile_elevation(obj, progress_cb=None):
     the network round-trip is skipped. Matches the real function's
     (elevations, diff) return contract and the scene-property side effects
     downstream code (metadata, overlays) reads."""
+    # Mirrors the real function's gen_or_obj contract (accepts either a
+    # GenerationContext or a bare bpy Object).
+    obj = gen_or_obj.mapObject if isinstance(gen_or_obj, GenerationContext) else gen_or_obj
+
     world_verts, _num_subdivisions, _disable_cache, _minLat, _maxLat, _minLon, _maxLon = (
-        _elevation_module.compute_and_store_tile_bounds(obj)
+        _elevation_module.compute_and_store_tile_bounds(gen_or_obj)
     )
 
     elevations = [

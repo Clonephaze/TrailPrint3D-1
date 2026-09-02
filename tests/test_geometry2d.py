@@ -416,7 +416,7 @@ def test_cdt_triangulate_square_no_holes():
     polygon = Polygon(exterior)
     result = g2d._cdt_triangulate(polygon, exterior, [])
     assert result is not None
-    verts2d, tris = result
+    verts2d, tris, ring_idx_lists = result
     assert len(verts2d) == 4
     assert len(tris) == 2  # a square triangulates into exactly 2 triangles
 
@@ -428,7 +428,7 @@ def test_cdt_triangulate_with_hole():
     polygon = Polygon(exterior, [hole])
     result = g2d._cdt_triangulate(polygon, exterior, [hole])
     assert result is not None
-    verts2d, tris = result 
+    verts2d, tris, ring_idx_lists = result 
     assert len(verts2d) == 8  # 4 outer + 4 hole verts, shared by index
     assert len(tris) > 2  # more triangles needed to route around the hole
 
