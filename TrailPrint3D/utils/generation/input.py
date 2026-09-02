@@ -411,11 +411,11 @@ def _rg_convert_then_center_coordinates(gen: GenerationContext):
 
     blender_coords = convert_to_blender_coordinates_batch(gen.runtime.pathCoordinates)
     if "separate_paths" in gen.settings.flags or len(gen.runtime.pathSegs or []) > 1:
-        gen.blenderPathSegs = [
+        gen.runtime.blenderPathSegs = [
             convert_to_blender_coordinates_batch(path) for path in gen.runtime.pathSegs or []
         ]
     if gen.runtime.pathSegsByFile:
-        gen.blenderPathSegsByFile = [
+        gen.runtime.blenderPathSegsByFile = [
             [convert_to_blender_coordinates_batch(seg) for seg in file_segs]
             for file_segs in (gen.runtime.pathSegsByFile or [])
         ]

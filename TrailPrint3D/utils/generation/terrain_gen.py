@@ -376,9 +376,9 @@ def _rg_prepare_trail_coords(gen: GenerationContext):
     Selects the correct coordinate set for the generation type, converts to Blender
     coordinates, simplifies, removes duplicates, and subdivides long segments to
     prevent trail clipping through terrain.  Stores results back into gen:
-      gen.blenderCoords         — processed main path
-      gen.blenderPathSegs       — processed per-segment paths (replaces Phase-6 raw version)
-      gen.blenderPathSegsByFile — processed per-file paths   (replaces Phase-6 raw version)
+      gen.runtime.blenderCoords         — processed main path
+      gen.runtime.blenderPathSegs       — processed per-segment paths (replaces Phase-6 raw version)
+      gen.runtime.blenderPathSegsByFile — processed per-file paths   (replaces Phase-6 raw version)
     Also writes the real-world map scale to the scene property store.
     """
     def _subdivide_long_segments(coords, max_xy_dist, depsgraph=None):
@@ -432,7 +432,7 @@ def _rg_prepare_trail_coords(gen: GenerationContext):
 
     if bpy.app.debug:
         # Log average slope using the pre-processed per-segment coords when available
-        _pre_segs = gen.blenderPathSegs or [blender_coords]
+        _pre_segs = gen.runtime.blenderPathSegs or [blender_coords]
         _g_slopes = []
         for _seg in _pre_segs:
             for _i in range(len(_seg) - 1):
@@ -450,7 +450,7 @@ def _rg_prepare_trail_coords(gen: GenerationContext):
     blender_coords = simplify_curve(blender_coords, 0.12)
     print("Removing duplicates")
     blender_coords = separate_duplicate_xy(blender_coords, 0.05)
-    gen.blenderCoords = _subdivide_long_segments(
+    gen.runtime.blenderCoords = _subdivide_long_segments(
         blender_coords, _MAX_TRAIL_SEG_BU, _depsgraph
     )
 
@@ -458,7 +458,7 @@ def _rg_prepare_trail_coords(gen: GenerationContext):
     if (
         "separate_paths" in gen.settings.flags or len(gen.runtime.pathSegs or []) > 1
     ) and "trail_map" not in gen.settings.flags:
-        gen.blenderPathSegs = [
+        gen.runtime.blenderPathSegs = [
             _subdivide_long_segments(
                 separate_duplicate_xy(
                     simplify_curve(convert_to_blender_coordinates_batch(path), 0.12),
@@ -470,11 +470,11 @@ def _rg_prepare_trail_coords(gen: GenerationContext):
             for path in (gen.runtime.pathSegs or [])
         ]
     else:
-        gen.blenderPathSegs = None
+        gen.runtime.blenderPathSegs = None
 
     # --- Per-file paths ---
     if gen.runtime.pathSegsByFile and "trail_map" not in gen.settings.flags:
-        gen.blenderPathSegsByFile = [
+        gen.runtime.blenderPathSegsByFile = [
             [
                 _subdivide_long_segments(
                     separate_duplicate_xy(
@@ -489,7 +489,7 @@ def _rg_prepare_trail_coords(gen: GenerationContext):
             for file_segs in gen.runtime.pathSegsByFile
         ]
     else:
-        gen.blenderPathSegsByFile = None
+        gen.runtime.blenderPathSegsByFile = None
 
     # --- Store real-world map scale ---
     if len(coordinates) >= 2:
@@ -503,7 +503,7 @@ def _rg_prepare_trail_coords(gen: GenerationContext):
 def _rg_build_trail_curves(gen: GenerationContext):
     """Create Blender curve objects from the processed trail coordinate arrays.
 
-    Uses gen.blenderCoords, gen.blenderPathSegs, and gen.blenderPathSegsByFile
+    Uses gen.runtime.blenderCoords, gen.runtime.blenderPathSegs, and gen.runtime.blenderPathSegsByFile
     (populated by _rg_prepare_trail_coords) and gen.settings.flags to pick the right
     curve-creation strategy.
 
@@ -512,9 +512,9 @@ def _rg_build_trail_curves(gen: GenerationContext):
     from ..mesh_ops import splitCurves
     from ..primitives import create_curve_from_coordinates
 
-    blender_coords = gen.blenderCoords or []
-    blender_coords_separate = gen.blenderPathSegs or []
-    blender_coords_by_file = gen.blenderPathSegsByFile or []
+    blender_coords = gen.runtime.blenderCoords or []
+    blender_coords_separate = gen.runtime.blenderPathSegs or []
+    blender_coords_by_file = gen.runtime.blenderPathSegsByFile or []
     flags = gen.settings.flags
 
     curveObj = None

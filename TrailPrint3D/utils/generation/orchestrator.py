@@ -177,7 +177,7 @@ def runGeneration(type, locked_scale=None):
             bpy.context.scene.tp3d.currentTrail = curveObjs[0]
 
         _n_segs = len(curveObjs) if curveObjs else 0
-        _n_pts = len(gen.blenderCoords) if gen.blenderCoords else 0
+        _n_pts = len(gen.runtime.blenderCoords) if gen.runtime.blenderCoords else 0
         overlay.add_completed_step(
             f"Trail built  —  {_n_segs} seg{'s' if _n_segs != 1 else ''}, {_n_pts} pts"
         )
