@@ -18,6 +18,28 @@ from . import constants as const
 from . import temp, utils
 
 
+def _slicer_profile_items(self, context):
+    items = [("NONE", "Built-in defaults",
+              "Use the built-in Bambu A1 template. "
+              "Add your own profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced")]
+    try:
+        import importlib
+        from .threemf_discovery import get_threemf_api
+        _api = get_threemf_api()
+        if _api is None:
+            return items
+        # Use the resolved api module's package to avoid bl_ext prefix mismatch.
+        sp = importlib.import_module(".slicer_profiles", package=_api.__package__)
+        for p in sp.list_profiles():
+            detail = p.machine or p.vendor
+            items.append((p.name, p.name,
+                          f"{detail} (from {p.source_file}). "
+                          "Add more profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced"))
+    except Exception:
+        pass
+    return items
+
+
 def shape_callback(self,context):
     #print(f"Shape: {self.shape}")
     #if self.shape == "HEXAGON INNER TEXT" or self.shape == "HEXAGON OUTER TEXT" or self.shape =="OCTAGON OUTER TEXT" or self.shape == "HEXAGON FRONT TEXT":
@@ -202,6 +224,27 @@ def repair_invalid_shape(scene):
     tp3d = getattr(scene, "tp3d", None)
     if tp3d is not None and not tp3d.shape:
         tp3d.shape = "HEXAGON"
+
+
+# Module-level lists keep items alive so Blender's enum cache never holds dangling pointers.
+_ELEMENT_MODE_ITEMS_BASE = [
+    ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
+    ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
+    # ('SINGLECOLORMODE', _("SingleColor (Alternative)"), "Use this SingleColorMode if the other one causes problems"),
+    ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')")),
+]
+_ELEMENT_MODE_ITEMS_WITH_TEXTURE = [
+    ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
+    ('CREATE_TEXTURE', _("Create Texture"), _("Rasterize OSM elements into a UV texture for multi-filament 3MF export")),
+    ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
+    # ('SINGLECOLORMODE', _("SingleColor (Alternative)"), "Use this SingleColorMode if the other one causes problems"),
+    ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')")),
+]
+
+
+def _element_mode_items(self, context):
+    from . import temp
+    return _ELEMENT_MODE_ITEMS_WITH_TEXTURE if temp.has3mf else _ELEMENT_MODE_ITEMS_BASE
 
 
 # Define a Property Group to store variables
@@ -479,14 +522,19 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
 
     elementMode: EnumProperty(
         name="Element handling",
-        items=[
-            ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
-            ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
-            #('SINGLECOLORMODE', _("SingleColor (Alternative)"), "Use this SingleColorMode if the other one causes problems"),
-            ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')"))
-        ],
-        default='PAINT'
+        items=_element_mode_items,
+        default=0
     )# type: ignore
+    tex_include_roads: BoolProperty(  # type: ignore
+        name=_("Roads in texture"),
+        default=True,
+        description=_("Rasterize the road footprint into the paint texture (terrain under roads coloured black)")
+    )
+    tex_include_trail: BoolProperty(  # type: ignore
+        name=_("Trail in texture"),
+        default=True,
+        description=_("Rasterize the trail footprint into the paint texture (terrain under trail coloured red)")
+    )
     elementModeInset: FloatProperty(name=_("Clip Inset"), default=2.0, min=0.0, description=_("Thickness of solid frame for SCM-elements"))# type: ignore
 
     elementSource: EnumProperty(
@@ -560,6 +608,11 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     show_export: BoolProperty(name=_("Export"), default=True) # type: ignore
     disable_auto_export: BoolProperty(name=_("Disable Auto Export"), default=False, description=_("Don't automatically export files after generation")) # type: ignore
     disable_3mf_export: BoolProperty(name=_("Disable 3MF Export"), default=False, description=_("Don't use 3MF format even if the addon is installed")) # type: ignore
+    slicer_profile_name: EnumProperty(  # type: ignore
+        name=_("Slicer Profile"),
+        items=_slicer_profile_items,
+        description=_("Printer/filament profile embedded in the 3MF export. Add profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced"),
+    )
 
     show_stats: BoolProperty(name= _("Additional Info"), default=False) # type: ignore
     show_coloring: BoolProperty(name= _("Elements"), default=False) # type: ignore

@@ -204,6 +204,8 @@ class TP3D_PT_generate(bpy.types.Panel):
                 col.label(text=_("Auto-enabled with SCM Elements"), icon='LOCKED')
             if props.singleColorMode or _elem_scm:
                 col.prop(props, "singleColorModeHeight")
+            if props.elementMode == "CREATE_TEXTURE":
+                col.prop(props, "tex_include_trail", icon='CHECKBOX_HLT' if props.tex_include_trail else 'CHECKBOX_DEHLT')
 
             # Scale
             box = layout.box()
@@ -249,6 +251,8 @@ class TP3D_PT_advanced(bpy.types.Panel):
             box.prop(props, "disable_auto_export")
             if temp.has3mf:
                 box.prop(props, "disable_3mf_export")
+                if not props.disable_3mf_export:
+                    box.prop(props, "slicer_profile_name")
 
         # --- MAP ---
         layout.prop(props, "show_map", icon="TRIA_DOWN" if props.show_map else "TRIA_RIGHT", emboss=False)
@@ -372,15 +376,19 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 col.prop(props, "el_sSmallActive", icon='CHECKBOX_HLT' if props.el_sSmallActive else 'CHECKBOX_DEHLT')
                 col.prop(props, "el_sServiceActive", icon='CHECKBOX_HLT' if props.el_sServiceActive else 'CHECKBOX_DEHLT')
                 col.prop(props, "el_sFootwaysActive", icon='CHECKBOX_HLT' if props.el_sFootwaysActive else 'CHECKBOX_DEHLT')
-                if props.elementMode == "PAINT" and _any_road and props.el_sHeight == 0:
+                if props.elementMode in ("PAINT", "CREATE_TEXTURE") and _any_road and props.el_sHeight == 0:
                     row = sub.row()
                     row.alert = True
                     row.label(text=_("Road Height must be > 0 in Paint mode"), icon='ERROR')
                 row = sub.row(align=True)
                 row.prop(props, "el_sMultiplier")
                 row.prop(props, "el_sHeight")
-                if props.elementMode != "PAINT":
+                if props.elementMode not in ("PAINT", "CREATE_TEXTURE"):
                     sub.prop(props, "el_sCutTolerance")
+                if props.elementMode == "CREATE_TEXTURE":
+                    sub.prop(props, "tex_include_roads", icon='CHECKBOX_HLT' if props.tex_include_roads else 'CHECKBOX_DEHLT')
+                if props.el_sServiceActive:
+                    sub.prop(props, "el_sExcludeAlleys", icon='CHECKBOX_HLT' if props.el_sExcludeAlleys else 'CHECKBOX_DEHLT')
 
         # --- PIN ---
         layout.prop(props, "show_pin", icon="TRIA_DOWN" if props.show_pin else "TRIA_RIGHT", emboss=False)

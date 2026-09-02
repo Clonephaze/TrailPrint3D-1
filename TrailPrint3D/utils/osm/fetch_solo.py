@@ -232,6 +232,7 @@ def fetch_osm_data(
             e,
             [
                 'nwr["building"]',
+                'nwr["building:part"]',
             ],
         ),
         "STREETS": lambda s, w, n, e, mapsize=0, big=True, med=True, small=False, exclude_alleys=True, footways=False, service=False, **_: (
