@@ -37,7 +37,7 @@ def _make_cache_path(bbox, kind, settings=None):
         water_ponds = bool(bpy.context.scene.tp3d.col_wPondsActive)
         water_small_rivers = bool(bpy.context.scene.tp3d.col_wSmallRiversActive)
         water_big_rivers = bool(bpy.context.scene.tp3d.col_wBigRiversActive)
-        exclude_alleys = bool(bpy.context.scene.tp3d.el_sExcludeAlleys)
+        exclude_alleys = True
         road_footways = bool(bpy.context.scene.tp3d.el_sFootwaysActive)
         road_service = bool(bpy.context.scene.tp3d.el_sServiceActive)
 
@@ -99,7 +99,7 @@ def _build_union_query(south, west, north, east, kinds, settings=None):
         water_ponds = bool(bpy.context.scene.tp3d.col_wPondsActive)
         water_small_rivers = bool(bpy.context.scene.tp3d.col_wSmallRiversActive)
         water_big_rivers = bool(bpy.context.scene.tp3d.col_wBigRiversActive)
-        exclude_alleys = bool(bpy.context.scene.tp3d.el_sExcludeAlleys)
+        exclude_alleys = True
         road_footways = bool(bpy.context.scene.tp3d.el_sFootwaysActive)
         road_service = bool(bpy.context.scene.tp3d.el_sServiceActive)
 
@@ -300,7 +300,7 @@ def _classify_element(element, active_kinds, settings=None):
                 ):
                     return "STREETS"
             else:
-                exclude_alleys = bool(bpy.context.scene.tp3d.el_sExcludeAlleys)
+                exclude_alleys = True
                 if not (
                     highway == "service"
                     and exclude_alleys

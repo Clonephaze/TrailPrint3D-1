@@ -197,17 +197,21 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
         water_ponds=bool(tp3d.col_wPondsActive),
         water_small_rivers=bool(tp3d.col_wSmallRiversActive),
         water_big_rivers=bool(tp3d.col_wBigRiversActive),
-        exclude_alleys=bool(tp3d.el_sExcludeAlleys),
+        exclude_alleys=True,
         road_footways=bool(tp3d.el_sFootwaysActive),
         road_service=bool(tp3d.el_sServiceActive),
     )
     map_km = gen.runtime.mapKm if gen.runtime.mapKm is not None else tp3d.sMapInKm
-    _active_kind_tasks = [
-        (key.upper(), _tile_tasks)
-        for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS
-        if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1)
-        and map_km <= max_size
-    ]
+    _active_kind_tasks = (
+        [
+            (key.upper(), _tile_tasks)
+            for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS
+            if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1)
+            and map_km <= max_size
+        ]
+        if gen.settings.elementSource == "OSM"
+        else []
+    )
     if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE:
         _active_kind_tasks.append(("BUILDINGS", _tile_tasks))
     if (
@@ -240,6 +244,79 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
     t.start()
     gen.fetch.fetchThread = t
     gen.fetch.fetchResult = result
+
+
+def _rg_start_satellite_prefetch(gen: GenerationContext):
+    """Launch a daemon thread that pre-fetches the ESA WorldCover land-cover
+    crop (and, in debug mode, a companion true-color photo) for the map's
+    tile bounds, overlapping the request with the elevation/OSM fetches.
+
+    No-op if elementSource isn't WORLDCOVER. The caller must join the thread
+    before consuming gen.fetch.satelliteResult.
+    """
+    if gen.settings.elementSource != "WORLDCOVER":
+        return
+
+    from ..satellite import get_cached_landcover_image, get_cached_photo_image
+
+    tp3d = bpy.context.scene.tp3d
+    min_lat, max_lat = gen.runtime.tbMinLat, gen.runtime.tbMaxLat
+    min_lon, max_lon = gen.runtime.tbMinLon, gen.runtime.tbMaxLon
+    disable_cache = bool(tp3d.disableCache)
+    debug = bool(bpy.app.debug)
+
+    result: dict = {}
+
+    def _run():
+        landcover = get_cached_landcover_image(
+            min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache
+        )
+        photo = (
+            get_cached_photo_image(
+                min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache
+            )
+            if debug
+            else None
+        )
+        result["landcover"] = landcover
+        result["photo"] = photo
+
+    t = threading.Thread(target=_run, daemon=True, name="satellite-prefetch")
+    t.start()
+    gen.fetch.satelliteThread = t
+    gen.fetch.satelliteResult = result
+
+
+def _rg_create_satellite_plane(gen: GenerationContext):
+    """Join the satellite prefetch thread and build the land-cover reference
+    plane, painting the terrain's up-facing faces from it in PAINT mode.
+
+    No-op if elementSource isn't WORLDCOVER or the fetch produced nothing.
+    """
+    if gen.settings.elementSource != "WORLDCOVER" or gen.fetch.satelliteThread is None:
+        return
+
+    from ..satellite import create_satellite_plane, paint_terrain_from_landcover
+
+    gen.fetch.satelliteThread.join()
+    result = gen.fetch.satelliteResult or {}
+    landcover = result.get("landcover")
+    if landcover is None:
+        print("WorldCover: no land-cover data returned for this area, skipping.")
+        return
+
+    min_lat, max_lat = gen.runtime.tbMinLat, gen.runtime.tbMaxLat
+    min_lon, max_lon = gen.runtime.tbMinLon, gen.runtime.tbMaxLon
+    tp3d = bpy.context.scene.tp3d
+    z_height = float(tp3d.highestZ) + 1.0
+
+    create_satellite_plane(
+        landcover, min_lat, max_lat, min_lon, max_lon, z_height,
+        debug_photo_tiled=result.get("photo"),
+    )
+
+    if gen.settings.elementMode == "PAINT":
+        paint_terrain_from_landcover(gen.runtime.mapObject, min_lat, max_lat, min_lon, max_lon)
 
 
 def _rg_fetch_elevation(gen: GenerationContext):
@@ -514,7 +591,7 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
     if gen.runtime.mapObject.type != "MESH":
         raise GenerationError(f"Map object '{gen.runtime.mapObject.name}' is not a mesh.")
     if (
-        not hasattr(gen, "tileVerts")
+        not hasattr(gen.runtime, "tileVerts")
         or gen.runtime.tileVerts is None
         or len(gen.runtime.tileVerts) == 0
     ):
@@ -560,6 +637,12 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
                 f"tileVerts length {len(tile_verts)} doesn't match vertices {_total_verts}"
             )
         new_z = (tile_verts / 1000.0) * gen.settings.scaleElevation * gen.runtime.autoScale * merc
+        if gen.settings.smoothTerrainTop:
+            from ..terrain import smooth_terrain_top_z
+
+            new_z = smooth_terrain_top_z(
+                co[:, 0], co[:, 1], new_z, iterations=gen.settings.smoothTerrainStrength
+            )
         co[:, 2] = new_z
         mesh.vertices.foreach_set("co", co.ravel())
         mesh.update()

@@ -42,6 +42,7 @@ class RunSettings:
     yTerrainOffset: float
     singleColorMode: bool
     elementMode: str
+    elementSource: str
     disableCache: bool
     num_subdivisions: int
     plateThickness: float
@@ -54,6 +55,8 @@ class RunSettings:
     pathThickness: float = 1.2
     genType: int = 0
     lockedScale: float | None = None
+    smoothTerrainTop: bool = False
+    smoothTerrainStrength: int = 2
 
 
 @dataclass
@@ -95,6 +98,8 @@ class FetchState:
 
     fetchThread: threading.Thread | None = None
     fetchResult: dict[str, dict[Any, tuple[dict, bool]]] | None = None
+    satelliteThread: threading.Thread | None = None
+    satelliteResult: dict[str, Any] | None = None
 
 
 @dataclass

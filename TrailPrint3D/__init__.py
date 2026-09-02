@@ -89,6 +89,7 @@ _PREMIUM_CLASS_NAMES = [
     "TP3D_OT_import_height_map",
     "TP3D_OT_popup_heightmap",
     "TP3D_OT_map_picker",
+    "TP3D_OT_sliding_puzzle_configurator",
 ]
 
 

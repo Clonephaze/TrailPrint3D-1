@@ -92,7 +92,7 @@ def export_selected_to_STL(force="STL"):
     active_obj = bpy.context.active_object
 
 
-def export_selected_to_3mf(is_auto: bool = False):
+def export_selected_to_3mf(filename=None, is_auto: bool = False):
     from .utils import show_message_box
     import os
     import tempfile
@@ -204,7 +204,8 @@ def export_selected_to_3mf(is_auto: bool = False):
     if not bpy.app.background:
         customThumbnail(duplicates, thumbnail_path)
 
-    full_path = exportPath + _sanitize_filename(bpy.context.scene.tp3d.modelname) + ".3mf"
+    base_name = filename if filename else bpy.context.scene.tp3d.modelname
+    full_path = exportPath + _sanitize_filename(base_name) + ".3mf"
 
     _3mf_api = get_threemf_api()
     if _3mf_api is None:

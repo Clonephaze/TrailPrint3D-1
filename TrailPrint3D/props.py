@@ -63,7 +63,7 @@ def shape_callback(self,context):
 def get_special_blend_items(self, context):
     # puzzles.blend itself (the hand-crafted jigsaw/sliding-puzzle templates)
     # stays Premium-exclusive and is stripped from free builds by build.py --
-    # unlike the interactive Puzzle Generator, which is free. Items must be a
+    # unlike the interactive Jigsaw Puzzle Generator, which is free. Items must be a
     # callback (not a static default) so this list can change per-build.
     #
     # Dynamic-items EnumProperty can't take an explicit `default=` -- Blender
@@ -171,6 +171,16 @@ def shape_update(self, context):
         self.shapeTextStyle = "NONE"
 
 
+def element_source_update(self, context):
+    # ESA WorldCover face-painting (paint_terrain_from_landcover) only runs
+    # in PAINT elementMode -- the "Element handling" control is hidden
+    # whenever WorldCover is selected (panels.py), so force the stored value
+    # to match what that hidden state implies, rather than silently doing
+    # nothing if elementMode was last left on SEPARATE/SINGLECOLORMODE_REMESH.
+    if self.elementSource == 'WORLDCOVER':
+        self.elementMode = 'PAINT'
+
+
 def get_effective_shape(tp3d) -> str:
     """The full shape identifier generation.py/metadata.py operate on
     (e.g. "HEXAGON OUTER TEXT"), composed from the base shape dropdown and
@@ -190,6 +200,24 @@ def get_effective_shape(tp3d) -> str:
     if style and style != "NONE" and style in valid_styles:
         return f"{base} {style}"
     return base
+
+
+# Effective shapes that add a backplate with an outer border around the map
+# (see the "outersize = size * (1 + outerBorderSize/100)" calc duplicated in
+# HexagonOuterText/HexagonFrontText/OctagonOuterText/MedalText in
+# text_objects.py, and the same set gating plateBevel/handleStyle in
+# panels.py's TP3D_PT_shapes). "... INNER TEXT" has no border, so it's not here.
+PLATE_SHAPES = {"HEXAGON OUTER TEXT", "HEXAGON FRONT TEXT", "OCTAGON OUTER TEXT", "CIRCLE OUTER TEXT"}
+
+
+def get_effective_footprint_size(tp3d):
+    """The actual outer footprint size (mm) of the generated model. Shapes
+    with a plate (see PLATE_SHAPES) are larger than objSize by the outer
+    border, so anything scaled to fit the map (e.g. an imported holder) needs
+    this instead of the bare objSize."""
+    if get_effective_shape(tp3d) in PLATE_SHAPES:
+        return tp3d.objSize * (1 + tp3d.outerBorderSize / 100)
+    return tp3d.objSize
 
 
 def repair_invalid_shape(scene):
@@ -474,6 +502,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     rescaleMultiplier: FloatProperty(name = _("scale"), default = 1, min = 0, max = 10000) # type: ignore
     thickenValue: FloatProperty(name= _("thickenValue"), default = 1, description = _("Makes your Map 1mm thicker")) # type: ignore
     fixedElevationScale: BoolProperty(name= _("FixedElevationScale(10mm)"), default=False, description = _("Force the elevation to be 10mm High from highest to lowest point (ElevationScale still applies after that)")) # type: ignore
+    smoothTerrainTop: BoolProperty(name= _("Smooth Terrain"), default=False, description = _("Smooth the Terrain. Useful if your Terrain looks blocky or has weird Grid lines")) # type: ignore
+    smoothTerrainStrength: IntProperty(name= _("Smoothing Strength"), default=2, min=1, max=10, description = _("Number of smoothing passes applied to the terrain top surface. Higher = smoother but less detailed")) # type: ignore
     singleColorMode: BoolProperty(name= _("SingleColorMode Trail"), default = False, description = _("Enable this if you don't have a Multicolor printer")) # type: ignore
     singleColorModeHeight: FloatProperty(name= _("Trail Height"), default = 0.4, min=0.0, max=10.0, description = _("How far the SCM trail strip rises above the terrain surface (mm). 0 = flush with terrain. Works the same as Road Height.")) # type: ignore
     tolerance: FloatProperty(name= _("SingleColorMode Tolerance"), default = 0.2, description=_("Tolerance of the Trail for the SingleColorMode"), min=0) # type: ignore
@@ -517,9 +547,21 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     elementModeInset: FloatProperty(name=_("Clip Inset"), default=2.0, min=0.0, description=_("Thickness of solid frame for SCM-elements"))# type: ignore
     col_osmSmoothing: FloatProperty(name=_("Smoothing"), default=0.0, min=0.0, max=1.0, subtype='FACTOR', description=_("Rounds element polygons, ignores water. 0 = off, 0.5 = slight, 1.0 = heavy"))# type: ignore
 
+    elementSource: EnumProperty(
+        name=_("Element Source"),
+        items=[
+            ('OSM', _("OSM"), _("Fetch water, forests, farmland, and other elements from OpenStreetMap/Overpass")),
+            ('WORLDCOVER', _("ESA WorldCover"), _("Color the terrain from ESA WorldCover's land-cover classification instead of individual OSM element toggles. Roads and Buildings still come from OSM.")),
+        ],
+        default='OSM',
+        update=element_source_update
+    )# type: ignore
+
 
     col_wArea: FloatProperty(name= _("Water Threshold"), default = 1, description = _("Lakes smaller than the threshold won't be included")) # type: ignore
-    col_wStreamWidth: FloatProperty(name= _("River Width"), default = 1.0, min=0.1, max=10.0, description = _("Adjusts the thickness of rivers and streams")) # type: ignore
+    col_wStreamWidth: FloatProperty(name= _("River Width"), default = 1.0, min=0.1, max=100.0, description = _("Adjusts the thickness of rivers and streams")) # type: ignore
+    col_wFlattenTop: BoolProperty(name= _("Flatten Water Surface"), default=True, description = _("Flatten each water body's top surface to its own median height, giving it a flat bottom instead of following every terrain bump. Only applies in Separate Objects and Single-Color mode -- has no effect in Paint on Map mode")) # type: ignore
+    col_wInsert: FloatProperty(name= _("Insert"), default=0, min=0.0, description = _("Sink the water piece this many mm lower in Z (its cutout in the terrain goes the same amount deeper, thickness unchanged). Only applies in Separate Objects and Single-Color mode")) # type: ignore
     col_wPondsActive: BoolProperty(name= _("Water"), default=False, description = _("Include ponds and lakes (natural=water)")) # type: ignore
     col_wSmallRiversActive: BoolProperty(name= _("Small Rivers"), default=False, description = _("smaller Streams, canals, ditches and other minor waterways are not included in default water setting")) # type: ignore
     col_wBigRiversActive: BoolProperty(name= _("Big Rivers"), default=False, description = _("Major named rivers (waterway with wikidata tag. Usually already part of water setting)")) # type: ignore
@@ -540,18 +582,17 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     el_bHeightMultiplier: FloatProperty(name= _("Height Multiplier"), default=1.0, min=0.01, soft_max=10.0, description=_("Multiplies building height")) # type: ignore
     el_bMinPrintMM: FloatProperty(name= _("Min Footprint (mm)"), default=0.15, min=0.0, soft_max=5.0, precision=2, description=_("Buildings whose printed footprint side is smaller than this (in model mm) are skipped. Scale-aware: a larger real-world building on a bigger-km map prints smaller, so this threshold naturally culls more on larger maps.")) # type: ignore
 
-    el_sMultiplier: FloatProperty(name= _("Road Width Multiplier"), default = 1, description = _("To make Roads thicker or thinner")) # type: ignore
+    el_sMultiplier: FloatProperty(name= _("Road Width Multiplier"), default = 1, min=0.01, soft_max=100.0, description = _("To make Roads thicker or thinner")) # type: ignore
     el_sHeight: FloatProperty(name= _("Road Height"), default = 0.4, min=0.0, description = _("Height of road geometry above terrain")) # type: ignore
-    el_sCutTolerance: FloatProperty(name= _("Road Cutout Tolerance"), default = 0.2, min=0.0, description = _("Extra clearance added around roads when cutting their footprint out of terrain/elements in SingleColorMode, so the printed road piece seats without an overly tight fit. Same idea as Tolerance Elements, but for roads.")) # type: ignore
+    el_sCutTolerance: FloatProperty(name= _("Road Cutout Tolerance"), default = 0.2, min=0.0, description = _("Extra clearance added around roads when cutting their footprint out of terrain/elements in SEPARATE/SingleColorMode, so the printed road piece seats without an overly tight fit. Same idea as Tolerance Elements, but for roads.")) # type: ignore
     el_sCutDepth: FloatProperty(name= _("Road Cut Depth"), default = 0.05, min=0.0, description = _("Extra depth added below the road's bottom face when cutting its slot out of the terrain in SingleColorMode. Increase if the road piece binds vertically.")) # type: ignore
-    el_sExcludeAlleys: BoolProperty(name= _("Exclude Alleys/Driveways"), default=True, description = _("Drops OSM highway=service ways explicitly tagged service=alley, service=driveway, service=parking_aisle, or service=drive-through -- the actual back-alley/driveway/parking-lot clutter -- while keeping plain service roads. Uses OSM's own tagging instead of guessing from geometry (a single street is often split into many short ways at every intersection, so filtering by length would wrongly cull real streets too).")) # type: ignore
 
     show_water: BoolProperty(name= _("Water & Ocean"), default=False) # type: ignore
     show_roads: BoolProperty(name= _("Roads"), default=False) # type: ignore
     el_sBigActive: BoolProperty(name= _("Big Roads"), default=False, description = f"primary, motorway, primary_link, motorway_link — limited to motorway only on maps < {const.ROADS_MAXSIZE}km") # type: ignore
     el_sMedActive: BoolProperty(name= _("Medium Roads"), default=False, description = f"secondary, tertiary, secondary_link, tertiary_link — ignored on maps < {const.STREETS_MAJOR_ONLY_THRESHOLD}km") # type: ignore
     el_sSmallActive: BoolProperty(name= _("Small Roads"), default=False, description = f"residential, living_street — ignored on maps < {const.STREETS_PRIMARY_THRESHOLD}km") # type: ignore
-    el_sServiceActive: BoolProperty(name= _("Service Roads"), default=False, description = f"highway=service -- vehicle access roads to buildings, parking lots, business estates (see Key:service on the OSM wiki). Split out from Small Roads since it needs its own alley/driveway/parking_aisle sub-tag filtering (see Exclude Alleys/Driveways) rather than being lumped in with named residential streets. Ignored on maps < {const.STREETS_PRIMARY_THRESHOLD}km") # type: ignore
+    el_sServiceActive: BoolProperty(name= _("Service Roads"), default=False, description = f"highway=service -- vehicle access roads to buildings, parking lots, business estates (see Key:service on the OSM wiki). Split out from Small Roads since alley/driveway/parking_aisle ways are always filtered out of it (using OSM's own service=* sub-tag, not geometry) rather than being lumped in with named residential streets. Ignored on maps < {const.STREETS_PRIMARY_THRESHOLD}km") # type: ignore
     el_sFootwaysActive: BoolProperty(name= _("Footways/Sidewalks"), default=False, description = f"highway=footway -- pedestrian sidewalks and paths, OSM's own separate non-vehicle category (see Key:highway on the OSM wiki). Kept out of Small Roads by default since footways trace almost every street and are usually the biggest single source of visual clutter. Ignored on maps < {const.STREETS_PRIMARY_THRESHOLD}km") # type: ignore
     el_oActive: BoolProperty(name=_("Include Ocean"), default=False, description=_("Generate ocean surface cut along the coastline. Experimental")) # type: ignore
     el_oMinIslandArea: FloatProperty(name=_("Min Island Area"), default=2.0, min=0.0, soft_max=100.0, description=_("Islands smaller than this area (in map units²) are not punched out of the ocean. At a 100mm map size, 1 map unit ≈ 1mm on the print, so the default 2.0 ≈ a ~1.4×1.4mm patch. Set to 0 to punch all islands.")) # type: ignore

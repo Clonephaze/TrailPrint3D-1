@@ -36,6 +36,24 @@ var ELEMENT_STATUS_ORDER = [
 var TP3D_ELEMENT_STATE = {};
 ELEMENT_STATUS_ORDER.forEach(function(entry) { TP3D_ELEMENT_STATE[entry[0]] = !!ELEMENT_STATES[entry[0]]; });
 
+// Mirrors utils.generation._ELEMENT_COMPOSITE_FLAGS -- 'water' and 'roads'
+// are each an OR of several independent sub-checkboxes with no single
+// master flag on the scene PropertyGroup, so a chip/card-icon click needs
+// to pick a sub-flag to actually turn on/off. Kept in sync with that Python
+// dict by hand (it's small and rarely changes); ADVANCED_SETTINGS_STATE
+// keys here are the camelCase versions of its snake_case attr names, same
+// convention as COMPOSITE_ELEMENTS in settings_modal.js.
+var TP3D_COMPOSITE_FLAGS = {
+    water: { subflags: ['colWPondsActive', 'colWSmallRiversActive', 'colWBigRiversActive', 'elOActive'], bootstrap: 'colWPondsActive' },
+    roads: { subflags: ['elSBigActive', 'elSMedActive', 'elSSmallActive', 'elSServiceActive', 'elSFootwaysActive'], bootstrap: 'elSSmallActive' }
+};
+
+function tp3dCompositeIsActive(key) {
+    var def = TP3D_COMPOSITE_FLAGS[key];
+    return !!def && typeof ADVANCED_SETTINGS_STATE !== 'undefined'
+        && def.subflags.some(function(f) { return !!ADVANCED_SETTINGS_STATE[f]; });
+}
+
 // Repaints every element with data-element-toggle="key" (this strip's chip
 // and/or the modal's card icon, whichever are currently in the DOM).
 function tp3dRepaintElementToggle(key) {
@@ -46,9 +64,56 @@ function tp3dRepaintElementToggle(key) {
     });
 }
 
+// Repaints a composite category's own sub-checkbox inputs (in the Settings
+// modal's Elements tab, if currently built) to match ADVANCED_SETTINGS_STATE
+// -- live + editable while the category is on, or showing its remembered
+// combo greyed out + locked while it's off. That tab is built once and
+// never re-rendered (see tp3dBuildElementsTab), so this has to reach into
+// the DOM directly rather than relying on a rebuild.
+function tp3dRepaintCompositeCheckboxes(key) {
+    var def = TP3D_COMPOSITE_FLAGS[key];
+    if (!def || typeof ADVANCED_SETTINGS_STATE === 'undefined') return;
+    var active = tp3dCompositeIsActive(key);
+    var remembered = (ADVANCED_SETTINGS_STATE._compositeRemembered || {})[key] || {};
+    def.subflags.forEach(function(f) {
+        var checked = active ? !!ADVANCED_SETTINGS_STATE[f] : !!remembered[f];
+        document.querySelectorAll('[data-advanced-checkbox="' + f + '"]').forEach(function(el) {
+            el.checked = checked;
+            el.disabled = !active;
+            if (el.closest('label')) el.closest('label').classList.toggle('locked', !active);
+        });
+    });
+}
+
+// Predicts what utils.apply_element_toggle will do server-side for a
+// composite category -- same remember-on-off / restore-on-on logic, kept
+// in ADVANCED_SETTINGS_STATE._compositeRemembered so a fresh page load and
+// a same-session chip click agree -- and applies it optimistically to
+// ADVANCED_SETTINGS_STATE + the modal's checkboxes.
 function tp3dToggleElement(key) {
     TP3D_ELEMENT_STATE[key] = !TP3D_ELEMENT_STATE[key];
     tp3dRepaintElementToggle(key);
+
+    var def = TP3D_COMPOSITE_FLAGS[key];
+    if (def && typeof ADVANCED_SETTINGS_STATE !== 'undefined') {
+        ADVANCED_SETTINGS_STATE._compositeRemembered = ADVANCED_SETTINGS_STATE._compositeRemembered || {};
+        if (tp3dCompositeIsActive(key)) {
+            var snapshot = {};
+            def.subflags.forEach(function(f) { snapshot[f] = !!ADVANCED_SETTINGS_STATE[f]; });
+            ADVANCED_SETTINGS_STATE._compositeRemembered[key] = snapshot;
+            def.subflags.forEach(function(f) { ADVANCED_SETTINGS_STATE[f] = false; });
+        } else {
+            var remembered = ADVANCED_SETTINGS_STATE._compositeRemembered[key] || {};
+            var hasRemembered = def.subflags.some(function(f) { return !!remembered[f]; });
+            if (hasRemembered) {
+                def.subflags.forEach(function(f) { ADVANCED_SETTINGS_STATE[f] = !!remembered[f]; });
+            } else {
+                ADVANCED_SETTINGS_STATE[def.bootstrap] = true;
+            }
+        }
+        tp3dRepaintCompositeCheckboxes(key);
+    }
+
     fetch('http://127.0.0.1:' + PORT + '/toggle_element', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

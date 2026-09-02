@@ -24,11 +24,13 @@ from .terrain_gen import (
     _cleanup_build_area,
     _rg_build_trail_curves,
     _rg_create_map_object,
+    _rg_create_satellite_plane,
     _rg_displace_terrain_with_curve,
     _rg_extrude_terrain,
     _rg_fetch_elevation,
     _rg_prepare_trail_coords,
     _rg_start_osm_prefetch,
+    _rg_start_satellite_prefetch,
 )
 
 # ---------------------------------------------------------------------------
@@ -138,6 +140,7 @@ def runGeneration(type, locked_scale=None):
 
         # --- OSM background prefetch: start now so Overpass requests overlap with elevation download ---
         _rg_start_osm_prefetch(gen)
+        _rg_start_satellite_prefetch(gen)
 
         if gen.fetch.fetchThread is not None:
             print("OSM prefetch started (overlapping elevation download)")
@@ -196,6 +199,7 @@ def runGeneration(type, locked_scale=None):
 
         # --- Phase 14: Create terrain overlay elements ---
         overlay.update(0.83, "Terrain Elements", "Adding elements…")
+        _rg_create_satellite_plane(gen)
         if gen.fetch.fetchThread is not None:
             gen.fetch.fetchThread.join()
         _rg_build_terrain_elements(gen, prefetched_osm=gen.fetch.fetchResult)

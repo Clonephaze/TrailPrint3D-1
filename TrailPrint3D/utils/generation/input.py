@@ -63,6 +63,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         yTerrainOffset: float = tp3d.yTerrainOffset
         singleColorMode: bool = tp3d.singleColorMode
         elementMode: str = tp3d.elementMode
+        elementSource: str = tp3d.elementSource
         disableCache: bool = tp3d.disableCache
         num_subdivisions: int = tp3d.num_subdivisions
         textFont: str = tp3d.textFont
@@ -87,6 +88,8 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         pathThickness: float = tp3d.pathThickness
         el_sCutTolerance: float = tp3d.el_sCutTolerance
         el_sCutDepth: float = tp3d.el_sCutDepth
+        smoothTerrainTop: bool = tp3d.smoothTerrainTop
+        smoothTerrainStrength: int = tp3d.smoothTerrainStrength
         jMapLat: float = tp3d.jMapLat
         jMapLon: float = tp3d.jMapLon
         jMapRadius: float = tp3d.jMapRadius
@@ -206,6 +209,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
             yTerrainOffset=yTerrainOffset,
             singleColorMode=singleColorMode,
             elementMode=elementMode,
+            elementSource=elementSource,
             disableCache=disableCache,
             num_subdivisions=num_subdivisions,
             plateThickness=plateThickness,
@@ -218,6 +222,8 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
             pathThickness=pathThickness,
             genType=gen_type,
             lockedScale=locked_scale,
+            smoothTerrainTop=smoothTerrainTop,
+            smoothTerrainStrength=smoothTerrainStrength,
         ),
         elevation=ElevationSettings(
             el_Smoothing=el_Smoothing,

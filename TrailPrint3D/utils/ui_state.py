@@ -361,22 +361,49 @@ _ADVANCED_SETTINGS_FIELDS = [
         "type": float,
         "group": "Roads",
     },
-    {
-        "key": "elSExcludeAlleys",
-        "attr": "el_sExcludeAlleys",
-        "type": bool,
-        "group": "Roads",
-    },
 ]
 _ADVANCED_SETTINGS_BY_KEY = {f["key"]: f for f in _ADVANCED_SETTINGS_FIELDS}
+_ATTR_TO_ADVANCED_KEY = {f["attr"]: f["key"] for f in _ADVANCED_SETTINGS_FIELDS}
+
+
+def build_composite_remembered_state(tp3d=None):
+    """Per composite category (water, roads), the sub-flag combination the
+    Settings modal should show -- greyed out and unclickable -- while that
+    category is off. Mirrors apply_element_toggle's own remember/restore
+    logic: the live combo if any sub-flag is currently on, else whatever
+    was remembered from the last time it got toggled off via a picker
+    chip/card-icon (or all-False if that's never happened). Keyed by the
+    same camelCase field keys ADVANCED_SETTINGS_STATE itself uses, so the
+    page can look values up directly by a checkbox's own field key.
+    """
+    if tp3d is None:
+        tp3d = bpy.context.scene.tp3d
+    result = {}
+    for cat_key, (subflags, _bootstrap) in _ELEMENT_COMPOSITE_FLAGS.items():
+        current = {f: bool(getattr(tp3d, f)) for f in subflags}
+        if any(current.values()):
+            values = current
+        else:
+            remembered = tp3d.get(f"_toggle_remember_{cat_key}")
+            values = (
+                {f: bool(v) for f, v in zip(subflags, remembered)}
+                if remembered
+                else current
+            )
+        result[cat_key] = {_ATTR_TO_ADVANCED_KEY[f]: v for f, v in values.items() if f in _ATTR_TO_ADVANCED_KEY}
+    return result
 
 
 def build_advanced_settings_state(tp3d=None):
     """Current values for every Advanced Settings popup field, for the
-    picker pages' ADVANCED_SETTINGS_STATE snapshot."""
+    picker pages' ADVANCED_SETTINGS_STATE snapshot. '_compositeRemembered'
+    is a reserved key (no real field uses a leading underscore) carrying
+    build_composite_remembered_state's per-category snapshot alongside it."""
     if tp3d is None:
         tp3d = bpy.context.scene.tp3d
-    return {f["key"]: getattr(tp3d, f["attr"]) for f in _ADVANCED_SETTINGS_FIELDS}
+    state = {f["key"]: getattr(tp3d, f["attr"]) for f in _ADVANCED_SETTINGS_FIELDS}
+    state["_compositeRemembered"] = build_composite_remembered_state(tp3d)
+    return state
 
 
 def apply_advanced_setting_update(tp3d, key, value):

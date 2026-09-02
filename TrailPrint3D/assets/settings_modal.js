@@ -32,15 +32,13 @@
 // fetched, the same way it already restores the base layer, form fields, etc.
 var TP3D_SETTINGS_TAB = 'elements';
 
+// Resolution deliberately isn't in this list -- every picker page already
+// has its own page-level #resolutionSlider (outside this modal), and that's
+// the one the /confirm handler actually applies (see operators.py: it
+// overwrites props.num_subdivisions from the payload's own 'resolution' at
+// Send time regardless of anything pushed live via this modal). Having both
+// meant two controls for one setting that could silently disagree.
 var SETTINGS_MODAL_MAP_FIELDS = [
-    { key: 'resolution', source: 'SETTINGS_STATE', endpoint: 'update_setting',
-      label: 'Resolution', type: 'range', step: 1, min: 1, max: 10,
-      title: '(max recommended 8) Higher number = more detailed terrain but slower generation. Drag the slider up to 10, or type a larger number directly.',
-      preview: 'https://trailprint3d.com/images/howto/installation/Resolution.webp',
-      previewCaption: [
-          'Higher Resolution -> Higher Quality map but longer Generation times',
-          'For a 100mm Large map, a Resolution of 8 is the sweetspot'
-      ] },
     { key: 'scaleElevation', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Elevation Scale', type: 'number', step: 0.1, min: 0,
       title: 'Multiplier to the Elevation',
@@ -112,7 +110,7 @@ var COMPOSITE_ELEMENTS = {
         ],
         numberFields: [
             { key: 'colWArea', label: 'Lake/Pond Threshold', step: 0.1, min: 0 },
-            { key: 'colWStreamWidth', label: 'River Width', step: 0.1, min: 0.1, max: 10 },
+            { key: 'colWStreamWidth', label: 'River Width', step: 0.1, min: 0.1, max: 100 },
             { key: 'elOMinIslandArea', label: 'Min Island Area', step: 0.5, min: 0 },
             { key: 'elORdpEpsilon', label: 'Coastline Simplify', step: 0.01, min: 0, max: 2 }
         ]
@@ -123,8 +121,7 @@ var COMPOSITE_ELEMENTS = {
             { key: 'elSMedActive', label: 'Medium Roads' },
             { key: 'elSSmallActive', label: 'Small Roads' },
             { key: 'elSServiceActive', label: 'Service Roads' },
-            { key: 'elSFootwaysActive', label: 'Footways/Sidewalks' },
-            { key: 'elSExcludeAlleys', label: 'Exclude Alleys/Driveways' }
+            { key: 'elSFootwaysActive', label: 'Footways/Sidewalks' }
         ],
         numberFields: [
             { key: 'elSMultiplier', label: 'Width Multiplier', step: 0.1, min: 0 },
@@ -261,12 +258,24 @@ function tp3dBuildNumberField(field) {
     return wrap;
 }
 
-function tp3dBuildCheckboxField(field) {
+// *compositeKey*, when given, marks this checkbox as one of a composite
+// category's own sub-flags (see TP3D_COMPOSITE_FLAGS in element_status.js)
+// -- while that category is off, the checkbox shows its remembered value
+// (ADVANCED_SETTINGS_STATE._compositeRemembered, from
+// utils.build_composite_remembered_state) instead of the live False, and
+// is locked (disabled) rather than editable. A field not present in that
+// category's remembered map is never locked, same as a plain checkbox.
+function tp3dBuildCheckboxField(field, compositeKey) {
     var label = document.createElement('label');
     label.title = field.title || '';
     var input = document.createElement('input');
     input.type = 'checkbox';
-    input.checked = !!ADVANCED_SETTINGS_STATE[field.key];
+    input.setAttribute('data-advanced-checkbox', field.key);
+    var remembered = compositeKey ? ((ADVANCED_SETTINGS_STATE._compositeRemembered || {})[compositeKey] || {}) : {};
+    var locked = compositeKey && !tp3dCompositeIsActive(compositeKey) && remembered.hasOwnProperty(field.key);
+    input.checked = locked ? !!remembered[field.key] : !!ADVANCED_SETTINGS_STATE[field.key];
+    input.disabled = locked;
+    if (locked) label.classList.add('locked');
     input.addEventListener('change', function() {
         tp3dSendAdvancedUpdate(field.key, input.checked);
     });
@@ -324,7 +333,7 @@ function tp3dBuildCompositeElementCard(key) {
 
     var checklist = document.createElement('div');
     checklist.className = 'card-checklist';
-    def.checkboxes.forEach(function(field) { checklist.appendChild(tp3dBuildCheckboxField(field)); });
+    def.checkboxes.forEach(function(field) { checklist.appendChild(tp3dBuildCheckboxField(field, key)); });
     card.appendChild(checklist);
 
     def.numberFields.forEach(function(field) { card.appendChild(tp3dBuildNumberField(field)); });

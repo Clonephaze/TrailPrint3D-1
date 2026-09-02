@@ -150,6 +150,17 @@ class TP3D_OT_export_three_mf(bpy.types.Operator):
     bl_idname = "tp3d.export_three_mf"
     bl_label = "Export 3mf"
     bl_description = "Export Selected Objects as Separate 3MF. Separate Addon by Clonephaze"
+    bl_options = {'REGISTER'}
+
+    filename: StringProperty(name=_("File Name"), default="")  # type: ignore
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "filename")
+
+    def invoke(self, context, event):
+        self.filename = context.scene.tp3d.modelname
+        return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
         tp3d = context.scene.tp3d  # Access stored variables
@@ -157,7 +168,7 @@ class TP3D_OT_export_three_mf(bpy.types.Operator):
         installed = utils.is_3mf_extension_installed()
 
         if installed:
-        
+
             exportPath = tp3d.get('export_path', None)
 
             if not exportPath:
@@ -175,18 +186,22 @@ class TP3D_OT_export_three_mf(bpy.types.Operator):
             if not os.path.isdir(exportPath):
                 self.report({'ERROR'}, f"Invalid export Directory: {exportPath}. Please select a valid Directory.")
                 return {'CANCELLED'}
-            
+
             if not context.selected_objects:
                 self.report({'ERROR'}, "Please select the Object you want to Export")
                 return {'CANCELLED'}
-            
-            utils.export_selected_to_3mf()
+
+            if not self.filename:
+                self.report({'ERROR'}, "Please enter a filename")
+                return {'CANCELLED'}
+
+            utils.export_selected_to_3mf(self.filename)
 
             utils.show_message_box(f"Exported to: {exportPath}", "INFO", "Export Complete")
         else:
             print("Addon not Installed")
 
-        
+
 
         return {'FINISHED'}
 
@@ -1994,6 +2009,8 @@ def _collect_existing_maps():
     for obj in bpy.context.scene.objects:
         if obj.get("Object type") != "MAP" and obj.get("objType") != "MAP":
             continue
+        if "PuzzleRow" in obj or "PuzzleCol" in obj:
+            continue
 
         if obj.get("Shape") == "CUSTOM":
             shape = "custom"
@@ -2115,7 +2132,7 @@ def _generate_trails(context, gpx_paths, overlay, progress_start, progress_end):
 
 class TP3D_OT_puzzle_configurator(bpy.types.Operator):
     bl_idname = "tp3d.puzzle_configurator"
-    bl_label = "Puzzle Generator"
+    bl_label = "Jigsaw Puzzle Generator"
     bl_description = (
         "Open an interactive map — draw a rectangle and choose rows/columns, "
         "then Send to Blender to generate an interlocking jigsaw puzzle map"
@@ -2144,6 +2161,14 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
         try:
             data = json.loads(rp.read_text(encoding='utf-8'))
+            # Jigsaw pieces use whatever minThickness the user already has
+            # set in the sidebar, same as every other generator -- no longer
+            # forced to 0 (or, with "Terrain on Frame" on, to a small
+            # positive override) here. minThickness's own FloatProperty
+            # already enforces min=0.5 (props.py), so the holder's own
+            # frame-cap boolean can't hit the zero-thickness pinch that
+            # forcing 0 used to risk either -- that only happens at exactly
+            # minThickness=0.
             self._apply_puzzle_result(context, data)
         except Exception as exc:  # noqa: BLE001 - Wide exception catch for puzzle result application
             import traceback
@@ -2243,6 +2268,13 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         gpx_paths = data.get('gpx_paths', [])
         tolerance = float(data.get('tolerance', 0.3) or 0.3)
         puzzle_corner_radius = float(data.get('puzzleCornerRadius') or 0)
+        # Read early (normally read just before the holder is actually built,
+        # much later below) -- frame_terrain_requested/frame_margin are
+        # needed BEFORE `blank` itself is created, to size its fetch tile
+        # large enough to also cover the holder's own outer margin.
+        holder_data = data.get('holder') or {}
+        frame_terrain_requested = bool(holder_data.get('frameTerrain'))
+        frame_margin = float(holder_data.get('wallWidth') or 4.0) + tolerance / 2
         rows_n = int(data.get('rows') or 0)
         cols_n = int(data.get('cols') or 0)
         shape_name = data.get('shape')
@@ -2306,12 +2338,59 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         x2, y2, _ = utils.convert_to_blender_coordinates(north, east, 0, 0)
         tile_w, tile_h = abs(x2 - x1), abs(y2 - y1)
         center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+        # The puzzle's own true world bounds -- BEFORE `blank` below is
+        # possibly enlarged to also cover the holder's own outer margin --
+        # passed as cut_into_puzzle_pieces' own piece_bounds so pieces' [0, 1]
+        # points keep mapping against the puzzle's real footprint rather than
+        # the (possibly bigger) blank.
+        puzzle_min_x, puzzle_max_x = min(x1, x2), max(x1, x2)
+        puzzle_min_y, puzzle_max_y = min(y1, y2), max(y1, y2)
 
-        blank = utils.create_rectangle(tile_w, tile_h, props.num_subdivisions)
+        # Clear whatever previously-generated content already occupies this
+        # spot first, same reasoning as runGeneration's own "Phase 7" (
+        # utils/generation.py) -- otherwise regenerating a puzzle at the
+        # same location leaves the old tile/pieces/holder sitting underneath
+        # the new one instead of being replaced. runGeneration's own check
+        # is a tight 0.2-unit point-proximity test with no object-type
+        # filter at all (it'll happily remove a light or camera sitting
+        # exactly on the target center); a puzzle's footprint is a whole
+        # grid area rather than one point, so this uses a bounding-box
+        # overlap against that area instead -- but, precisely because that
+        # area can be large, it's scoped to objects this addon itself
+        # generated (anything carrying objType/"Object type" metadata --
+        # MAP tiles, HOLDER objects, trails, pins, ...) rather than matching
+        # runGeneration's own unfiltered blast radius. Same pattern the
+        # premium sliding puzzle generator's own operator uses.
+        for obs in list(bpy.data.objects):
+            if obs.get("objType") is None and obs.get("Object type") is None:
+                continue
+            if puzzle_min_x <= obs.location.x <= puzzle_max_x and puzzle_min_y <= obs.location.y <= puzzle_max_y:
+                bpy.data.objects.remove(obs, do_unlink=True)
+
+        # blank_w/h stay equal to tile_w/h unless a holder with "Terrain on
+        # Frame" was requested -- one shared tile/elevation-fetch/paint pass
+        # then covers both the puzzle AND the holder's own outer footprint,
+        # instead of a second, independently-fetched tile whose OSM/elevation
+        # data (and therefore element colors) isn't guaranteed to agree with
+        # the first (same reasoning the premium sliding puzzle generator's
+        # own frame_margin uses).
+        blank_w = tile_w + (2 * frame_margin if frame_terrain_requested else 0)
+        blank_h = tile_h + (2 * frame_margin if frame_terrain_requested else 0)
+        blank = utils.create_rectangle(blank_w, blank_h, props.num_subdivisions)
         # cut_into_puzzle_pieces names every piece "{terrain_obj.name}_piece_{row}_{col}" --
         # renaming the blank here is what gets the puzzle's chosen name onto
         # every generated piece without touching that naming logic itself.
         blank.name = puzzle_name
+        # Captured now (not read back off `blank` itself later) -- once
+        # build_puzzle_holder consumes/removes frame_terrain_obj (=blank),
+        # the Python `blank` reference becomes a dangling RNA pointer and
+        # even reading blank.name off it raises ReferenceError, not just
+        # returning something stale.
+        blank_name = blank.name
+        # The puzzle's OWN size, not the (possibly enlarged) blank's actual
+        # size -- this metadata gets copied verbatim onto every piece by
+        # cut_into_puzzle_pieces, so it needs to describe the puzzle, not the
+        # fetch tile.
         blank["objSize"] = max(tile_w, tile_h)
         blank["Shape"] = "SQUARE"
         blank["objType"] = "MAP"
@@ -2398,6 +2477,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             bpy.data.objects.remove(buildings_obj, do_unlink=True)
         from .utils.osm import buildings as _bld_utils
         buildings_data = getattr(_bld_utils, '_puzzle_buildings_data', None)
+        from .utils.osm import gen as _osm_gen
 
         # Snap trails against the continuous tile before cutting — avoids raycasting misses in the inter-piece gaps.
         trails = []
@@ -2405,9 +2485,18 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             overlay.update(0.6, "Generating trails…", f"{len(gpx_paths)} trail(s)…")
             trails = _generate_trails(context, gpx_paths, overlay, 0.6, 0.75)
 
+        # `blank` may be larger than the puzzle itself (enlarged above to
+        # also cover the holder's own outer margin) -- piece_bounds keeps the
+        # pieces' own normalized points mapped against the PUZZLE's true
+        # sub-region rather than blank's full (bigger) extent, and
+        # keep_terrain_obj leaves `blank` around afterward so the holder's
+        # own terrain rim can still be cut from this SAME object/paint pass
+        # below instead of a second, independently-generated tile.
         overlay.update(0.75, "Cutting puzzle pieces…", f"{len(pieces)} piece(s)…")
         piece_objs, piece_seam_polys = utils.cut_into_puzzle_pieces(
-            blank, pieces, tolerance, roads_data=roads_data, buildings_data=buildings_data
+            blank, pieces, tolerance, roads_data=roads_data, buildings_data=buildings_data,
+            piece_bounds=(puzzle_min_x, puzzle_max_x, puzzle_min_y, puzzle_max_y) if frame_terrain_requested else None,
+            keep_terrain_obj=frame_terrain_requested,
         )
 
         if trails:
@@ -2423,7 +2512,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             overlay.update(0.85, "Merging trails into pieces…", f"{len(trails)} trail(s)…")
             for trail_obj in trails:
                 for piece_obj in piece_objs:
-                    if utils.osm.gen.is_bbox_overlapping(trail_obj, piece_obj):
+                    if _osm_gen.is_bbox_overlapping(trail_obj, piece_obj):
                         utils.merge_active_with_map(piece_obj, trail_obj)
             # merge_active_with_map only hides each original whole trail (hide_set(True))
             # rather than removing it -- fine for the regular single-tile flow where that
@@ -2433,7 +2522,6 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             utils.remove_objects(trails)
 
         holder_obj = None
-        holder_data = data.get('holder') or {}
         if holder_data.get('enabled'):
             overlay.update(0.97, "Generating holder…", "")
             if shape_name in ('hex', 'radial'):
@@ -2464,9 +2552,27 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
                     font=holder_data.get('font', ''),
                     text_size_mm=float(holder_data.get('textSize') or 0) or None,
                     piece_seam_polys=piece_seam_polys if holder_data.get('seamEngraving', True) else None,
+                    # The SAME blank cut_into_puzzle_pieces just left alone
+                    # (keep_terrain_obj above) -- its elevation AND per-face
+                    # element colors come from the exact same generation pass
+                    # as the pieces. build_circular_puzzle_holder (hex/radial,
+                    # above) isn't extended with this yet, so frame_terrain_
+                    # requested is only ever actually consumed here.
+                    frame_terrain_obj=blank if frame_terrain_requested else None,
                 )
             if holder_obj is not None:
                 holder_obj.name = f"{puzzle_name}_Holder"
+
+        # Safety net, not the normal path -- build_puzzle_holder above
+        # already consumes (removes) `blank` itself whenever frame_terrain_obj
+        # was actually passed to it. This only fires if frame_terrain_requested
+        # was set but the holder ended up NOT built that way regardless (the
+        # holder disabled entirely, or the hex/radial circular holder branch,
+        # which doesn't accept frame_terrain_obj) -- keep_terrain_obj above
+        # left `blank` alive expecting a consumer that, in that case, never
+        # ran, so it would otherwise leak as an orphaned MAP-tagged tile.
+        if frame_terrain_requested and blank_name in bpy.data.objects:
+            bpy.data.objects.remove(bpy.data.objects[blank_name], do_unlink=True)
 
         try:
             utils.zoom_camera_to_objects(piece_objs + ([holder_obj] if holder_obj is not None else []))
@@ -2726,9 +2832,10 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         utils.createTerrainFromSelected(manage_overlay=False, skip_bottom_recess=True)
 
         if gpx_paths:
+            from .utils.osm import gen as _osm_gen
             trails = _generate_trails(context, gpx_paths, overlay, 0.95, 0.99)
             for trail_obj in trails:
-                if utils.osm.gen.is_bbox_overlapping(trail_obj, blank):
+                if _osm_gen.is_bbox_overlapping(trail_obj, blank):
                     utils.merge_active_with_map(blank, trail_obj)
             if not bpy.app.debug:
                 utils.remove_objects(trails)

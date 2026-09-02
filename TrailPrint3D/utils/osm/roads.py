@@ -50,6 +50,8 @@ class RoadConfig:
     max_lat: float
     max_lon: float
     street_width_multiplier: float
+    # Always True (see from_scene) -- alley/driveway/parking_aisle filtering
+    # isn't user-configurable, just always-on cleanup of Service Roads.
     exclude_alleys: bool
     tier_active: dict[str, bool] = field(
         default_factory=lambda: {t: True for t in TIER_TAGS}
@@ -79,7 +81,7 @@ class RoadConfig:
             max_lat=tp3d.maxLat,
             max_lon=tp3d.maxLon,
             street_width_multiplier=tp3d.el_sMultiplier,
-            exclude_alleys=bool(tp3d.el_sExcludeAlleys),
+            exclude_alleys=True,
             tier_active=tier_active,
         )
 
@@ -371,6 +373,127 @@ def _triangulated_terrain_faces(map_obj: bpy.types.Object) -> list:
     return tris
 
 
+def terrain_surface_min_z(terrain_tris: list) -> float:
+    """Lowest Z among a terrain's upward-facing surface triangles (see
+    ``_triangulated_terrain_faces``) -- the actual relief's lowest point,
+    not the Z of the solid's flat bottom face (which sits further down to
+    give every point minThickness of material)."""
+    return min(pt[2] for tri in terrain_tris for pt in tri)
+
+
+def _bary_z(tri: tuple, x: float, y: float) -> float:
+    """Interpolate Z at (x, y) inside a flat 3-D triangle via barycentric coords."""
+    (x0, y0, z0), (x1, y1, z1), (x2, y2, z2) = tri
+    d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+    if abs(d) < 1e-12:
+        return (z0 + z1 + z2) / 3.0
+    w0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / d
+    w1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / d
+    w2 = 1.0 - w0 - w1
+    return w0 * z0 + w1 * z1 + w2 * z2
+
+
+def _clip_terrain_grid_to_polygon(
+    terrain_tris: list,
+    polygon,
+    z_offset: float,
+) -> tuple[list[tuple[float, float, float]], list[tuple[int, int, int]]]:
+    """Clip the terrain's own triangulated grid to a 2-D road polygon (holes included).
+
+    Triangles fully inside the polygon are kept verbatim -- same vertices, same
+    connectivity as the terrain mesh -- which is what gives the road top the
+    identical resolution/pattern as the terrain and painted elements, instead
+    of an independent (and much uglier) earcut triangulation. Triangles
+    straddling the polygon boundary are Shapely-clipped and earcut-filled only
+    for that sliver; height at any new vertex is barycentric-interpolated from
+    the original flat terrain triangle, so it's exact, not approximated.
+    Terrain outside the polygon (or inside a hole, e.g. a city block) is
+    dropped, which is what carves the hole into the road mesh.
+    """
+    from shapely.geometry import Polygon as ShPolygon
+    from shapely.prepared import prep
+
+    if polygon is None or polygon.is_empty:
+        return [], []
+
+    # Cheap bounding-box pre-filter: only construct ShPolygon for triangles
+    # whose AABB overlaps the road polygon bbox.  For a road covering ~5% of
+    # the terrain this eliminates ~95% of ShPolygon constructions vs. the old
+    # STRtree approach (which built ShPolygon for every tri unconditionally).
+    pbounds = polygon.bounds          # (minx, miny, maxx, maxy)
+    px0, py0, px1, py1 = pbounds
+    prepared = prep(polygon)
+
+    tri_polys = []
+    tri_data = []
+    for tri in terrain_tris:
+        (x0, y0, _z0), (x1, y1, _z1), (x2, y2, _z2) = tri
+        if max(x0, x1, x2) < px0 or min(x0, x1, x2) > px1:
+            continue
+        if max(y0, y1, y2) < py0 or min(y0, y1, y2) > py1:
+            continue
+        tp = ShPolygon(((x0, y0), (x1, y1), (x2, y2)))
+        if tp.is_empty or not tp.is_valid or tp.area <= 1e-12:
+            continue
+        tri_polys.append(tp)
+        tri_data.append(tri)
+
+    if not tri_polys:
+        return [], []
+
+    out_verts: list[tuple[float, float, float]] = []
+    out_tris: list[tuple[int, int, int]] = []
+    vert_cache: dict[tuple[float, float, float], int] = {}
+
+    def _get_vert(x: float, y: float, z: float) -> int:
+        key = (round(x, 5), round(y, 5), round(z, 5))
+        idx = vert_cache.get(key)
+        if idx is None:
+            idx = len(out_verts)
+            out_verts.append((x, y, z))
+            vert_cache[key] = idx
+        return idx
+
+    for idx in range(len(tri_polys)):
+        tp = tri_polys[idx]
+        tri = tri_data[idx]
+
+        if prepared.contains(tp):
+            i0 = _get_vert(tri[0][0], tri[0][1], tri[0][2] + z_offset)
+            i1 = _get_vert(tri[1][0], tri[1][1], tri[1][2] + z_offset)
+            i2 = _get_vert(tri[2][0], tri[2][1], tri[2][2] + z_offset)
+            out_tris.append((i0, i1, i2))
+            continue
+
+        if not prepared.intersects(tp):
+            continue
+
+        inter = tp.intersection(polygon)
+        if inter.is_empty:
+            continue
+
+        for part in g2d.iter_polygons(inter):
+            part = orient(part, sign=1.0)  # exterior CCW, holes CW -- matches terrain winding
+            ext = list(part.exterior.coords)[:-1]
+            if len(ext) < 3:
+                continue
+            holes = [
+                list(ring.coords)[:-1] for ring in part.interiors if len(ring.coords) >= 4
+            ]
+            ec = g2d._earcut_triangulate(ext, holes)
+            if ec is None:
+                continue
+            verts2d_part, tris_part = ec
+            local_idx = []
+            for vx, vy in verts2d_part:
+                vz = _bary_z(tri, vx, vy) + z_offset
+                local_idx.append(_get_vert(vx, vy, vz))
+            for a, b, c in tris_part:
+                out_tris.append((local_idx[a], local_idx[b], local_idx[c]))
+
+    return out_verts, out_tris
+
+
 def _build_variable_extruded_mesh(
     top_verts: list[tuple[float, float, float]],
     top_tris: list[tuple[int, int, int]],
@@ -566,7 +689,7 @@ def roads_geometry_for_polygon(
 
 
 def create_roads(
-    gen: GenerationContext, default_height=10.0, scaleHor=1.0
+    gen: GenerationContext, default_height=10.0, scaleHor=1.0, full_depth=None, terrain_tris=None
 ):
     """
     Generate road geometry from OSM polylines and return the final mesh plus the road union polygon.
@@ -575,7 +698,11 @@ def create_roads(
         gen: Generation context (must contain mapObject, tile bounds, etc.)
         default_height: Fallback height for extrusion if terrain data is missing.
         scaleHor: Horizontal scaling factor.
-        full_depth: If True, use full-depth extrusion (affects RoadConfig).
+        full_depth: If given, overrides the elementMode-derived default (affects RoadConfig
+            and the cutter's Z depth). If None, derived from gen.settings.elementMode.
+        terrain_tris: Optional pre-triangulated terrain surface (see
+            ``_triangulated_terrain_faces``), used to set the cutter's bottom Z exactly at
+            the terrain surface's lowest point instead of the model's own bounding box.
 
     Returns:
         tuple: (roads_mesh_object, road_union_polygon) on success.
@@ -599,7 +726,7 @@ def create_roads(
     # Check that tile bounds are present and reasonable
     required_bounds = ["tbMinLat", "tbMinLon", "tbMaxLat", "tbMaxLon"]
     for attr in required_bounds:
-        if not hasattr(gen, attr) or getattr(gen, attr) is None:
+        if not hasattr(gen.runtime, attr) or getattr(gen.runtime, attr) is None:
             raise GenerationError(f"Missing tile bound: '{attr}'")
 
     _t_setup = time.time()
@@ -609,7 +736,8 @@ def create_roads(
 
     # --- Configuration ---------------------------------------------------
     try:
-        full_depth = gen.settings.elementMode != "PAINT"
+        if full_depth is None:
+            full_depth = gen.settings.elementMode != "PAINT"
         config = RoadConfig.from_scene(bpy.context.scene.tp3d, full_depth=full_depth)
     except Exception as e:
         raise GenerationError(f"Failed to load road configuration: {e}")
@@ -661,10 +789,17 @@ def create_roads(
     )
 
     # --- Z bounds from terrain --------------------------------------------
-    # Use the map object's bounding box to set bottom/top z, with fallback.
+    # A full_depth cutter only needs to reach exactly as deep as the road
+    # piece it will later stand in for (see finalize_roads, which sits
+    # 0.6mm below the terrain surface's lowest point) -- not all the way
+    # down to the model's own base. This cutter is never booleaned against
+    # that final piece itself, so matching its depth exactly is safe.
     try:
         mc = [gen.runtime.mapObject.matrix_world @ Vector(c) for c in gen.runtime.mapObject.bound_box]
-        bottom_z = min(v.z for v in mc) - 1.0
+        if terrain_tris:
+            bottom_z = terrain_surface_min_z(terrain_tris) - 0.6
+        else:
+            bottom_z = min(v.z for v in mc) - 1.0
         top_z = max(v.z for v in mc) + default_height
     except Exception as e:
         # Fallback to default heights if bounding box fails

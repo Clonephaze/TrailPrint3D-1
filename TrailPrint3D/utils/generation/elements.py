@@ -255,10 +255,14 @@ def _rg_build_terrain_elements(
         _elem_idx[0] += 1
 
     _water_feat_active = (
-        tp3d.col_wPondsActive
-        or tp3d.col_wSmallRiversActive
-        or tp3d.col_wBigRiversActive
-    ) and map_km <= const.WATER_MAXSIZE
+        gen.settings.elementSource == "OSM"
+        and (
+            tp3d.col_wPondsActive
+            or tp3d.col_wSmallRiversActive
+            or tp3d.col_wBigRiversActive
+        )
+        and map_km <= const.WATER_MAXSIZE
+    )
     _ocean_active = tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE
     _water_ocean_combined = _water_feat_active and _ocean_active
 
@@ -294,20 +298,24 @@ def _rg_build_terrain_elements(
             water_ponds=bool(tp3d.col_wPondsActive),
             water_small_rivers=bool(tp3d.col_wSmallRiversActive),
             water_big_rivers=bool(tp3d.col_wBigRiversActive),
-            exclude_alleys=bool(tp3d.el_sExcludeAlleys),
+            exclude_alleys=True,
             road_footways=bool(tp3d.el_sFootwaysActive),
             road_service=bool(tp3d.el_sServiceActive),
         )
-        _active_kind_tasks = [
-            (key.upper(), _tile_tasks)
-            for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS
-            if (
-                flag_attr(tp3d)
-                if callable(flag_attr)
-                else getattr(tp3d, flag_attr) == 1
-            )
-            and map_km <= max_size
-        ]
+        _active_kind_tasks = (
+            [
+                (key.upper(), _tile_tasks)
+                for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS
+                if (
+                    flag_attr(tp3d)
+                    if callable(flag_attr)
+                    else getattr(tp3d, flag_attr) == 1
+                )
+                and map_km <= max_size
+            ]
+            if gen.settings.elementSource == "OSM"
+            else []
+        )
         _all_prefetched = _fetch_all_kinds_parallel(
             _active_kind_tasks, _overpass_semaphore, settings=_fetch_settings
         )
@@ -364,13 +372,17 @@ def _rg_build_terrain_elements(
     _water_result = None  # raw coloring_main() result for 'water' -- replayed below if ocean finds nothing
     for key, flag_attr, max_size, phase, msg in COLORING_ELEMENTS:
         terrain[key] = None
+        if gen.settings.elementSource != "OSM":
+            continue
         if flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1:
             if map_km <= max_size:
                 _advance_elem_progress(phase, msg)
+                _cutter_out = {} if gen.settings.elementMode == "SEPARATE" else None
                 _result = coloring_main(
                     gen,
                     key.upper(),
                     prefetched_tiles=_all_prefetched.get(key.upper(), {}),
+                    cutter_out=_cutter_out,
                 )
                 if key == "water":
                     _water_result = _result
@@ -393,6 +405,18 @@ def _rg_build_terrain_elements(
                 else:
                     terrain[key] = _result
                     _ov.set_fetch_done(key, success=True)
+                    if gen.settings.elementMode == "SEPARATE":
+                        from ..mesh_ops import (
+                            separate_mode_recess_cutter,
+                            separate_mode_recess_cutter_from_prism,
+                        )
+
+                        _prism = (_cutter_out or {}).get("prism")
+                        if _prism is not None:
+                            separate_mode_recess_cutter_from_prism(_prism, _result, obj)
+                            bpy.data.objects.remove(_prism, do_unlink=True)
+                        else:
+                            separate_mode_recess_cutter(_result, obj)
                 if key == "water" and _water_ocean_combined:
                     # Ocean will complete this chip; hold at 50%
                     _ov.set_fetch_progress("water", 0.5)
@@ -488,6 +512,21 @@ def _rg_build_terrain_elements(
             _ov.set_fetch_ready("roads")
             if gen.runtime.sScaleHor is None:
                 raise GenerationError("ScaleHor not Set")
+            # Cache the terrain's own triangulated grid NOW, while terrain is
+            # still pristine (no boolean cuts yet) -- both create_roads' own
+            # cutter (so it stops exactly at the terrain surface instead of
+            # the model's bounding box) and finalize_roads() (called later,
+            # after roads is used as the cheap boolean cutter) need this
+            # original height data under the road footprint, which a cut
+            # would otherwise destroy.
+            from ..mesh_ops import recalculateNormals as _rg_recalc_normals
+            from ..osm.roads import (
+                _triangulated_terrain_faces,
+                compute_full_depth_bottom_z,
+            )
+
+            _rg_recalc_normals(obj)
+            _terrain_tris_cache = _triangulated_terrain_faces(obj)
             # PAINT mode: roads is fused visually onto a single-piece terrain,
             # never printed standalone -- a thin raised strip is fine. Every
             # other mode (SINGLECOLORMODE*) needs roads to stand on
@@ -498,23 +537,13 @@ def _rg_build_terrain_elements(
                 gen,
                 gen.elevation.el_sHeight,
                 gen.runtime.sScaleHor,
+                full_depth=(tp3d.elementMode != "PAINT"),
+                terrain_tris=_terrain_tris_cache,
             )
             if result is not None:
                 roads, roads_polygon = result
-                # Cache the terrain's own triangulated grid + the road footprint
-                # NOW, while terrain is still pristine (no boolean cuts yet) --
-                # finalize_roads() (called later, after roads is used as the
-                # cheap boolean cutter) needs the original height data under
-                # the road footprint, which a cut would otherwise destroy.
-                from ..mesh_ops import recalculateNormals as _rg_recalc_normals
-                from ..osm.roads import (
-                    _triangulated_terrain_faces,
-                    compute_full_depth_bottom_z,
-                )
-
-                _rg_recalc_normals(obj)
                 terrain["roads_polygon"] = roads_polygon
-                terrain["_terrain_tris_cache"] = _triangulated_terrain_faces(obj)
+                terrain["_terrain_tris_cache"] = _terrain_tris_cache
                 global _puzzle_roads_data
                 _puzzle_roads_data = (
                     roads_polygon,

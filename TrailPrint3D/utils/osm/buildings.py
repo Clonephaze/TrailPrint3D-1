@@ -578,12 +578,12 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
     # per-vertex drape is a vectorized numpy lookup instead of ~200k one-by-one
     # BVH raycasts (which were the ~30s cost).
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    eval_wall = wall_obj.evaluated_get(depsgraph)
-    bm_bvh = bmesh.new()
-    bm_bvh.from_mesh(eval_wall.to_mesh())
-    bm_bvh.transform(wall_obj.matrix_world)
-    terrain_bvh = BVHTree.FromBMesh(bm_bvh)
-    bm_bvh.free()
+    eval_terrain = map.evaluated_get(depsgraph)
+    bm_terrain = bmesh.new()
+    bm_terrain.from_mesh(eval_terrain.to_mesh())
+    bm_terrain.transform(map.matrix_world)
+    terrain_bvh = BVHTree.FromBMesh(bm_terrain)
+    bm_terrain.free()
 
     _ov = _progress.ProgressOverlay.get()
     if _ov.active:

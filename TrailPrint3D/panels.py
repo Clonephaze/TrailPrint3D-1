@@ -266,6 +266,9 @@ class TP3D_PT_advanced(bpy.types.Panel):
             row.prop(props, "yTerrainOffset", text=_("Y-Offset"))
             col.prop(props, "overwritePathElevation", text=_("Snap Trail to Terrain"))
             col.prop(props, "fixedElevationScale")
+            col.prop(props, "smoothTerrainTop")
+            if props.smoothTerrainTop:
+                col.prop(props, "smoothTerrainStrength")
 
             tol_box = box.box()
             tol_box.label(text=_("Single-Color-mode Tolerances"), icon='SNAP_MIDPOINT')
@@ -280,69 +283,79 @@ class TP3D_PT_advanced(bpy.types.Panel):
         if props.show_coloring:
             box = layout.box()
             box.label(text=_("Terrain Elements"), icon='TEXTURE')
-            box.prop(props, "elementMode")
-            if "PAINT" in props.elementMode:
-                tex_row = box.row()
-                tex_row.prop(props, "tex_use_texture")
-                if props.tex_use_texture == True:
-                    tex_row.prop(props, "tex_resolution")
-            box.prop(props, "col_osmSmoothing")
+            box.prop(props, "elementSource")
+            if props.elementSource == 'OSM':
+                box.prop(props, "elementMode")
+                # if "SINGLECOLORMODE" in props.elementMode:
+                #     box.prop(props, "elementModeInset")
+                if "PAINT" in props.elementMode:
+                    tex_row = box.row()
+                    tex_row.prop(props, "tex_use_texture")
+                    if props.tex_use_texture == True:
+                        tex_row.prop(props, "tex_resolution")
+                box.prop(props, "col_osmSmoothing")
 
-            sub = box.box()
-            row = sub.row()
-            row.prop(props, "show_water", icon="TRIA_DOWN" if props.show_water else "TRIA_RIGHT", emboss=False, text=_("Water & Ocean"))
-            _any_water = props.col_wPondsActive or props.col_wSmallRiversActive or props.col_wBigRiversActive or props.el_oActive
-            row.label(text="", icon='CHECKBOX_HLT' if _any_water else 'CHECKBOX_DEHLT')
-            if props.show_water:
-                col = sub.column(align=True)
-                row = col.row(align=True)
-                row.prop(props, "col_wPondsActive", icon='CHECKBOX_HLT' if props.col_wPondsActive else 'CHECKBOX_DEHLT')
-                row.prop(props, "col_wBigRiversActive", icon='CHECKBOX_HLT' if props.col_wBigRiversActive else 'CHECKBOX_DEHLT')
-                row = col.row(align=True)
-                row.prop(props, "col_wSmallRiversActive", icon='CHECKBOX_HLT' if props.col_wSmallRiversActive else 'CHECKBOX_DEHLT')
-                row.prop(props, "col_wStreamWidth")
-                col.prop(props, "col_wArea")
-                row = col.row(align=True)
-                row.prop(props, "el_oActive", icon='CHECKBOX_HLT' if props.el_oActive else 'CHECKBOX_DEHLT')
-                if props.el_oActive:
-                    col.prop(props, "el_oMinIslandArea")
-                    col.prop(props, "el_oRdpEpsilon")
+                sub = box.box()
+                row = sub.row()
+                row.prop(props, "show_water", icon="TRIA_DOWN" if props.show_water else "TRIA_RIGHT", emboss=False, text=_("Water & Ocean"))
+                _any_water = props.col_wPondsActive or props.col_wSmallRiversActive or props.col_wBigRiversActive or props.el_oActive
+                row.label(text="", icon='CHECKBOX_HLT' if _any_water else 'CHECKBOX_DEHLT')
+                if props.show_water:
+                    col = sub.column(align=True)
+                    row = col.row(align=True)
+                    row.prop(props, "col_wPondsActive", icon='CHECKBOX_HLT' if props.col_wPondsActive else 'CHECKBOX_DEHLT')
+                    row.prop(props, "col_wBigRiversActive", icon='CHECKBOX_HLT' if props.col_wBigRiversActive else 'CHECKBOX_DEHLT')
+                    row = col.row(align=True)
+                    row.prop(props, "col_wSmallRiversActive", icon='CHECKBOX_HLT' if props.col_wSmallRiversActive else 'CHECKBOX_DEHLT')
+                    row.prop(props, "col_wStreamWidth")
+                    col.prop(props, "col_wArea")
+                    row = col.row(align=True)
+                    row.prop(props, "el_oActive", icon='CHECKBOX_HLT' if props.el_oActive else 'CHECKBOX_DEHLT')
+                    if props.el_oActive:
+                        col.prop(props, "el_oMinIslandArea")
+                        col.prop(props, "el_oRdpEpsilon")
+                    flatten_row = col.row()
+                    flatten_row.enabled = props.elementMode != "PAINT"
+                    flatten_row.prop(props, "col_wFlattenTop")
+                    insert_row = col.row()
+                    insert_row.enabled = "SINGLECOLORMODE" in props.elementMode or props.elementMode == "SEPARATE"
+                    insert_row.prop(props, "col_wInsert")
 
-            sub = box.box()
-            sub.label(text=_("Forests"), icon='FORCE_WIND')
-            row = sub.row(align=True)
-            row.prop(props, "col_fActive")
-            row.prop(props, "col_fArea")
+                sub = box.box()
+                sub.label(text=_("Forests"), icon='FORCE_WIND')
+                row = sub.row(align=True)
+                row.prop(props, "col_fActive")
+                row.prop(props, "col_fArea")
 
-            sub = box.box()
-            sub.label(text=_("Scree"), icon='RNDCURVE')
-            row = sub.row(align=True)
-            row.prop(props, "col_scrActive")
-            row.prop(props, "col_scrArea")
+                sub = box.box()
+                sub.label(text=_("Scree"), icon='RNDCURVE')
+                row = sub.row(align=True)
+                row.prop(props, "col_scrActive")
+                row.prop(props, "col_scrArea")
 
-            sub = box.box()
-            sub.label(text=_("City Boundaries"), icon='HOME')
-            row = sub.row(align=True)
-            row.prop(props, "col_cActive")
-            row.prop(props, "col_cArea")
+                sub = box.box()
+                sub.label(text=_("City Boundaries"), icon='HOME')
+                row = sub.row(align=True)
+                row.prop(props, "col_cActive")
+                row.prop(props, "col_cArea")
 
-            sub = box.box()
-            sub.label(text=_("Greenspaces"), icon='OUTLINER_OB_POINTCLOUD')
-            row = sub.row(align=True)
-            row.prop(props, "col_grActive")
-            row.prop(props, "col_grArea")
+                sub = box.box()
+                sub.label(text=_("Greenspaces"), icon='OUTLINER_OB_POINTCLOUD')
+                row = sub.row(align=True)
+                row.prop(props, "col_grActive")
+                row.prop(props, "col_grArea")
 
-            sub = box.box()
-            sub.label(text=_("Farmland"), icon='OUTLINER_OB_SURFACE')
-            row = sub.row(align=True)
-            row.prop(props, "col_faActive")
-            row.prop(props, "col_faArea")
+                sub = box.box()
+                sub.label(text=_("Farmland"), icon='OUTLINER_OB_SURFACE')
+                row = sub.row(align=True)
+                row.prop(props, "col_faActive")
+                row.prop(props, "col_faArea")
 
-            sub = box.box()
-            sub.label(text=_("Glaciers"), icon='FREEZE')
-            row = sub.row(align=True)
-            row.prop(props, "col_glActive")
-            row.prop(props, "col_glArea")
+                sub = box.box()
+                sub.label(text=_("Glaciers"), icon='FREEZE')
+                row = sub.row(align=True)
+                row.prop(props, "col_glActive")
+                row.prop(props, "col_glArea")
 
             box = layout.box()
             box.label(text=_("3D Elements (Experimental)"), icon='MESH_CUBE')
@@ -381,8 +394,6 @@ class TP3D_PT_advanced(bpy.types.Panel):
                     sub.prop(props, "el_sCutDepth")
                 if props.tex_use_texture:
                     sub.prop(props, "tex_include_roads", icon='CHECKBOX_HLT' if props.tex_include_roads else 'CHECKBOX_DEHLT')
-                if props.el_sServiceActive:
-                    sub.prop(props, "el_sExcludeAlleys", icon='CHECKBOX_HLT' if props.el_sExcludeAlleys else 'CHECKBOX_DEHLT')
 
         # --- PIN ---
         layout.prop(props, "show_pin", icon="TRIA_DOWN" if props.show_pin else "TRIA_RIGHT", emboss=False)
@@ -402,7 +413,11 @@ class TP3D_PT_advanced(bpy.types.Panel):
         layout.prop(props, "show_special", icon="TRIA_DOWN" if props.show_special else "TRIA_RIGHT", emboss=False)
         if props.show_special:
             box = layout.box()
-            box.operator("tp3d.puzzle_configurator", text=_("Puzzle Generator"), icon='MOD_BOOLEAN')
+            box.operator("tp3d.puzzle_configurator", text=_("Jigsaw Puzzle Generator"), icon='MOD_BOOLEAN')
+            if temp.PREMIUMVERSION:
+                box.operator("tp3d.sliding_puzzle_configurator", text=_("Sliding Puzzle Generator"), icon='MOD_BOOLEAN')
+            else:
+                box.operator("tp3d.terrain_dummy", text=_("Sliding Puzzle Generator"), icon="LOCKED")
 
             box.separator(factor=0.5)
             col = box.column(align=True)
@@ -738,12 +753,16 @@ class TP3D_MT_generators_menu(bpy.types.Menu):
 
     def draw(self, context):
         layout = self.layout
+        layout.operator("tp3d.map_generator", text=_("Map Generator"), icon='MESH_CIRCLE')
         if temp.PREMIUMVERSION:
             layout.operator("tp3d.map_picker", text=_("Multi Tile Generator"), icon='WORLD')
         else:
             layout.operator("tp3d.terrain_dummy", text=_("Multi Tile Generator"), icon='LOCKED')
-        layout.operator("tp3d.map_generator", text=_("Map Generator"), icon='MESH_CIRCLE')
-        layout.operator("tp3d.puzzle_configurator", text=_("Puzzle Generator"), icon='MOD_BOOLEAN')
+        layout.operator("tp3d.puzzle_configurator", text=_("Jigsaw Puzzle Generator"), icon='MOD_BOOLEAN')
+        if temp.PREMIUMVERSION:
+            layout.operator("tp3d.sliding_puzzle_configurator", text=_("Sliding Puzzle Generator"), icon='MOD_BOOLEAN')
+        else:
+            layout.operator("tp3d.terrain_dummy", text=_("Sliding Puzzle Generator"), icon='LOCKED')
 
 
 def draw_tp3d_viewport_menu(self, context):
