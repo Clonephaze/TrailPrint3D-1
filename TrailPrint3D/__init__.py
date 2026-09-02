@@ -186,6 +186,13 @@ def unregister():
 
     panels.remove_tp3d_viewport_menu()
 
+    # Clear any open windows and/or popups.
+    # The warnings overlay specifically would get stuck in the viewport
+    # if it wasn't dismissed before the addon is unregistered.
+    progress.ProgressOverlay.get().finish()
+    progress.WarningsOverlay.get().finish()
+    progress.WarningsOverlay.clear()
+
     if temp.PREMIUMVERSION:
         import sys
         ops_pe = sys.modules.get(f"{__package__}.premium.operators_pe")
