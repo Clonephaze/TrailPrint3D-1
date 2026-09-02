@@ -70,13 +70,13 @@ import TrailPrint3D.utils.generation.terrain_gen
 import TrailPrint3D.utils.generation.elements
 import TrailPrint3D.utils.generation.output
 import TrailPrint3D.utils.generation.orchestrator
-import TrailPrint3D.premium.generation_pe
+import TrailPrint3D.utils.generation.from_selected
 importlib.reload(TrailPrint3D.utils.generation.input)
 importlib.reload(TrailPrint3D.utils.generation.terrain_gen)
 importlib.reload(TrailPrint3D.utils.generation.elements)
 importlib.reload(TrailPrint3D.utils.generation.output)
 importlib.reload(TrailPrint3D.utils.generation.orchestrator)
-importlib.reload(TrailPrint3D.premium.generation_pe)
+importlib.reload(TrailPrint3D.utils.generation.from_selected)
 importlib.reload(TrailPrint3D.utils.generation)
 
 # Package __init__ after all sub-modules
