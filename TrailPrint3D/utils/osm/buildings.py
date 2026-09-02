@@ -555,7 +555,7 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
     _t_setup = time.time()
 
     # Copy map and extrude vertical faces outward
-    map = gen.mapObject
+    map = gen.runtime.mapObject
     wall_obj = map.copy()
     wall_obj.data = map.data.copy()
     bpy.context.collection.objects.link(wall_obj)
@@ -601,10 +601,10 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
         terrain_bvh, _x_min, _x_max, _y_min, _y_max, _z_cast, minThickness
     )
 
-    minLat = gen.tbMinLat
-    minLon = gen.tbMinLon
-    maxLat = gen.tbMaxLat
-    maxLon = gen.tbMaxLon
+    minLat = gen.runtime.tbMinLat
+    minLon = gen.runtime.tbMinLon
+    maxLat = gen.runtime.tbMaxLat
+    maxLon = gen.runtime.tbMaxLon
 
     # Geometry for ALL buildings across every tile is accumulated here and built
     # into one mesh at the very end.

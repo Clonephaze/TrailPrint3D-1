@@ -2386,7 +2386,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         roads_obj = bpy.data.objects.get(f"{puzzle_name}_ROADS")
         if roads_obj is not None:
             bpy.data.objects.remove(roads_obj, do_unlink=True)
-        from .utils import generation as _gen_utils
+        from .utils.generation import elements as _gen_utils
         # In CREATE_TEXTURE mode roads/trail are baked into the UV texture; skip 3D rebuilds.
         _texture_mode = props.elementMode == 'CREATE_TEXTURE'
         roads_data = None if _texture_mode else getattr(_gen_utils, '_puzzle_roads_data', None)

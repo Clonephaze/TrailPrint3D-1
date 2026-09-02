@@ -18,18 +18,16 @@ class GPXStats:
 
 
 @dataclass
-class GenerationContext:
+class RunSettings:
+    """User/scene config captured once during input validation (Phase 1)."""
+
     flags: frozenset[str]
-    gpx_file_path: str
     gpx_chain_path: str
-    exportPath: str
     exportFormat: str
     shape: str
-    name: str
     modelname: str
     size: int
     autoExport: bool
-    keepPositions: bool
     scaleElevation: float
     scalemode: str
     scaleLon1: float
@@ -38,8 +36,6 @@ class GenerationContext:
     scaleLat2: float
     shapeRotation: int
     overwritePathElevation: bool
-    api: str
-    selfHosted: str
     fixedElevationScale: bool
     minThickness: float
     xTerrainOffset: float
@@ -48,24 +44,7 @@ class GenerationContext:
     elementMode: str
     disableCache: bool
     num_subdivisions: int
-    textFont: str
     plateThickness: float
-    col_wActive: bool
-    col_fActive: bool
-    col_cActive: bool
-    col_grActive: bool
-    col_glActive: bool
-    el_Smoothing: float
-    el_bActive: bool
-    el_sActive: bool
-    el_sHeight: float
-    jMapLat: float
-    jMapLon: float
-    jMapRadius: float
-    jMapLat1: float
-    jMapLon1: float
-    jMapLat2: float
-    jMapLon2: float
     rectangleHeight: int = 100
     ellipseRatio: float = 0.75
     customFilePath: str = ""
@@ -73,10 +52,55 @@ class GenerationContext:
     shellWallThickness: float = 2.0
     plateInsertValue: float = 0.0
     pathThickness: float = 1.2
-    el_sCutTolerance: float = 0.2
-    el_sCutDepth: float = 0.05
     genType: int = 0
     lockedScale: float | None = None
+
+
+@dataclass
+class ElevationSettings:
+    """Elevation smoothing/base/step (staircase) options."""
+
+    el_Smoothing: float
+    el_sHeight: float
+    el_sCutTolerance: float = 0.2
+    el_sCutDepth: float = 0.05
+
+
+@dataclass
+class JMapSettings:
+    """JMap bbox/radius area-selection inputs."""
+
+    jMapLat: float
+    jMapLon: float
+    jMapRadius: float
+    jMapLat1: float
+    jMapLon1: float
+    jMapLat2: float
+    jMapLon2: float
+
+
+@dataclass
+class TextureSettings:
+    """MMU paint texture export options."""
+
+    useTexture: bool = False
+    texResolution: int = 2048
+    texRoads: bool = False
+    texTrail: bool = False
+
+
+@dataclass
+class FetchState:
+    """Background OSM prefetch thread and its result, set in Phase 6/8."""
+
+    fetchThread: threading.Thread | None = None
+    fetchResult: dict[str, dict[Any, tuple[dict, bool]]] | None = None
+
+
+@dataclass
+class RuntimeState:
+    """Working data populated/mutated by pipeline phases as generation proceeds."""
+
     mapObject: Object | None = None
     mapOutline: Polygon | MultiPolygon | None = None
     tbMinLat: float = 0
@@ -109,12 +133,22 @@ class GenerationContext:
     shellObj: Object | None = None
     roadObj: Object | None = None
     roadUnion: Polygon | MultiPolygon | None = None
-    useTexture: bool = False
-    texResolution: int = 2048
-    texRoads: bool = False
-    texTrail: bool = False
-    fetchThread: threading.Thread | None = None
-    fetchResult: dict[str, dict[Any, tuple[dict, bool]]] | None = None
+
+
+@dataclass
+class GenerationContext:
+    """Composed from the grouped dataclasses above.
+
+    Old flat access (`gen.runtime.mapObject`) is gone — use the group it now lives
+    in instead (`gen.runtime.mapObject`).
+    """
+
+    settings: RunSettings
+    elevation: ElevationSettings
+    jmap: JMapSettings
+    texture: TextureSettings = field(default_factory=TextureSettings)
+    fetch: FetchState = field(default_factory=FetchState)
+    runtime: RuntimeState = field(default_factory=RuntimeState)
 
 
 class ValidationError(Exception):

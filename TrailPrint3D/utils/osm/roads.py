@@ -594,7 +594,7 @@ def create_roads(
     # --- Input validation ------------------------------------------------
     if gen is None:
         raise GenerationError("Generation context is None.")
-    if gen.mapObject is None:
+    if gen.runtime.mapObject is None:
         raise GenerationError("No map object assigned; cannot create roads.")
     # Check that tile bounds are present and reasonable
     required_bounds = ["tbMinLat", "tbMinLon", "tbMaxLat", "tbMaxLon"]
@@ -609,7 +609,7 @@ def create_roads(
 
     # --- Configuration ---------------------------------------------------
     try:
-        full_depth = gen.elementMode != "PAINT"
+        full_depth = gen.settings.elementMode != "PAINT"
         config = RoadConfig.from_scene(bpy.context.scene.tp3d, full_depth=full_depth)
     except Exception as e:
         raise GenerationError(f"Failed to load road configuration: {e}")
@@ -617,10 +617,10 @@ def create_roads(
     # --- Fetch road polylines from OSM -----------------------------------
     try:
         tier_polylines = fetch_tier_polylines(
-            gen.tbMinLat,
-            gen.tbMinLon,
-            gen.tbMaxLat,
-            gen.tbMaxLon,
+            gen.runtime.tbMinLat,
+            gen.runtime.tbMinLon,
+            gen.runtime.tbMaxLat,
+            gen.runtime.tbMaxLon,
             TIER_TAGS,
             config.tier_active,
             config.exclude_alleys,
@@ -663,7 +663,7 @@ def create_roads(
     # --- Z bounds from terrain --------------------------------------------
     # Use the map object's bounding box to set bottom/top z, with fallback.
     try:
-        mc = [gen.mapObject.matrix_world @ Vector(c) for c in gen.mapObject.bound_box]
+        mc = [gen.runtime.mapObject.matrix_world @ Vector(c) for c in gen.runtime.mapObject.bound_box]
         bottom_z = min(v.z for v in mc) - 1.0
         top_z = max(v.z for v in mc) + default_height
     except Exception as e:
@@ -674,7 +674,7 @@ def create_roads(
 
     # --- Clip to map footprint -------------------------------------------
     try:
-        map_fp = map_footprint_polygon(gen.mapObject)
+        map_fp = map_footprint_polygon(gen.runtime.mapObject)
         if map_fp is None or map_fp.is_empty:
             raise GenerationError("Failed to obtain valid map footprint polygon.")
     except Exception as e:
@@ -754,6 +754,6 @@ def create_roads(
         f"[TP3D roads] final mesh ({len(roads.data.vertices)} verts) took "
         f"{time.time() - _t_setup:.1f}s total"
     )
-    gen.roadObj = roads
-    gen.roadUnion = road_union
+    gen.runtime.roadObj = roads
+    gen.runtime.roadUnion = road_union
     return roads, road_union

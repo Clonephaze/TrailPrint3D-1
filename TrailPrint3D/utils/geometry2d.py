@@ -240,13 +240,13 @@ def smooth_polygon_taubin(gen: GenerationContext, geom, pin_tolerance=1e-3, **ta
     from shapelysmooth import taubin_smooth
 
     _require_shapely()
-    outline = gen.mapOutline
+    outline = gen.runtime.mapOutline
     # mapOutline is stored in the map object's LOCAL space (pre-transform); geom
     # is in absolute Mercator space, so translate to match before pin-checking.
-    if outline is not None and gen.mapObject is not None:
+    if outline is not None and gen.runtime.mapObject is not None:
         from shapely.affinity import translate as _shp_translate
         outline = _shp_translate(
-            outline, xoff=gen.mapObject.location.x, yoff=gen.mapObject.location.y
+            outline, xoff=gen.runtime.mapObject.location.x, yoff=gen.runtime.mapObject.location.y
         )
     pin_geom = (
         outline.boundary

@@ -19,7 +19,7 @@ Coordinate conventions
 import bpy
 import numpy as np
 
-from .generation import GenerationContext
+from .dataclasses import GenerationContext
 
 # ── Palette definition ────────────────────────────────────────────────────────
 # Each colour is expressed as sRGB uint8 (R, G, B).  These values are used
@@ -206,8 +206,8 @@ def setup_paint_texture(gen: GenerationContext):
       3mf_paint_extruder_colors — triggering the 3MF addon's paint-segmentation
       export when use_orca_format="AUTO" or "PAINT".
     """
-    resolution = gen.texResolution
-    terrain_obj = gen.mapObject
+    resolution = gen.texture.texResolution
+    terrain_obj = gen.runtime.mapObject
     mesh = terrain_obj.data
     cursor = bpy.context.scene.cursor.location
     cursor_x = float(cursor.x)
@@ -217,7 +217,7 @@ def setup_paint_texture(gen: GenerationContext):
     if width <= 0 or height <= 0:
         print("[TP3D texture] degenerate terrain bbox — skipping texture setup")
         return
-    polygons_by_kind = gen.elements.get("_osm_polygons", {})
+    polygons_by_kind = gen.runtime.elements.get("_osm_polygons", {})
     present_kinds = {k.upper() for k, v in polygons_by_kind.items() if v is not None}
     palette, _kind_to_index = _build_palette(present_kinds)
 
