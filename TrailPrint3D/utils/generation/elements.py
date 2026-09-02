@@ -277,7 +277,7 @@ def _rg_build_terrain_elements(
         _tile_lons = math.ceil((gen.runtime.tbMaxLon - gen.runtime.tbMinLon) / _lon_step)
         _tile_tasks = [
             (
-                gen.runtime.tbMaxLat + k * _lat_step,
+                gen.runtime.tbMinLat + k * _lat_step,
                 gen.runtime.tbMinLon + l * _lon_step,
                 gen.runtime.tbMinLat + k * _lat_step + _lat_step,
                 gen.runtime.tbMinLon + l * _lon_step + _lon_step,

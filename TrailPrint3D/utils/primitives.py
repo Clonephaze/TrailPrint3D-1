@@ -235,10 +235,21 @@ def build_mesh_from_polygon(polygon, cell_size: float, name: str = "Shape"):
     if not verts or not tris:
         return None
 
+    # Drop degenerate triangles (two+ corners collapsed onto the same vertex
+    # index by clip_triangles_to_polygon's 5-decimal rounding dedup, which
+    # can happen at tiny cell_size/near-zero polygon extents). from_pydata
+    # and bm.from_mesh accept these silently, but the bmesh.ops.delete call
+    # below can hard-crash Blender's native bmesh code on the resulting
+    # invalid geometry rather than raising a catchable Python exception.
+    tris = [t for t in tris if len(set(t)) == 3]
+    if not tris:
+        return None
+
     mesh = bpy.data.meshes.new(name)
     obj = bpy.data.objects.new(name, mesh)
     bpy.context.collection.objects.link(obj)
     mesh.from_pydata(verts, [], tris)
+    mesh.validate(verbose=False)
     mesh.update()
 
     bpy.context.view_layer.objects.active = obj

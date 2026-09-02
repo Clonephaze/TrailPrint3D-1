@@ -5,11 +5,13 @@ import bpy  # type: ignore
 from mathutils import Vector  # type: ignore
 
 from ... import progress as _progress
+from ..dataclasses import GenerationContext, GenerationError, ValidationError
 from .elements import (
     _rg_apply_single_color_mode,
     _rg_build_terrain_elements,
 )
-from .output import _rg_assign_materials
+from .input import _rg_validate_inputs
+from .output import _rg_apply_texture, _rg_assign_materials
 from ..ui_state import build_fetch_items
 
 # ---------------------------------------------------------------------------
@@ -22,28 +24,24 @@ from ..ui_state import build_fetch_items
 # ---------------------------------------------------------------------------
 
 
-def _ctfs_load_props():
-    """Load all settings needed by createTerrainFromSelected from the scene."""
-    tp3d = bpy.context.scene.tp3d
-    return {
-        "scaleElevation": tp3d.scaleElevation,
-        "api": tp3d.api,
-        "minThickness": tp3d.minThickness,
-        "autoScale": tp3d.sAutoScale,
-        "singleColorMode": tp3d.singleColorMode,
-        "elementMode": tp3d.elementMode,
-        "selfHosted": tp3d.selfHosted,
-        "indipendendTiles": tp3d.indipendendTiles,
-        "additionalExtrusion": tp3d.sAdditionalExtrusion,
-        "scaleHor": tp3d.get("sScaleHor", 1),
-    }
+def _ctfs_build_gen() -> GenerationContext:
+    """Build a GenerationContext for the tile-based flow.
+
+    createTerrainFromSelected drives already-placed tile objects rather than
+    runGeneration's own GPX pipeline, so no generation flags are needed --
+    this reuses _rg_validate_inputs purely to load current scene settings
+    into the same dataclasses the rest of the _rg_* pipeline expects.
+    """
+    gen = _rg_validate_inputs(frozenset(), gen_type=0)
+    gen.runtime.sScaleHor = bpy.context.scene.tp3d.get("sScaleHor", 1)
+    return gen
 
 
-def _ctfs_apply_elevation(zobj, props, progress_cb=None, skip_bottom_recess=False):
+def _ctfs_apply_elevation(gen: GenerationContext, zobj, additionalExtrusion, progress_cb=None, skip_bottom_recess=False):
     """Fetch terrain elevation, apply to vertices, extrude bottom face, shift to z=0.
 
-    Returns (lowestZ, highestZ, additionalExtrusion).
-    The returned additionalExtrusion may differ from props['additionalExtrusion']
+    Returns (lowestZ, highestZ, additionalExtrusion, n_elev_pts).
+    The returned additionalExtrusion may differ from the passed-in value
     when indipendendTiles is True.
 
     skip_bottom_recess: the recess-the-bottom-face safety net below exists to
@@ -58,31 +56,43 @@ def _ctfs_apply_elevation(zobj, props, progress_cb=None, skip_bottom_recess=Fals
     loop below would force at least a 1mm recess off that noise alone.
     """
     from ..elevation import (
-        get_tile_elevation,  # deferred to avoid circular import at load time
+        compute_and_store_tile_bounds,  # deferred to avoid circular import at load time
+        get_tile_elevation,
     )
     from ..geo import (
         convert_to_geo,  # deferred to avoid circular import at load time
     )
 
-    scaleElevation = props["scaleElevation"]
-    autoScale = props["autoScale"]
-    minThickness = props["minThickness"]
-    additionalExtrusion = props["additionalExtrusion"]
-    indipendendTiles = props["indipendendTiles"]
+    tp3d = bpy.context.scene.tp3d
+    scaleElevation = gen.settings.scaleElevation
+    minThickness = gen.settings.minThickness
+    indipendendTiles = tp3d.indipendendTiles
 
     print(f"additionalExtrusion: {additionalExtrusion}")
 
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-    tileVerts, _diff = get_tile_elevation(zobj, progress_cb=progress_cb)
+    gen.runtime.mapObject = zobj
+    # get_tile_elevation only populates gen.runtime.mapKm/tbMin*/tbMax* via its
+    # own internal call to compute_and_store_tile_bounds when that call is made
+    # with the bare object -- call it here first so _rg_build_terrain_elements
+    # (which needs gen.runtime.mapKm) sees it too.
+    compute_and_store_tile_bounds(gen)
+    get_tile_elevation(gen, progress_cb=progress_cb)
+    tileVerts = gen.runtime.tileVerts or []
 
     # Reset scene property to original value before this tile
-    bpy.context.scene.tp3d.sAdditionalExtrusion = additionalExtrusion
+    tp3d.sAdditionalExtrusion = additionalExtrusion
 
     if len(tileVerts) < 500:
         _progress.WarningsOverlay.add_warning(
             f"Mesh has only {len(tileVerts)} Points. Increase Resolution for higher Quality",
             "warn",
         )
+
+    # createTerrainFromSelected reads the auto-scale from the scene rather than
+    # computing it itself -- callers pre-fetch elevation and set this before
+    # invoking this flow (see operators.py's _apply_puzzle_result).
+    autoScale = tp3d.sAutoScale
 
     # Find elevation range
     mesh = zobj.data
@@ -265,15 +275,9 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     from ..mesh_ops import (
         recalculateNormals,  # deferred to avoid circular import at load time
     )
-    from ..metadata import (
-        writeMetadata,  # deferred to avoid circular import at load time
-    )
     from ..primitives import (
         setupColors,  # deferred to avoid circular import at load time
     )
-
-    props = _ctfs_load_props()
-    start_time = time.time()
 
     overlay = _progress.ProgressOverlay.get()
     if manage_overlay:
@@ -284,12 +288,20 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     print("SCRIPT STARTED - createTerrainFromSelected")
     print("------------------------------------------------")
 
-    if (
-        props["selfHosted"] != ""
-        and props["selfHosted"] is not None
-        and props["api"] == 1
-    ):
-        print(f"!!using {props['selfHosted']} instead of Opentopodata!!")
+    try:
+        gen = _ctfs_build_gen()
+    except ValidationError as e:
+        print(f"Validation Failed: {e}")
+        _progress.WarningsOverlay.add_warning(f"Error: {e}")
+        if manage_overlay:
+            overlay.finish()
+        return {"CANCELLED"}
+
+    start_time = time.time()
+
+    tp3d = bpy.context.scene.tp3d
+    if tp3d.selfHosted != "" and tp3d.selfHosted is not None and tp3d.api == 1:
+        print(f"!!using {tp3d.selfHosted} instead of Opentopodata!!")
 
     setupColors()
 
@@ -310,7 +322,7 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
 
     lowestZ = 0
     highestZ = 0
-    additionalExtrusion = props["additionalExtrusion"]
+    additionalExtrusion = tp3d.sAdditionalExtrusion
 
     _map_km = round(bpy.context.scene.tp3d.get("sMapInKm", 0), 1)
     _fetch_items = build_fetch_items(_map_km)
@@ -381,142 +393,137 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
         # Reset chip strip for this tile
         overlay.set_fetch_items(build_fetch_items(_map_km))
 
-        # Create flat duplicate for trail boolean (normal mode only)
-        duplicate = None
-        if not props["singleColorMode"]:
-            pass
-            # COMMENTED OUT FOR NOW, NOT SURE IF NEEDED CURRENTLY (MAYBE FOR SINGLE COLOR MODE)
-            # duplicate = zobj.copy()
-            # duplicate.data = zobj.data.copy()
-            # bpy.context.collection.objects.link(duplicate)
-            # for col in zobj.users_collection:
-            #    if duplicate.name not in col.objects:
-            #        col.objects.link(duplicate)
-            # duplicate.name = "Bool"
-            # duplicate.select_set(False)
+        try:
+            # Create flat duplicate for trail boolean (normal mode only)
+            duplicate = None
+            if not gen.settings.singleColorMode:
+                pass
+                # COMMENTED OUT FOR NOW, NOT SURE IF NEEDED CURRENTLY (MAYBE FOR SINGLE COLOR MODE)
+                # duplicate = zobj.copy()
+                # duplicate.data = zobj.data.copy()
+                # bpy.context.collection.objects.link(duplicate)
+                # for col in zobj.users_collection:
+                #    if duplicate.name not in col.objects:
+                #        col.objects.link(duplicate)
+                # duplicate.name = "Bool"
+                # duplicate.select_set(False)
 
-        # Apply terrain elevation + extrude bottom face (0% → 50% of this tile)
-        overlay.update(
-            base_pct + step * 0.00,
-            "Fetching Elevation",
-            f"{tile_label} — querying elevation API…",
-        )
-        overlay.set_fetch_progress("elevation", 0.0)
-
-        def _elev_progress(pct, _base_pct=base_pct, _step=step, _tile_label=tile_label):
-            t = pct / 100.0
+            # Apply terrain elevation + extrude bottom face (0% → 50% of this tile)
             overlay.update(
-                _base_pct + _step * t * 0.50,
+                base_pct + step * 0.00,
                 "Fetching Elevation",
-                f"{_tile_label} — {pct}% complete…",
-                sub_percent=t,
-                sub_label="Elevation tiles",
+                f"{tile_label} — querying elevation API…",
             )
-            overlay.set_fetch_progress("elevation", t)
+            overlay.set_fetch_progress("elevation", 0.0)
 
-        props["additionalExtrusion"] = additionalExtrusion
-        lowestZ, highestZ, additionalExtrusion, n_elev_pts = _ctfs_apply_elevation(
-            zobj,
-            props,
-            progress_cb=_elev_progress,
-            skip_bottom_recess=skip_bottom_recess,
-        )
-        props["additionalExtrusion"] = additionalExtrusion
-        overlay.sub_percent = None
-        overlay.set_fetch_done("elevation", success=True)
-        overlay.update(
-            base_pct + step * 0.50,
-            "Elevation Ready",
-            f"{tile_label} — {n_elev_pts} pts, z {lowestZ:.1f}–{highestZ:.1f}",
-        )
-        overlay.add_completed_step(
-            f"{tile_label} — elevation fetched ({n_elev_pts} pts, z {lowestZ:.1f}–{highestZ:.1f})"
-        )
+            def _elev_progress(pct, _base_pct=base_pct, _step=step, _tile_label=tile_label):
+                t = pct / 100.0
+                overlay.update(
+                    _base_pct + _step * t * 0.50,
+                    "Fetching Elevation",
+                    f"{_tile_label} — {pct}% complete…",
+                    sub_percent=t,
+                    sub_label="Elevation tiles",
+                )
+                overlay.set_fetch_progress("elevation", t)
 
-        # Handle trail projection / intersection
-        overlay.update(
-            base_pct + step * 0.60,
-            "Building Trail",
-            f"{tile_label} — projecting trail onto terrain…",
-        )
-        print(f"duplicate: {duplicate}")
-        curveObjs = _ctfs_handle_trail(zobj, duplicate, props["singleColorMode"])
-        _n_trails = len(curveObjs)
-        print(f"_n_trails: {_n_trails}")
-        overlay.add_completed_step(
-            f"{tile_label} — trail built ({_n_trails} seg{'s' if _n_trails != 1 else ''})"
-            if _n_trails
-            else f"{tile_label} — no trail"
-        )
-
-        # Base material
-        mat = bpy.data.materials.get("BASE")
-        zobj.data.materials.clear()
-        zobj.data.materials.append(mat)
-
-        # Terrain overlay elements (water, forest, city, glacier, buildings, roads)
-        _elem_start = base_pct + step * 0.70
-        _elem_end = base_pct + step * 0.93
-        overlay.update(
-            _elem_start, "Terrain Elements", f"{tile_label} — building overlay layers…"
-        )
-        terrain = _rg_build_terrain_elements(
-            zobj,
-            props["scaleHor"],
-            phase_start=_elem_start,
-            phase_end=_elem_end,
-            tile_label=tile_label,
-        )
-        if terrain["roads"]:
-            terrain["roads"].location.z += 0.4
-        _found = [k for k, v in terrain.items() if v is not None]
-        overlay.add_completed_step(
-            f"{tile_label} — elements: {', '.join(_found)}"
-            if _found
-            else f"{tile_label} — no elements"
-        )
-
-        recalculateNormals(zobj)
-
-        # Single color mode processing
-        overlay.update(
-            base_pct + step * 0.85,
-            "Coloring",
-            f"{tile_label} — applying single-color mode…",
-        )
-        print(f"curveObjs: {curveObjs} ")
-        _rg_apply_single_color_mode(zobj, curveObjs, terrain, props)
-
-        # Create a texture: rasterise OSM polygons into a UV paint texture.
-        # _rg_build_terrain_elements already populated terrain['_osm_polygons']
-        # and discarded the road mesh; we just need to bake the texture here.
-        if props["elementMode"] == "CREATE_TEXTURE":
-            from ..texture import setup_paint_texture
-
+            lowestZ, highestZ, additionalExtrusion, n_elev_pts = _ctfs_apply_elevation(
+                gen,
+                zobj,
+                additionalExtrusion,
+                progress_cb=_elev_progress,
+                skip_bottom_recess=skip_bottom_recess,
+            )
+            overlay.sub_percent = None
+            overlay.set_fetch_done("elevation", success=True)
             overlay.update(
-                base_pct + step * 0.89,
-                "Texture",
-                f"{tile_label} — rasterising OSM texture…",
+                base_pct + step * 0.50,
+                "Elevation Ready",
+                f"{tile_label} — {n_elev_pts} pts, z {lowestZ:.1f}–{highestZ:.1f}",
             )
-            setup_paint_texture(zobj, terrain.get("_osm_polygons", {}))
-            # Trail curves are encoded in the texture; 3D objects not needed.
-            if curveObjs and not props["singleColorMode"]:
-                for _tcrv in list(curveObjs):
-                    if _tcrv and _tcrv.name in bpy.data.objects:
-                        bpy.data.objects.remove(_tcrv, do_unlink=True)
-                curveObjs.clear()
+            overlay.add_completed_step(
+                f"{tile_label} — elevation fetched ({n_elev_pts} pts, z {lowestZ:.1f}–{highestZ:.1f})"
+            )
 
-        # Finalize tile
-        overlay.update(
-            base_pct + step * 0.93, "Finalizing", f"{tile_label} — writing metadata…"
-        )
-        writeMetadata(zobj)
-        bpy.ops.object.select_all(action="DESELECT")
-        zobj.select_set(False)
-        zobj["lowestZ"] += additionalExtrusion
-        zobj["highestZ"] += additionalExtrusion
+            # Handle trail projection / intersection
+            overlay.update(
+                base_pct + step * 0.60,
+                "Building Trail",
+                f"{tile_label} — projecting trail onto terrain…",
+            )
+            print(f"duplicate: {duplicate}")
+            curveObjs = _ctfs_handle_trail(zobj, duplicate, gen.settings.singleColorMode)
+            gen.runtime.curveObjs = curveObjs
+            _n_trails = len(curveObjs)
+            print(f"_n_trails: {_n_trails}")
+            overlay.add_completed_step(
+                f"{tile_label} — trail built ({_n_trails} seg{'s' if _n_trails != 1 else ''})"
+                if _n_trails
+                else f"{tile_label} — no trail"
+            )
 
-        _rg_assign_materials(zobj, curveObjs, None, None, props)
+            # Base material
+            mat = bpy.data.materials.get("BASE")
+            zobj.data.materials.clear()
+            zobj.data.materials.append(mat)
+
+            # Terrain overlay elements (water, forest, city, glacier, buildings, roads)
+            _elem_start = base_pct + step * 0.70
+            _elem_end = base_pct + step * 0.93
+            overlay.update(
+                _elem_start, "Terrain Elements", f"{tile_label} — building overlay layers…"
+            )
+            terrain = _rg_build_terrain_elements(
+                gen,
+                phase_start=_elem_start,
+                phase_end=_elem_end,
+                tile_label=tile_label,
+            )
+            if terrain["roads"]:
+                terrain["roads"].location.z += 0.4
+            _found = [k for k, v in terrain.items() if v is not None]
+            overlay.add_completed_step(
+                f"{tile_label} — elements: {', '.join(_found)}"
+                if _found
+                else f"{tile_label} — no elements"
+            )
+
+            recalculateNormals(zobj)
+
+            # Single color mode processing
+            overlay.update(
+                base_pct + step * 0.85,
+                "Coloring",
+                f"{tile_label} — applying single-color mode…",
+            )
+            print(f"curveObjs: {curveObjs} ")
+            _rg_apply_single_color_mode(gen)
+
+            # Finalize tile -- writes metadata + assigns materials
+            overlay.update(
+                base_pct + step * 0.90, "Finalizing", f"{tile_label} — assigning materials…"
+            )
+            _rg_assign_materials(gen)
+
+            # Rasterise OSM polygons into a UV paint texture, when enabled.
+            # _rg_build_terrain_elements already populated terrain['_osm_polygons']
+            # (elements.py) and discarded the road mesh; this just bakes it.
+            if gen.texture.useTexture:
+                overlay.update(
+                    base_pct + step * 0.93,
+                    "Texture",
+                    f"{tile_label} — rasterising OSM texture…",
+                )
+                _rg_apply_texture(gen)
+
+            bpy.ops.object.select_all(action="DESELECT")
+            zobj.select_set(False)
+            zobj["lowestZ"] += additionalExtrusion
+            zobj["highestZ"] += additionalExtrusion
+        except GenerationError as e:
+            print(f"{tile_label} — generation phase failed: {e}")
+            _progress.WarningsOverlay.add_warning(f"{tile_label}: {e}", icon="error")
+            continue
 
     # Mark all tiles done in the preview
     if _mp_tiles_info:

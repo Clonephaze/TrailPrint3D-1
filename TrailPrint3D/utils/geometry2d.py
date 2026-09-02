@@ -463,23 +463,35 @@ def map_footprint_polygon(obj):
                     segs.append(s)
 
     bm.free()
-    if not segs:
-        return None
-    merged = union_all(segs)
-    polys = list(polygonize(merged))
-    if not polys:
-        return None
-    # Union every polygon big enough to be real map area, not just the
-    # single biggest one -- a mesh with several disjoint islands (e.g. a
-    # pre-cut multi-tile puzzle blank) polygonizes into one boundary loop
-    # per island, and every one of them is genuine map area that OSM
-    # elements (roads/buildings) must still be clipped to. Small artifact
-    # loops (magnet-hole cutouts, etc.) are filtered relative to the
-    # largest piece found.
-    max_area = max(p.area for p in polys)
-    keep = [p for p in polys if p.area >= max_area * 0.01]
-    footprint = union_all(keep)
-    return validate(footprint)
+    if segs:
+        merged = union_all(segs)
+        polys = list(polygonize(merged))
+        if polys:
+            # Union every polygon big enough to be real map area, not just the
+            # single biggest one -- a mesh with several disjoint islands (e.g. a
+            # pre-cut multi-tile puzzle blank) polygonizes into one boundary loop
+            # per island, and every one of them is genuine map area that OSM
+            # elements (roads/buildings) must still be clipped to. Small artifact
+            # loops (magnet-hole cutouts, etc.) are filtered relative to the
+            # largest piece found.
+            max_area = max(p.area for p in polys)
+            keep = [p for p in polys if p.area >= max_area * 0.01]
+            footprint = validate(union_all(keep))
+            if footprint is not None and not footprint.is_empty:
+                return footprint
+
+    # Boundary-edge tracing found nothing (or an open, non-polygonizable
+    # chain): a sharp/thin outline feature (e.g. the heart shape's cusp) can
+    # produce sliver wall faces whose near-degenerate normal fails the
+    # near-vertical wall test, leaving a gap in the traced ring. Fall back to
+    # projecting the solid's downward-facing faces (the base plate), which
+    # covers the full footprint regardless of how the walls triangulated.
+    footprint = footprint_with_holes(obj, down_only=True)
+    if footprint is not None and not footprint.is_empty:
+        return footprint
+    # A flat, single-layer map (no base/walls) has no downward faces at all --
+    # project every face instead as a last resort.
+    return footprint_with_holes(obj, down_only=False)
 
 
 def footprint_with_holes(

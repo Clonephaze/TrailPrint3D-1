@@ -2425,7 +2425,13 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
                            sub_percent=t, sub_label="Elevation tiles")
             overlay.set_fetch_progress('elevation', t)
 
-        preview_elevations, preview_diff = utils.get_tile_elevation(blank, progress_cb=_puzzle_elev_progress)
+        # get_tile_elevation's bare-object path silently returns None on a
+        # cache miss (only the GenerationContext path actually fetches) --
+        # route through a real gen, same pattern createTerrainFromSelected uses.
+        gen = utils._rg_validate_inputs(frozenset(), gen_type=0)
+        gen.runtime.mapObject = blank
+        utils.compute_and_store_tile_bounds(gen)
+        preview_elevations, preview_diff = utils.get_tile_elevation(gen, progress_cb=_puzzle_elev_progress)
         overlay.sub_percent = None
 
         if props.fixedElevationScale:
@@ -2799,7 +2805,13 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                            sub_percent=t, sub_label="Elevation tiles")
             overlay.set_fetch_progress('elevation', t)
 
-        preview_elevations, preview_diff = utils.get_tile_elevation(blank, progress_cb=_elev_progress)
+        # get_tile_elevation's bare-object path silently returns None on a
+        # cache miss (only the GenerationContext path actually fetches) --
+        # route through a real gen, same pattern createTerrainFromSelected uses.
+        gen = utils._rg_validate_inputs(frozenset(), gen_type=0)
+        gen.runtime.mapObject = blank
+        utils.compute_and_store_tile_bounds(gen)
+        preview_elevations, preview_diff = utils.get_tile_elevation(gen, progress_cb=_elev_progress)
         overlay.sub_percent = None
 
         if props.fixedElevationScale:
