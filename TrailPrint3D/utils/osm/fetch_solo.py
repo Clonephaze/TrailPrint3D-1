@@ -53,7 +53,7 @@ def fetch_osm_data(
         water_ponds = bool(bpy.context.scene.tp3d.col_wPondsActive)
         water_small_rivers = bool(bpy.context.scene.tp3d.col_wSmallRiversActive)
         water_big_rivers = bool(bpy.context.scene.tp3d.col_wBigRiversActive)
-        exclude_alleys = bool(bpy.context.scene.tp3d.el_sExcludeAlleys)
+        exclude_alleys = True
         road_footways = bool(bpy.context.scene.tp3d.el_sFootwaysActive)
         road_service = bool(bpy.context.scene.tp3d.el_sServiceActive)
 

@@ -359,13 +359,32 @@ def map_footprint_polygon(obj):
 
     # A closed solid map (base + side walls + top) has NO single-face edges, so
     # the above finds nothing. Fall back to the top-surface silhouette: an edge
-    # is on the outline when exactly one of its linked faces points upward (its
-    # other neighbour is a vertical wall). This recovers the map outline for a
-    # watertight terrain block.
+    # is on the outline when exactly one of its linked faces is a perimeter
+    # wall (its other neighbour is real terrain). This recovers the map
+    # outline for a watertight terrain block.
+    #
+    # A face's normal alone can't tell a perimeter wall from steep terrain --
+    # both can be near-vertical. What's unique to the extruded perimeter wall
+    # is that it's the only geometry spanning all the way down to the flat
+    # base plate (the solidify step always drops the base *below* the lowest
+    # terrain point, by minThickness); no terrain face, however steep, ever
+    # reaches that low. So classify by touching the base, not by normal --
+    # normal-based classification mistook steep cliffs/ridges for walls and
+    # carved holes out of the map outline there, silently dropping buildings
+    # and roads on steep terrain.
     if not segs:
+        world_zs = [(mw @ v.co).z for v in bm.verts]
+        z_min_mesh = min(world_zs) if world_zs else 0.0
+        z_eps = max(1e-4, 1e-4 * (max(world_zs) - z_min_mesh)) if world_zs else 1e-4
+
+        def _is_wall_face(f):
+            if abs(f.normal.normalized().z) >= 0.1:
+                return False  # not near-vertical -> definitely terrain
+            return min((mw @ v.co).z for v in f.verts) <= z_min_mesh + z_eps
+
         for e in bm.edges:
-            up = sum(1 for f in e.link_faces if f.normal.normalized().z > 0.5)
-            if up == 1:
+            wall_count = sum(1 for f in e.link_faces if _is_wall_face(f))
+            if wall_count == 1:
                 s = _seg(e)
                 if s is not None:
                     segs.append(s)

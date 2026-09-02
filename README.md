@@ -37,7 +37,7 @@ Automatically fetches and renders geographic data from [OpenStreetMap](https://w
 - **Pin Placement** — places a pin at GPS coordinates; pin on city name <sup>_Premium_</sup>
 - **Heightmap Import** <sup>_Premium_</sup> — imports a 2D image as a heightmap
 - **Map Holder & Connectors** — appends a decorative stand or connector piece to your map
-- **Puzzle Generator** — draw an area and choose rows/columns to turn a map into an interlocking jigsaw puzzle
+- **Jigsaw Puzzle Generator** — draw an area and choose rows/columns to turn a map into an interlocking jigsaw puzzle
 
 ### Export
 - Export to **STL**, **OBJ**, and **3MF** (3mf is using the [3MF Addon by Clonephaze](https://github.com/Clonephaze/3MF-Blender-Add-on---Maintained))

@@ -31,6 +31,14 @@ importlib.reload(TrailPrint3D.utils.presets)
 importlib.reload(TrailPrint3D.utils.elevation)
 importlib.reload(TrailPrint3D.utils.geometry2d)
 
+# satellite.py is only pulled in via deferred (function-scope) imports (its
+# top-level `import requests` must stay lazy -- requests isn't bundled with
+# Blender), so it may not be an attribute of TrailPrint3D.utils yet on a
+# fresh session. Import it explicitly before reloading, same as the osm
+# sub-package below.
+import TrailPrint3D.utils.satellite
+importlib.reload(TrailPrint3D.utils.satellite)
+
 # osm sub-package: its submodules are only pulled in via deferred (function-
 # scope) imports, so reloading TrailPrint3D.utils.osm alone (its empty
 # __init__.py) does NOT refresh them -- each must be imported and reloaded

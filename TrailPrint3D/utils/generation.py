@@ -63,6 +63,8 @@ def _rg_validate_inputs(flags):
     api                = tp3d.api
     selfHosted         = tp3d.get("selfHosted", "")
     fixedElevScale     = tp3d.get('fixedElevationScale', False)
+    smoothTerrainTop   = tp3d.get('smoothTerrainTop', False)
+    smoothTerrainStrength = tp3d.get('smoothTerrainStrength', 2)
     minThickness       = tp3d.get("minThickness", 2)
     xTerrainOffset     = tp3d.get("xTerrainOffset", 0)
     yTerrainOffset     = tp3d.get("yTerrainOffset", 0)
@@ -197,6 +199,8 @@ def _rg_validate_inputs(flags):
         'api':                   api,
         'selfHosted':            selfHosted,
         'fixedElevationScale':   fixedElevScale,
+        'smoothTerrainTop':      smoothTerrainTop,
+        'smoothTerrainStrength': smoothTerrainStrength,
         'minThickness':          minThickness,
         'xTerrainOffset':        xTerrainOffset,
         'yTerrainOffset':        yTerrainOffset,
@@ -458,7 +462,6 @@ def _rg_start_osm_prefetch(tp3d, map_km):
         water_ponds         = bool(tp3d.col_wPondsActive),
         water_small_rivers  = bool(tp3d.col_wSmallRiversActive),
         water_big_rivers    = bool(tp3d.col_wBigRiversActive),
-        exclude_alleys      = bool(tp3d.el_sExcludeAlleys),
         road_footways       = bool(tp3d.el_sFootwaysActive),
         road_service        = bool(tp3d.el_sServiceActive),
     )
@@ -485,6 +488,45 @@ def _rg_start_osm_prefetch(tp3d, map_km):
         result.update(fetched)
 
     t = threading.Thread(target=_run, daemon=True, name="osm-prefetch")
+    t.start()
+    return t, result
+
+
+def _rg_start_satellite_prefetch(tp3d):
+    """Launch a daemon thread that downloads the land-cover reference image
+    (if elementSource is WORLDCOVER) so the network fetch overlaps
+    elevation/OSM download.
+
+    The caller must call thread.join() before consuming the result dict.
+    Returns (None, {}) immediately if the feature is disabled. In Blender
+    debug mode, also fetches the real satellite photo for side-by-side
+    comparison -- skipped otherwise to avoid the extra network round-trip.
+    """
+    if tp3d.elementSource != 'WORLDCOVER':
+        return None, {}
+
+    from .satellite import (  # deferred to avoid circular import at load time
+        get_cached_landcover_image,
+        get_cached_photo_image,
+    )
+
+    min_lat, max_lat = tp3d.minLat, tp3d.maxLat
+    min_lon, max_lon = tp3d.minLon, tp3d.maxLon
+    disable_cache = bool(tp3d.disableCache)
+    debug = bool(bpy.app.debug)
+
+    result = {}
+
+    def _run():
+        result["landcover_tiled"] = get_cached_landcover_image(
+            min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache
+        )
+        if debug:
+            result["photo_tiled"] = get_cached_photo_image(
+                min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache
+            )
+
+    t = threading.Thread(target=_run, daemon=True, name="satellite-prefetch")
     t.start()
     return t, result
 
@@ -591,7 +633,6 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
             water_ponds         = bool(tp3d.col_wPondsActive),
             water_small_rivers  = bool(tp3d.col_wSmallRiversActive),
             water_big_rivers    = bool(tp3d.col_wBigRiversActive),
-            exclude_alleys      = bool(tp3d.el_sExcludeAlleys),
             road_footways       = bool(tp3d.el_sFootwaysActive),
             road_service        = bool(tp3d.el_sServiceActive),
         )
@@ -631,7 +672,8 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
         if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1):
             if map_km <= max_size:
                 _advance_elem_progress(phase, msg)
-                _result = coloring_main(obj, key.upper(), prefetched_tiles=_all_prefetched.get(key.upper(), {}))
+                _cutter_out = {}
+                _result = coloring_main(obj, key.upper(), prefetched_tiles=_all_prefetched.get(key.upper(), {}), cutter_out=_cutter_out)
                 if key == 'water':
                     _water_result = _result
                 if _result is _COLORING_EMPTY:
@@ -652,7 +694,16 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
                     _ov.set_fetch_done(key, success=False)
                 else:
                     terrain[key] = _result
+                    if _cutter_out.get('prism') is not None:
+                        terrain[f'{key}_prism'] = _cutter_out['prism']
                     _ov.set_fetch_done(key, success=True)
+                # coloring_main hands back the SEPARATE-mode recess prism (see
+                # separate_mode_recess_cutter_from_prism) via cutter_out only
+                # on the success path above -- if the element ended up empty/
+                # filtered/painted/None instead, the prism it already built is
+                # an orphan nothing will use, so it needs cleaning up here.
+                if terrain.get(f'{key}_prism') is None and _cutter_out.get('prism') is not None:
+                    bpy.data.objects.remove(_cutter_out['prism'], do_unlink=True)
                 if key == 'water' and _water_ocean_combined:
                     # Ocean will complete this chip; hold at 50%
                     _ov.set_fetch_progress('water', 0.5)
@@ -734,26 +785,32 @@ def _rg_build_terrain_elements(obj, scaleHor, curveObj=None, phase_start=0.83, p
             _advance_elem_progress("Roads", "Fetching road data…")
             _ov.set_fetch_progress('roads', 0.0)
             _ov.set_fetch_ready('roads')
-            # PAINT mode: roads is fused visually onto a single-piece terrain,
-            # never printed standalone -- a thin raised strip is fine. Every
-            # other mode (SEPARATE / SINGLECOLORMODE*) needs roads to stand on
-            # its own as a base-to-top piece, like the coloring elements and
-            # the SCM trail groove insert, so it can be printed/assembled
-            # separately instead of being a sliver with nothing to sit on.
+            # Cache the terrain's own triangulated surface grid NOW, while
+            # terrain is still pristine (no boolean cuts yet) -- both
+            # create_roads (so its full_depth cutter stops at the terrain
+            # surface's lowest point instead of the model's own base) and
+            # finalize_roads (later, after roads is used as the cheap
+            # boolean cutter) need this original height data, which a cut
+            # would otherwise destroy.
+            from .mesh_ops import recalculateNormals as _rg_recalc_normals
+            from .osm.roads import _triangulated_terrain_faces
+            _rg_recalc_normals(obj)
+            _terrain_tris_cache = _triangulated_terrain_faces(obj)
+
+            # PAINT and SEPARATE modes: roads is just a thin raised strip
+            # sitting on top of the terrain surface (or on top of a coloring
+            # element's own surface where one exists), never printed
+            # standalone as a base-to-top piece -- SEPARATE just keeps it as
+            # its own object instead of baking it into terrain materials.
+            # Only SINGLECOLORMODE* needs roads to stand on its own as a
+            # base-to-top piece, like the coloring elements and the SCM
+            # trail groove insert, so it can be printed/assembled separately.
             result = create_roads(obj, tp3d.el_sHeight, scaleHor, map_km,
                                    full_depth=(tp3d.elementMode not in ("PAINT", "CREATE_TEXTURE")))
             if result is not None:
                 roads, roads_polygon = result
-                # Cache the terrain's own triangulated grid + the road footprint
-                # NOW, while terrain is still pristine (no boolean cuts yet) --
-                # finalize_roads() (called later, after roads is used as the
-                # cheap boolean cutter) needs the original height data under
-                # the road footprint, which a cut would otherwise destroy.
-                from .mesh_ops import recalculateNormals as _rg_recalc_normals
-                from .osm.roads import _triangulated_terrain_faces
-                _rg_recalc_normals(obj)
                 terrain['roads_polygon'] = roads_polygon
-                terrain['_terrain_tris_cache'] = _triangulated_terrain_faces(obj)
+                terrain['_terrain_tris_cache'] = _terrain_tris_cache
                 global _puzzle_roads_data
                 _puzzle_roads_data = (roads_polygon, terrain['_terrain_tris_cache'], tp3d.el_sHeight)
                 if tp3d.elementMode == "CREATE_TEXTURE" and roads_polygon is not None and tp3d.tex_include_roads:
@@ -797,6 +854,8 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         is_mesh_manifold,
         recalculateNormals,
         selectBottomFaces,
+        separate_mode_recess_cutter,
+        separate_mode_recess_cutter_from_prism,
         single_color_mode_curve,
         single_color_mode_mesh_remesh,
         single_color_mode_mesh_wireframe,
@@ -900,7 +959,22 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                 for tcrv in curveObjs:
                     boolean_operation(elem_obj, tcrv)
 
-    if props['elementMode'] in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
+    # SEPARATE mode reuses the same per-element cutter loop as SCM to
+    # subtract water/forest/scree/city/greenspace/farmland/glacier/ocean out
+    # of the terrain (roads and buildings stay excluded, same as SCM). It
+    # always wants an exact, zero-tolerance recess -- flush, not a printed
+    # clearance gap. Where coloring_main captured the tall prism it used to
+    # build the element (terrain[f'{key}_prism'] -- every COLORING_ELEMENTS
+    # kind except ocean, which doesn't go through coloring_main), that prism
+    # is reused directly as the terrain cutter via
+    # separate_mode_recess_cutter_from_prism: INTERSECT(map, prism) (which
+    # built the element) and DIFFERENCE(map, prism) (which cuts the recess)
+    # are complementary halves of the same computation against the same two
+    # meshes, so the recess and the element boundary stay bit-consistent at
+    # the map's outer edge -- no reconstructed boundary, no coincident-face
+    # drift. separate_mode_recess_cutter (deriving the boundary from the
+    # element's own mesh) is the fallback for keys without a captured prism.
+    if props['elementMode'] in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH", "SEPARATE"):
 
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
@@ -908,8 +982,8 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         # Maps key -> thicker mesh object, filled as each element is processed.
         thicker_by_key = {}
 
-
-        _scm_fn = single_color_mode_mesh_remesh if props['elementMode'] == "SINGLECOLORMODE_REMESH" else single_color_mode_mesh_wireframe
+        if props['elementMode'] != "SEPARATE":
+            _scm_fn = single_color_mode_mesh_remesh if props['elementMode'] == "SINGLECOLORMODE_REMESH" else single_color_mode_mesh_wireframe
 
         _active_scm_keys = [k for k in TERRAIN_PRIORITY_ORDER if terrain.get(k)]
         _n_scm = max(1, len(_active_scm_keys))
@@ -926,7 +1000,35 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                     message=f"Single-color: remeshing {key.capitalize()} ({_scm_done + 1}/{_n_scm})…",
                 )
 
-            thicker = _scm_fn(elem_obj, obj)
+            # Water-only "Insert": sink the water piece down in Z before the
+            # cutter is built from its own geometry, so the terrain recess
+            # goes exactly as much deeper as the piece sinks -- the piece
+            # itself just translates rigidly, so its own thickness is
+            # unaffected. The captured prism (if any) has to move with it,
+            # since separate_mode_recess_cutter_from_prism reads the recess
+            # floor depth from elem_obj but the XY boundary from the prism.
+            if key == 'water':
+                _wInsert = bpy.context.scene.tp3d.col_wInsert
+                if _wInsert:
+                    elem_obj.location.z -= _wInsert
+                    _wPrism = terrain.get('water_prism')
+                    if _wPrism is not None:
+                        _wPrism.location.z -= _wInsert
+                    # matrix_world is not refreshed until the next depsgraph
+                    # update -- the cutter builder reads it immediately below
+                    # to place the cutter, so without this the recess would
+                    # still be built at the pre-shift height even though
+                    # elem_obj itself visibly moved.
+                    bpy.context.view_layer.update()
+
+            if props['elementMode'] == "SEPARATE":
+                _prism = terrain.get(f'{key}_prism')
+                if _prism is not None:
+                    thicker = separate_mode_recess_cutter_from_prism(_prism, elem_obj, obj)
+                else:
+                    thicker = separate_mode_recess_cutter(elem_obj, obj)
+            else:
+                thicker = _scm_fn(elem_obj, obj)
             thicker_by_key[key] = thicker
 
             if _ov.active:
@@ -954,30 +1056,36 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
             for thicker in thicker_by_key.values():
                 remove_objects(thicker)
 
-    if props['elementMode'] == "SEPARATE" and thickerCurves:
-        for key in TERRAIN_PRIORITY_ORDER:
-            elem_obj = terrain.get(key)
-            if not elem_obj:
-                continue
-            _ov = _progress.ProgressOverlay.get()
-            if _ov.active:
-                _ov.update(message=f"Cutting trail from {key.capitalize()}…")
-            for tcrv in thickerCurves:
-                boolean_operation(elem_obj, tcrv)
+        # The captured prisms (terrain[f'{key}_prism']) are only consumed as
+        # a template inside separate_mode_recess_cutter_from_prism, which
+        # duplicates them rather than using them directly -- the originals
+        # are still sitting in the scene and need their own cleanup here.
+        if props['elementMode'] == "SEPARATE":
+            for key in TERRAIN_PRIORITY_ORDER:
+                _prism = terrain.pop(f'{key}_prism', None)
+                if _prism is None:
+                    continue
+                if bpy.app.debug:
+                    obj_size = props.get('size', 100)
+                    _prism.location.x += obj_size
+                else:
+                    remove_objects(_prism)
 
     # Cut roads out of every finalized terrain element (element = element -
     # road), so a road crossing water/forest/city/etc. leaves a continuous
     # raised strip with the element notched around it instead of the two
-    # objects silently overlapping. Only meaningful once elements exist as
-    # real separate solids (SEPARATE / SINGLECOLORMODE / SINGLECOLORMODE_
-    # REMESH) -- in PAINT mode elements are baked as terrain face materials,
-    # there's no separate mesh to cut. Buildings are intentionally excluded
-    # -- they sit on top of both terrain and elements untouched. This must
-    # run AFTER every element's own cross-element cuts above are finished,
-    # and BEFORE the trail-groove step below, which stays the true last
-    # boolean of the whole pipeline.
+    # objects silently overlapping. Only meaningful for a full_depth roads
+    # piece (SINGLECOLORMODE / SINGLECOLORMODE_REMESH) that reaches all the
+    # way down and would otherwise collide with the element's own volume --
+    # in PAINT and SEPARATE, roads is just a thin raised strip sitting on
+    # top of whatever surface is below it, so it never overlaps the element
+    # in the first place and there's nothing to cut. Buildings are
+    # intentionally excluded -- they sit on top of both terrain and elements
+    # untouched. This must run AFTER every element's own cross-element cuts
+    # above are finished, and BEFORE the trail-groove step below, which
+    # stays the true last boolean of the whole pipeline.
     roads_obj = terrain.get('roads')
-    if roads_obj is not None and props['elementMode'] in ("SEPARATE", "SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
+    if roads_obj is not None and props['elementMode'] in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
         # MANIFOLD requires BOTH operands to be watertight -- roads is the
         # known carrier of a small residual non-manifold defect (see osm.py's
         # create_roads notes), so it must be checked here too, not just the
@@ -996,7 +1104,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         if cut_tolerance > 0:
             _road_poly = terrain.get('roads_polygon')
             if _road_poly is not None and not _road_poly.is_empty:
-                from .osm.roads import _build_extruded_mesh
+                from .osm.roads import _build_extruded_mesh, terrain_surface_min_z
                 from . import geometry2d as _g2d
                 from shapely.geometry.polygon import orient as _orient
                 _buffered = _road_poly.buffer(cut_tolerance, join_style='mitre')
@@ -1013,8 +1121,20 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
                             _all_v2d.extend(_v2)
                             _all_tris += [(a + _base, b + _base, c + _base) for a, b, c in _t2]
                     if _all_v2d and _all_tris:
+                        # Stop the cutter at exactly the same depth as the
+                        # actual roads piece finalize_roads will later build
+                        # (0.6mm below the terrain surface's lowest point) --
+                        # this cutter is a standalone temp object, never
+                        # booleaned against the final roads piece itself, so
+                        # there's no coincident-face risk from matching it
+                        # exactly; any deeper and the recess floor sits
+                        # visibly below the road piece that fills it.
                         _mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
-                        _bz = min(v.z for v in _mc) - 2.0
+                        _terrain_tris_for_cut = terrain.get('_terrain_tris_cache')
+                        if _terrain_tris_for_cut:
+                            _bz = terrain_surface_min_z(_terrain_tris_for_cut) - 0.6
+                        else:
+                            _bz = min(v.z for v in _mc) - 2.0
                         _tz = max(v.z for v in _mc) + 20.0
                         _cutter_tmp = _build_extruded_mesh(_all_v2d, _all_tris, _bz, _tz)
                         recalculateNormals(_cutter_tmp)
@@ -1064,7 +1184,7 @@ def _rg_apply_single_color_mode(obj, curveObjs, terrain, props):
         _ov = _progress.ProgressOverlay.get()
         if _ov.active:
             _ov.update(message="Roads: adding terrain detail…")
-        from .osm.roads import finalize_roads  # deferred — only needed here
+        from .osm.roads import finalize_roads, terrain_surface_min_z  # deferred — only needed here
         el_sHeight = bpy.context.scene.tp3d.el_sHeight
         full_depth = props['elementMode'] not in ('PAINT', 'CREATE_TEXTURE')
         mc = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
@@ -1377,7 +1497,10 @@ def apply_element_toggle(tp3d, key):
     in the N-panel (e.g. only Small Roads) survives a quick off/on from the
     picker instead of resetting to some fixed default. First-ever
     toggle-ON with nothing remembered (and nothing already set) falls back
-    to enabling just the category's single most common sub-flag.
+    to enabling just the category's single most common sub-flag. The
+    remembered combo is also surfaced to the picker pages (see
+    build_composite_remembered_state) so their Settings modal can show it,
+    greyed out, while the category is off.
     """
     if key in _ELEMENT_SINGLE_FLAGS:
         attr = _ELEMENT_SINGLE_FLAGS[key]
@@ -1487,17 +1610,45 @@ _ADVANCED_SETTINGS_FIELDS = [
     {'key': 'elSMultiplier', 'attr': 'el_sMultiplier', 'type': float, 'group': 'Roads'},
     {'key': 'elSHeight', 'attr': 'el_sHeight', 'type': float, 'group': 'Roads'},
     {'key': 'elSCutTolerance', 'attr': 'el_sCutTolerance', 'type': float, 'group': 'Roads'},
-    {'key': 'elSExcludeAlleys', 'attr': 'el_sExcludeAlleys', 'type': bool, 'group': 'Roads'},
 ]
 _ADVANCED_SETTINGS_BY_KEY = {f['key']: f for f in _ADVANCED_SETTINGS_FIELDS}
+_ATTR_TO_ADVANCED_KEY = {f['attr']: f['key'] for f in _ADVANCED_SETTINGS_FIELDS}
+
+
+def build_composite_remembered_state(tp3d=None):
+    """Per composite category (water, roads), the sub-flag combination the
+    Settings modal should show -- greyed out and unclickable -- while that
+    category is off. Mirrors apply_element_toggle's own remember/restore
+    logic: the live combo if any sub-flag is currently on, else whatever
+    was remembered from the last time it got toggled off via a picker
+    chip/card-icon (or all-False if that's never happened). Keyed by the
+    same camelCase field keys ADVANCED_SETTINGS_STATE itself uses, so the
+    page can look values up directly by a checkbox's own field key.
+    """
+    if tp3d is None:
+        tp3d = bpy.context.scene.tp3d
+    result = {}
+    for cat_key, (subflags, _bootstrap) in _ELEMENT_COMPOSITE_FLAGS.items():
+        current = {f: bool(getattr(tp3d, f)) for f in subflags}
+        if any(current.values()):
+            values = current
+        else:
+            remembered = tp3d.get(f'_toggle_remember_{cat_key}')
+            values = {f: bool(v) for f, v in zip(subflags, remembered)} if remembered else current
+        result[cat_key] = {_ATTR_TO_ADVANCED_KEY[f]: v for f, v in values.items()}
+    return result
 
 
 def build_advanced_settings_state(tp3d=None):
     """Current values for every Advanced Settings popup field, for the
-    picker pages' ADVANCED_SETTINGS_STATE snapshot."""
+    picker pages' ADVANCED_SETTINGS_STATE snapshot. '_compositeRemembered'
+    is a reserved key (no real field uses a leading underscore) carrying
+    build_composite_remembered_state's per-category snapshot alongside it."""
     if tp3d is None:
         tp3d = bpy.context.scene.tp3d
-    return {f['key']: getattr(tp3d, f['attr']) for f in _ADVANCED_SETTINGS_FIELDS}
+    state = {f['key']: getattr(tp3d, f['attr']) for f in _ADVANCED_SETTINGS_FIELDS}
+    state['_compositeRemembered'] = build_composite_remembered_state(tp3d)
+    return state
 
 
 def apply_advanced_setting_update(tp3d, key, value):
@@ -1738,6 +1889,11 @@ def runGeneration(type, locked_scale=None):
     if _osm_prefetch_thread is not None:
         print("OSM prefetch started (overlapping elevation download)")
 
+    # --- Satellite reference image prefetch: same overlap trick ---
+    _sat_prefetch_thread, _sat_prefetched = _rg_start_satellite_prefetch(_tp3d_snap)
+    if _sat_prefetch_thread is not None:
+        print("Satellite imagery prefetch started (overlapping elevation download)")
+
     # --- Phase 9: Fetch terrain elevation data ---
     overlay.update(0.38, "Fetching Elevation Data", "Querying API — this may take a moment…")
     print("------------------------------------------------")
@@ -1884,10 +2040,12 @@ def runGeneration(type, locked_scale=None):
     mesh.vertices.foreach_get("co", co_flat)
     co = co_flat.reshape((_total_verts, 3))
 
-    # Transform local coords to world space and extract world Y for Mercator correction
+    # Transform local coords to world space and extract world X/Y (X for the
+    # optional terrain-smoothing pass below, Y for the Mercator correction)
     m = np.array(MapObject.matrix_world, dtype=np.float64)
     co_h = np.hstack([co, np.ones((_total_verts, 1), dtype=np.float64)])
-    world_y = (m @ co_h.T).T[:, 1]
+    world_xy = (m @ co_h.T).T[:, :2]
+    world_x, world_y = world_xy[:, 0], world_xy[:, 1]
 
     # Mercator latitude correction: stay in radians — skip the degrees roundtrip
     # convert_to_geo: lat_deg = degrees(2*atan(exp(y/(R*scaleHor))) - pi/2)
@@ -1897,6 +2055,15 @@ def runGeneration(type, locked_scale=None):
 
     # Compute new Z for all vertices at once and write back
     new_z = np.array(tileVerts, dtype=np.float64) / 1000.0 * props['scaleElevation'] * autoScale * merc
+
+    if props['smoothTerrainTop']:
+        from .terrain import smooth_terrain_top_z  # deferred to avoid circular import at load time
+        _pre_z = new_z
+        new_z = smooth_terrain_top_z(world_x, world_y, new_z, iterations=props['smoothTerrainStrength'])
+        _delta = np.abs(new_z - _pre_z)
+        print(f"[TrailPrint3D] Smooth Terrain Top: applied to {len(new_z)} verts "
+              f"(max Δz={_delta.max():.4f}, mean Δz={_delta.mean():.4f})")
+
     co[:, 2] = new_z
     mesh.vertices.foreach_set("co", co.ravel())
     mesh.update()
@@ -2070,6 +2237,38 @@ def runGeneration(type, locked_scale=None):
     _lo = bpy.context.scene.tp3d.lowestZ
     _hi = bpy.context.scene.tp3d.highestZ
     overlay.add_completed_step(f"Terrain applied  —  z {_lo:.1f} to {_hi:.1f}")
+
+    # --- Satellite reference plane: join the prefetch and build it on the main thread ---
+    if _sat_prefetch_thread is not None:
+        _sat_prefetch_thread.join()
+        _landcover_tiled = _sat_prefetched.get("landcover_tiled")
+        if _landcover_tiled:
+            try:
+                from .satellite import (  # deferred to avoid circular import at load time
+                    create_satellite_plane,
+                    paint_terrain_from_landcover,
+                )
+                create_satellite_plane(
+                    _landcover_tiled,
+                    _tp3d_snap.minLat, _tp3d_snap.maxLat,
+                    _tp3d_snap.minLon, _tp3d_snap.maxLon,
+                    z_height=_hi + 10.0,  # fixed gap above the terrain's highest point
+                    debug_photo_tiled=_sat_prefetched.get("photo_tiled"),
+                )
+                overlay.add_completed_step("Satellite reference plane placed")
+
+                if bpy.context.scene.tp3d.elementMode == "PAINT":
+                    paint_terrain_from_landcover(
+                        obj,
+                        _tp3d_snap.minLat, _tp3d_snap.maxLat,
+                        _tp3d_snap.minLon, _tp3d_snap.maxLon,
+                    )
+                    overlay.add_completed_step("Terrain painted from land cover")
+            except Exception as e:  # noqa: BLE001 - satellite plane is a non-fatal reference aid
+                print(f"Satellite plane creation failed: {e}")
+                _progress.WarningsOverlay.add_warning("Satellite imagery unavailable", "warn")
+        else:
+            _progress.WarningsOverlay.add_warning("Satellite imagery unavailable", "warn")
 
     if type == 20:
         for i, crv in enumerate(curveObjs):

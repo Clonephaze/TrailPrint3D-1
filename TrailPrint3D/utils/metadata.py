@@ -203,7 +203,15 @@ def writeMetadata(obj, type = "MAP"):
         obj["yTerrainOffset"] = bpy.context.scene.tp3d.yTerrainOffset
         obj["elementMode"] = bpy.context.scene.tp3d.elementMode
 
-        obj["ExportGroup"] = 1
+        # Roads is a real standalone base-to-top piece in Single-Color mode
+        # (see finalize_roads/full_depth in generation.py) so it belongs in
+        # its own print group, like the other coloring elements above.
+        # Buildings always sit on top of both terrain and elements untouched,
+        # so they always print with the map.
+        if type == "ROADS":
+            obj["ExportGroup"] = 0 if "SINGLECOLORMODE" in bpy.context.scene.tp3d.elementMode else 1
+        else:
+            obj["ExportGroup"] = 1
 
     if type == "PLATE":
         obj["Object type"] = type

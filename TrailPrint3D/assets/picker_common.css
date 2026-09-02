@@ -167,7 +167,12 @@ body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #eee; ma
 .element-card .card-checklist { display: flex; flex-direction: column; gap: 3px; width: 100%; margin: 2px 0; }
 .element-card .card-checklist label { display: flex; align-items: center; gap: 5px; font-size: 11px;
     color: #ccc; cursor: pointer; }
+/* Shown while the checkbox's own composite category (Water/Roads) is off --
+   the checkbox still reflects its remembered value but can't be edited
+   until the category is turned back on. */
+.element-card .card-checklist label.locked { color: #777; cursor: not-allowed; }
 .element-card input[type=checkbox] { width: 13px; height: 13px; accent-color: #007bff; cursor: pointer; flex-shrink: 0; }
+.element-card input[type=checkbox]:disabled { cursor: not-allowed; }
 #elementStatus { flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 10px 16px;
     background: #202020; border-bottom: 1px solid #444; overflow-x: auto; }
 .element-chip { display: flex; align-items: center; gap: 7px; flex-shrink: 0;
