@@ -566,7 +566,7 @@ def buildings_geometry_for_polygon(piece_polygon, buildings_data):
     return b_verts, b_faces
 
 
-def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
+def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0, prefetched_tiles=None):
 
     # Mercator scale used by convert_to_blender_coordinates (it reads sScaleHor
     # from the scene). Read once so the vectorized node conversion matches.
@@ -705,7 +705,13 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
                 data = []
 
                 _t0 = time.time()
-                data = fetch_osm_data(bbox, "BUILDINGS")
+                if prefetched_tiles is not None:
+                    # Already fetched (and disk-cached) by the combined
+                    # background prefetch -- avoid re-querying Overpass.
+                    tile_result = prefetched_tiles.get(bbox)
+                    data = tile_result[0] if tile_result else None
+                else:
+                    data = fetch_osm_data(bbox, "BUILDINGS")
                 _t_fetch += time.time() - _t0
 
                 if not data or "elements" not in data:

@@ -689,7 +689,8 @@ def roads_geometry_for_polygon(
 
 
 def create_roads(
-    gen: GenerationContext, default_height=10.0, scaleHor=1.0, full_depth=None, terrain_tris=None
+    gen: GenerationContext, default_height=10.0, scaleHor=1.0, full_depth=None, terrain_tris=None,
+    prefetched_tiles=None,
 ):
     """
     Generate road geometry from OSM polylines and return the final mesh plus the road union polygon.
@@ -754,6 +755,7 @@ def create_roads(
             config.exclude_alleys,
             ALLEY_SERVICE_TYPES,
             progress_overlay=_ov,
+            prefetched_tiles=prefetched_tiles,
         )
     except Exception as e:
         raise GenerationError(f"Failed to fetch road polylines from OSM: {e}")

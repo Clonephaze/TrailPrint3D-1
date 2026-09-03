@@ -418,6 +418,7 @@ def fetch_tier_polylines(
     exclude_alleys: bool,
     alley_service_types: frozenset[str],
     progress_overlay=None,
+    prefetched_tiles=None,
 ) -> dict[str, list] | None:
     """
     Fetch OSM road data over a tiled grid and bucket ways by tier.
@@ -462,7 +463,13 @@ def fetch_tier_polylines(
             east = west + lon_step
             bbox = (south, west, north, east)
 
-            data = fetch_osm_data(bbox, "STREETS")
+            if prefetched_tiles is not None:
+                # Already fetched (and disk-cached) by the combined
+                # background prefetch -- avoid re-querying Overpass.
+                tile_result = prefetched_tiles.get(bbox)
+                data = tile_result[0] if tile_result else None
+            else:
+                data = fetch_osm_data(bbox, "STREETS")
             if not data or "elements" not in data:
                 print("No Road data returned")
                 return None  # Hard failure — propagate upward.
