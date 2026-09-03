@@ -410,6 +410,7 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, c
 
     pos_geoms = []
     neg_geoms = []
+    river_geoms = []  # WATER ribbons built from open ways (rivers/streams), tracked separately so smoothing can skip only these
     _dbg_filtered_small = []  # polygons dropped for being below col_Area (debug only)
 
     scaleHor = gen.runtime.sScaleHor
@@ -568,6 +569,8 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, c
                         ribbon = _clip_to_query_bbox(ribbon)
                         if ribbon is not None and not ribbon.is_empty:
                             pos_geoms.append(ribbon)
+                            if kind == "WATER":
+                                river_geoms.append(ribbon)
                             waterCreated += 1
                         else:
                             waterDeleted += 1
@@ -644,20 +647,38 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, c
         if _clipped is not None and not _clipped.is_empty:
             final_geom = _g2d.validate(_clipped)
     _pre_smooth_geom = final_geom if bpy.app.debug else None
-    if _smooth_r > 0 and kind not in "WATER":
-        smoothed_geom = _g2d.smooth_polygon_taubin(gen,
-            final_geom, steps=_smooth_r
-        )
-        print(f"  [smoothing steps] Taubin smoothing steps={_smooth_r}  ")
-        # force=True per-polygon before union: splits self-touching rings (figure-8
-        # pinch points from Taubin) without touching already-valid unrelated polygons.
-        _smooth_parts = [
-            _g2d.validate(p, force=True) for p in _g2d.iter_polygons(smoothed_geom)
+    # Rivers (ribbons from open ways) keep their Taubin-unsmoothed shape; lakes/ponds
+    # and every other kind still get smoothed as before.
+    _river_union = _g2d.union(river_geoms) if river_geoms else None
+    if _smooth_r > 0:
+        if _river_union is not None and not _river_union.is_empty:
+            _to_smooth = _g2d.validate(final_geom.difference(_river_union))
+            _river_part = _g2d.validate(final_geom.intersection(_river_union))
+        else:
+            _to_smooth = final_geom
+            _river_part = None
+
+        _smoothed_result = None
+        if _to_smooth is not None and not _to_smooth.is_empty:
+            smoothed_geom = _g2d.smooth_polygon_taubin(gen,
+                _to_smooth, steps=_smooth_r
+            )
+            print(f"  [smoothing steps] Taubin smoothing steps={_smooth_r}  ")
+            # force=True per-polygon before union: splits self-touching rings (figure-8
+            # pinch points from Taubin) without touching already-valid unrelated polygons.
+            _smooth_parts = [
+                _g2d.validate(p, force=True) for p in _g2d.iter_polygons(smoothed_geom)
+            ]
+            union_smoothed = _g2d.union(
+                [p for p in _smooth_parts if p is not None and not p.is_empty]
+            )
+            _smoothed_result = _g2d.validate(union_smoothed)
+
+        _rejoin_parts = [
+            p for p in (_smoothed_result, _river_part) if p is not None and not p.is_empty
         ]
-        union_smoothed = _g2d.union(
-            [p for p in _smooth_parts if p is not None and not p.is_empty]
-        )
-        final_geom = _g2d.validate(union_smoothed)
+        if _rejoin_parts:
+            final_geom = _g2d.validate(_g2d.union(_rejoin_parts))
     print(
         f"  [coloring_main] Shapely union+subtract ({kind}): {time.time() - _t_shapely:.3f}s  pos={len(pos_geoms)}  neg={len(neg_geoms)}"
     )
