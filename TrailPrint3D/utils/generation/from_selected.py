@@ -11,7 +11,7 @@ from .elements import (
     _rg_build_terrain_elements,
 )
 from .input import _rg_validate_inputs
-from .output import _rg_apply_texture, _rg_assign_materials
+from .output import _rg_apply_texture, _rg_assign_materials, _rg_finalize_metadata
 from ..ui_state import build_fetch_items
 
 # ---------------------------------------------------------------------------
@@ -261,8 +261,202 @@ def _ctfs_handle_trail(zobj, duplicate, singleColorMode):
     return curveObjs
 
 
+def _ctfs_build_tile_preview(selected_objects):
+    """Build the multi-tile map-preview overlay payload (only meaningful for 2+ tiles).
+
+    Mirrors createTerrainFromSelected's own per-tile skip conditions exactly:
+    must be MESH, objType absent OR == "MAP", and not already processed
+    (highestZ/lowestZ both already set). Returns (valid_objs, tiles_info,
+    tile_size) -- tiles_info stays empty when there's fewer than 2 valid
+    tiles, since a single tile has nothing to preview against.
+    """
+    valid = [
+        obj
+        for obj in selected_objects
+        if obj.type == "MESH"
+        and obj.get("objType", "MAP") == "MAP"
+        and not (obj.get("highestZ", 0) != 0 and obj.get("lowestZ", 0) != 0)
+    ]
+    tile_size = float(valid[0].get("objSize", 1.0)) if valid else 1.0
+    tiles_info = []
+    if len(valid) >= 2:
+        tiles_info = [
+            {
+                "bx": round(float(obj.location.x), 3),
+                "by": round(float(obj.location.y), 3),
+                "status": "pending",
+                "shape": obj.get("Shape", "square").lower().split()[0],
+            }
+            for obj in valid
+        ]
+    return valid, tiles_info, tile_size
+
+
+def _ctfs_update_tile_preview_status(overlay, valid, tiles_info, tile_size, zobj):
+    """Advance the map-preview's per-tile status markers as the loop reaches zobj."""
+    if not tiles_info or zobj not in valid:
+        return
+    idx = valid.index(zobj)
+    for k in range(idx):
+        tiles_info[k]["status"] = "done"
+    tiles_info[idx]["status"] = "active"
+    overlay.set_map_preview({"tiles": tiles_info, "tile_size": round(tile_size, 3)})
+
+
+def _ctfs_process_tile(
+    gen: GenerationContext,
+    zobj,
+    tile_idx: int,
+    n_tiles: int,
+    additionalExtrusion: float,
+    skip_bottom_recess: bool,
+    overlay,
+    map_km: float,
+):
+    """Run one tile through the same back-half phases runGeneration itself uses.
+
+    Mirrors runGeneration's phases 14-17 (terrain elements, single-color
+    mode, materials, texture) via the shared _rg_* functions, with the
+    elevation+trail steps handled by _ctfs_apply_elevation/_ctfs_handle_trail
+    instead of runGeneration's curve-driven displacement (these tiles are
+    pre-shaped primitives, not a trail-derived outline).
+
+    Raises GenerationError on failure -- caught by the caller's per-tile loop.
+    Returns (lowestZ, highestZ, additionalExtrusion).
+    """
+    from ..mesh_ops import (
+        recalculateNormals,  # deferred to avoid circular import at load time
+    )
+
+    tile_label = f"Tile {tile_idx + 1}/{n_tiles}"
+    base_pct = tile_idx / n_tiles
+    step = 1.0 / n_tiles
+
+    overlay.set_fetch_items(build_fetch_items(map_km))
+
+    # --- Phase 1: Apply terrain elevation + extrude bottom face ---
+    overlay.update(
+        base_pct + step * 0.00,
+        "Fetching Elevation",
+        f"{tile_label} — querying elevation API…",
+    )
+    overlay.set_fetch_progress("elevation", 0.0)
+
+    def _elev_progress(pct):
+        t = pct / 100.0
+        overlay.update(
+            base_pct + step * t * 0.50,
+            "Fetching Elevation",
+            f"{tile_label} — {pct}% complete…",
+            sub_percent=t,
+            sub_label="Elevation tiles",
+        )
+        overlay.set_fetch_progress("elevation", t)
+
+    lowestZ, highestZ, additionalExtrusion, n_elev_pts = _ctfs_apply_elevation(
+        gen,
+        zobj,
+        additionalExtrusion,
+        progress_cb=_elev_progress,
+        skip_bottom_recess=skip_bottom_recess,
+    )
+    overlay.sub_percent = None
+    overlay.set_fetch_done("elevation", success=True)
+    overlay.update(
+        base_pct + step * 0.50,
+        "Elevation Ready",
+        f"{tile_label} — {n_elev_pts} pts, z {lowestZ:.1f}–{highestZ:.1f}",
+    )
+    overlay.add_completed_step(
+        f"{tile_label} — elevation fetched ({n_elev_pts} pts, z {lowestZ:.1f}–{highestZ:.1f})"
+    )
+
+    # --- Phase 2: Trail projection / intersection ---
+    overlay.update(
+        base_pct + step * 0.60,
+        "Building Trail",
+        f"{tile_label} — projecting trail onto terrain…",
+    )
+    curveObjs = _ctfs_handle_trail(zobj, None, gen.settings.singleColorMode)
+    gen.runtime.curveObjs = curveObjs
+    _n_trails = len(curveObjs)
+    overlay.add_completed_step(
+        f"{tile_label} — trail built ({_n_trails} seg{'s' if _n_trails != 1 else ''})"
+        if _n_trails
+        else f"{tile_label} — no trail"
+    )
+
+    # --- Phase 3: Base material ---
+    mat = bpy.data.materials.get("BASE")
+    zobj.data.materials.clear()
+    zobj.data.materials.append(mat)
+
+    # --- Phase 4: Terrain overlay elements (water, forest, city, glacier, buildings, roads) ---
+    _elem_start = base_pct + step * 0.70
+    _elem_end = base_pct + step * 0.93
+    overlay.update(
+        _elem_start, "Terrain Elements", f"{tile_label} — building overlay layers…"
+    )
+    terrain = _rg_build_terrain_elements(
+        gen,
+        phase_start=_elem_start,
+        phase_end=_elem_end,
+        tile_label=tile_label,
+    )
+    if terrain["roads"]:
+        terrain["roads"].location.z += 0.4
+    _found = [k for k, v in terrain.items() if v is not None]
+    overlay.add_completed_step(
+        f"{tile_label} — elements: {', '.join(_found)}"
+        if _found
+        else f"{tile_label} — no elements"
+    )
+
+    recalculateNormals(zobj)
+
+    # --- Phase 5: Single color mode processing ---
+    overlay.update(
+        base_pct + step * 0.85,
+        "Coloring",
+        f"{tile_label} — applying single-color mode…",
+    )
+    _rg_apply_single_color_mode(gen)
+
+    # --- Phase 6: Assign materials ---
+    overlay.update(
+        base_pct + step * 0.90, "Finalizing", f"{tile_label} — assigning materials…"
+    )
+    _rg_assign_materials(gen)
+
+    # --- Phase 7: Rasterise OSM polygons into a UV paint texture, when enabled ---
+    # _rg_build_terrain_elements already populated terrain['_osm_polygons']
+    # (elements.py) and discarded the road mesh; this just bakes it.
+    if gen.texture.useTexture:
+        overlay.update(
+            base_pct + step * 0.93,
+            "Texture",
+            f"{tile_label} — rasterising OSM texture…",
+        )
+        _rg_apply_texture(gen)
+
+    bpy.ops.object.select_all(action="DESELECT")
+    zobj.select_set(False)
+    zobj["lowestZ"] += additionalExtrusion
+    zobj["highestZ"] += additionalExtrusion
+
+    return lowestZ, highestZ, additionalExtrusion
+
+
 def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
-    """Apply terrain elevation and overlays to already-placed tile objects.
+    """Run the generation pipeline's back half on already-placed tile objects.
+
+    An orchestrator in its own right, same as runGeneration -- the map
+    picker, puzzle picker, and Extend flows all funnel into this rather than
+    runGeneration's own from-scratch GPX pipeline (see the module docstring
+    above). Shares the exact same _rg_* phase functions runGeneration uses
+    for terrain elements/coloring/materials/texture (_ctfs_process_tile);
+    only the elevation+trail step differs, since these tiles are pre-shaped
+    primitives rather than a trail-derived outline.
 
     manage_overlay: when False the caller owns the ProgressOverlay lifecycle
     (start/finish).  All internal update/step calls still run normally so the
@@ -272,9 +466,6 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     docstring. Pass True for fresh single-tile callers with no neighbor
     baseline to protect (e.g. the puzzle generator).
     """
-    from ..mesh_ops import (
-        recalculateNormals,  # deferred to avoid circular import at load time
-    )
     from ..primitives import (
         setupColors,  # deferred to avoid circular import at load time
     )
@@ -325,40 +516,16 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     additionalExtrusion = tp3d.sAdditionalExtrusion
 
     _map_km = round(bpy.context.scene.tp3d.get("sMapInKm", 0), 1)
-    _fetch_items = build_fetch_items(_map_km)
-    overlay.set_fetch_items(_fetch_items)
+    overlay.set_fetch_items(build_fetch_items(_map_km))
 
-    # Build multi-tile map preview (only when 2+ valid tiles)
-    # Mirror the loop's own skip conditions exactly:
-    #   - must be MESH
-    #   - objType absent OR == "MAP"  (objects without objType are valid map tiles)
-    #   - not already processed (highestZ and lowestZ both non-zero)
-    _mp_valid = [
-        obj
-        for obj in selected_objects
-        if obj.type == "MESH"
-        and obj.get("objType", "MAP") == "MAP"
-        and not (obj.get("highestZ", 0) != 0 and obj.get("lowestZ", 0) != 0)
-    ]
-    _mp_tiles_info = []
-    _mp_tile_size = float(_mp_valid[0].get("objSize", 1.0)) if _mp_valid else 1.0
-    if len(_mp_valid) >= 2:
-        for obj in _mp_valid:
-            _mp_tiles_info.append(
-                {
-                    "bx": round(float(obj.location.x), 3),
-                    "by": round(float(obj.location.y), 3),
-                    "status": "pending",
-                    "shape": obj.get("Shape", "square").lower().split()[0],
-                }
-            )
+    _mp_valid, _mp_tiles_info, _mp_tile_size = _ctfs_build_tile_preview(selected_objects)
+    if _mp_tiles_info:
         overlay.set_map_preview(
             {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
         )
 
     n_tiles = len(selected_objects)
     for tile_idx, zobj in enumerate(selected_objects):
-        tile_label = f"Tile {tile_idx + 1}/{n_tiles}"
         bpy.ops.object.select_all(action="DESELECT")
         bpy.context.scene.cursor.location = zobj.location
 
@@ -377,150 +544,23 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
         if _mp_tiles_info and _progress.SubprocessProgress.get().is_cancel_requested():
             break
 
-        base_pct = tile_idx / n_tiles
-        step = 1.0 / n_tiles
-
-        # Update tile statuses in map preview
-        if _mp_tiles_info and zobj in _mp_valid:
-            _mp_idx = _mp_valid.index(zobj)
-            for k in range(_mp_idx):
-                _mp_tiles_info[k]["status"] = "done"
-            _mp_tiles_info[_mp_idx]["status"] = "active"
-            overlay.set_map_preview(
-                {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
-            )
-
-        # Reset chip strip for this tile
-        overlay.set_fetch_items(build_fetch_items(_map_km))
+        _ctfs_update_tile_preview_status(
+            overlay, _mp_valid, _mp_tiles_info, _mp_tile_size, zobj
+        )
 
         try:
-            # Create flat duplicate for trail boolean (normal mode only)
-            duplicate = None
-            if not gen.settings.singleColorMode:
-                pass
-                # COMMENTED OUT FOR NOW, NOT SURE IF NEEDED CURRENTLY (MAYBE FOR SINGLE COLOR MODE)
-                # duplicate = zobj.copy()
-                # duplicate.data = zobj.data.copy()
-                # bpy.context.collection.objects.link(duplicate)
-                # for col in zobj.users_collection:
-                #    if duplicate.name not in col.objects:
-                #        col.objects.link(duplicate)
-                # duplicate.name = "Bool"
-                # duplicate.select_set(False)
-
-            # Apply terrain elevation + extrude bottom face (0% → 50% of this tile)
-            overlay.update(
-                base_pct + step * 0.00,
-                "Fetching Elevation",
-                f"{tile_label} — querying elevation API…",
-            )
-            overlay.set_fetch_progress("elevation", 0.0)
-
-            def _elev_progress(pct, _base_pct=base_pct, _step=step, _tile_label=tile_label):
-                t = pct / 100.0
-                overlay.update(
-                    _base_pct + _step * t * 0.50,
-                    "Fetching Elevation",
-                    f"{_tile_label} — {pct}% complete…",
-                    sub_percent=t,
-                    sub_label="Elevation tiles",
-                )
-                overlay.set_fetch_progress("elevation", t)
-
-            lowestZ, highestZ, additionalExtrusion, n_elev_pts = _ctfs_apply_elevation(
+            lowestZ, highestZ, additionalExtrusion = _ctfs_process_tile(
                 gen,
                 zobj,
+                tile_idx,
+                n_tiles,
                 additionalExtrusion,
-                progress_cb=_elev_progress,
-                skip_bottom_recess=skip_bottom_recess,
+                skip_bottom_recess,
+                overlay,
+                _map_km,
             )
-            overlay.sub_percent = None
-            overlay.set_fetch_done("elevation", success=True)
-            overlay.update(
-                base_pct + step * 0.50,
-                "Elevation Ready",
-                f"{tile_label} — {n_elev_pts} pts, z {lowestZ:.1f}–{highestZ:.1f}",
-            )
-            overlay.add_completed_step(
-                f"{tile_label} — elevation fetched ({n_elev_pts} pts, z {lowestZ:.1f}–{highestZ:.1f})"
-            )
-
-            # Handle trail projection / intersection
-            overlay.update(
-                base_pct + step * 0.60,
-                "Building Trail",
-                f"{tile_label} — projecting trail onto terrain…",
-            )
-            print(f"duplicate: {duplicate}")
-            curveObjs = _ctfs_handle_trail(zobj, duplicate, gen.settings.singleColorMode)
-            gen.runtime.curveObjs = curveObjs
-            _n_trails = len(curveObjs)
-            print(f"_n_trails: {_n_trails}")
-            overlay.add_completed_step(
-                f"{tile_label} — trail built ({_n_trails} seg{'s' if _n_trails != 1 else ''})"
-                if _n_trails
-                else f"{tile_label} — no trail"
-            )
-
-            # Base material
-            mat = bpy.data.materials.get("BASE")
-            zobj.data.materials.clear()
-            zobj.data.materials.append(mat)
-
-            # Terrain overlay elements (water, forest, city, glacier, buildings, roads)
-            _elem_start = base_pct + step * 0.70
-            _elem_end = base_pct + step * 0.93
-            overlay.update(
-                _elem_start, "Terrain Elements", f"{tile_label} — building overlay layers…"
-            )
-            terrain = _rg_build_terrain_elements(
-                gen,
-                phase_start=_elem_start,
-                phase_end=_elem_end,
-                tile_label=tile_label,
-            )
-            if terrain["roads"]:
-                terrain["roads"].location.z += 0.4
-            _found = [k for k, v in terrain.items() if v is not None]
-            overlay.add_completed_step(
-                f"{tile_label} — elements: {', '.join(_found)}"
-                if _found
-                else f"{tile_label} — no elements"
-            )
-
-            recalculateNormals(zobj)
-
-            # Single color mode processing
-            overlay.update(
-                base_pct + step * 0.85,
-                "Coloring",
-                f"{tile_label} — applying single-color mode…",
-            )
-            print(f"curveObjs: {curveObjs} ")
-            _rg_apply_single_color_mode(gen)
-
-            # Finalize tile -- writes metadata + assigns materials
-            overlay.update(
-                base_pct + step * 0.90, "Finalizing", f"{tile_label} — assigning materials…"
-            )
-            _rg_assign_materials(gen)
-
-            # Rasterise OSM polygons into a UV paint texture, when enabled.
-            # _rg_build_terrain_elements already populated terrain['_osm_polygons']
-            # (elements.py) and discarded the road mesh; this just bakes it.
-            if gen.texture.useTexture:
-                overlay.update(
-                    base_pct + step * 0.93,
-                    "Texture",
-                    f"{tile_label} — rasterising OSM texture…",
-                )
-                _rg_apply_texture(gen)
-
-            bpy.ops.object.select_all(action="DESELECT")
-            zobj.select_set(False)
-            zobj["lowestZ"] += additionalExtrusion
-            zobj["highestZ"] += additionalExtrusion
         except GenerationError as e:
+            tile_label = f"Tile {tile_idx + 1}/{n_tiles}"
             print(f"{tile_label} — generation phase failed: {e}")
             _progress.WarningsOverlay.add_warning(f"{tile_label}: {e}", icon="error")
             continue
@@ -537,18 +577,7 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     for zobj in selected_objects:
         zobj.select_set(True)
 
-    end_time = time.time()
-    duration = end_time - start_time
-
-    bpy.context.scene.tp3d.lowestZ = lowestZ
-    bpy.context.scene.tp3d.highestZ = highestZ
-    bpy.context.scene.tp3d["o_time"] = f"Script ran for {duration:.0f} seconds"
-
-    from ..elevation import load_generation_counter, save_generation_counter
-
-    _total_maps = load_generation_counter() + 1
-    save_generation_counter(_total_maps)
-    bpy.context.scene.tp3d["o_mapsGenerated"] = f"Maps Generated: {_total_maps}"
+    _rg_finalize_metadata(gen, start_time, lowestZ=lowestZ, highestZ=highestZ)
 
     _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
     _m, _s = divmod(_elapsed, 60)

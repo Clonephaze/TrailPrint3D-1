@@ -1,7 +1,6 @@
 import time
 
 import bpy
-from bpy.app.translations import pgettext as _
 
 from ... import progress as _progress
 from ..dataclasses import GenerationContext, GenerationError, ValidationError
@@ -19,7 +18,12 @@ from .input import (
     _rg_load_coordinates,
     _rg_validate_inputs,
 )
-from .output import _rg_apply_texture, _rg_assign_materials, _rg_export
+from .output import (
+    _rg_apply_texture,
+    _rg_assign_materials,
+    _rg_export,
+    _rg_finalize_metadata,
+)
 from .terrain_gen import (
     _cleanup_build_area,
     _rg_build_trail_curves,
@@ -225,18 +229,8 @@ def runGeneration(type, locked_scale=None):
         _rg_export(gen)
 
         # Calculate script durations for prints and overlay updates
-        end_time = time.time()
-        duration = end_time - start_time
+        duration = _rg_finalize_metadata(gen, start_time)
         bpy.context.scene.tp3d.sRunDuration = round(duration)
-        bpy.context.scene.tp3d["o_time"] = _("Script ran for {} seconds").format(
-            round(duration)
-        )
-
-        from ..elevation import load_generation_counter, save_generation_counter
-
-        _total_maps = load_generation_counter() + 1
-        save_generation_counter(_total_maps)
-        bpy.context.scene.tp3d["o_mapsGenerated"] = f"Maps Generated: {_total_maps}"
 
         if gen.runtime.mapObject:
             gen.runtime.mapObject["GenerationTime"] = round(duration)

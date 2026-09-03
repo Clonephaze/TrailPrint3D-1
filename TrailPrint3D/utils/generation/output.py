@@ -1,10 +1,37 @@
+import time
 from typing import Any
 
 import bpy  # type: ignore
+from bpy.app.translations import pgettext as _
 from bpy.types import Object
 
 from ...progress import ProgressOverlay as _progress
 from ..dataclasses import GenerationContext
+
+
+def _rg_finalize_metadata(gen: GenerationContext, start_time: float, lowestZ=None, highestZ=None) -> float:
+    """Write the run-duration text and bump the persistent generation counter.
+
+    Shared tail step for both runGeneration and createTerrainFromSelected --
+    lowestZ/highestZ are optional since runGeneration's own displace step
+    already writes them to the scene earlier in its own pipeline.
+    Returns the elapsed duration in seconds.
+    """
+    from ..elevation import load_generation_counter, save_generation_counter
+
+    duration = time.time() - start_time
+    tp3d = bpy.context.scene.tp3d
+    tp3d["o_time"] = _("Script ran for {} seconds").format(round(duration))
+    if lowestZ is not None:
+        tp3d.lowestZ = lowestZ
+    if highestZ is not None:
+        tp3d.highestZ = highestZ
+
+    _total_maps = load_generation_counter() + 1
+    save_generation_counter(_total_maps)
+    tp3d["o_mapsGenerated"] = f"Maps Generated: {_total_maps}"
+
+    return duration
 
 
 def _rg_apply_texture(gen: GenerationContext):
