@@ -309,8 +309,8 @@ def _classify_element(element, active_kinds, settings=None):
                 ):
                     return "STREETS"
 
-    # BUILDINGS — anything with a building=* tag
-    if "BUILDINGS" in active_kinds and tags.get("building"):
+    # BUILDINGS — anything with a building=* or building:part=* tag
+    if "BUILDINGS" in active_kinds and (tags.get("building") or tags.get("building:part")):
         return "BUILDINGS"
 
     # WATER — natural water bodies and waterways

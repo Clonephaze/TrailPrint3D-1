@@ -1,5 +1,6 @@
 import math
 import time
+from collections import Counter
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
@@ -166,7 +167,9 @@ def _skillion_heights(verts2d, z_eave, roof_height, roof_angle_deg, direction_de
     if roof_height is None:
         pitch = math.radians(roof_angle_deg if roof_angle_deg is not None else 20.0)
         roof_height = span * math.tan(pitch)
-    return [z_eave + roof_height * (p - p_min) / span for p in proj]
+    # `direction_deg` is the compass bearing of the downhill slope, so height
+    # must DECREASE moving that way (p_max = the low/eave side), not increase.
+    return [z_eave + roof_height * (p_max - p) / span for p in proj]
 
 
 def _fitted_rect_axes(poly):
@@ -384,9 +387,15 @@ def _append_building(
     poly: shapely Polygon (single, possibly with holes) footprint.
     z_offset: eave height above the local terrain max, already scaled to
         print units (see create_buildings).
-    z_min_offset: floor height above the local terrain min, already scaled to
-        print units -- 0 for a normal ground-level building, >0 for a
-        building:part that starts partway up (e.g. a tower over a podium).
+    z_min_offset: OSM min_height, already scaled to print units -- absolute
+        height above the real terrain where this part's own volume starts
+        (0 for a normal ground-level building; >0 for e.g. a rooftop
+        cupola or an antenna/spire mast whose `height` tag is its own
+        absolute top, not a segment length relative to min_height). A solid
+        pedestal is extruded from the real terrain up to that start height
+        using the same footprint (see below) so the part is never left
+        floating with no manifold path to the ground, without inflating a
+        thin mast into a full-height spike by pretending it starts at grade.
     roof_shape / roof_height / roof_angle / roof_direction: OSM roof:* tag
         values, already unit-converted by the caller where relevant.
     building_type: OSM building=* value, used only to detect stadiums/
@@ -402,14 +411,24 @@ def _append_building(
     _vx = [v[0] for v in verts2d]
     _vy = [v[1] for v in verts2d]
     zs = sample_z(_vx, _vy)
-    z_floor = float(zs.min()) + z_min_offset
+    z_ground = float(zs.min())
+    z_floor = z_ground + z_min_offset
     z_eave = float(zs.max()) + z_offset
+
+    if z_min_offset > 1e-4:
+        _extrude_prism(ext, holes, verts2d, cap_tris, z_ground, z_floor, b_verts, b_faces)
 
     rs = (roof_shape or "flat").strip().lower()
     bt = (building_type or "").strip().lower()
     rh_default = (
         roof_height if roof_height is not None else max(z_eave - z_floor, 0.1) * 0.5
     )
+    # OSM `height` is the absolute peak including the roof; `roof:height` is the
+    # roof's own vertical span, subtracted from it to get the eave -- NOT added
+    # on top of `height` (that previously turned e.g. One WTC's skillion facets,
+    # height=417 roof:height=362, into a spike to 417+362 instead of tapering
+    # from 417-362=55 up to the correct peak at 417).
+    wall_top = max(z_floor, z_eave - rh_default)
 
     if bt in ("stadium", "grandstand") and _add_stadium_bowl(poly, z_floor, z_eave, rh_default, rs, b_verts, b_faces):
         return
@@ -422,7 +441,7 @@ def _append_building(
             verts2d,
             cap_tris,
             z_floor,
-            z_eave,
+            wall_top,
             rh_default,
             rs,
             b_verts,
@@ -462,7 +481,7 @@ def _append_building(
             b_verts.append((vx, vy, z_floor))
         eave_base = len(b_verts)
         for vx, vy in verts2d:
-            b_verts.append((vx, vy, z_eave))
+            b_verts.append((vx, vy, wall_top))
         for ia, ib, ic in cap_tris:
             b_faces.append([base + ic, base + ib, base + ia])  # floor
         start = 0
@@ -476,7 +495,7 @@ def _append_building(
                 b_faces.append([a, b, c, d])  # vertical wall
             start += rn
         apex_idx = len(b_verts)
-        b_verts.append((cx, cy, z_eave + rh_default))
+        b_verts.append((cx, cy, z_eave))  # peak == the tag height, already incl. roof
         start = 0
         for ring in [ext] + holes:
             rn = len(ring)
@@ -489,7 +508,7 @@ def _append_building(
 
     if rs == "skillion":
         heights = _skillion_heights(
-            verts2d, z_eave, roof_height, roof_angle, roof_direction
+            verts2d, wall_top, roof_height, roof_angle, roof_direction
         )
         _add_height_field_roof(
             ext, holes, verts2d, cap_tris, z_floor, heights, b_verts, b_faces
@@ -501,7 +520,7 @@ def _append_building(
         if axes is not None and axes["coverage"] >= 0.75:
             hip = rs in ("hipped", "hip", "half-hipped")
             heights = _ridge_heights(
-                verts2d, axes, z_eave, roof_height, roof_angle, hip
+                verts2d, axes, wall_top, roof_height, roof_angle, hip
             )
             _add_height_field_roof(
                 ext, holes, verts2d, cap_tris, z_floor, heights, b_verts, b_faces
@@ -605,6 +624,14 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
     minLon = gen.runtime.tbMinLon
     maxLat = gen.runtime.tbMaxLat
     maxLon = gen.runtime.tbMaxLon
+    # Printed so two separate runs (e.g. "normal" vs "puzzle") can be diffed
+    # for an EXACT bbox match after the fact, instead of trying to hand-match
+    # UI inputs beforehand -- this is what fetch_osm_data's cache key is
+    # actually built from (see make_cache_key's 7-decimal rounding).
+    print(
+        f"[TP3D buildings] tile bounds: minLat={minLat:.7f} minLon={minLon:.7f} "
+        f"maxLat={maxLat:.7f} maxLon={maxLon:.7f}"
+    )
 
     # Geometry for ALL buildings across every tile is accumulated here and built
     # into one mesh at the very end.
@@ -616,6 +643,17 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
     # jigsaw seams. Each entry is a dict; see the fields appended below.
     _puzzle_footprints = []
     b_height_mult = bpy.context.scene.tp3d.el_bHeightMultiplier
+
+    # Diagnostics only -- lets two generation runs (e.g. "normal" vs "puzzle")
+    # over the same area be compared from the console instead of guessing why
+    # one looks more detailed: how many buildings actually carry a roof:shape/
+    # roof:height/building:part tag from Overpass, and how many footprints
+    # survive the el_bMinPrintMM cull below.
+    _roof_shape_counts = Counter()
+    _has_roof_height_tag = 0
+    _is_part_count = 0
+    _entries_seen = 0
+    _parts_kept = 0
 
     # Clip footprints to the map outline in 2D so buildings never spill past the
     # map edge -- robust, unlike a 3D boolean against a non-manifold building mesh.
@@ -780,10 +818,19 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
                     if len(footprint) < 3:
                         continue
 
-                    height = safe_float_height(tags.get("height", default_height))
-                    levels = safe_float_height(tags.get("building:levels", 0))
-                    if levels != 0:
-                        height = levels * 2.7
+                    # An explicit height tag is real surveyed/modeled data and always
+                    # wins; building:levels * 2.7m is only a fallback guess for
+                    # buildings with no height tag at all. Previously this was
+                    # backwards (levels always overrode height when present), which
+                    # under-measured buildings like 28 Liberty (height=248 but
+                    # building:levels=60 -> a wrong 162m) whenever a sibling
+                    # building:part lacked a levels tag and kept its own correct
+                    # height -- producing a mismatched, apparently "too tall" part.
+                    if tags.get("height") is not None:
+                        height = safe_float_height(tags.get("height"))
+                    else:
+                        levels = safe_float_height(tags.get("building:levels", 0))
+                        height = levels * 2.7 if levels != 0 else float(default_height)
                     min_height = safe_float_height(
                         tags.get("min_height") or tags.get("building:min_height") or 0
                     )
@@ -793,6 +840,12 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
                         if tags.get("tomb") == "pyramid"
                         else tags.get("roof:shape")
                     )
+                    _entries_seen += 1
+                    _roof_shape_counts[roof_shape or "flat"] += 1
+                    if is_part:
+                        _is_part_count += 1
+                    if tags.get("roof:height") is not None:
+                        _has_roof_height_tag += 1
                     roof_height_tag = tags.get("roof:height")
                     if roof_height_tag is not None:
                         roof_height = (
@@ -853,13 +906,25 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
                 # individually (otherwise you'd get a solid block AND the
                 # detailed parts overlapping it). A building with no parts
                 # (the common case today) renders exactly as before.
+                # Uses an STRtree bbox query per base instead of an O(bases *
+                # parts) brute-force scan -- with tens of thousands of
+                # buildings in one tile (e.g. a dense city-center marathon
+                # route) the brute-force version could mean billions of
+                # shapely .contains() calls and looked like a hang.
                 parts = [e for e in tile_entries if e["is_part"]]
                 bases = [e for e in tile_entries if not e["is_part"]]
                 if parts:
+                    from shapely.strtree import STRtree
+
+                    part_polys = [p["poly"] for p in parts]
+                    part_reps = [p.representative_point() for p in part_polys]
+                    tree = STRtree(part_reps)
                     for b in bases:
+                        # predicate kwarg is broken in Blender's Shapely build --
+                        # bbox-only query then filter manually (see terrain.py).
                         b["has_parts"] = any(
-                            b["poly"].contains(p["poly"].representative_point())
-                            for p in parts
+                            b["poly"].contains(part_reps[int(idx)])
+                            for idx in tree.query(b["poly"])
                         )
                 else:
                     for b in bases:
@@ -872,8 +937,16 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
                     )
 
                 # Each (clipped) polygon part becomes its own manifold volume.
-                for entry in render_entries:
+                # This triangulation/extrusion loop is the actual heavy cost for
+                # large tiles, so it gets its own progress slice (0.75-0.98)
+                # instead of silently running after the 0.75 parsing checkpoint.
+                _n_render = max(1, len(render_entries))
+                for _ri, entry in enumerate(render_entries):
+                    if _ov.active and _ri % max(1, _n_render // 20) == 0:
+                        _render_frac = ((_cntr - 1) + _ri / _n_render) / _maxcntr
+                        _ov.set_fetch_progress("buildings", 0.75 + 0.23 * _render_frac)
                     for part in g2d.iter_polygons(entry["poly"], min_area=min_area):
+                        _parts_kept += 1
                         _puzzle_footprints.append(
                             {
                                 "poly": part,
@@ -906,8 +979,14 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
         f"[TP3D buildings] fetch={_t_fetch:.1f}s  convert={_t_convert:.1f}s  "
         f"geometry(clip+earcut+raycast)={_t_geom:.1f}s"
     )
+    print(
+        f"[TP3D buildings] DIAGNOSTIC: {_entries_seen} tagged elements parsed, "
+        f"{_is_part_count} building:part, {_has_roof_height_tag} with roof:height tag, "
+        f"{_parts_kept} footprints survived el_bMinPrintMM={bpy.context.scene.tp3d.el_bMinPrintMM} cull. "
+        f"roof:shape distribution: {dict(_roof_shape_counts)}"
+    )
     if _ov.active:
-        _ov.set_fetch_progress("buildings", 0.75)
+        _ov.set_fetch_progress("buildings", 0.985)
         _ov.update(message="Buildings: building mesh…")
     _t0 = time.time()
     remove_objects(wall_obj)
@@ -931,7 +1010,7 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0):
     bpy.context.view_layer.update()
 
     if _ov.active:
-        _ov.set_fetch_progress("buildings", 0.90)
+        _ov.set_fetch_progress("buildings", 0.99)
 
     for poly in mesh.polygons:
         poly.use_smooth = False  # flat shading for buildings
