@@ -223,7 +223,9 @@ class TP3D_PT_generate(bpy.types.Panel):
             if props.singleColorMode or _elem_scm:
                 col.prop(props, "singleColorModeHeight")
             if props.tex_use_texture == True:
-                col.prop(props, "tex_include_trail", icon='CHECKBOX_HLT' if props.tex_include_trail else 'CHECKBOX_DEHLT')
+                trail_tex_row = col.row()
+                trail_tex_row.enabled = not _elem_scm
+                trail_tex_row.prop(props, "tex_include_trail", icon='CHECKBOX_HLT' if props.tex_include_trail else 'CHECKBOX_DEHLT')
 
             # Scale
             box = layout.box()
