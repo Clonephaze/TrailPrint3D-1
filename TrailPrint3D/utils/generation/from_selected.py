@@ -479,116 +479,140 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     print("SCRIPT STARTED - createTerrainFromSelected")
     print("------------------------------------------------")
 
+    # Mirrors runGeneration's own try/except(ValidationError, GenerationError,
+    # Exception)/finally -- guarantees overlay.finish() runs even when a tile
+    # or a step outside the per-tile loop raises something unexpected, so the
+    # overlay never gets stuck open under manage_overlay=False callers either.
     try:
         gen = _ctfs_build_gen()
+
+        start_time = time.time()
+
+        tp3d = bpy.context.scene.tp3d
+        if tp3d.selfHosted != "" and tp3d.selfHosted is not None and tp3d.api == 1:
+            print(f"!!using {tp3d.selfHosted} instead of Opentopodata!!")
+
+        setupColors()
+
+        overlay.update(0.02, "Initializing", "Validating selection…")
+
+        selected_objects = bpy.context.selected_objects
+        if not selected_objects:
+            from ..scene import (
+                show_message_box,  # deferred to avoid circular import at load time
+            )
+
+            show_message_box("No objects selected")
+            return {"FINISHED"}
+
+        bpy.ops.object.select_all(action="DESELECT")
+
+        lowestZ = 0
+        highestZ = 0
+        additionalExtrusion = tp3d.sAdditionalExtrusion
+
+        _map_km = round(bpy.context.scene.tp3d.get("sMapInKm", 0), 1)
+        overlay.set_fetch_items(build_fetch_items(_map_km))
+
+        _mp_valid, _mp_tiles_info, _mp_tile_size = _ctfs_build_tile_preview(selected_objects)
+        if _mp_tiles_info:
+            overlay.set_map_preview(
+                {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
+            )
+
+        n_tiles = len(selected_objects)
+        for tile_idx, zobj in enumerate(selected_objects):
+            bpy.ops.object.select_all(action="DESELECT")
+            bpy.context.scene.cursor.location = zobj.location
+
+            if zobj.type != "MESH":
+                continue
+            if "objType" in zobj and zobj["objType"] != "MAP":
+                continue
+            if (
+                "highestZ" in zobj
+                and "lowestZ" in zobj
+                and zobj["highestZ"] != 0
+                and zobj["lowestZ"] != 0
+            ):
+                continue
+
+            if _mp_tiles_info and _progress.SubprocessProgress.get().is_cancel_requested():
+                break
+
+            _ctfs_update_tile_preview_status(
+                overlay, _mp_valid, _mp_tiles_info, _mp_tile_size, zobj
+            )
+
+            tile_label = f"Tile {tile_idx + 1}/{n_tiles}"
+            try:
+                lowestZ, highestZ, additionalExtrusion = _ctfs_process_tile(
+                    gen,
+                    zobj,
+                    tile_idx,
+                    n_tiles,
+                    additionalExtrusion,
+                    skip_bottom_recess,
+                    overlay,
+                    _map_km,
+                )
+            except GenerationError as e:
+                print(f"{tile_label} — generation phase failed: {e}")
+                _progress.WarningsOverlay.add_warning(f"{tile_label}: {e}", icon="error")
+                continue
+            except Exception as e:  # noqa: BLE001 - a single tile's bpy.ops/mesh-op failure shouldn't abort the whole batch
+                import traceback
+
+                traceback.print_exc()
+                print(f"{tile_label} — unexpected failure: {e}")
+                _progress.WarningsOverlay.add_warning(
+                    f"{tile_label}: unexpected failure, check console for details", icon="error"
+                )
+                continue
+
+        # Mark all tiles done in the preview
+        if _mp_tiles_info:
+            for _info in _mp_tiles_info:
+                _info["status"] = "done"
+            overlay.set_map_preview(
+                {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
+            )
+
+        bpy.context.view_layer.objects.active = selected_objects[0]
+        for zobj in selected_objects:
+            zobj.select_set(True)
+
+        _rg_finalize_metadata(gen, start_time, lowestZ=lowestZ, highestZ=highestZ)
+
+        _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
+        _m, _s = divmod(_elapsed, 60)
+        overlay.add_completed_step(f"Done  —  {_m:02d}:{_s:02d} total")
+        _progress.WarningsOverlay.add_warning(
+            "Multi-tile maps are not exported automatically — please use the Export buttons to export your tiles manually.",
+            "warn",
+        )
+        return {"FINISHED"}
     except ValidationError as e:
         print(f"Validation Failed: {e}")
         _progress.WarningsOverlay.add_warning(f"Error: {e}")
-        if manage_overlay:
-            overlay.finish()
         return {"CANCELLED"}
+    except GenerationError as e:
+        print(f"Generation phase failed: {e}")
+        _progress.WarningsOverlay.add_warning(str(e), icon="error")
+        return {"CANCELLED"}
+    except Exception as e:  # noqa: BLE001 - createTerrainFromSelected could raise many kinds of errors, mirrors runGeneration's own bare catch-all
+        import traceback
 
-    start_time = time.time()
-
-    tp3d = bpy.context.scene.tp3d
-    if tp3d.selfHosted != "" and tp3d.selfHosted is not None and tp3d.api == 1:
-        print(f"!!using {tp3d.selfHosted} instead of Opentopodata!!")
-
-    setupColors()
-
-    overlay.update(0.02, "Initializing", "Validating selection…")
-
-    selected_objects = bpy.context.selected_objects
-    if not selected_objects:
-        from ..scene import (
-            show_message_box,  # deferred to avoid circular import at load time
+        traceback.print_exc()
+        print(f"Generation failed: {e}")
+        _progress.WarningsOverlay.add_warning(
+            "Generation failed, check console for details"
         )
-
-        show_message_box("No objects selected")
+        return {"CANCELLED"}
+    finally:
         if manage_overlay:
             overlay.finish()
-        return {"FINISHED"}
-
-    bpy.ops.object.select_all(action="DESELECT")
-
-    lowestZ = 0
-    highestZ = 0
-    additionalExtrusion = tp3d.sAdditionalExtrusion
-
-    _map_km = round(bpy.context.scene.tp3d.get("sMapInKm", 0), 1)
-    overlay.set_fetch_items(build_fetch_items(_map_km))
-
-    _mp_valid, _mp_tiles_info, _mp_tile_size = _ctfs_build_tile_preview(selected_objects)
-    if _mp_tiles_info:
-        overlay.set_map_preview(
-            {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
-        )
-
-    n_tiles = len(selected_objects)
-    for tile_idx, zobj in enumerate(selected_objects):
-        bpy.ops.object.select_all(action="DESELECT")
-        bpy.context.scene.cursor.location = zobj.location
-
-        if zobj.type != "MESH":
-            continue
-        if "objType" in zobj and zobj["objType"] != "MAP":
-            continue
-        if (
-            "highestZ" in zobj
-            and "lowestZ" in zobj
-            and zobj["highestZ"] != 0
-            and zobj["lowestZ"] != 0
-        ):
-            continue
-
-        if _mp_tiles_info and _progress.SubprocessProgress.get().is_cancel_requested():
-            break
-
-        _ctfs_update_tile_preview_status(
-            overlay, _mp_valid, _mp_tiles_info, _mp_tile_size, zobj
-        )
-
-        try:
-            lowestZ, highestZ, additionalExtrusion = _ctfs_process_tile(
-                gen,
-                zobj,
-                tile_idx,
-                n_tiles,
-                additionalExtrusion,
-                skip_bottom_recess,
-                overlay,
-                _map_km,
-            )
-        except GenerationError as e:
-            tile_label = f"Tile {tile_idx + 1}/{n_tiles}"
-            print(f"{tile_label} — generation phase failed: {e}")
-            _progress.WarningsOverlay.add_warning(f"{tile_label}: {e}", icon="error")
-            continue
-
-    # Mark all tiles done in the preview
-    if _mp_tiles_info:
-        for _info in _mp_tiles_info:
-            _info["status"] = "done"
-        overlay.set_map_preview(
-            {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
-        )
-
-    bpy.context.view_layer.objects.active = selected_objects[0]
-    for zobj in selected_objects:
-        zobj.select_set(True)
-
-    _rg_finalize_metadata(gen, start_time, lowestZ=lowestZ, highestZ=highestZ)
-
-    _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
-    _m, _s = divmod(_elapsed, 60)
-    overlay.add_completed_step(f"Done  —  {_m:02d}:{_s:02d} total")
-    _progress.WarningsOverlay.add_warning(
-        "Multi-tile maps are not exported automatically — please use the Export buttons to export your tiles manually.",
-        "warn",
-    )
-    if manage_overlay:
-        overlay.finish()
-        _progress.WarningsOverlay.get().show()
+            _progress.WarningsOverlay.get().show()
 
 
 def generateJustTrail(material="TRAIL"):

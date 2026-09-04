@@ -2230,13 +2230,25 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         _generate_trails, merge_active_with_map) directly rather than
         refactoring that larger, already-working method.
         """
+        overlay = _progress.ProgressOverlay.get()
+        overlay.start()
+        _progress.WarningsOverlay.clear()
+        # Mirrors runGeneration's own try/finally -- guarantees the overlay
+        # always closes, even if something below raises an exception type
+        # this method doesn't explicitly handle (the modal's own outer
+        # except/finally reports the error but never touches the overlay).
+        try:
+            self._apply_puzzle_result_body(context, data)
+        finally:
+            overlay.finish()
+            _progress.WarningsOverlay.get().show()
+
+    def _apply_puzzle_result_body(self, context, data):
         from . import temp
         from .utils.geo import convert_to_neutral_coordinates
 
         props = context.scene.tp3d
         overlay = _progress.ProgressOverlay.get()
-        overlay.start()
-        _progress.WarningsOverlay.clear()
         start_time = time.time()
 
         # The puzzle cutter only knows how to cut terrain_obj itself apart --
@@ -2295,7 +2307,6 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
         if not bbox or not pieces:
             self.report({'WARNING'}, "Nothing to generate — draw a rectangle first")
-            overlay.finish()
             return
 
         south, north = bbox['south'], bbox['north']
@@ -2594,8 +2605,6 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
                         space.shading.type = 'MATERIAL'
 
         bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
-        overlay.finish()
-        _progress.WarningsOverlay.get().show()
         self.report({'INFO'}, f"Generated {len(piece_objs)} puzzle piece(s)" + (" + holder" if holder_obj is not None else ""))
 
     def _cleanup(self, context):
@@ -2706,10 +2715,22 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         rather than the Premium multitile picker's grid/tile-spacing/extend
         logic -- this picker only ever produces exactly one fresh tile.
         """
-        props = context.scene.tp3d
         overlay = _progress.ProgressOverlay.get()
         overlay.start()
         _progress.WarningsOverlay.clear()
+        # Mirrors runGeneration's own try/finally -- guarantees the overlay
+        # always closes, even if something below raises an exception type
+        # this method doesn't explicitly handle (the modal's own outer
+        # except/finally reports the error but never touches the overlay).
+        try:
+            self._apply_result_body(context, data)
+        finally:
+            overlay.finish()
+            _progress.WarningsOverlay.get().show()
+
+    def _apply_result_body(self, context, data):
+        props = context.scene.tp3d
+        overlay = _progress.ProgressOverlay.get()
         start_time = time.time()
 
         bounds = data.get('bounds')
@@ -2717,7 +2738,6 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
         if not bounds and not gpx_paths:
             self.report({'WARNING'}, "Nothing to generate — draw a shape first")
-            overlay.finish()
             return
 
         if not bounds and gpx_paths:
@@ -2729,8 +2749,6 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 _progress.WarningsOverlay.add_warning("Single Color Mode is not applied automatically due to performance reasons.", "warn")
                 _progress.WarningsOverlay.add_warning("Use 'Merge with Map' to apply it manually.", "warn")
             bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
-            overlay.finish()
-            _progress.WarningsOverlay.get().show()
             self.report({'INFO'}, f"Generated {len(gpx_paths)} trail(s)")
             return
 
@@ -2858,8 +2876,6 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             pass
 
         bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
-        overlay.finish()
-        _progress.WarningsOverlay.get().show()
         self.report({'INFO'}, "Generated 1 tile")
 
     def _cleanup(self, context):
@@ -2901,6 +2917,18 @@ class TP3D_OT_append_collection(bpy.types.Operator):
         overlay = _progress.ProgressOverlay.get()
         overlay.start()
         _progress.WarningsOverlay.clear()
+        # Mirrors runGeneration's own try/finally -- guarantees the overlay
+        # always closes even if a step below (coordinate loading, scene
+        # cleanup, etc.) raises before reaching runGeneration's own
+        # self-contained finally.
+        try:
+            return self._execute_body(context)
+        finally:
+            overlay.finish()
+            _progress.WarningsOverlay.get().show()
+
+    def _execute_body(self, context):
+        overlay = _progress.ProgressOverlay.get()
 
         #Set the Mapsize to the Size in the Collection name
         collection_name = bpy.context.scene.tp3d.specialCollectionName
