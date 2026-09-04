@@ -2946,17 +2946,16 @@ class TP3D_OT_append_collection(bpy.types.Operator):
         else:
             flags = utils._GEN_FLAGS[11]
 
-        props = utils._rg_validate_inputs(flags)
-        if props is None:
+        gen = utils._rg_validate_inputs(flags)
+        if gen is None:
             self.report({'WARNING'}, "Invalid input properties")
             return {'CANCELLED'}
 
-        coord_data = utils._rg_load_coordinates(flags, props)
-
-        coordinates, *_ = coord_data
+        utils._rg_load_coordinates(gen)
+        coordinates = gen.runtime.pathCoordinates
 
         print(f"Coord data: {coordinates}")
-        scaleHor = utils.calculate_scale(props['size'], coordinates, 10)
+        scaleHor = utils.calculate_scale(gen.settings.size, coordinates, 10)
         bpy.context.scene.tp3d["sScaleHor"] = scaleHor
 
 
@@ -2977,8 +2976,8 @@ class TP3D_OT_append_collection(bpy.types.Operator):
 
         # --- Phase 7: Remove previously generated objects at the same location ---
         overlay.update(0.28, "Scene Cleanup", "Removing previous objects…")
-        xOff = props['xTerrainOffset']
-        yOff = props['yTerrainOffset']
+        xOff = gen.settings.xTerrainOffset
+        yOff = gen.settings.yTerrainOffset
         target_2d        = Vector((centerx, centery))
         target_2d_offset = Vector((centerx + xOff, centery + yOff))
         for obs in bpy.data.objects:
