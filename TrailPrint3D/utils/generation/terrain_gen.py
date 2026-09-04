@@ -517,6 +517,13 @@ def _rg_build_trail_curves(gen: GenerationContext):
     blender_coords_by_file = gen.runtime.blenderPathSegsByFile or []
     flags = gen.settings.flags
 
+    # Pure "jmap"/"jmap_bbox" generation (center+radius or two-corner-points) has
+    # no GPX/trail data at all -- none of the branches below can ever match, so
+    # bail out early instead of falling through to "No trail curves created".
+    if not ({"gpx_file", "gpx_chain", "trail_map"} & flags):
+        gen.runtime.curveObjs = []
+        return
+
     curveObj = None
     curveObjs = None
     print("Building trail curve(s)")

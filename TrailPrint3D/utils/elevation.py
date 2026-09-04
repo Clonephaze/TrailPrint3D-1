@@ -370,13 +370,10 @@ def terrarium_pixel_to_elevation(r, g, b):
     """Convert Terrarium RGB pixel to elevation in meters."""
     return (r * 256 + g + b / 256) - 32768
 
-def get_elevation_TerrainTiles(gen: GenerationContext, coords, lenv=0, pointsDone=0, zoom=10, progress_cb=None):
+def get_elevation_TerrainTiles(bounds, coords, lenv=0, pointsDone=0, zoom=10, progress_cb=None):
 
     num_subdivisions = bpy.context.scene.tp3d.num_subdivisions
-    minLat = gen.runtime.tbMinLat
-    minLon = gen.runtime.tbMinLon
-    maxLat = gen.runtime.tbMaxLat
-    maxLon = gen.runtime.tbMaxLon
+    minLat, maxLat, minLon, maxLon = bounds
 
     from .geo import haversine  # deferred to avoid circular import at load time
 
@@ -479,13 +476,10 @@ def parse_webp_rgb_data(webp_path):
     return rgb_array
 
 
-def get_elevation_Mapterhorn(gen: GenerationContext, coords, lenv=0, pointsDone=0, zoom=10, progress_cb=None):
+def get_elevation_Mapterhorn(bounds, coords, lenv=0, pointsDone=0, zoom=10, progress_cb=None):
     """Fetch elevation from Mapterhorn terrain tiles (512px WebP, Terrarium encoding)."""
     num_subdivisions = bpy.context.scene.tp3d.num_subdivisions
-    minLat = gen.runtime.tbMinLat
-    minLon = gen.runtime.tbMinLon
-    maxLat = gen.runtime.tbMaxLat
-    maxLon = gen.runtime.tbMaxLon
+    minLat, maxLat, minLon, maxLon = bounds
 
     from .geo import haversine
 
@@ -958,8 +952,6 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
     # ─────────────────────────────────────────────────────────────────────────
 
     elevations = []
-    if gen is None:
-        return
     for i in range(0, len(world_verts), chunk_size):
         chunk = world_verts[i:i + chunk_size]
 
@@ -969,9 +961,9 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
         elif api == "OPEN-ELEVATION":
             chunk_elevations = get_elevation_openElevation(coords, len(world_verts), i, progress_cb=progress_cb)
         elif api == "TERRAIN-TILES":
-            chunk_elevations = get_elevation_TerrainTiles(gen, coords, len(world_verts), i, progress_cb=progress_cb)
+            chunk_elevations = get_elevation_TerrainTiles((minLat, maxLat, minLon, maxLon), coords, len(world_verts), i, progress_cb=progress_cb)
         elif api == "MAPTERHORN":
-            chunk_elevations = get_elevation_Mapterhorn(gen, coords, len(world_verts), i, progress_cb=progress_cb)
+            chunk_elevations = get_elevation_Mapterhorn((minLat, maxLat, minLon, maxLon), coords, len(world_verts), i, progress_cb=progress_cb)
         elif api == "OPENTOPOGRAPHY":
             chunk_elevations = get_elevation_openTopography(coords, len(world_verts), i, progress_cb=progress_cb)
         else:
@@ -988,7 +980,6 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
         _fixed_count = 0
     if _fixed_count > 0:
         print(f"Fixed {_fixed_count} invalid elevation value(s)")
-        gen.runtime.buggyData = 1
         if gen is not None:
             gen.runtime.buggyData = 1
 
@@ -1019,8 +1010,6 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
     bpy.context.scene.tp3d.lowestElevation = lowestElevation
     bpy.context.scene.tp3d.highestElevation = highestElevation
     bpy.context.scene.tp3d.sAdditionalExtrusion = additionalExtrusion
-    gen.runtime.tileVerts = elevations
-    gen.runtime.elDiff = diff
     if gen is not None:
         gen.runtime.tileVerts = elevations
         gen.runtime.elDiff = diff

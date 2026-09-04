@@ -480,10 +480,10 @@ def _clip_terrain_grid_to_polygon(
             holes = [
                 list(ring.coords)[:-1] for ring in part.interiors if len(ring.coords) >= 4
             ]
-            ec = g2d._earcut_triangulate(ext, holes)
+            ec = g2d._cdt_triangulate(part, ext, holes)
             if ec is None:
                 continue
-            verts2d_part, tris_part = ec
+            verts2d_part, tris_part, _ring_idx_lists = ec
             local_idx = []
             for vx, vy in verts2d_part:
                 vz = _bary_z(tri, vx, vy) + z_offset

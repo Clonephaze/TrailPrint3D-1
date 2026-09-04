@@ -134,10 +134,20 @@ def _rg_build_terrain_elements(
     from ..metadata import (
         writeMetadata,  # deferred to avoid circular import at load time
     )
+    from ..osm import buildings as _bld_mod
     from ..osm.buildings import create_buildings
     from ..osm.fetch_utils import OsmFetchSettings
     from ..osm.roads import create_roads
     from ..scene import set_origin_to_3d_cursor
+
+    # Cleared unconditionally (not just when disabled) so the puzzle flow's
+    # getattr(module, '_puzzle_roads_data'/'_puzzle_buildings_data') lookup
+    # never reuses stale data from an earlier generation that had roads/
+    # buildings enabled -- these module globals are only ever (re)written
+    # below when that element is actually built for THIS generation.
+    global _puzzle_roads_data
+    _puzzle_roads_data = None
+    _bld_mod._puzzle_buildings_data = None
     from ..terrain import (  # deferred to avoid circular import at load time
         _COLORING_EMPTY,
         _COLORING_FILTERED,
@@ -569,7 +579,6 @@ def _rg_build_terrain_elements(
                 roads, roads_polygon = result
                 terrain["roads_polygon"] = roads_polygon
                 terrain["_terrain_tris_cache"] = _terrain_tris_cache
-                global _puzzle_roads_data
                 _puzzle_roads_data = (
                     roads_polygon,
                     terrain["_terrain_tris_cache"],

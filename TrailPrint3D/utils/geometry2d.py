@@ -592,7 +592,7 @@ def _cdt_triangulate(polygon, exterior_xy, holes_xy):
     their original order so _extrude_flat_polygon's wall quads keep working.
     CDT Steiner points (if any) are appended after the ring vertices.
 
-    Returns (verts2d, tris) compatible with _earcut_triangulate, or None.
+    Returns (verts2d, tris, ring_idx_lists), or None.
     """
     _require_shapely()
     try:

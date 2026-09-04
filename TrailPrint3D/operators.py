@@ -2425,9 +2425,9 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
                            sub_percent=t, sub_label="Elevation tiles")
             overlay.set_fetch_progress('elevation', t)
 
-        # get_tile_elevation's bare-object path silently returns None on a
-        # cache miss (only the GenerationContext path actually fetches) --
-        # route through a real gen, same pattern createTerrainFromSelected uses.
+        # Route through a real gen rather than a bare object: get_tile_elevation()
+        # supports both, but only a real gen gets buggyData/tileVerts/elDiff
+        # bookkeeping, and every other preview-fetch call site follows this pattern.
         gen = utils._rg_validate_inputs(frozenset(), gen_type=0)
         gen.runtime.mapObject = blank
         utils.compute_and_store_tile_bounds(gen)
@@ -2805,9 +2805,9 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                            sub_percent=t, sub_label="Elevation tiles")
             overlay.set_fetch_progress('elevation', t)
 
-        # get_tile_elevation's bare-object path silently returns None on a
-        # cache miss (only the GenerationContext path actually fetches) --
-        # route through a real gen, same pattern createTerrainFromSelected uses.
+        # Route through a real gen rather than a bare object: get_tile_elevation()
+        # supports both, but only a real gen gets buggyData/tileVerts/elDiff
+        # bookkeeping, and every other preview-fetch call site follows this pattern.
         gen = utils._rg_validate_inputs(frozenset(), gen_type=0)
         gen.runtime.mapObject = blank
         utils.compute_and_store_tile_bounds(gen)
