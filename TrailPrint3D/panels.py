@@ -215,13 +215,13 @@ class TP3D_PT_generate(bpy.types.Panel):
             col.prop(props, "scaleElevation")
             col.prop(props, "pathThickness")
             _elem_scm = props.elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH")
+            if props.singleColorMode or _elem_scm:
+                col.prop(props, "singleColorModeHeight")
             scm_row = col.row()
             scm_row.enabled = not _elem_scm
             scm_row.prop(props, "singleColorMode")
             if _elem_scm:
                 col.label(text=_("Auto-enabled with SCM Elements"), icon='LOCKED')
-            if props.singleColorMode or _elem_scm:
-                col.prop(props, "singleColorModeHeight")
             if props.tex_use_texture == True:
                 trail_tex_row = col.row()
                 trail_tex_row.enabled = not _elem_scm

@@ -348,7 +348,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     objSize: IntProperty(name= _("Object Size in mm"), default = 100, min = 5, max = 10000,description = _("Size of the map in mm")) # type: ignore
     num_subdivisions: IntProperty(name = _("Resolution"), default = 8, min = 1, soft_max = 10, max = 50, description = _("(max recommended 8) Higher Number = more detailed terrain but slower generation. The slider caps at 10, but larger values can still be typed in directly.")) # type: ignore
     scaleElevation: FloatProperty(name = _("Elevation Scale"), default = 1, min = 0, max = 10000, description = _("Multiplier to the Elevation")) # type: ignore
-    pathThickness: FloatProperty(name = _("Path Thickness"), default = 1.2, min = 0.1, max = 5, description = _("Thickness of the path in mm")) # type: ignore
+    pathThickness: FloatProperty(name = _("Trail Width"), default = 1.2, min = 0.1, max = 5, description = _("Thickness of the path in mm")) # type: ignore
     shapeRotation: IntProperty(name = _("ShapeRotation"), default = 0, min = -360, max = 360, description = _("Rotation of the shape") ) # type: ignore
     overwritePathElevation: BoolProperty(name= _("Overwrite Path Elevation"), default=True, description = _("Cast each point of the trail onto the Terrain Mesh")) # type: ignore
     o_verticesPath: StringProperty(name="Path vertices ", default="") # type: ignore
