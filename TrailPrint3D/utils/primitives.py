@@ -384,15 +384,33 @@ def clean_and_union_geometry(
 
 
 def polygon_from_geojson(filepath: str, target_size: float = None):
-    """Loads a GeoJSON file using Shapely's C-accelerated parser, cleans it,
-    and returns a normalized Shapely geometry.
+    """Loads a GeoJSON file using Shapely's C-accelerated parser, projects it
+    from lon/lat degrees into local Mercator distance units (same projection
+    convert_to_blender_coordinates uses for every other geo-sourced shape in
+    this addon -- raw degrees would otherwise stretch the outline east-west,
+    since a degree of longitude covers less real ground distance than a
+    degree of latitude away from the equator), cleans it, and returns a
+    normalized Shapely geometry.
     """
+    import numpy as np
     from shapely import GeometryCollection, MultiPolygon, Polygon
     from shapely.io import from_geojson
+    from shapely.ops import transform
+
+    from .. import constants as const
 
     with open(filepath, "r", encoding="utf-8") as f:
         # Parses Geometries, Features, and FeatureCollections directly
         geom = from_geojson(f.read())
+
+    def _project(lon, lat):
+        lon = np.asarray(lon, dtype=np.float64)
+        lat = np.asarray(lat, dtype=np.float64)
+        x = const.R * np.radians(lon)
+        y = const.R * np.log(np.tan(np.pi / 4 + np.radians(lat) / 2))
+        return x, y
+
+    geom = transform(_project, geom)
 
     # Extract only polygonal geometry if the GeoJSON contained mixed types (e.g. points/lines)
     if isinstance(geom, GeometryCollection):

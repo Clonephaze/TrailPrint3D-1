@@ -102,11 +102,11 @@ def _rg_create_map_object(gen: GenerationContext):
             )
         elif gen.settings.shape == "GEOJSON":
             MapObject = create_custom_geojson(
-                gen.settings.customFilePath, gen.settings.size / 2, gen.settings.num_subdivisions, gen.settings.modelname
+                gen.settings.customFilePath, gen.settings.size, gen.settings.num_subdivisions, gen.settings.modelname
             )
         elif gen.settings.shape == "SVG":
             MapObject = create_custom_svg(
-                gen.settings.customFilePath, gen.settings.size / 2, gen.settings.num_subdivisions, gen.settings.modelname
+                gen.settings.customFilePath, gen.settings.size, gen.settings.num_subdivisions, gen.settings.modelname
             )
         else:
             MapObject = create_hexagon(
