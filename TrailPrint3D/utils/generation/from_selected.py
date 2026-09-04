@@ -673,11 +673,11 @@ def generateJustTrail(material="TRAIL"):
         if (type == 0 and len(blender_coords_separate) <= 1) and type != 2 or type == 4:
             if not blender_coords:
                 return None
-            create_curve_from_coordinates(blender_coords)
+            create_curve_from_coordinates(None, blender_coords)
             curveObj = bpy.context.view_layer.objects.active
         elif (type == 1 or len(blender_coords_separate) > 1) and type != 4:
             for crds in blender_coords_separate:
-                create_curve_from_coordinates(crds)
+                create_curve_from_coordinates(None, crds)
 
                 bpy.ops.object.join()
                 curveObj = bpy.context.view_layer.objects.active
