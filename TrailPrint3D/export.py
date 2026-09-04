@@ -144,6 +144,42 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False):
             bpy.context.view_layer.objects.active = obj
             bpy.ops.object.convert(target='MESH')
 
+    # With texture-mode paint export, companion objects (text/plate/shell, and
+    # the trail when it's excluded from the baked texture) have no paint data
+    # of their own -- give each a solid-colour paint texture matching the
+    # terrain's own baked palette so the exporter doesn't default them all to
+    # extruder 1. Done here (not at generation time) so it's also correct on
+    # a plain re-export of an already-generated map, not just a fresh one.
+    tp3d = bpy.context.scene.tp3d
+    if tp3d.tex_use_texture:
+        import ast
+
+        from .utils.texture import (
+            _ROADS_SRGB,
+            _TRAIL_SRGB,
+            _WHITE_SRGB,
+            tag_solid_color_for_paint_export,
+        )
+
+        map_dup = next((d for d in duplicates if d.get("Object type") == "MAP"), None)
+        if map_dup is not None and map_dup.type == 'MESH':
+            try:
+                palette = ast.literal_eval(map_dup.data.get("3mf_paint_extruder_colors", "{}"))
+            except (ValueError, SyntaxError):
+                palette = {}
+            if palette:
+                _companion_colors = {
+                    "TEXT": _WHITE_SRGB,
+                    "PLATE": _ROADS_SRGB,
+                    "SHELL": _ROADS_SRGB,
+                }
+                if not tp3d.tex_include_trail:
+                    _companion_colors["TRAIL"] = _TRAIL_SRGB
+                for dup in duplicates:
+                    _ccol = _companion_colors.get(dup.get("Object type"))
+                    if _ccol is not None:
+                        tag_solid_color_for_paint_export(dup, _ccol, palette)
+
     # ------------------------------------------------------------------
     #  New grouping logic based on tp3d.keep_positions
     # ------------------------------------------------------------------

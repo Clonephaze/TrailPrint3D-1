@@ -61,24 +61,6 @@ def _rg_apply_texture(gen: GenerationContext):
             tmp: Object = merge_with_map(gen.runtime.mapObject, crv)
             remove_objects(crv)
             gen.runtime.curveObjs[i] = tmp
-    # --- Phase 15c: Tag companion objects with solid-colour paint textures ---
-    # Without this the Orca exporter sees no paint data on these objects and
-    # the slicer defaults them to extruder 1 regardless of material colour.
-    if gen.texture.useTexture:
-        _mmu_palette = gen.runtime.elements.get("_mmu_palette")
-        if _mmu_palette:
-            from ..texture import (
-                _ROADS_SRGB,
-                _WHITE_SRGB,
-                tag_solid_color_for_paint_export,
-            )
-
-            for _cobj, _ccol in [
-                (gen.runtime.textObj, _WHITE_SRGB),
-                (gen.runtime.plateObj, _ROADS_SRGB),
-                (gen.runtime.shellObj, _ROADS_SRGB),
-            ]:
-                tag_solid_color_for_paint_export(_cobj, _ccol, _mmu_palette)
 
 
 def _rg_assign_materials(gen: GenerationContext):

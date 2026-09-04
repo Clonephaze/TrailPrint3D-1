@@ -76,22 +76,26 @@ def _build_palette(present_kinds):
 
     palette_dict: {0: "#RRGGBB", ...} where index 0 is the terrain background.
     kind_to_index: {KIND_STR_UPPER: int_palette_index}
+
+    Kinds that share an identical colour (e.g. OCEAN/WATER) reuse the same
+    palette key regardless of which one is encountered first in
+    _RASTER_ORDER -- a kind-name special case here previously only worked
+    when WATER was processed before OCEAN, silently wasting a filament slot
+    (and shifting every later index by one) whenever OCEAN came first.
     """
     palette = {0: _srgb_to_hex(*_BASE_SRGB)}
     kind_to_index = {}
     idx = 1
-    water_idx = None
     for kind in _RASTER_ORDER:
         if kind not in present_kinds:
             continue
-        if kind == "OCEAN" and water_idx is not None:
-            kind_to_index["OCEAN"] = water_idx
+        hexcol = _srgb_to_hex(*_KIND_TO_SRGB[kind])
+        existing_idx = next((k for k, v in palette.items() if v == hexcol), None)
+        if existing_idx is not None:
+            kind_to_index[kind] = existing_idx
             continue
-        srgb = _KIND_TO_SRGB[kind]
-        palette[idx] = _srgb_to_hex(*srgb)
+        palette[idx] = hexcol
         kind_to_index[kind] = idx
-        if kind == "WATER":
-            water_idx = idx
         idx += 1
     return palette, kind_to_index
 
@@ -221,9 +225,9 @@ def setup_paint_texture(gen: GenerationContext):
     present_kinds = {k.upper() for k, v in polygons_by_kind.items() if v is not None}
     palette, _kind_to_index = _build_palette(present_kinds)
 
-    # Always add WHITE and BLACK so companion text/plate objects have exact
-    # palette matches regardless of which OSM element kinds are present.
-    for _csrgb in (_WHITE_SRGB, _ROADS_SRGB):
+    # Always add WHITE, BLACK and TRAIL so companion text/plate/trail objects
+    # have exact palette matches regardless of which OSM element kinds are present.
+    for _csrgb in (_WHITE_SRGB, _ROADS_SRGB, _TRAIL_SRGB):
         _chex = _srgb_to_hex(*_csrgb)
         if _chex not in palette.values():
             palette[max(palette.keys()) + 1] = _chex
@@ -403,11 +407,20 @@ def tag_solid_color_for_paint_export(obj, srgb, palette):
 
     Without this the Orca exporter sees no paint data on the object and the
     slicer defaults it to extruder 1 regardless of material colour.
-    srgb must be a colour already present in palette for an exact extruder match.
+    srgb must be a colour already present in palette for an exact extruder match --
+    the exporter's segmentation encoder always renders a palette key K as
+    filament (K + 1) regardless of what's declared here (see
+    Blender3mfFormat's segmentation.py _build_state_map: ext_num = ext_idx + 1),
+    so the stored default_extruder must be palette_key + 1, not the raw key,
+    or every colour renders as whatever occupies the *next* palette slot.
     """
     if obj is None or not hasattr(obj, 'type') or obj.type != 'MESH':
         return
     mesh = obj.data
+
+    target_hex = _srgb_to_hex(*srgb)
+    palette_key = next((idx for idx, hexcol in palette.items() if hexcol == target_hex), 0)
+    default_extruder = palette_key + 1
 
     img_name = str(mesh.name) + "_MMU_Solid"
     if img_name in bpy.data.images:
@@ -445,8 +458,9 @@ def tag_solid_color_for_paint_export(obj, srgb, palette):
     mesh.materials.append(mat)
 
     mesh["3mf_is_paint_texture"]       = True
-    mesh["3mf_paint_default_extruder"] = 1
+    mesh["3mf_paint_default_extruder"] = default_extruder
     mesh["3mf_paint_extruder_colors"]  = str(palette)
+
 
 
 def crop_paint_texture_to_piece(piece_obj, source_image):
