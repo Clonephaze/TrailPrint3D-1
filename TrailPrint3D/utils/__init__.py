@@ -22,7 +22,7 @@ from .generation.elements import (
     _rg_apply_single_color_mode,
     _rg_build_terrain_elements,
 )
-from .generation.from_selected import createTerrainFromSelected, generateJustTrail
+from .generation.from_selected import runTileGeneration, generateJustTrail
 from .generation.input import (
     _rg_compute_trail_stats,
     _rg_load_coordinates,

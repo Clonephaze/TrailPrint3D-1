@@ -6,13 +6,13 @@ from mathutils import Vector  # type: ignore
 
 from ... import progress as _progress
 from ..dataclasses import GenerationContext, GenerationError, ValidationError
+from ..ui_state import build_fetch_items
 from .elements import (
     _rg_apply_single_color_mode,
     _rg_build_terrain_elements,
 )
 from .input import _rg_validate_inputs
 from .output import _rg_apply_texture, _rg_assign_materials, _rg_finalize_metadata
-from ..ui_state import build_fetch_items
 
 # ---------------------------------------------------------------------------
 # createTerrainFromSelected sub-phase helpers
@@ -24,7 +24,7 @@ from ..ui_state import build_fetch_items
 # ---------------------------------------------------------------------------
 
 
-def _ctfs_build_gen() -> GenerationContext:
+def _rtg_build_gen() -> GenerationContext:
     """Build a GenerationContext for the tile-based flow.
 
     createTerrainFromSelected drives already-placed tile objects rather than
@@ -37,7 +37,7 @@ def _ctfs_build_gen() -> GenerationContext:
     return gen
 
 
-def _ctfs_apply_elevation(gen: GenerationContext, zobj, additionalExtrusion, progress_cb=None, skip_bottom_recess=False):
+def _rtg_apply_elevation(gen: GenerationContext, zobj, additionalExtrusion, progress_cb=None, skip_bottom_recess=False):
     """Fetch terrain elevation, apply to vertices, extrude bottom face, shift to z=0.
 
     Returns (lowestZ, highestZ, additionalExtrusion, n_elev_pts).
@@ -175,7 +175,7 @@ def _ctfs_apply_elevation(gen: GenerationContext, zobj, additionalExtrusion, pro
     return lowestZ, highestZ, additionalExtrusion, len(tileVerts)
 
 
-def _ctfs_handle_trail(zobj, duplicate, singleColorMode):
+def _rtg_handle_trail(zobj, duplicate, singleColorMode):
     """Intersect or project trail curves onto this tile.
 
     In normal mode (singleColorMode=False): creates one extruded duplicate per
@@ -261,7 +261,7 @@ def _ctfs_handle_trail(zobj, duplicate, singleColorMode):
     return curveObjs
 
 
-def _ctfs_build_tile_preview(selected_objects):
+def _rtg_build_tile_preview(selected_objects):
     """Build the multi-tile map-preview overlay payload (only meaningful for 2+ tiles).
 
     Mirrors createTerrainFromSelected's own per-tile skip conditions exactly:
@@ -292,7 +292,7 @@ def _ctfs_build_tile_preview(selected_objects):
     return valid, tiles_info, tile_size
 
 
-def _ctfs_update_tile_preview_status(overlay, valid, tiles_info, tile_size, zobj):
+def _rtg_update_tile_preview_status(overlay, valid, tiles_info, tile_size, zobj):
     """Advance the map-preview's per-tile status markers as the loop reaches zobj."""
     if not tiles_info or zobj not in valid:
         return
@@ -303,7 +303,7 @@ def _ctfs_update_tile_preview_status(overlay, valid, tiles_info, tile_size, zobj
     overlay.set_map_preview({"tiles": tiles_info, "tile_size": round(tile_size, 3)})
 
 
-def _ctfs_process_tile(
+def _rtg_process_tile(
     gen: GenerationContext,
     zobj,
     tile_idx: int,
@@ -317,7 +317,7 @@ def _ctfs_process_tile(
 
     Mirrors runGeneration's phases 14-17 (terrain elements, single-color
     mode, materials, texture) via the shared _rg_* functions, with the
-    elevation+trail steps handled by _ctfs_apply_elevation/_ctfs_handle_trail
+    elevation+trail steps handled by _rtg_apply_elevation/_rtg_handle_trail
     instead of runGeneration's curve-driven displacement (these tiles are
     pre-shaped primitives, not a trail-derived outline).
 
@@ -353,7 +353,7 @@ def _ctfs_process_tile(
         )
         overlay.set_fetch_progress("elevation", t)
 
-    lowestZ, highestZ, additionalExtrusion, n_elev_pts = _ctfs_apply_elevation(
+    lowestZ, highestZ, additionalExtrusion, n_elev_pts = _rtg_apply_elevation(
         gen,
         zobj,
         additionalExtrusion,
@@ -377,7 +377,7 @@ def _ctfs_process_tile(
         "Building Trail",
         f"{tile_label} — projecting trail onto terrain…",
     )
-    curveObjs = _ctfs_handle_trail(zobj, None, gen.settings.singleColorMode)
+    curveObjs = _rtg_handle_trail(zobj, None, gen.settings.singleColorMode)
     gen.runtime.curveObjs = curveObjs
     _n_trails = len(curveObjs)
     overlay.add_completed_step(
@@ -447,14 +447,14 @@ def _ctfs_process_tile(
     return lowestZ, highestZ, additionalExtrusion
 
 
-def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
+def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
     """Run the generation pipeline's back half on already-placed tile objects.
 
     An orchestrator in its own right, same as runGeneration -- the map
     picker, puzzle picker, and Extend flows all funnel into this rather than
     runGeneration's own from-scratch GPX pipeline (see the module docstring
     above). Shares the exact same _rg_* phase functions runGeneration uses
-    for terrain elements/coloring/materials/texture (_ctfs_process_tile);
+    for terrain elements/coloring/materials/texture (_rtg_process_tile);
     only the elevation+trail step differs, since these tiles are pre-shaped
     primitives rather than a trail-derived outline.
 
@@ -462,7 +462,7 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     (start/finish).  All internal update/step calls still run normally so the
     caller's overlay reflects terrain progress.
 
-    skip_bottom_recess: forwarded to _ctfs_apply_elevation -- see its
+    skip_bottom_recess: forwarded to _rtg_apply_elevation -- see its
     docstring. Pass True for fresh single-tile callers with no neighbor
     baseline to protect (e.g. the puzzle generator).
     """
@@ -484,7 +484,7 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
     # or a step outside the per-tile loop raises something unexpected, so the
     # overlay never gets stuck open under manage_overlay=False callers either.
     try:
-        gen = _ctfs_build_gen()
+        gen = _rtg_build_gen()
 
         start_time = time.time()
 
@@ -514,7 +514,7 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
         _map_km = round(bpy.context.scene.tp3d.get("sMapInKm", 0), 1)
         overlay.set_fetch_items(build_fetch_items(_map_km))
 
-        _mp_valid, _mp_tiles_info, _mp_tile_size = _ctfs_build_tile_preview(selected_objects)
+        _mp_valid, _mp_tiles_info, _mp_tile_size = _rtg_build_tile_preview(selected_objects)
         if _mp_tiles_info:
             overlay.set_map_preview(
                 {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
@@ -540,13 +540,13 @@ def createTerrainFromSelected(manage_overlay=True, skip_bottom_recess=False):
             if _mp_tiles_info and _progress.SubprocessProgress.get().is_cancel_requested():
                 break
 
-            _ctfs_update_tile_preview_status(
+            _rtg_update_tile_preview_status(
                 overlay, _mp_valid, _mp_tiles_info, _mp_tile_size, zobj
             )
 
             tile_label = f"Tile {tile_idx + 1}/{n_tiles}"
             try:
-                lowestZ, highestZ, additionalExtrusion = _ctfs_process_tile(
+                lowestZ, highestZ, additionalExtrusion = _rtg_process_tile(
                     gen,
                     zobj,
                     tile_idx,

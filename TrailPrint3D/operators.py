@@ -2475,7 +2475,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # any shortfall the recess check would catch is just float-precision
         # noise between this step's lowest_z and createTerrainFromSelected's
         # own re-derived one, not a real need to dig into the bottom.
-        utils.createTerrainFromSelected(manage_overlay=False, skip_bottom_recess=True)
+        utils.runTileGeneration(manage_overlay=False, skip_bottom_recess=True)
 
         # roads_obj was used as a boolean cutter during generation; delete it
         # now — per-piece road geometry is rebuilt from the polygon cache below.
@@ -2859,7 +2859,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # skip_bottom_recess: this blank is always a fresh single tile with
         # additionalExtrusion locked to its OWN lowest point (set just
         # above), not an older neighbor's -- there's no seam to protect.
-        utils.createTerrainFromSelected(manage_overlay=False, skip_bottom_recess=True)
+        utils.runTileGeneration(manage_overlay=False, skip_bottom_recess=True)
 
         if gpx_paths:
             from .utils.osm import gen as _osm_gen
