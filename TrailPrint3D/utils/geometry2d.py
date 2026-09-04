@@ -222,42 +222,20 @@ def subtract(geom, neg_geom):
     return geom.difference(neg_geom)
 
 
-def smooth_polygon_taubin(gen: GenerationContext, geom, pin_tolerance=1e-3, **taubin_kwargs):
-    """Smooth a Shapely Polygon or MultiPolygon using Taubin smoothing
-    (shapelysmooth), preserving vertex count/order so outline-touching
-    vertices can be pinned back to their exact original position afterward.
+def _smooth_polygon_taubin_pinned(geom, is_pinned, **taubin_kwargs):
+    """Core Taubin smoothing pass shared by smooth_polygon_taubin() and
+    smooth_polygon_taubin_bbox_pinned() -- smooths a Shapely Polygon or
+    MultiPolygon, restoring any vertex for which is_pinned(x, y) is True back
+    to its exact original coordinate after smoothing.
 
+    is_pinned -- callable(x, y) -> bool, so callers can pin against either a
+    shared outline boundary or a tile bbox edge.
     taubin_kwargs -- passed straight through to shapelysmooth.taubin_smooth
-    (factor, mu, steps). Omitted here to use the library's own defaults;
-    tune once you've seen real output.
-
-    outline, if given, is a Shapely geometry (or its boundary) representing
-    a shared boundary that other element shapes may touch. Any vertex lying
-    on that boundary (within pin_tolerance) is restored to its exact
-    original coordinate after smoothing, so touching elements stay stitched
-    together at that edge.
+    (factor, mu, steps).
     """
     from shapelysmooth import taubin_smooth
 
     _require_shapely()
-    outline = gen.runtime.mapOutline
-    # mapOutline is stored in the map object's LOCAL space (pre-transform); geom
-    # is in absolute Mercator space, so translate to match before pin-checking.
-    if outline is not None and gen.runtime.mapObject is not None:
-        from shapely.affinity import translate as _shp_translate
-        outline = _shp_translate(
-            outline, xoff=gen.runtime.mapObject.location.x, yoff=gen.runtime.mapObject.location.y
-        )
-    pin_geom = (
-        outline.boundary
-        if outline is not None and hasattr(outline, "boundary")
-        else outline
-    )
-
-    def _is_pinned(px, py):
-        if pin_geom is None:
-            return False
-        return pin_geom.distance(Point(px, py)) <= pin_tolerance
 
     def _smooth_ring(coords):
         # Keep the ring CLOSED (first == last) when handing it to
@@ -268,7 +246,7 @@ def smooth_polygon_taubin(gen: GenerationContext, geom, pin_tolerance=1e-3, **ta
         if len(pts) < 4:  # 3 real points + closing duplicate
             return pts
 
-        pinned_mask = [_is_pinned(px, py) for px, py in pts]
+        pinned_mask = [is_pinned(px, py) for px, py in pts]
         smoothed = taubin_smooth(pts, **taubin_kwargs)
 
         result = [pts[i] if pinned_mask[i] else smoothed[i] for i in range(len(pts))]
@@ -299,6 +277,64 @@ def smooth_polygon_taubin(gen: GenerationContext, geom, pin_tolerance=1e-3, **ta
             return geom
         return flat[0] if len(flat) == 1 else MultiPolygon(flat)
     return geom
+
+
+def smooth_polygon_taubin(gen: GenerationContext, geom, pin_tolerance=1e-3, **taubin_kwargs):
+    """Smooth a Shapely Polygon or MultiPolygon using Taubin smoothing
+    (shapelysmooth), preserving vertex count/order so outline-touching
+    vertices can be pinned back to their exact original position afterward.
+
+    taubin_kwargs -- passed straight through to shapelysmooth.taubin_smooth
+    (factor, mu, steps). Omitted here to use the library's own defaults;
+    tune once you've seen real output.
+
+    Pins any vertex lying on gen.runtime.mapOutline's boundary (within
+    pin_tolerance) so touching elements stay stitched together at that edge.
+    """
+    _require_shapely()
+    outline = gen.runtime.mapOutline
+    # mapOutline is stored in the map object's LOCAL space (pre-transform); geom
+    # is in absolute Mercator space, so translate to match before pin-checking.
+    if outline is not None and gen.runtime.mapObject is not None:
+        from shapely.affinity import translate as _shp_translate
+        outline = _shp_translate(
+            outline, xoff=gen.runtime.mapObject.location.x, yoff=gen.runtime.mapObject.location.y
+        )
+    pin_geom = (
+        outline.boundary
+        if outline is not None and hasattr(outline, "boundary")
+        else outline
+    )
+
+    def _is_pinned(px, py):
+        if pin_geom is None:
+            return False
+        return pin_geom.distance(Point(px, py)) <= pin_tolerance
+
+    return _smooth_polygon_taubin_pinned(geom, _is_pinned, **taubin_kwargs)
+
+
+def smooth_polygon_taubin_bbox_pinned(geom, bbox, pin_tolerance=1e-3, **taubin_kwargs):
+    """Smooth a Shapely Polygon or MultiPolygon using Taubin smoothing,
+    pinning any vertex lying on the edges of *bbox* (min_x, min_y, max_x,
+    max_y) back to its exact original coordinate.
+
+    Intended for per-tile geometry (e.g. the ocean mesh) whose boundary must
+    stay exactly on the tile's bbox so adjacent tiles keep stitching
+    together seamlessly -- only interior vertices actually move.
+    """
+    _require_shapely()
+    min_x, min_y, max_x, max_y = bbox
+
+    def _is_pinned(px, py):
+        return (
+            abs(px - min_x) <= pin_tolerance
+            or abs(px - max_x) <= pin_tolerance
+            or abs(py - min_y) <= pin_tolerance
+            or abs(py - max_y) <= pin_tolerance
+        )
+
+    return _smooth_polygon_taubin_pinned(geom, _is_pinned, **taubin_kwargs)
 
 
 def line_to_ribbon(coords_xy, half_width, cap_style="round", join_style="round"):

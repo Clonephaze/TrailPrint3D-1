@@ -1762,6 +1762,40 @@ def _debug_add_polyline(name, pts2d, z=0.0, offset=(0.0, 0.0, 0.0)):
     coll.objects.link(obj)
 
 
+def _smoothed_ocean_polys(open_chains, closed_loops, bbox_bl, rdp_eps):
+    """Build closed ocean-face polygons from coastline chains and Taubin-smooth
+    them, pinning vertices on the tile bbox edge so adjacent tiles keep
+    stitching together seamlessly -- only interior coastline/island edges
+    actually move. Shared by the mesh (_build_ocean_mesh) and texture-paint
+    (createOcean's useTexture branch) code paths.
+
+    Smoothing must happen AFTER polygonization since Taubin needs closed
+    rings, and _polygonize_ocean_faces() is the first point where the
+    coastline chains have become closed ocean-face rings.
+    """
+    from . import geometry2d as _g2d
+
+    ocean_polys = _polygonize_ocean_faces(
+        open_chains, closed_loops, bbox_bl, rdp_eps=rdp_eps
+    )
+
+    _smooth_steps = int(getattr(getattr(bpy.context.scene, "tp3d", None), "col_osmSmoothing", 0.0) * 20)
+    if ocean_polys and _smooth_steps > 0:
+        _smoothed_polys = []
+        for poly in ocean_polys:
+            smoothed = _g2d.smooth_polygon_taubin_bbox_pinned(poly, bbox_bl, steps=_smooth_steps)
+            # force=True: splits self-touching rings (figure-8 pinch points
+            # from Taubin) without touching already-valid unrelated polygons.
+            _smoothed_polys.extend(
+                p for p in (_g2d.validate(part, force=True) for part in _g2d.iter_polygons(smoothed))
+                if p is not None and not p.is_empty
+            )
+        if _smoothed_polys:
+            ocean_polys = list(_g2d.iter_polygons(_g2d.union(_smoothed_polys), min_area=1.0))
+
+    return ocean_polys
+
+
 def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
     """Build the flat ocean mesh object from stitched coastline chains.
 
@@ -1782,9 +1816,7 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
     if bpy.app.debug:
         print(f"    [ocean mesh] coastline RDP epsilon = {rdp_eps}")
 
-    ocean_polys = _polygonize_ocean_faces(
-        open_chains, closed_loops, bbox_bl, rdp_eps=rdp_eps
-    )
+    ocean_polys = _smoothed_ocean_polys(open_chains, closed_loops, bbox_bl, rdp_eps)
 
     if not ocean_polys:
         if not open_chains and not closed_loops:
@@ -1913,7 +1945,7 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
         # Skip building any Blender mesh — return the Shapely polygon so the
         # texture rasterizer can paint it like every other OSM element.
         rdp_eps = getattr(bpy.context.scene.tp3d, "el_oRdpEpsilon", 0.1)
-        _ct_polys = _polygonize_ocean_faces(open_chains, closed_loops, bbox_bl, rdp_eps=rdp_eps)
+        _ct_polys = _smoothed_ocean_polys(open_chains, closed_loops, bbox_bl, rdp_eps)
         if not _ct_polys:
             _progress.WarningsOverlay.add_warning(
                 "Could not build ocean polygon — ocean layer skipped.", "warn"
