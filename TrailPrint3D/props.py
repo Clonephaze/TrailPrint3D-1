@@ -284,7 +284,6 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     customFilePath: bpy.props.StringProperty(
         name="File Path",
         description="Path to the GeoJSON or SVG file",
-        subtype='FILE_PATH',
         default="",
     )
 

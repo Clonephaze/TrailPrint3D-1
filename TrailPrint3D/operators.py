@@ -2002,6 +2002,40 @@ class TP3D_OT_pick_svg_file(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
 
+class TP3D_OT_pick_svg_shape_file(bpy.types.Operator):
+    bl_idname = "tp3d.pick_svg_shape_file"
+    bl_label = "Use SVG File"
+    bl_description = "Use the selected SVG file as the map's outline shape"
+
+    filepath: StringProperty(subtype='FILE_PATH')  # type: ignore
+    filter_glob: StringProperty(default="*.svg", options={'HIDDEN'})  # type: ignore
+
+    def execute(self, context):
+        context.scene.tp3d.customFilePath = self.filepath
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
+class TP3D_OT_pick_geojson_shape_file(bpy.types.Operator):
+    bl_idname = "tp3d.pick_geojson_shape_file"
+    bl_label = "Use GeoJSON File"
+    bl_description = "Use the selected GeoJSON file as the map's outline shape"
+
+    filepath: StringProperty(subtype='FILE_PATH')  # type: ignore
+    filter_glob: StringProperty(default="*.geojson;*.json", options={'HIDDEN'})  # type: ignore
+
+    def execute(self, context):
+        context.scene.tp3d.customFilePath = self.filepath
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
 class TP3D_OT_check_update(bpy.types.Operator):
     bl_idname = "tp3d.check_update"
     bl_label = "Check for Updates"
