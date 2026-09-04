@@ -92,7 +92,7 @@ def export_selected_to_STL(force="STL"):
     active_obj = bpy.context.active_object
 
 
-def export_selected_to_3mf(filename=None, is_auto: bool = False):
+def export_selected_to_3mf(filename: str = "", is_auto: bool = False):
     from .utils import show_message_box
     import os
     import tempfile

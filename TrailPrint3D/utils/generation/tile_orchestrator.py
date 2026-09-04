@@ -615,6 +615,58 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
             _progress.WarningsOverlay.get().show()
 
 
+def _gjt_bake_into_existing_textures(curve_obj):
+    """Rasterize curve_obj's own path onto the MMU_Paint texture of every
+    nearby MAP object that already has one baked (CREATE_TEXTURE mode).
+
+    Derives the trail ribbon polygon from curve_obj's own spline points the
+    same way _rg_apply_single_color_mode's PAINT-mode branch does for a
+    full-generation trail (see its "_Trail" scan there), but for one
+    already-known curve instead of scanning the whole scene by name, and
+    via bake_trail_into_texture's non-destructive compositing write instead
+    of a full setup_paint_texture rebuild (which would wipe every other
+    already-baked element back to base colour).
+
+    Returns True if it painted onto at least one map -- the caller should
+    then discard the 3D curve, since it's now fully represented in the
+    texture(s) it overlapped.
+    """
+    from ..geometry2d import polylines_to_ribbon
+    from ..texture import bake_trail_into_texture
+
+    tp3d = bpy.context.scene.tp3d
+    mw = curve_obj.matrix_world
+    coords = []
+    for sp in curve_obj.data.splines:
+        pts = sp.points if len(sp.points) > 0 else sp.bezier_points
+        if len(pts) >= 2:
+            coords.append([(mw @ Vector((p.co.x, p.co.y, p.co.z)))[:2] for p in pts])
+    if not coords:
+        return False
+    ribbon = polylines_to_ribbon(coords, tp3d.pathThickness / 2 + tp3d.tolerance, quad_segs=4)
+    if ribbon is None or ribbon.is_empty:
+        return False
+
+    def _xy_extents(o):
+        corners = [o.matrix_world @ Vector(c) for c in o.bound_box]
+        xs = [c.x for c in corners]
+        ys = [c.y for c in corners]
+        return min(xs), max(xs), min(ys), max(ys)
+
+    tx_min, tx_max, ty_min, ty_max = _xy_extents(curve_obj)
+
+    baked = False
+    for ob in bpy.context.view_layer.objects:
+        if ob.type != 'MESH' or ob.get("objType") != "MAP":
+            continue
+        cx_min, cx_max, cy_min, cy_max = _xy_extents(ob)
+        if cx_min > tx_max or cx_max < tx_min or cy_min > ty_max or cy_max < ty_min:
+            continue
+        if bake_trail_into_texture(ob, ribbon):
+            baked = True
+    return baked
+
+
 def generateJustTrail(material="TRAIL"):
     from ..geo import (  # deferred to avoid circular import at load time
         convert_to_blender_coordinates,
@@ -731,5 +783,10 @@ def generateJustTrail(material="TRAIL"):
         mat = bpy.data.materials.get(material)
         curveObj.data.materials.clear()
         curveObj.data.materials.append(mat)
+
+    if curveObj is not None and props.elementMode == "CREATE_TEXTURE" and props.tex_include_trail:
+        if _gjt_bake_into_existing_textures(curveObj):
+            bpy.data.objects.remove(curveObj, do_unlink=True)
+            return None
 
     return curveObj

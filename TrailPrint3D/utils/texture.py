@@ -331,6 +331,73 @@ def setup_paint_texture(gen: GenerationContext):
     return palette
 
 
+def bake_trail_into_texture(terrain_obj, trail_polygon):
+    """Rasterize a single trail ribbon polygon onto terrain_obj's EXISTING
+    MMU_Paint texture in place, without disturbing whatever other elements
+    (water/forest/roads/etc) are already baked into it.
+
+    setup_paint_texture() always rebuilds the image from scratch from a full
+    polygons_by_kind dict, so it can't be reused here -- callers like
+    generateJustTrail() add a trail to an already-generated CREATE_TEXTURE
+    map, long after the original polygons_by_kind used to build it is gone.
+
+    Returns False (no-op) if terrain_obj has no existing paint texture to
+    composite onto -- the caller should fall back to keeping the trail as
+    3D geometry in that case.
+    """
+    if trail_polygon is None or trail_polygon.is_empty:
+        return False
+
+    mesh = terrain_obj.data
+    img_name = f"{mesh.name}_MMU_Paint"
+    image = bpy.data.images.get(img_name)
+    if image is None:
+        return False
+
+    resolution = image.size[0]
+    min_x, min_y, width, height = _compute_local_bbox(terrain_obj)
+    if width <= 0 or height <= 0:
+        return False
+
+    # _rasterize_geometry's world->local conversion assumes the "cursor"
+    # value it's given is the object's own world origin -- true at the
+    # original bake, where setup_paint_texture ran right after
+    # createTerrainFromSelected pointed scene.cursor.location at this exact
+    # tile (see its per-tile loop). Reading the *current* scene cursor here
+    # instead would silently misalign the trail onto the wrong pixels the
+    # moment it's moved (e.g. by a later tile) between then and now, so use
+    # the tile's own world location directly rather than depending on
+    # whatever the live cursor currently is.
+    cursor_x, cursor_y = float(terrain_obj.location.x), float(terrain_obj.location.y)
+
+    arr = np.empty(resolution * resolution * 4, dtype=np.float32)
+    image.pixels.foreach_get(arr)
+    arr = arr.reshape((resolution, resolution, 4))
+
+    srgb = _KIND_TO_SRGB["TRAIL"]
+    color_f = (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
+    _rasterize_geometry(trail_polygon, arr, color_f, None,
+                        cursor_x, cursor_y, min_x, min_y, width, height, resolution)
+
+    image.pixels.foreach_set(arr.ravel())
+    image.pack()
+
+    # Register TRAIL in the exported extruder-colour palette if this map's
+    # original bake predates it (no trail existed yet at bake time).
+    import ast
+    try:
+        palette = ast.literal_eval(mesh.get("3mf_paint_extruder_colors", "{}"))
+    except (ValueError, SyntaxError):
+        palette = {}
+    trail_hex = _srgb_to_hex(*srgb)
+    if trail_hex not in palette.values():
+        next_idx = (max(palette.keys()) + 1) if palette else 1
+        palette[next_idx] = trail_hex
+        mesh["3mf_paint_extruder_colors"] = str(palette)
+
+    return True
+
+
 def tag_solid_color_for_paint_export(obj, srgb, palette):
     """Give a companion mesh a 1×1 solid-colour paint texture.
 
