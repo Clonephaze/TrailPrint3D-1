@@ -9,7 +9,9 @@ from ...progress import ProgressOverlay as _progress
 from ..dataclasses import GenerationContext
 
 
-def _rg_finalize_metadata(gen: GenerationContext, start_time: float, lowestZ=None, highestZ=None) -> float:
+def _rg_finalize_metadata(
+    gen: GenerationContext, start_time: float, lowestZ=None, highestZ=None
+) -> float:
     """Write the run-duration text and bump the persistent generation counter.
 
     Shared tail step for both runGeneration and createTerrainFromSelected --
@@ -139,6 +141,15 @@ def _rg_assign_materials(gen: GenerationContext):
         writeMetadata(shellobj, type="SHELL")
 
 
+def _rg_set_material_preview():
+    # --- Material preview mode ---
+    for area in bpy.context.screen.areas:
+        if area.type == "VIEW_3D":
+            for space in area.spaces:
+                if space.type == "VIEW_3D" and space.shading.type != "MATERIAL":
+                    space.shading.type = "MATERIAL"
+
+
 def _rg_export(gen: GenerationContext):
     """Export all geometry, update API counters, and zoom camera."""
     from ...export import (  # deferred to avoid circular import at load time
@@ -178,7 +189,9 @@ def _rg_export(gen: GenerationContext):
 
     if is_3mf_extension_installed():
         print("Exporting to 3mf")
-        if gen.runtime.curveObjs and (not gen.texture.useTexture or not gen.texture.texTrail):
+        if gen.runtime.curveObjs and (
+            not gen.texture.useTexture or not gen.texture.texTrail
+        ):
             for tcrv in curveObjs:
                 try:
                     if tcrv and tcrv.name in bpy.data.objects:
@@ -293,5 +306,3 @@ def _rg_export(gen: GenerationContext):
         )
 
     zoom_camera_to_selected(gen.runtime.mapObject)
-
-

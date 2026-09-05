@@ -12,7 +12,12 @@ from .elements import (
     _rg_build_terrain_elements,
 )
 from .input import _rg_validate_inputs
-from .output import _rg_apply_texture, _rg_assign_materials, _rg_finalize_metadata
+from .output import (
+    _rg_apply_texture,
+    _rg_assign_materials,
+    _rg_finalize_metadata,
+    _rg_set_material_preview,
+)
 
 # ---------------------------------------------------------------------------
 # createTerrainFromSelected sub-phase helpers
@@ -37,7 +42,13 @@ def _rtg_build_gen() -> GenerationContext:
     return gen
 
 
-def _rtg_apply_elevation(gen: GenerationContext, zobj, additionalExtrusion, progress_cb=None, skip_bottom_recess=False):
+def _rtg_apply_elevation(
+    gen: GenerationContext,
+    zobj,
+    additionalExtrusion,
+    progress_cb=None,
+    skip_bottom_recess=False,
+):
     """Fetch terrain elevation, apply to vertices, extrude bottom face, shift to z=0.
 
     Returns (lowestZ, highestZ, additionalExtrusion, n_elev_pts).
@@ -514,7 +525,9 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
         _map_km = round(bpy.context.scene.tp3d.get("sMapInKm", 0), 1)
         overlay.set_fetch_items(build_fetch_items(_map_km))
 
-        _mp_valid, _mp_tiles_info, _mp_tile_size = _rtg_build_tile_preview(selected_objects)
+        _mp_valid, _mp_tiles_info, _mp_tile_size = _rtg_build_tile_preview(
+            selected_objects
+        )
         if _mp_tiles_info:
             overlay.set_map_preview(
                 {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
@@ -537,7 +550,10 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
             ):
                 continue
 
-            if _mp_tiles_info and _progress.SubprocessProgress.get().is_cancel_requested():
+            if (
+                _mp_tiles_info
+                and _progress.SubprocessProgress.get().is_cancel_requested()
+            ):
                 break
 
             _rtg_update_tile_preview_status(
@@ -558,7 +574,9 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
                 )
             except GenerationError as e:
                 print(f"{tile_label} — generation phase failed: {e}")
-                _progress.WarningsOverlay.add_warning(f"{tile_label}: {e}", icon="error")
+                _progress.WarningsOverlay.add_warning(
+                    f"{tile_label}: {e}", icon="error"
+                )
                 continue
             except Exception as e:  # noqa: BLE001 - a single tile's bpy.ops/mesh-op failure shouldn't abort the whole batch
                 import traceback
@@ -566,7 +584,8 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
                 traceback.print_exc()
                 print(f"{tile_label} — unexpected failure: {e}")
                 _progress.WarningsOverlay.add_warning(
-                    f"{tile_label}: unexpected failure, check console for details", icon="error"
+                    f"{tile_label}: unexpected failure, check console for details",
+                    icon="error",
                 )
                 continue
 
@@ -583,6 +602,9 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
             zobj.select_set(True)
 
         _rg_finalize_metadata(gen, start_time, lowestZ=lowestZ, highestZ=highestZ)
+
+        # Check for/set material preview mode
+        _rg_set_material_preview()
 
         _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
         _m, _s = divmod(_elapsed, 60)
@@ -643,7 +665,9 @@ def _gjt_bake_into_existing_textures(curve_obj):
             coords.append([(mw @ Vector((p.co.x, p.co.y, p.co.z)))[:2] for p in pts])
     if not coords:
         return False
-    ribbon = polylines_to_ribbon(coords, tp3d.pathThickness / 2 + tp3d.tolerance, quad_segs=4)
+    ribbon = polylines_to_ribbon(
+        coords, tp3d.pathThickness / 2 + tp3d.tolerance, quad_segs=4
+    )
     if ribbon is None or ribbon.is_empty:
         return False
 
@@ -657,7 +681,7 @@ def _gjt_bake_into_existing_textures(curve_obj):
 
     baked = False
     for ob in bpy.context.view_layer.objects:
-        if ob.type != 'MESH' or ob.get("objType") != "MAP":
+        if ob.type != "MESH" or ob.get("objType") != "MAP":
             continue
         cx_min, cx_max, cy_min, cy_max = _xy_extents(ob)
         if cx_min > tx_max or cx_max < tx_min or cy_min > ty_max or cy_max < ty_min:
@@ -784,7 +808,11 @@ def generateJustTrail(material="TRAIL"):
         curveObj.data.materials.clear()
         curveObj.data.materials.append(mat)
 
-    if curveObj is not None and props.elementMode == "CREATE_TEXTURE" and props.tex_include_trail:
+    if (
+        curveObj is not None
+        and props.elementMode == "CREATE_TEXTURE"
+        and props.tex_include_trail
+    ):
         if _gjt_bake_into_existing_textures(curveObj):
             bpy.data.objects.remove(curveObj, do_unlink=True)
             return None
