@@ -23,6 +23,7 @@ from .output import (
     _rg_assign_materials,
     _rg_export,
     _rg_finalize_metadata,
+    _rg_set_material_preview,
 )
 from .terrain_gen import (
     _cleanup_build_area,
@@ -240,6 +241,9 @@ def runGeneration(type, locked_scale=None):
             "----------------------------------------------------------------",
             " ",
         )
+        
+        # Check for/set material preview mode
+        _rg_set_material_preview()
 
         _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
         _m, _s = divmod(_elapsed, 60)

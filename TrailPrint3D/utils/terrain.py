@@ -1117,12 +1117,6 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, c
     merged_object.data.materials.clear()
     merged_object.data.materials.append(mat)
 
-    for area in bpy.context.screen.areas:
-        if area.type == "VIEW_3D":
-            for space in area.spaces:
-                if space.type == "VIEW_3D":
-                    space.shading.type = "MATERIAL"
-
     bpy.context.preferences.edit.use_global_undo = True
     print(
         f"  [coloring_main] TOTAL ({kind}, {elementMode}): {time.time() - _t_color:.3f}s"
