@@ -2799,14 +2799,6 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         except (ReferenceError, AttributeError, IndexError):
             pass
 
-        # Material preview mode -- mirrors runGeneration's own finishing step
-        # (generation.py), which the puzzle flow doesn't go through at all.
-        for area in bpy.context.screen.areas:
-            if area.type == 'VIEW_3D':
-                for space in area.spaces:
-                    if space.type == 'VIEW_3D':
-                        space.shading.type = 'MATERIAL'
-
         bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
         self.report({'INFO'}, f"Generated {len(piece_objs)} puzzle piece(s)" + (" + holder" if holder_obj is not None else ""))
 

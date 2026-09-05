@@ -591,7 +591,8 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
              '--window-size=1870,1030', '--window-position=25,5',
              '--no-first-run', '--no-default-browser-check',
              '--disable-extensions', '--disable-background-networking',
-             '--disable-features=Translate,TranslateUI'],
+             '--disable-features=Translate,TranslateUI',
+             '--disable-sync'],
             stdout=sp.DEVNULL, stderr=sp.DEVNULL,
         )
 

@@ -106,13 +106,6 @@ def _rg_create_text_and_overlays(gen: GenerationContext):
     gen.runtime.plateObj = plateobj
     gen.runtime.shellObj = shellobj
 
-    # --- Material preview mode ---
-    for area in bpy.context.screen.areas:
-        if area.type == "VIEW_3D":
-            for space in area.spaces:
-                if space.type == "VIEW_3D":
-                    space.shading.type = "MATERIAL"
-
 
 def _rg_build_terrain_elements(
     gen: GenerationContext,
