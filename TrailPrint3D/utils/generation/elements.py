@@ -694,6 +694,162 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
         except Exception as e:
             raise GenerationError(f"Failed to process curve projections: {e}") from e
 
+    def _clip_paint_trail_curves_to_map(gen: GenerationContext, map_obj):
+        """Trim each PAINT-mode trail curve's spline points to the map's true
+        2D outline, so a path that runs outside the printed shape (common
+        with a tight custom SVG/GeoJSON border, less so with a generous
+        default shape sized to the GPX bounding box) doesn't poke out past
+        the model's edge.
+
+        Skipped when the trail is about to be baked into the texture (or
+        dropped) by _rg_apply_texture instead -- clipping the curve here
+        would be wasted work, since the texture only ever paints onto the
+        terrain's own faces regardless of how far the trail's footprint
+        extends past them.
+
+        Uses a 2D Shapely clip (path ∩ outline) on the curve's centerline
+        rather than a 3D boolean against the actual map solid: the trail is
+        a bevelled tube resting ON TOP of the terrain surface, so
+        intersecting its solid volume against the terrain's solid volume
+        would remove almost all of it -- only the thin sliver embedded at
+        trailCutDepth actually overlaps the map's own solid. Clipping the
+        2D centerline instead and letting GEOS linearly interpolate Z at the
+        new boundary-crossing points keeps the curve's real (raycasted)
+        height intact everywhere it's still inside the map.
+
+        That centerline clip alone still leaves the tube's bevelled radius
+        poking out past the boundary at any point that landed exactly on
+        it, since pathThickness/2 of width extends outward from a
+        centerline point on either side. So for any curve whose centerline
+        was actually cut (i.e. it used to run outside the outline), we
+        additionally convert that one curve to a mesh and INTERSECT it
+        against a tall vertical prism built straight from the outline
+        polygon -- a plain XY "cookie cutter" spanning far above and below
+        any possible trail height, so it trims the tube flush with the
+        boundary without conforming/clipping it to the terrain's height at
+        all. Curves that were never near the boundary are left as
+        lightweight curve objects and skip this conversion entirely.
+        """
+        if (gen.texture.useTexture and gen.texture.texTrail) or map_obj is None:
+            return
+        outline = gen.runtime.mapOutline
+        if outline is None or outline.is_empty:
+            return
+
+        from mathutils import Vector
+        from shapely.affinity import translate as _shp_translate
+        from shapely.geometry import LineString
+
+        from ..mesh_ops import _clean_solid_mesh, _extrude_flat_polygon, boolean_operation
+        from ..scene import remove_objects
+        from .. import geometry2d as _g2d
+
+        def _iter_lines(geom):
+            if geom is None or geom.is_empty:
+                return
+            if geom.geom_type == "LineString":
+                if geom.length > 0:
+                    yield geom
+            elif geom.geom_type in ("MultiLineString", "GeometryCollection"):
+                for g in geom.geoms:
+                    yield from _iter_lines(g)
+
+        def _build_outline_cutter(outline_poly):
+            """A plain vertical prism of outline_poly, tall enough to clear
+            any trail height without ever clipping it in Z -- only the XY
+            side walls (the outline's true edge) can cut anything."""
+            verts, faces = [], []
+            for poly in _g2d.iter_polygons(outline_poly):
+                _extrude_flat_polygon(_g2d, poly, -1e4, 1e4, verts, faces)
+            if not verts:
+                return None
+            mesh = bpy.data.meshes.new("TrailClipCutter")
+            mesh.from_pydata(verts, [], faces)
+            mesh.update()
+            _clean_solid_mesh(mesh)
+            cutter = bpy.data.objects.new("TrailClipCutter", mesh)
+            bpy.context.collection.objects.link(cutter)
+            return cutter
+
+        # mapOutline is stored in the map's LOCAL space (pre-transform); the
+        # curve's spline points are read in WORLD space below, so translate
+        # the outline to match (same convention used for roads/SCM elsewhere
+        # in this file).
+        outline_ws = _shp_translate(
+            outline, xoff=map_obj.location.x, yoff=map_obj.location.y
+        )
+
+        cutter_obj = None
+        try:
+            clipped_objs = []
+            for crv in gen.runtime.curveObjs or []:
+                if crv is None or crv.type != "CURVE":
+                    if crv is not None:
+                        clipped_objs.append(crv)
+                    continue
+
+                mw = crv.matrix_world
+                inv = mw.inverted()
+                new_splines_coords = []
+                was_cut = False
+                for spline in crv.data.splines:
+                    pts = spline.points if len(spline.points) > 0 else spline.bezier_points
+                    if len(pts) < 2:
+                        continue
+                    world_coords = [
+                        (mw @ Vector((p.co.x, p.co.y, p.co.z)))[:] for p in pts
+                    ]
+                    line = LineString(world_coords)
+                    clipped = line.intersection(outline_ws)
+                    kept_parts = list(_iter_lines(clipped))
+                    if sum(p.length for p in kept_parts) < line.length - 1e-4:
+                        was_cut = True
+                    for part in kept_parts:
+                        coords = list(part.coords)
+                        if len(coords) >= 2:
+                            new_splines_coords.append(
+                                [inv @ Vector(c) for c in coords]
+                            )
+
+                if not new_splines_coords:
+                    # Whole curve fell outside the map -- drop it entirely.
+                    remove_objects(crv)
+                    continue
+
+                for sp in list(crv.data.splines):
+                    crv.data.splines.remove(sp)
+                for coords in new_splines_coords:
+                    sp = crv.data.splines.new("POLY")
+                    sp.points.add(len(coords) - 1)
+                    for i, co in enumerate(coords):
+                        sp.points[i].co = (co.x, co.y, co.z, 1)
+
+                if was_cut:
+                    # The centerline landed exactly on the boundary at the
+                    # cut point(s) -- only the tube's own bevelled surface
+                    # can still poke past it, so bake it to a mesh and trim
+                    # that with the cookie-cutter prism.
+                    if cutter_obj is None:
+                        cutter_obj = _build_outline_cutter(outline_ws)
+                    if cutter_obj is not None:
+                        bpy.ops.object.select_all(action="DESELECT")
+                        crv.select_set(True)
+                        bpy.context.view_layer.objects.active = crv
+                        bpy.ops.object.convert(target="MESH")
+                        boolean_operation(crv, cutter_obj, "INTERSECT")
+                        if not crv.data.vertices:
+                            remove_objects(crv)
+                            continue
+
+                clipped_objs.append(crv)
+
+            if cutter_obj is not None:
+                bpy.data.objects.remove(cutter_obj, do_unlink=True)
+
+            gen.runtime.curveObjs = clipped_objs
+        except Exception as e:
+            raise GenerationError(f"Failed to clip trail to map shape: {e}") from e
+
     def _collect_paint_trail_ribbons(gen: GenerationContext):
         """In PAINT mode, derive 2D ribbon footprints from _Trail curve objects."""
         from mathutils import Vector
@@ -1068,8 +1224,10 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
     if gen.settings.elementMode == "SINGLECOLORMODE_REMESH" and gen.runtime.curveObjs:
         thickerCurves, trail_thick_ribbons = _process_curve_projections(gen, obj)
 
-    # Step 2: In PAINT mode, collect trail ribbons from _Trail curves
+    # Step 2: In PAINT mode, clip trail curves to the map shape and collect
+    # trail ribbons from the (now-clipped) _Trail curves
     if gen.settings.elementMode == "PAINT":
+        _clip_paint_trail_curves_to_map(gen, obj)
         paint_ribbons = _collect_paint_trail_ribbons(gen)
         trail_thick_ribbons.extend(paint_ribbons)
 
