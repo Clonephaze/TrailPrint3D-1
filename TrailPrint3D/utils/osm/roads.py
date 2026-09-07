@@ -16,20 +16,34 @@ from ..dataclasses import GenerationContext, GenerationError
 # ---------------------------------------------------------------------------
 
 TIER_TAGS: dict[str, set[str]] = {
-    "big": {"motorway", "primary", "motorway_link", "primary_link"},
-    "medium": {
+    "highways": {"motorway", "motorway_link"},
+    "major": {"trunk", "primary", "trunk_link", "primary_link"},
+    "minor": {
         "secondary",
         "tertiary",
         "secondary_link",
         "tertiary_link",
         "unclassified",
-        "trunk",
-        "trunk_link",
     },
-    "small": {"residential", "living_street"},
+    "residential": {"residential", "living_street"},
     "service": {"service"},
     "footway": {"footway"},
+    "cycle_bridle": {"cycleway", "bridleway"},
+    "track": {"track"},
+    "path": {"path"},
 }
+
+# Dense, short-segment tiers -- dropped above STREETS_PRIMARY_THRESHOLD to
+# avoid width-scaled roads fusing into solid blocks on zoomed-out maps.
+DENSE_TIERS: frozenset[str] = frozenset(
+    {"residential", "service", "footway", "cycle_bridle", "path"}
+)
+
+# Sparse, long-segment tiers -- survive up to ROADS_MAXSIZE. Tracks are
+# usually a handful of long rural/wilderness lines (often the one trail a
+# user actually wants) rather than urban clutter, so they get the same
+# headroom as the arterial road network instead of the dense-tier cutoff.
+SPARSE_TIERS: frozenset[str] = frozenset({"highways", "major", "minor", "track"})
 
 ALLEY_SERVICE_TYPES: frozenset[str] = frozenset(
     {"alley", "driveway", "parking_aisle", "drive-through"}
@@ -59,21 +73,23 @@ class RoadConfig:
 
     @classmethod
     def from_scene(cls, tp3d, full_depth: bool = False) -> "RoadConfig":
-        tier_active = {
-            "big": bool(tp3d.el_sBigActive),
-            "medium": bool(tp3d.el_sMedActive),
-            "small": bool(tp3d.el_sSmallActive),
-            "service": bool(tp3d.el_sServiceActive),
-            "footway": bool(tp3d.el_sFootwaysActive),
-        }
+        from ...props import get_road_active  # deferred to avoid circular import at load time
+
+        tier_active = {tier: get_road_active(tp3d, tier) for tier in TIER_TAGS}
+
         if full_depth:
-            if tier_active["service"] or tier_active["footway"]:
+            # Same reasoning as the old service/footway exclusion: cycle_bridle
+            # and path are similarly dense thin-line tiers that don't remesh
+            # cleanly as a standalone full-depth piece. Track is exempt --
+            # it behaves like the sparse arterial tiers (long, few segments).
+            _too_dense_for_full_depth = {"service", "footway", "cycle_bridle", "path"}
+            if any(tier_active[t] for t in _too_dense_for_full_depth):
                 warning.add_warning(
-                    "[TP3D roads] full_depth mode: excluding service/footway tiers "
-                    "(too dense to remesh cleanly as a standalone piece)"
+                    "[TP3D roads] full_depth mode: excluding service/footway/cycle_bridle/path "
+                    "tiers (too dense to remesh cleanly as a standalone piece)"
                 )
-            tier_active["service"] = False
-            tier_active["footway"] = False
+            for t in _too_dense_for_full_depth:
+                tier_active[t] = False
 
         return cls(
             min_lat=tp3d.minLat,

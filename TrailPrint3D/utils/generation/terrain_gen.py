@@ -158,9 +158,14 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
     The caller must call thread.join() before consuming the result dict.
     Returns (None, {}) immediately if no coloring elements are active.
     """
+    from ...props import (  # deferred to avoid circular import
+        any_road_active,
+        get_road_active,
+    )
     from ..osm.fetch_utils import (
         OsmFetchSettings,  # deferred to avoid circular import at load time
     )
+    from ..osm.roads import TIER_TAGS  # deferred to avoid circular import at load time
     from ..terrain import (
         _fetch_all_kinds_parallel,  # deferred to avoid circular import at load time
     )
@@ -191,15 +196,11 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
         disable_cache=tp3d.disableCache,
         api_retries=tp3d.apiRetries,
         mapsize=tp3d.sMapInKm,
-        road_big=bool(tp3d.el_sBigActive),
-        road_med=bool(tp3d.el_sMedActive),
-        road_small=bool(tp3d.el_sSmallActive),
+        road_tiers={tier: get_road_active(tp3d, tier) for tier in TIER_TAGS},
         water_ponds=bool(tp3d.col_wPondsActive),
         water_small_rivers=bool(tp3d.col_wSmallRiversActive),
         water_big_rivers=bool(tp3d.col_wBigRiversActive),
         exclude_alleys=True,
-        road_footways=bool(tp3d.el_sFootwaysActive),
-        road_service=bool(tp3d.el_sServiceActive),
     )
     map_km = gen.runtime.mapKm if gen.runtime.mapKm is not None else tp3d.sMapInKm
     _active_kind_tasks = (
@@ -214,18 +215,7 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
     )
     if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE:
         _active_kind_tasks.append(("BUILDINGS", _tile_tasks))
-    if (
-        any(
-            [
-                tp3d.el_sBigActive,
-                tp3d.el_sMedActive,
-                tp3d.el_sSmallActive,
-                tp3d.el_sServiceActive,
-                tp3d.el_sFootwaysActive,
-            ]
-        )
-        and map_km <= const.ROADS_MAXSIZE
-    ):
+    if any_road_active(tp3d) and map_km <= const.ROADS_MAXSIZE:
         _active_kind_tasks.append(("STREETS", _tile_tasks))
     if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE:
         _active_kind_tasks.append(("COASTLINE", _tile_tasks))

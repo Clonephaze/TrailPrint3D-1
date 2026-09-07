@@ -29,6 +29,14 @@ def save_myproperties_to_csv(filename):
             if name == "rna_type" or p.is_readonly:
                 continue
 
+            if name == "road_types":
+                # CollectionProperty -- not a bool/int/float/str/list/tuple,
+                # so the generic getattr/writerow below can't handle it.
+                # One row per tier: "road_types.<road_id>", "True"/"False".
+                for item in props.road_types:
+                    writer.writerow([f"road_types.{item.road_id}", item.active])
+                continue
+
             try:
                 value = getattr(props, name)
             except AttributeError:
@@ -161,6 +169,14 @@ def load_myproperties_from_csv(filename):
                 continue
 
             name, value = row[0], row[1]
+
+            if name.startswith("road_types."):
+                # See save_myproperties_to_csv's matching special-case.
+                from ..props import set_road_active  # deferred to avoid circular import
+
+                road_id = name.split(".", 1)[1]
+                set_road_active(props, road_id, value.lower() == "true")
+                continue
 
             if not hasattr(props, name):
                 continue  # skip unknown properties

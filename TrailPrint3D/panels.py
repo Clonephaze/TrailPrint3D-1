@@ -9,7 +9,22 @@ import textwrap
 
 from . import addon_preferences, temp, updater
 from . import constants as const
-from .props import SHAPE_TEXT_STYLES, get_effective_shape
+from .props import (
+    SHAPE_TEXT_STYLES,
+    any_road_active,
+    ensure_road_types,
+    get_effective_shape,
+)
+
+
+class TP3D_UL_road_types(bpy.types.UIList):
+    """Plain checkbox list of road tiers -- no add/remove, list only."""
+    bl_idname = "TP3D_UL_road_types"
+
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.prop(item, "active", text=item.name,
+                 icon='CHECKBOX_HLT' if item.active else 'CHECKBOX_DEHLT', emboss=False)
 
 
 def draw_wrapped_label(layout, context, text, icon='NONE'):
@@ -392,18 +407,14 @@ class TP3D_PT_advanced(bpy.types.Panel):
             #sub.operator("tp3d.remake_buildings", icon='FILE_REFRESH')
 
             sub = box.box()
+            ensure_road_types(props)
             row = sub.row()
             row.prop(props, "show_roads", icon="TRIA_DOWN" if props.show_roads else "TRIA_RIGHT", emboss=False, text=_("Roads"))
-            _any_road = (props.el_sBigActive or props.el_sMedActive or props.el_sSmallActive
-                         or props.el_sServiceActive or props.el_sFootwaysActive)
+            _any_road = any_road_active(props)
             row.label(text="", icon='CHECKBOX_HLT' if _any_road else 'CHECKBOX_DEHLT')
             if props.show_roads:
                 col = sub.column(align=True)
-                col.prop(props, "el_sBigActive", icon='CHECKBOX_HLT' if props.el_sBigActive else 'CHECKBOX_DEHLT')
-                col.prop(props, "el_sMedActive", icon='CHECKBOX_HLT' if props.el_sMedActive else 'CHECKBOX_DEHLT')
-                col.prop(props, "el_sSmallActive", icon='CHECKBOX_HLT' if props.el_sSmallActive else 'CHECKBOX_DEHLT')
-                col.prop(props, "el_sServiceActive", icon='CHECKBOX_HLT' if props.el_sServiceActive else 'CHECKBOX_DEHLT')
-                col.prop(props, "el_sFootwaysActive", icon='CHECKBOX_HLT' if props.el_sFootwaysActive else 'CHECKBOX_DEHLT')
+                col.template_list("TP3D_UL_road_types", "", props, "road_types", props, "road_types_index", rows=5)
                 if props.elementMode == "PAINT" and _any_road and props.el_sHeight == 0 and props.tex_include_roads == False:
                     row = sub.row()
                     row.alert = True

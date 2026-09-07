@@ -27,7 +27,8 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
     from bpy.types import Scene
 
     from ...props import (
-        get_effective_shape,  # deferred to avoid circular import at load time
+        any_road_active,  # deferred to avoid circular import at load time
+        get_effective_shape,
     )
 
     start_time = time.time()
@@ -69,15 +70,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         textFont: str = tp3d.textFont
         plateThickness: float = tp3d.plateThickness
         el_Smoothing: float = tp3d.col_osmSmoothing
-        el_sActive: bool = any(
-            [
-                tp3d.el_sBigActive,
-                tp3d.el_sMedActive,
-                tp3d.el_sSmallActive,
-                tp3d.el_sServiceActive,
-                tp3d.el_sFootwaysActive,
-            ]
-        )
+        el_sActive: bool = any_road_active(tp3d)
         el_sHeight: float = tp3d.el_sHeight
         rectangleHeight: int = tp3d.rectangleHeight
         ellipseRatio: float = tp3d.ellipseRatio

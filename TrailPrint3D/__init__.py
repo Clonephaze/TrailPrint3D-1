@@ -24,6 +24,7 @@ from . import export, operators, panels
 # resetting PREMIUMVERSION = False) cannot break detection.
 classes = [
     progress.TP3D_OT_warnings_mouse,
+    panels.TP3D_UL_road_types,
     panels.TP3D_PT_generate,
     panels.TP3D_PT_advanced,
     panels.TP3D_PT_shapes,
@@ -104,6 +105,7 @@ def startup_function(scene, dummy = None):
 
     for scn in bpy.data.scenes:
         props.repair_invalid_shape(scn)
+        props.ensure_road_types(scn.tp3d)
 
     utils.loadCollections(scene, dummy)
 
@@ -137,6 +139,10 @@ def register():
             temp.PREMIUMVERSION = False
 
     bpy.utils.register_class(addon_preferences.TP3D_AddonPreferences)
+    # TP3D_RoadTypeItem must be registered before TP3D_PG_properties -- the
+    # latter's road_types = CollectionProperty(type=TP3D_RoadTypeItem) needs
+    # that type to already be a registered RNA struct.
+    bpy.utils.register_class(props.TP3D_RoadTypeItem)
     bpy.utils.register_class(props.TP3D_PG_properties)
     bpy.app.translations.register(const.ADDON_NAME, translation.translations_dict)
     bpy.types.Scene.tp3d = bpy.props.PointerProperty(type=props.TP3D_PG_properties)
@@ -178,6 +184,7 @@ def _load_collections_deferred():
         # Implicitly returns None, so the timer only runs once
         for scn in bpy.data.scenes:
             props.repair_invalid_shape(scn)
+            props.ensure_road_types(scn.tp3d)
         utils.loadCollections(None, None)
     except (AttributeError, RuntimeError, ReferenceError) as e:
         print(f"TrailPrint3D: deferred collection load failed: {e}")
@@ -215,6 +222,11 @@ def unregister():
 
     try:
         bpy.utils.unregister_class(props.TP3D_PG_properties)
+    except RuntimeError:
+        pass
+
+    try:
+        bpy.utils.unregister_class(props.TP3D_RoadTypeItem)
     except RuntimeError:
         pass
 

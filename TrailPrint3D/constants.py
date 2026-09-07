@@ -25,10 +25,12 @@ FARMLAND_MAXSIZE = 200
 GLACIER_MAXSIZE = 1000
 BUILDINGS_MAXSIZE = 30
 BUILDINGS_MIN_PRINT_MM = 0.15 # Buildings whose PRINTED footprint side is smaller than this are culled, scales with map size.
-ROADS_MAXSIZE = 500
+ROADS_MAXSIZE = 500                  # dense + sparse road tiers dropped entirely above this mapsize
 COASTLINE_MAXSIZE = 1000
-STREETS_MAJOR_ONLY_THRESHOLD = 100   # above this mapsize: motorway+trunk only
-STREETS_PRIMARY_THRESHOLD = 40       # above this mapsize: + primary+secondary
+STREETS_PRIMARY_THRESHOLD = 40       # dense-tier roads (residential/service/footway/cycle_bridle/path)
+                                      # dropped above this mapsize to avoid width-scaled roads fusing
+                                      # into solid blocks on zoomed-out maps; sparse tiers (highways/
+                                      # major/minor/track) are unaffected until ROADS_MAXSIZE
 
 
 

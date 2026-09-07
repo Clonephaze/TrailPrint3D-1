@@ -124,13 +124,17 @@ def _rg_build_terrain_elements(
     tile_label: optional prefix for progress messages (e.g. "Tile 2/6") used by
     multi-tile callers so element messages keep their tile context visible.
     """
+    from ...props import (  # deferred to avoid circular import
+        any_road_active,
+        get_road_active,
+    )
     from ..metadata import (
         writeMetadata,  # deferred to avoid circular import at load time
     )
     from ..osm import buildings as _bld_mod
     from ..osm.buildings import create_buildings
     from ..osm.fetch_utils import OsmFetchSettings
-    from ..osm.roads import create_roads
+    from ..osm.roads import TIER_TAGS, create_roads
     from ..scene import set_origin_to_3d_cursor
 
     # Cleared unconditionally (not just when disabled) so the puzzle flow's
@@ -231,16 +235,7 @@ def _rg_build_terrain_elements(
         )
         + (
             ["_roads"]
-            if any(
-                [
-                    tp3d.el_sBigActive,
-                    tp3d.el_sMedActive,
-                    tp3d.el_sSmallActive,
-                    tp3d.el_sServiceActive,
-                    tp3d.el_sFootwaysActive,
-                ]
-            )
-            and map_km <= const.ROADS_MAXSIZE
+            if any_road_active(tp3d) and map_km <= const.ROADS_MAXSIZE
             else []
         )
     )
@@ -295,15 +290,11 @@ def _rg_build_terrain_elements(
             disable_cache=tp3d.disableCache,
             api_retries=tp3d.apiRetries,
             mapsize=tp3d.sMapInKm,
-            road_big=bool(tp3d.el_sBigActive),
-            road_med=bool(tp3d.el_sMedActive),
-            road_small=bool(tp3d.el_sSmallActive),
+            road_tiers={tier: get_road_active(tp3d, tier) for tier in TIER_TAGS},
             water_ponds=bool(tp3d.col_wPondsActive),
             water_small_rivers=bool(tp3d.col_wSmallRiversActive),
             water_big_rivers=bool(tp3d.col_wBigRiversActive),
             exclude_alleys=True,
-            road_footways=bool(tp3d.el_sFootwaysActive),
-            road_service=bool(tp3d.el_sServiceActive),
         )
         _active_kind_tasks = (
             [
@@ -325,18 +316,7 @@ def _rg_build_terrain_elements(
         # already-fetched + disk-cached tiles instead of re-querying Overpass.
         if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE:
             _active_kind_tasks.append(("BUILDINGS", _tile_tasks))
-        if (
-            any(
-                [
-                    tp3d.el_sBigActive,
-                    tp3d.el_sMedActive,
-                    tp3d.el_sSmallActive,
-                    tp3d.el_sServiceActive,
-                    tp3d.el_sFootwaysActive,
-                ]
-            )
-            and map_km <= const.ROADS_MAXSIZE
-        ):
+        if any_road_active(tp3d) and map_km <= const.ROADS_MAXSIZE:
             _active_kind_tasks.append(("STREETS", _tile_tasks))
         if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE:
             _active_kind_tasks.append(("COASTLINE", _tile_tasks))
@@ -371,15 +351,7 @@ def _rg_build_terrain_elements(
         ):
             _ov.set_fetch_ready("buildings")
         if (
-            any(
-                [
-                    tp3d.el_sBigActive,
-                    tp3d.el_sMedActive,
-                    tp3d.el_sSmallActive,
-                    tp3d.el_sServiceActive,
-                    tp3d.el_sFootwaysActive,
-                ]
-            )
+            any_road_active(tp3d)
             and map_km <= const.ROADS_MAXSIZE
             and _all_prefetched.get("STREETS")
         ):
@@ -524,15 +496,7 @@ def _rg_build_terrain_elements(
     # Roads — own creation function + clipping + material post-processing.
     # --------------------------------------------------
     terrain["roads"] = None
-    if any(
-        [
-            tp3d.el_sBigActive,
-            tp3d.el_sMedActive,
-            tp3d.el_sSmallActive,
-            tp3d.el_sServiceActive,
-            tp3d.el_sFootwaysActive,
-        ]
-    ):
+    if any_road_active(tp3d):
         if map_km <= const.ROADS_MAXSIZE:
             _advance_elem_progress("Roads", "Fetching road data…")
             _ov.set_fetch_progress("roads", 0.0)

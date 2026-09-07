@@ -7,6 +7,7 @@ import bpy
 from bpy.app.translations import pgettext_iface as _  #For Translation of Text Required
 from bpy.props import (
     BoolProperty,
+    CollectionProperty,
     EnumProperty,
     FloatProperty,
     IntProperty,
@@ -117,6 +118,98 @@ SHAPE_TEXT_STYLES = {
         _SHELL_ITEM,
     ],
 }
+
+
+# Road type tiers shown in the Roads UIList. `road_id` is the stable lookup
+# key (mirrors utils.osm.roads.TIER_TAGS) -- it is never translated and never
+# shown, so lookups can't break if the display name changes with locale.
+# Order here is the order rows are populated/displayed in.
+ROAD_TYPE_DEFS = [
+    ("highways", _("Highways"),
+     "highway=motorway, motorway_link -- controlled-access highways"),
+    ("major", _("Major Roads"),
+     "highway=trunk, primary, trunk_link, primary_link -- arterial roads just below highway grade"),
+    ("minor", _("Minor Roads"),
+     "highway=secondary, tertiary, secondary_link, tertiary_link, unclassified"),
+    ("residential", _("Residential Roads"),
+     "highway=residential, living_street"),
+    ("service", _("Service Roads"),
+     "highway=service -- vehicle access roads to buildings, parking lots, business estates (see "
+     "Key:service on the OSM wiki). Split out from Residential Roads since alley/driveway/"
+     "parking_aisle ways are always filtered out of it (using OSM's own service=* sub-tag, not "
+     "geometry) rather than being lumped in with named residential streets."),
+    ("footway", _("Footways/Sidewalks"),
+     "highway=footway -- pedestrian sidewalks and paths, OSM's own separate non-vehicle category "
+     "(see Key:highway on the OSM wiki). Kept separate by default since footways trace almost every "
+     "street and are usually the biggest single source of visual clutter."),
+    ("cycle_bridle", _("Cycle/Bridle Paths"),
+     "highway=cycleway, bridleway -- dedicated bike and horse paths"),
+    ("track", _("Tracks"),
+     "highway=track -- unpaved access tracks/fire roads. Often the one long rural trail a user "
+     "actually wants, so this tier is exempt from the dense-road mapsize cutoff that drops "
+     "Residential/Service/Footway/Cycle-Bridle roads on larger maps (see STREETS_PRIMARY_THRESHOLD)."),
+    ("path", _("Trails/Paths"),
+     "highway=path -- generic multi-use/hiking trail, ambiguous length so kept in the normal "
+     "dense-road mapsize cutoff rather than being exempted like Tracks."),
+]
+
+_ROAD_TYPE_IDS = {d[0] for d in ROAD_TYPE_DEFS}
+
+
+class TP3D_RoadTypeItem(bpy.types.PropertyGroup):
+    """One row of the Roads UIList. `name` (inherited) holds the translated
+    display label; `road_id` is the stable, untranslated lookup key."""
+    road_id: StringProperty()  # type: ignore
+    active: BoolProperty(default=False)  # type: ignore
+    description: StringProperty()  # type: ignore
+
+
+def ensure_road_types(tp3d):
+    """Populate/repair `tp3d.road_types` from ROAD_TYPE_DEFS.
+
+    CollectionProperty starts empty on every new file/scene -- unlike an
+    EnumProperty there's no static item list Blender can draw on its own, so
+    this has to be called before the Roads UIList is drawn (and again after
+    file load, in case an older file predates a tier being added/removed).
+    Existing values are preserved by road_id; only missing ids are added and
+    stale ids (from a future addon downgrade) are dropped.
+    """
+    existing = {item.road_id: item.active for item in tp3d.road_types}
+    if existing.keys() == _ROAD_TYPE_IDS:
+        return
+    tp3d.road_types.clear()
+    for road_id, label, desc in ROAD_TYPE_DEFS:
+        item = tp3d.road_types.add()
+        item.road_id = road_id
+        item.name = label
+        item.description = desc
+        item.active = existing.get(road_id, False)
+
+
+def get_road_active(tp3d, road_id: str) -> bool:
+    """True if the given road tier (e.g. "highways", "track") is enabled.
+
+    Deliberately NOT tp3d.road_types.get(road_id) -- bpy_prop_collection.get()
+    matches by the item's `name` field (the translated display label, e.g.
+    "Highways"), not by our separate `road_id` field ("highways"). That
+    always misses, silently returning None -- which is why this used to
+    return False unconditionally regardless of what was actually checked.
+    """
+    for item in tp3d.road_types:
+        if item.road_id == road_id:
+            return bool(item.active)
+    return False
+
+
+def set_road_active(tp3d, road_id: str, value: bool) -> None:
+    for item in tp3d.road_types:
+        if item.road_id == road_id:
+            item.active = bool(value)
+            return
+
+
+def any_road_active(tp3d) -> bool:
+    return any(item.active for item in tp3d.road_types)
 
 
 def get_shape_text_style_items(self, context):
@@ -588,11 +681,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
 
     show_water: BoolProperty(name= _("Water & Ocean"), default=False) # type: ignore
     show_roads: BoolProperty(name= _("Roads"), default=False) # type: ignore
-    el_sBigActive: BoolProperty(name= _("Big Roads"), default=False, description = f"primary, motorway, primary_link, motorway_link — limited to motorway only on maps < {const.ROADS_MAXSIZE}km") # type: ignore
-    el_sMedActive: BoolProperty(name= _("Medium Roads"), default=False, description = f"secondary, tertiary, secondary_link, tertiary_link — ignored on maps < {const.STREETS_MAJOR_ONLY_THRESHOLD}km") # type: ignore
-    el_sSmallActive: BoolProperty(name= _("Small Roads"), default=False, description = f"residential, living_street — ignored on maps < {const.STREETS_PRIMARY_THRESHOLD}km") # type: ignore
-    el_sServiceActive: BoolProperty(name= _("Service Roads"), default=False, description = f"highway=service -- vehicle access roads to buildings, parking lots, business estates (see Key:service on the OSM wiki). Split out from Small Roads since alley/driveway/parking_aisle ways are always filtered out of it (using OSM's own service=* sub-tag, not geometry) rather than being lumped in with named residential streets. Ignored on maps < {const.STREETS_PRIMARY_THRESHOLD}km") # type: ignore
-    el_sFootwaysActive: BoolProperty(name= _("Footways/Sidewalks"), default=False, description = f"highway=footway -- pedestrian sidewalks and paths, OSM's own separate non-vehicle category (see Key:highway on the OSM wiki). Kept out of Small Roads by default since footways trace almost every street and are usually the biggest single source of visual clutter. Ignored on maps < {const.STREETS_PRIMARY_THRESHOLD}km") # type: ignore
+    road_types: CollectionProperty(type=TP3D_RoadTypeItem) # type: ignore
+    road_types_index: IntProperty(default=0) # type: ignore
     el_oActive: BoolProperty(name=_("Include Ocean"), default=False, description=_("Generate ocean surface cut along the coastline. Experimental")) # type: ignore
     el_oMinIslandArea: FloatProperty(name=_("Min Island Area"), default=2.0, min=0.0, soft_max=100.0, description=_("Islands smaller than this area (in map units²) are not punched out of the ocean. At a 100mm map size, 1 map unit ≈ 1mm on the print, so the default 2.0 ≈ a ~1.4×1.4mm patch. Set to 0 to punch all islands.")) # type: ignore
     el_oRdpEpsilon: FloatProperty(name=_("Coastline Simplify"), default=0.1, min=0.0, soft_max=2.0, precision=3, description=_("Douglas-Peucker simplification tolerance (map units) applied to the coastline before building the ocean. Higher = fewer points but can introduce self-intersections on convoluted coasts. Set to 0 to disable simplification. Testing aid.")) # type: ignore

@@ -2144,10 +2144,12 @@ class TP3D_OT_remake_roads(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
+        from .props import any_road_active  # deferred to avoid circular import at load time
+
         tp3d = context.scene.tp3d
         m = tp3d.currentMap
         return (m is not None and m.name in bpy.data.objects
-                and any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive]))
+                and any_road_active(tp3d))
 
     def execute(self, context):
         from .utils.metadata import writeMetadata

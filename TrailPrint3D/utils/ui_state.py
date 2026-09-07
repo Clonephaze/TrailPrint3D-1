@@ -97,15 +97,15 @@ def build_fetch_items(map_km=None):
             )
             max_size = None
         elif key == "roads":
-            active = any(
-                [
-                    tp3d.el_sBigActive,
-                    tp3d.el_sMedActive,
-                    tp3d.el_sSmallActive,
-                    tp3d.el_sServiceActive,
-                    tp3d.el_sFootwaysActive,
-                ]
+            from ..props import get_road_active
+            from .osm.fetch_utils import (
+                allowed_road_tiers,
             )
+            from .osm.roads import TIER_TAGS
+
+            _allowed = allowed_road_tiers(map_km)
+            active = any(get_road_active(tp3d, t) and t in _allowed for t in TIER_TAGS)
+            max_size = None  # mapsize already folded into `active` via allowed_road_tiers
         else:
             active = bool(flag and getattr(tp3d, flag, 0) == 1)
         if active and (max_size is None or map_km <= max_size):
@@ -117,6 +117,14 @@ def build_fetch_items(map_km=None):
 # with no single master flag on the PropertyGroup; 'elevation' has no
 # toggle at all (the base terrain height is always fetched). Shared by
 # build_element_toggle_states and apply_element_toggle below so the two
+# stay in sync by construction rather than by convention.
+# 'water' is an OR of several independent sub-checkboxes with no single
+# master flag on the PropertyGroup; 'roads' is the same idea but its 9
+# sub-checkboxes live in the road_types CollectionProperty instead of plain
+# attributes, so it can't share water's getattr/setattr-based tuple -- see
+# _road_subflags/_get_composite_flag/_set_composite_flag below. 'elevation'
+# has no toggle at all (the base terrain height is always fetched). Shared
+# by build_element_toggle_states and apply_element_toggle below so the two
 # stay in sync by construction rather than by convention.
 _ELEMENT_SINGLE_FLAGS = {
     "forest": "col_fActive",
@@ -137,17 +145,38 @@ _ELEMENT_COMPOSITE_FLAGS = {
         ),
         "col_wPondsActive",
     ),
-    "roads": (
-        (
-            "el_sBigActive",
-            "el_sMedActive",
-            "el_sSmallActive",
-            "el_sServiceActive",
-            "el_sFootwaysActive",
-        ),
-        "el_sSmallActive",
-    ),
 }
+
+
+def _road_subflags():
+    """Road tier ids in display order -- the 'roads' composite's sub-flags.
+    Deferred import: see utils.osm.roads.TIER_TAGS."""
+    from .osm.roads import TIER_TAGS
+
+    return tuple(TIER_TAGS.keys())
+
+
+# Bootstrap sub-flag for the 'roads' composite's first-ever toggle-ON (see
+# apply_element_toggle's docstring) -- residential roads are the closest
+# equivalent to the old scheme's "Small Roads" default.
+_ROADS_BOOTSTRAP = "residential"
+
+
+def _get_composite_flag(tp3d, key, subflag):
+    if key == "roads":
+        from ..props import get_road_active
+
+        return get_road_active(tp3d, subflag)
+    return bool(getattr(tp3d, subflag))
+
+
+def _set_composite_flag(tp3d, key, subflag, value):
+    if key == "roads":
+        from ..props import set_road_active
+
+        set_road_active(tp3d, subflag, value)
+    else:
+        setattr(tp3d, subflag, bool(value))
 
 
 def build_element_toggle_states(tp3d=None):
@@ -167,6 +196,9 @@ def build_element_toggle_states(tp3d=None):
         states[key] = bool(getattr(tp3d, attr))
     for key, (subflags, _) in _ELEMENT_COMPOSITE_FLAGS.items():
         states[key] = any(getattr(tp3d, f) for f in subflags)
+    from ..props import any_road_active
+
+    states["roads"] = any_road_active(tp3d)
     return states
 
 
@@ -178,35 +210,39 @@ def apply_element_toggle(tp3d, key):
     runs on a background thread and can't safely touch scene data).
 
     'elevation' has no toggle and is ignored. For the single-flag
-    categories this just inverts the one BoolProperty. For the two
-    composites (water, roads), toggling OFF remembers the exact sub-flag
-    combination in a scene custom property before zeroing them, and
-    toggling back ON restores that same combination -- so a mix fine-tuned
-    in the N-panel (e.g. only Small Roads) survives a quick off/on from the
-    picker instead of resetting to some fixed default. First-ever
-    toggle-ON with nothing remembered (and nothing already set) falls back
-    to enabling just the category's single most common sub-flag.
+    categories this just inverts the one BoolProperty. For the composites
+    (water, roads), toggling OFF remembers the exact sub-flag combination in
+    a scene custom property before zeroing them, and toggling back ON
+    restores that same combination -- so a mix fine-tuned in the N-panel
+    (e.g. only Tracks + Footways) survives a quick off/on from the picker
+    instead of resetting to some fixed default. First-ever toggle-ON with
+    nothing remembered (and nothing already set) falls back to enabling
+    just the category's single most common sub-flag.
     """
     if key in _ELEMENT_SINGLE_FLAGS:
         attr = _ELEMENT_SINGLE_FLAGS[key]
         setattr(tp3d, attr, not getattr(tp3d, attr))
         return
-    if key not in _ELEMENT_COMPOSITE_FLAGS:
+
+    if key == "roads":
+        subflags, bootstrap = _road_subflags(), _ROADS_BOOTSTRAP
+    elif key in _ELEMENT_COMPOSITE_FLAGS:
+        subflags, bootstrap = _ELEMENT_COMPOSITE_FLAGS[key]
+    else:
         return  # 'elevation' or an unrecognized key -- nothing to toggle
 
-    subflags, bootstrap = _ELEMENT_COMPOSITE_FLAGS[key]
     remember_key = f"_toggle_remember_{key}"
-    if any(getattr(tp3d, f) for f in subflags):
-        tp3d[remember_key] = [bool(getattr(tp3d, f)) for f in subflags]
+    if any(_get_composite_flag(tp3d, key, f) for f in subflags):
+        tp3d[remember_key] = [bool(_get_composite_flag(tp3d, key, f)) for f in subflags]
         for f in subflags:
-            setattr(tp3d, f, False)
+            _set_composite_flag(tp3d, key, f, False)
     else:
         remembered = tp3d.get(remember_key)
         if remembered and any(remembered):
             for f, v in zip(subflags, remembered):
-                setattr(tp3d, f, bool(v))
+                _set_composite_flag(tp3d, key, f, bool(v))
         else:
-            setattr(tp3d, bootstrap, True)
+            _set_composite_flag(tp3d, key, bootstrap, True)
 
 
 # The Settings popup's Map tab -- a small, fixed whitelist of scene fields
@@ -327,26 +363,15 @@ _ADVANCED_SETTINGS_FIELDS = [
         "type": float,
         "group": "Buildings",
     },
-    {"key": "elSBigActive", "attr": "el_sBigActive", "type": bool, "group": "Roads"},
-    {"key": "elSMedActive", "attr": "el_sMedActive", "type": bool, "group": "Roads"},
-    {
-        "key": "elSSmallActive",
-        "attr": "el_sSmallActive",
-        "type": bool,
-        "group": "Roads",
-    },
-    {
-        "key": "elSServiceActive",
-        "attr": "el_sServiceActive",
-        "type": bool,
-        "group": "Roads",
-    },
-    {
-        "key": "elSFootwaysActive",
-        "attr": "el_sFootwaysActive",
-        "type": bool,
-        "group": "Roads",
-    },
+    {"key": "elSHighwaysActive", "road_id": "highways", "type": bool, "group": "Roads"},
+    {"key": "elSMajorActive", "road_id": "major", "type": bool, "group": "Roads"},
+    {"key": "elSMinorActive", "road_id": "minor", "type": bool, "group": "Roads"},
+    {"key": "elSResidentialActive", "road_id": "residential", "type": bool, "group": "Roads"},
+    {"key": "elSServiceActive", "road_id": "service", "type": bool, "group": "Roads"},
+    {"key": "elSFootwayActive", "road_id": "footway", "type": bool, "group": "Roads"},
+    {"key": "elSCycleBridleActive", "road_id": "cycle_bridle", "type": bool, "group": "Roads"},
+    {"key": "elSTrackActive", "road_id": "track", "type": bool, "group": "Roads"},
+    {"key": "elSPathActive", "road_id": "path", "type": bool, "group": "Roads"},
     {"key": "elSMultiplier", "attr": "el_sMultiplier", "type": float, "group": "Roads"},
     {"key": "elSHeight", "attr": "el_sHeight", "type": float, "group": "Roads"},
     {
@@ -363,7 +388,28 @@ _ADVANCED_SETTINGS_FIELDS = [
     },
 ]
 _ADVANCED_SETTINGS_BY_KEY = {f["key"]: f for f in _ADVANCED_SETTINGS_FIELDS}
-_ATTR_TO_ADVANCED_KEY = {f["attr"]: f["key"] for f in _ADVANCED_SETTINGS_FIELDS}
+_ATTR_TO_ADVANCED_KEY = {f["attr"]: f["key"] for f in _ADVANCED_SETTINGS_FIELDS if "attr" in f}
+_ROAD_ID_TO_ADVANCED_KEY = {f["road_id"]: f["key"] for f in _ADVANCED_SETTINGS_FIELDS if "road_id" in f}
+
+
+def _read_advanced_field(tp3d, field):
+    if "road_id" in field:
+        from ..props import get_road_active
+
+        return get_road_active(tp3d, field["road_id"])
+    return getattr(tp3d, field["attr"])
+
+
+def _write_advanced_field(tp3d, field, value):
+    if "road_id" in field:
+        from ..props import set_road_active
+
+        set_road_active(tp3d, field["road_id"], bool(value))
+        return
+    try:
+        setattr(tp3d, field["attr"], field["type"](value))
+    except (TypeError, ValueError):
+        pass
 
 
 def build_composite_remembered_state(tp3d=None):
@@ -391,6 +437,19 @@ def build_composite_remembered_state(tp3d=None):
                 else current
             )
         result[cat_key] = {_ATTR_TO_ADVANCED_KEY[f]: v for f, v in values.items() if f in _ATTR_TO_ADVANCED_KEY}
+
+    road_ids = _road_subflags()
+    current = {r: _get_composite_flag(tp3d, "roads", r) for r in road_ids}
+    if any(current.values()):
+        road_values = current
+    else:
+        remembered = tp3d.get("_toggle_remember_roads")
+        road_values = (
+            {r: bool(v) for r, v in zip(road_ids, remembered)} if remembered else current
+        )
+    result["roads"] = {
+        _ROAD_ID_TO_ADVANCED_KEY[r]: v for r, v in road_values.items() if r in _ROAD_ID_TO_ADVANCED_KEY
+    }
     return result
 
 
@@ -401,7 +460,7 @@ def build_advanced_settings_state(tp3d=None):
     build_composite_remembered_state's per-category snapshot alongside it."""
     if tp3d is None:
         tp3d = bpy.context.scene.tp3d
-    state = {f["key"]: getattr(tp3d, f["attr"]) for f in _ADVANCED_SETTINGS_FIELDS}
+    state = {f["key"]: _read_advanced_field(tp3d, f) for f in _ADVANCED_SETTINGS_FIELDS}
     state["_compositeRemembered"] = build_composite_remembered_state(tp3d)
     return state
 
@@ -416,9 +475,6 @@ def apply_advanced_setting_update(tp3d, key, value):
     field = _ADVANCED_SETTINGS_BY_KEY.get(key)
     if not field:
         return
-    try:
-        setattr(tp3d, field["attr"], field["type"](value))
-    except (TypeError, ValueError):
-        pass
+    _write_advanced_field(tp3d, field, value)
 
 
