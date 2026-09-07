@@ -686,7 +686,8 @@ def _gjt_bake_into_existing_textures(curve_obj):
         cx_min, cx_max, cy_min, cy_max = _xy_extents(ob)
         if cx_min > tx_max or cx_max < tx_min or cy_min > ty_max or cy_max < ty_min:
             continue
-        if bake_trail_into_texture(ob, ribbon):
+        _trail_mat = curve_obj.data.materials[0] if curve_obj.data.materials else None
+        if bake_trail_into_texture(ob, ribbon, _trail_mat):
             baked = True
     return baked
 
@@ -810,7 +811,7 @@ def generateJustTrail(material="TRAIL"):
 
     if (
         curveObj is not None
-        and props.elementMode == "CREATE_TEXTURE"
+        and props.tex_use_texture
         and props.tex_include_trail
     ):
         if _gjt_bake_into_existing_textures(curveObj):

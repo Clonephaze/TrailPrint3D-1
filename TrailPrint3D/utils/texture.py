@@ -22,36 +22,21 @@ import numpy as np
 from .dataclasses import GenerationContext
 
 # ── Palette definition ────────────────────────────────────────────────────────
-# Each colour is expressed as sRGB uint8 (R, G, B).  These values are used
-# for *both* the image pixels and the hex strings in 3mf_paint_extruder_colors,
-# guaranteeing exact nearest-colour matching (Manhattan distance = 0) during
-# the 3MF addon's segmentation export.
-
-_BASE_SRGB   = (13,  179,  13)   # terrain background (BASE material)
-_WATER_SRGB  = (0,    0,  200)
-_FOREST_SRGB = (5,   64,    5)
-_SCREE_SRGB  = (150, 150, 150)   # SCREE uses MOUNTAIN material
-_CITY_SRGB   = (180, 180,  30)
-_GS_SRGB     = (40,  255,  40)   # GREENSPACE
-_FARM_SRGB   = (80,  130,  30)
-_GLAC_SRGB   = (205, 220, 205)
-_ROADS_SRGB  = (0,    0,   0)    # BLACK
-_TRAIL_SRGB  = (255,  0,   0)    # TRAIL
-_WHITE_SRGB  = (255, 255, 255)   # companion text objects
-
-# OSM kind string (uppercase) → sRGB byte tuple.
-# OCEAN shares WATER's slot; duplicates are merged in _build_palette().
-_KIND_TO_SRGB = {
-    "WATER":      _WATER_SRGB,
-    "OCEAN":      _WATER_SRGB,
-    "FOREST":     _FOREST_SRGB,
-    "SCREE":      _SCREE_SRGB,
-    "CITY":       _CITY_SRGB,
-    "GREENSPACE": _GS_SRGB,
-    "FARMLAND":   _FARM_SRGB,
-    "GLACIER":    _GLAC_SRGB,
-    "ROADS":      _ROADS_SRGB,
-    "TRAIL":      _TRAIL_SRGB,
+# Texture-mode colours are derived from the *same* Blender materials used by
+# every non-texture export path (see primitives.setupColors()) instead of a
+# second, independently-hardcoded palette -- one colour definition, not two.
+# OCEAN shares WATER's material; duplicates are merged in _build_palette().
+_KIND_MATERIAL_NAME = {
+    "WATER":      "WATER",
+    "OCEAN":      "WATER",
+    "FOREST":     "FOREST",
+    "SCREE":      "MOUNTAIN",
+    "CITY":       "CITY",
+    "GREENSPACE": "GREENSPACE",
+    "FARMLAND":   "FARMLAND",
+    "GLACIER":    "GLACIER",
+    "ROADS":      "BLACK",
+    "TRAIL":      "TRAIL",
 }
 
 # Rasterization order: low-priority kinds first so high-priority kinds
@@ -71,6 +56,32 @@ def _srgb_to_hex(r8, g8, b8):
     return f"#{int(r8):02X}{int(g8):02X}{int(b8):02X}"
 
 
+def material_to_srgb(material, fallback=(0, 0, 0)):
+    """Convert a material's Principled BSDF Base Colour to an sRGB uint8
+    (R, G, B) tuple, so texture-mode colours -- and the fake solid-colour
+    patches given to companion objects for 3MF paint export -- always match
+    what that material actually renders as everywhere else in the addon.
+
+    Materials here are set up (see primitives.setupColors()) by plugging the
+    desired 0-255 colour directly into Base Color as value/255, not through a
+    proper linear-light workflow -- e.g. BASE's old hardcoded texture colour
+    (13, 179, 13) only lines up with its material (0.05, 0.7, 0.05) under a
+    plain ×255 scale, not the sRGB gamma curve (which would give ~63,178,63).
+    So converting back uses that same plain scale, not gamma decoding.
+    """
+    if material is None or not material.use_nodes:
+        return fallback
+    bsdf = next((n for n in material.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is None:
+        return fallback
+    lin = bsdf.inputs["Base Color"].default_value
+    return tuple(round(max(0.0, min(1.0, lin[i])) * 255) for i in range(3))
+
+
+def _named_material_srgb(name, fallback=(0, 0, 0)):
+    return material_to_srgb(bpy.data.materials.get(name), fallback)
+
+
 def _build_palette(present_kinds):
     """Return (palette_dict, kind_to_index) for the kinds actually present.
 
@@ -83,13 +94,13 @@ def _build_palette(present_kinds):
     when WATER was processed before OCEAN, silently wasting a filament slot
     (and shifting every later index by one) whenever OCEAN came first.
     """
-    palette = {0: _srgb_to_hex(*_BASE_SRGB)}
+    palette = {0: _srgb_to_hex(*_named_material_srgb("BASE"))}
     kind_to_index = {}
     idx = 1
     for kind in _RASTER_ORDER:
         if kind not in present_kinds:
             continue
-        hexcol = _srgb_to_hex(*_KIND_TO_SRGB[kind])
+        hexcol = _srgb_to_hex(*_named_material_srgb(_KIND_MATERIAL_NAME[kind]))
         existing_idx = next((k for k, v in palette.items() if v == hexcol), None)
         if existing_idx is not None:
             kind_to_index[kind] = existing_idx
@@ -227,8 +238,8 @@ def setup_paint_texture(gen: GenerationContext):
 
     # Always add WHITE, BLACK and TRAIL so companion text/plate/trail objects
     # have exact palette matches regardless of which OSM element kinds are present.
-    for _csrgb in (_WHITE_SRGB, _ROADS_SRGB, _TRAIL_SRGB):
-        _chex = _srgb_to_hex(*_csrgb)
+    for _cmat_name in ("WHITE", "BLACK", "TRAIL"):
+        _chex = _srgb_to_hex(*_named_material_srgb(_cmat_name))
         if _chex not in palette.values():
             palette[max(palette.keys()) + 1] = _chex
 
@@ -273,14 +284,15 @@ def setup_paint_texture(gen: GenerationContext):
     mesh.update()
 
     # ── Rasterize ─────────────────────────────────────────────────────────────
-    base_f = (_BASE_SRGB[0] / 255.0, _BASE_SRGB[1] / 255.0, _BASE_SRGB[2] / 255.0, 1.0)
+    _base_srgb = _named_material_srgb("BASE")
+    base_f = (_base_srgb[0] / 255.0, _base_srgb[1] / 255.0, _base_srgb[2] / 255.0, 1.0)
     arr = np.full((resolution, resolution, 4), base_f, dtype=np.float32)
 
     for kind in _RASTER_ORDER:
         geom = polygons_by_kind.get(kind) or polygons_by_kind.get(kind.lower())
         if geom is None:
             continue
-        srgb = _KIND_TO_SRGB[kind]
+        srgb = _named_material_srgb(_KIND_MATERIAL_NAME[kind])
         c_f = (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
         _rasterize_geometry(geom, arr, c_f, None,
                             cursor_x, cursor_y, min_x, min_y, width, height, resolution)
@@ -335,10 +347,14 @@ def setup_paint_texture(gen: GenerationContext):
     return palette
 
 
-def bake_trail_into_texture(terrain_obj, trail_polygon):
+def bake_trail_into_texture(terrain_obj, trail_polygon, material=None):
     """Rasterize a single trail ribbon polygon onto terrain_obj's EXISTING
     MMU_Paint texture in place, without disturbing whatever other elements
     (water/forest/roads/etc) are already baked into it.
+
+    material : the trail curve's own Blender material (e.g. TRAIL or YELLOW),
+    so a trail baked into the texture keeps its actual colour instead of
+    always turning red. Falls back to the TRAIL material if not given.
 
     setup_paint_texture() always rebuilds the image from scratch from a full
     polygons_by_kind dict, so it can't be reused here -- callers like
@@ -378,7 +394,7 @@ def bake_trail_into_texture(terrain_obj, trail_polygon):
     image.pixels.foreach_get(arr)
     arr = arr.reshape((resolution, resolution, 4))
 
-    srgb = _KIND_TO_SRGB["TRAIL"]
+    srgb = material_to_srgb(material) if material is not None else _named_material_srgb("TRAIL")
     color_f = (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
     _rasterize_geometry(trail_polygon, arr, color_f, None,
                         cursor_x, cursor_y, min_x, min_y, width, height, resolution)
@@ -519,7 +535,8 @@ def crop_paint_texture_to_piece(piece_obj, source_image):
     )
 
     # Re-paint the base-colour anchor block at (0,0)–(4,4) in the crop.
-    base_f = (_BASE_SRGB[0] / 255.0, _BASE_SRGB[1] / 255.0, _BASE_SRGB[2] / 255.0, 1.0)
+    _base_srgb = _named_material_srgb("BASE")
+    base_f = (_base_srgb[0] / 255.0, _base_srgb[1] / 255.0, _base_srgb[2] / 255.0, 1.0)
     crop_arr[0:4, 0:4] = base_f
 
     img_name = str(mesh.name) + "_MMU_Paint"

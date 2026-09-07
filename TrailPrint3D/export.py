@@ -159,9 +159,8 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False):
         import ast
 
         from .utils.texture import (
-            _ROADS_SRGB,
-            _TRAIL_SRGB,
-            _WHITE_SRGB,
+            _srgb_to_hex,
+            material_to_srgb,
             tag_solid_color_for_paint_export,
         )
 
@@ -172,17 +171,28 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False):
             except (ValueError, SyntaxError):
                 palette = {}
             if palette:
-                _companion_colors = {
-                    "TEXT": _WHITE_SRGB,
-                    "PLATE": _ROADS_SRGB,
-                    "SHELL": _ROADS_SRGB,
-                }
-                if not tp3d.tex_include_trail:
-                    _companion_colors["TRAIL"] = _TRAIL_SRGB
+                # TEXT/PLATE/SHELL are always one fixed colour; TRAIL is not --
+                # different trail curves can carry different materials (e.g. a
+                # red vs. a yellow trail), so that one must be read from each
+                # object's own material rather than assumed to be constant.
+                _fixed_companion_material = {"TEXT": "WHITE", "PLATE": "BLACK", "SHELL": "BLACK"}
+                _palette_dirty = False
                 for dup in duplicates:
-                    _ccol = _companion_colors.get(dup.get("Object type"))
-                    if _ccol is not None:
-                        tag_solid_color_for_paint_export(dup, _ccol, palette)
+                    obj_type = dup.get("Object type")
+                    if obj_type in _fixed_companion_material:
+                        _ccol = material_to_srgb(bpy.data.materials.get(_fixed_companion_material[obj_type]))
+                    elif obj_type == "TRAIL" and not tp3d.tex_include_trail:
+                        _own_mat = dup.data.materials[0] if dup.data and dup.data.materials else None
+                        _ccol = material_to_srgb(_own_mat or bpy.data.materials.get("TRAIL"))
+                    else:
+                        continue
+                    _chex = _srgb_to_hex(*_ccol)
+                    if _chex not in palette.values():
+                        palette[max(palette.keys()) + 1] = _chex
+                        _palette_dirty = True
+                    tag_solid_color_for_paint_export(dup, _ccol, palette)
+                if _palette_dirty:
+                    map_dup.data["3mf_paint_extruder_colors"] = str(palette)
 
     # ------------------------------------------------------------------
     #  New grouping logic based on tp3d.keep_positions
