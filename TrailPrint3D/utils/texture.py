@@ -236,6 +236,37 @@ def setup_paint_texture(gen: GenerationContext):
     present_kinds = {k.upper() for k, v in polygons_by_kind.items() if v is not None}
     palette, _kind_to_index = _build_palette(present_kinds)
 
+    # ── WorldCover land-cover base fill ─────────────────────────────────────
+    # elementSource == "WORLDCOVER" colors terrain from the ESA WorldCover
+    # reference plane rather than individual OSM element toggles (see
+    # satellite.py's paint_terrain_from_landcover(), the non-texture-mode
+    # equivalent this mirrors). That function assigns per-face materials,
+    # which texture mode ignores entirely -- without this, WORLDCOVER +
+    # useTexture silently produced a plain BASE-colour terrain. Sampled once
+    # here (vectorized over the whole pixel grid); OSM-derived kinds (roads,
+    # buildings, trail) still rasterize on top per _RASTER_ORDER below.
+    landcover_classes = None
+    landcover_fill = {}
+    if gen.settings.elementSource == "WORLDCOVER":
+        from .satellite import _LANDCOVER_MATERIAL_MAP, sample_landcover_classes
+        landcover_classes = sample_landcover_classes(
+            resolution, cursor_x, cursor_y, min_x, min_y, width, height,
+            gen.runtime.tbMinLat, gen.runtime.tbMaxLat, gen.runtime.tbMinLon, gen.runtime.tbMaxLon,
+        )
+        if landcover_classes is not None:
+            for _class_id in (int(c) for c in np.unique(landcover_classes) if c >= 0):
+                _mat_name = _LANDCOVER_MATERIAL_MAP.get(_class_id)
+                if _mat_name is None:
+                    continue
+                _lc_srgb = _named_material_srgb(_mat_name)
+                landcover_fill[_class_id] = (
+                    _srgb_to_hex(*_lc_srgb),
+                    (_lc_srgb[0] / 255.0, _lc_srgb[1] / 255.0, _lc_srgb[2] / 255.0, 1.0),
+                )
+    for _lc_hex, _ in landcover_fill.values():
+        if _lc_hex not in palette.values():
+            palette[max(palette.keys()) + 1] = _lc_hex
+
     # Always add WHITE, BLACK and TRAIL so companion text/plate/trail objects
     # have exact palette matches regardless of which OSM element kinds are present.
     for _cmat_name in ("WHITE", "BLACK", "TRAIL"):
@@ -287,6 +318,10 @@ def setup_paint_texture(gen: GenerationContext):
     _base_srgb = _named_material_srgb("BASE")
     base_f = (_base_srgb[0] / 255.0, _base_srgb[1] / 255.0, _base_srgb[2] / 255.0, 1.0)
     arr = np.full((resolution, resolution, 4), base_f, dtype=np.float32)
+
+    if landcover_classes is not None:
+        for _class_id, (_, _c_f) in landcover_fill.items():
+            arr[landcover_classes == _class_id] = _c_f
 
     for kind in _RASTER_ORDER:
         geom = polygons_by_kind.get(kind) or polygons_by_kind.get(kind.lower())
