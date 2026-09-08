@@ -49,9 +49,9 @@ _PHOTO_COLLECTION = "sentinel-2-l2a"
 _MAX_PX = 1600  # overall stitched-image long-edge budget
 _USER_AGENT = "TrailPrint3D_3.00"
 
-# Physical chunk size (km) for the tiling grid -- comfortably under a single
-# Sentinel-2 tile's ~110km footprint (the tighter of the two collections),
-# so every chunk is guaranteed to land fully inside one source item.
+# Physical chunk size (km) for the photo tiling grid -- comfortably under a
+# single Sentinel-2 tile's ~110km footprint, so every chunk is guaranteed to
+# land fully inside one source item.
 _CHUNK_KM = 80
 _KM_PER_DEGREE_LAT = 111.0
 
@@ -63,6 +63,18 @@ _KM_PER_DEGREE_LAT = 111.0
 # near an edge (best-overlap picking among a handful of candidates helps,
 # per _stac_search, but isn't a guaranteed fix).
 _WORLDCOVER_GRID_DEG = 3.0
+
+# Landcover's own chunk size -- deliberately much larger than _CHUNK_KM
+# above. That constant is sized for Sentinel-2's tighter ~110km tiles (the
+# debug true-color photo); reusing it for WorldCover (whose own tiles cover
+# up to _WORLDCOVER_GRID_DEG=3 degrees, ~333km at the equator) chunked a
+# large map into far more pieces than the source data ever needed -- a
+# 1000km-wide map was ~13x13=169 separate STAC-search+crop round trips
+# instead of ~3x3=9. Set above that 333km ceiling so _grid_breaks()'s
+# mandatory snap_deg breaks (which already guarantee no chunk straddles a
+# WorldCover tile, regardless of this constant) are what actually determines
+# chunk size -- i.e. one chunk per WorldCover tile actually crossed.
+_LANDCOVER_CHUNK_KM = 350
 
 SATELLITE_PLANE_NAME = "TP3D_SatelliteRef"
 DEBUG_RAW_PLANE_NAME = "TP3D_SatelliteRef_DebugRaw"
@@ -340,15 +352,27 @@ def _grid_breaks(min_v, max_v, step_deg, snap_deg=None):
 
 def _fetch_tiled(prefix, collection, asset, min_lat, max_lat, min_lon, max_lon,
                   disable_cache, max_cache_age_hours, sortby=None,
-                  colormap_name=None, colormap=None, grid_snap_deg=None):
-    """Fetch bbox as a grid of _CHUNK_KM-sized chunks (1x1 for anything smaller),
+                  colormap_name=None, colormap=None, grid_snap_deg=None,
+                  chunk_km=_CHUNK_KM, progress_cb=None):
+    """Fetch bbox as a grid of chunk_km-sized chunks (1x1 for anything smaller),
     each independently STAC-searched + cropped, in parallel.
 
     grid_snap_deg (e.g. _WORLDCOVER_GRID_DEG), if given, additionally splits
     the grid at every multiple of that many degrees, so a chunk can never
     straddle a known source-tile grid line -- rows/columns then have uneven
     spans, so each chunk carries its own pixel size and canvas offset rather
-    than a single uniform chunk_w/chunk_h.
+    than a single uniform chunk_w/chunk_h. Since that snap already guarantees
+    no chunk straddles a source tile, chunk_km only matters for how many
+    *extra* chunks get carved out within a single source tile -- callers
+    pass the tightest value their own collection actually needs (see
+    _LANDCOVER_CHUNK_KM vs the Sentinel-2-driven default above).
+
+    progress_cb, if given, is called with a 0-1 float as each chunk finishes
+    (in completion order, not task order) -- lets a caller with dozens/
+    hundreds of chunks show real download progress instead of the overlay
+    just sitting at "fetching" for however long the whole grid takes.
+    Called from whichever worker thread finishes a chunk, never the fetch's
+    own calling thread -- like this whole function, not main-thread safe.
 
     Safe to call from a worker thread -- does no bpy.* work. Returns a
     TiledCrop, or None if every chunk failed (no coverage / all requests
@@ -360,8 +384,8 @@ def _fetch_tiled(prefix, collection, asset, min_lat, max_lat, min_lon, max_lon,
         return None
 
     center_lat = (min_lat + max_lat) / 2.0
-    lat_step_deg = _CHUNK_KM / _KM_PER_DEGREE_LAT
-    lon_step_deg = _CHUNK_KM / max(1e-6, _KM_PER_DEGREE_LAT * math.cos(math.radians(center_lat)))
+    lat_step_deg = chunk_km / _KM_PER_DEGREE_LAT
+    lon_step_deg = chunk_km / max(1e-6, _KM_PER_DEGREE_LAT * math.cos(math.radians(center_lat)))
     lat_breaks = _grid_breaks(min_lat, max_lat, lat_step_deg, snap_deg=grid_snap_deg)
     lon_breaks = _grid_breaks(min_lon, max_lon, lon_step_deg, snap_deg=grid_snap_deg)
     n_rows = len(lat_breaks) - 1
@@ -399,10 +423,19 @@ def _fetch_tiled(prefix, collection, asset, min_lat, max_lat, min_lon, max_lon,
 
     if len(tasks) == 1:
         results = [_fetch_one(tasks[0])]
+        if progress_cb:
+            progress_cb(1.0)
     else:
         print(f"Satellite {prefix}: area exceeds one source tile, fetching {n_rows}x{n_cols} chunks")
+        results = [None] * len(tasks)
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(tasks))) as ex:
-            results = list(ex.map(_fetch_one, tasks))
+            future_to_idx = {ex.submit(_fetch_one, t): i for i, t in enumerate(tasks)}
+            completed = 0
+            for future in concurrent.futures.as_completed(future_to_idx):
+                results[future_to_idx[future]] = future.result()
+                completed += 1
+                if progress_cb:
+                    progress_cb(completed / len(tasks))
 
     if not any(t["path"] for t in results):
         return None
@@ -412,7 +445,8 @@ def _fetch_tiled(prefix, collection, asset, min_lat, max_lat, min_lon, max_lon,
 
 
 def get_cached_landcover_image(min_lat, max_lat, min_lon, max_lon,
-                                disable_cache=False, max_cache_age_hours=720):
+                                disable_cache=False, max_cache_age_hours=720,
+                                progress_cb=None):
     """Return a TiledCrop for an ESA WorldCover land-cover map of bbox.
 
     Disk-cached per chunk (same convention as the Overpass cache). Safe to
@@ -420,11 +454,15 @@ def get_cached_landcover_image(min_lat, max_lat, min_lon, max_lon,
     coverage could be found/fetched anywhere in bbox; callers must treat
     that as non-fatal. The classification is colorized server-side with our
     own _LANDCOVER_PALETTE -- no client-side color processing needed.
+
+    progress_cb, if given, is forwarded to _fetch_tiled() -- see its
+    docstring; called with a 0-1 float as each chunk finishes.
     """
     return _fetch_tiled(
         "landcover", _LANDCOVER_COLLECTION, "map",
         min_lat, max_lat, min_lon, max_lon, disable_cache, max_cache_age_hours,
         colormap=_LANDCOVER_PALETTE, grid_snap_deg=_WORLDCOVER_GRID_DEG,
+        chunk_km=_LANDCOVER_CHUNK_KM, progress_cb=progress_cb,
     )
 
 

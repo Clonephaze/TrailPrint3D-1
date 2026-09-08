@@ -147,7 +147,7 @@ function _fmtPhaseAge() {
 __ICONS__
 
 var BADGE_COLORS = {
-  elevation:'#3d72b2', forest:'#2d8f3d', water:'#2d78cc',
+  elevation:'#3d72b2', landcover:'#6b9e4c', forest:'#2d8f3d', water:'#2d78cc',
   scree:'#7a6248',     city:'#8844aa',   greenspace:'#4daa3d',
   farmland:'#aa9928',  glacier:'#7dc0e8',ocean:'#1244aa',
   buildings:'#cc8222', roads:'#444'

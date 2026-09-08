@@ -247,6 +247,7 @@ def _rg_start_satellite_prefetch(gen: GenerationContext):
     if gen.settings.elementSource != "WORLDCOVER":
         return
 
+    from ...progress import ProgressOverlay
     from ..satellite import get_cached_landcover_image, get_cached_photo_image
 
     tp3d = bpy.context.scene.tp3d
@@ -255,11 +256,18 @@ def _rg_start_satellite_prefetch(gen: GenerationContext):
     disable_cache = bool(tp3d.disableCache)
     debug = bool(bpy.app.debug)
 
+    # set_fetch_progress() only mutates plain state + writes a JSON file (no
+    # bpy.* calls) -- safe to call from the worker/pool threads below, unlike
+    # set_fetch_items/set_fetch_done which force a viewport redraw.
+    overlay = ProgressOverlay.get()
+    overlay.set_fetch_progress("landcover", 0.0)
+
     result: dict = {}
 
     def _run():
         landcover = get_cached_landcover_image(
-            min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache
+            min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache,
+            progress_cb=lambda frac: overlay.set_fetch_progress("landcover", frac),
         )
         photo = (
             get_cached_photo_image(
@@ -286,11 +294,13 @@ def _rg_create_satellite_plane(gen: GenerationContext):
     if gen.settings.elementSource != "WORLDCOVER" or gen.fetch.satelliteThread is None:
         return
 
+    from ...progress import ProgressOverlay
     from ..satellite import create_satellite_plane, paint_terrain_from_landcover
 
     gen.fetch.satelliteThread.join()
     result = gen.fetch.satelliteResult or {}
     landcover = result.get("landcover")
+    ProgressOverlay.get().set_fetch_done("landcover", success=landcover is not None)
     if landcover is None:
         print("WorldCover: no land-cover data returned for this area, skipping.")
         return

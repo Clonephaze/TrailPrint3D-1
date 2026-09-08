@@ -159,6 +159,7 @@ class ProgressOverlay:
     COL_FETCH_IDLE = (0.25, 0.25, 0.25, 1.00)
     FETCH_COLORS = {
         'elevation':  (0.25, 0.45, 0.70, 1.00),
+        'landcover':  (0.42, 0.62, 0.30, 1.00),
         'forest':     (0.20, 0.58, 0.25, 1.00),
         'water':      (0.18, 0.48, 0.80, 1.00),
         'scree':      (0.52, 0.42, 0.32, 1.00),

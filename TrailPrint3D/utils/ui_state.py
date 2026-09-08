@@ -74,6 +74,8 @@ def build_fetch_items(map_km=None):
     if map_km is None:
         map_km = round(tp3d.get("sMapInKm", 0), 1)
     items = [{"key": "elevation", "icon": "E", "label": "Elevation"}]
+    if tp3d.elementSource == "WORLDCOVER":
+        items.append({"key": "landcover", "icon": "L", "label": "Land Cover"})
     defs = [
         ("forest", "col_fActive", const.FOREST_MAXSIZE, "F", "Forest"),
         ("water", None, const.WATER_MAXSIZE, "W", "Water"),

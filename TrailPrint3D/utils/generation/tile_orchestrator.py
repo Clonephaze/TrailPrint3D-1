@@ -18,6 +18,7 @@ from .output import (
     _rg_finalize_metadata,
     _rg_set_material_preview,
 )
+from .terrain_gen import _rg_create_satellite_plane, _rg_start_satellite_prefetch
 
 # ---------------------------------------------------------------------------
 # createTerrainFromSelected sub-phase helpers
@@ -88,6 +89,13 @@ def _rtg_apply_elevation(
     # with the bare object -- call it here first so _rg_build_terrain_elements
     # (which needs gen.runtime.mapKm) sees it too.
     compute_and_store_tile_bounds(gen)
+    # This tile's own bbox is now known -- start the WorldCover prefetch (a
+    # no-op unless elementSource == "WORLDCOVER") here so its network request
+    # overlaps get_tile_elevation()'s below, same overlap runGeneration gets
+    # by starting it alongside its own elevation fetch. Joined later by
+    # _rg_create_satellite_plane() in _rtg_process_tile, once this tile's
+    # mesh has real elevation to test face normals against.
+    _rg_start_satellite_prefetch(gen)
     get_tile_elevation(gen, progress_cb=progress_cb)
     tileVerts = gen.runtime.tileVerts or []
 
@@ -401,6 +409,17 @@ def _rtg_process_tile(
     mat = bpy.data.materials.get("BASE")
     zobj.data.materials.clear()
     zobj.data.materials.append(mat)
+
+    # --- Phase 3b: WorldCover reference plane + paint (no-op unless
+    # elementSource == "WORLDCOVER") --- mirrors runGeneration's own
+    # ordering: after the base material is in materials[0] (so any face the
+    # land-cover sampler doesn't confidently classify keeps that as its
+    # fallback, same as an unpainted single-flow terrain) and before OSM
+    # elements below, so roads/buildings can still take priority over it.
+    overlay.update(
+        base_pct + step * 0.65, "Land Cover", f"{tile_label} — sampling WorldCover…"
+    )
+    _rg_create_satellite_plane(gen)
 
     # --- Phase 4: Terrain overlay elements (water, forest, city, glacier, buildings, roads) ---
     _elem_start = base_pct + step * 0.70
