@@ -2883,8 +2883,10 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             rp.unlink()
 
         # Multi-GPX import is a Premium feature -- the free page's own input
-        # element is capped to a single file (see map_generator.html).
-        html_filename = 'map_generator.html'
+        # element is capped to a single file (see map_generator.html);
+        # premium/map_generator_pe.html is the Premium counterpart with a
+        # multi-file GPX input (see its gpxInput element).
+        html_filename = 'premium/map_generator_pe.html' if temp.PREMIUMVERSION else 'map_generator.html'
         html_path = pathlib.Path(__file__).parent / html_filename
         self._server = mp.start_picker(
             self._result_path,

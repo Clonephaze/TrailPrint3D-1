@@ -197,7 +197,6 @@
                     console.log('[TP3D picker] /get_state returned:', s);
                     if (!s) return;
                     if (s.settingsTab) tp3dActivateSettingsTab(s.settingsTab);
-                    if (s.lat != null) map.setView([s.lat, s.lng], s.zoom);
                     if (s.baseLayer && baseLayers[s.baseLayer] && s.baseLayer !== activeBaseLayerName) {
                         map.removeLayer(baseLayers[activeBaseLayerName]);
                         baseLayers[s.baseLayer].addTo(map);
@@ -240,6 +239,14 @@
                     }
                     updateSendState();
                     updateStatus();
+                    // Done LAST, after coords is already restored above --
+                    // setView() fires 'moveend' (bound to saveState further
+                    // down), and saveState() reads the live `coords`
+                    // variable. Calling setView() before coords was restored
+                    // let that moveend handler write coords:null back to the
+                    // state file, silently wiping the drawn area on every
+                    // reopen even when nothing else changed.
+                    if (s.lat != null) map.setView([s.lat, s.lng], s.zoom);
                 })
                 .catch(function() { updateSendState(); updateStatus(); });
         }
