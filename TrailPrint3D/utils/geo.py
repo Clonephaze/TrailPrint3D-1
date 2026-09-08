@@ -79,7 +79,7 @@ def convert_to_blender_coordinates(lat, lon, elevation,timestamp):
 
     return (x, y, z)
 
-def convert_to_blender_coordinates_batch(coords):
+def convert_to_blender_coordinates_batch(coords) -> list[tuple[float, float, float]]:
     """Vectorized batch version of convert_to_blender_coordinates.
 
     coords: iterable of (lat, lon, elevation, timestamp)
@@ -144,7 +144,7 @@ def haversine(lat1, lon1, lat2, lon2):
     return distance
 
 
-def calculate_total_length(points):
+def calculate_total_length(points) -> float:
     #Calculates the total path length in kilometers.
     if len(points) < 2:
         return 0.0
@@ -158,7 +158,7 @@ def calculate_total_length(points):
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1.0 - a))
     return float(np.sum(const.R * c))
 
-def calculate_total_elevation(points):
+def calculate_total_elevation(points) -> float:
     #Calculates the total elevation gain in meters.
     if len(points) < 2:
         return 0.0
@@ -166,7 +166,7 @@ def calculate_total_elevation(points):
     diffs = np.diff(elevs)
     return float(np.sum(diffs[diffs > 0]))
 
-def calculate_total_time(points):
+def calculate_total_time(points) -> float:
     hrs = 0
     #Calculates the total time taken between the first and last points.
     if len(points) < 2:
@@ -179,7 +179,7 @@ def calculate_total_time(points):
 
     return hrs
 
-def calculate_date(points):
+def calculate_date(points) -> str:
     #Calculates the total time taken between the first and last points.
     if len(points) < 2:
         return ""

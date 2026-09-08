@@ -7,6 +7,7 @@ import bpy
 from bpy.app.translations import pgettext_iface as _  #For Translation of Text Required
 from bpy.props import (
     BoolProperty,
+    CollectionProperty,
     EnumProperty,
     FloatProperty,
     IntProperty,
@@ -18,27 +19,32 @@ from . import constants as const
 from . import temp, utils
 
 
-def _slicer_profile_items(self, context):
-    items = [("NONE", "Built-in defaults",
-              "Use the built-in Bambu A1 template. "
-              "Add your own profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced")]
-    try:
-        import importlib
-        from .threemf_discovery import get_threemf_api
-        _api = get_threemf_api()
-        if _api is None:
-            return items
-        # Use the resolved api module's package to avoid bl_ext prefix mismatch.
-        sp = importlib.import_module(".slicer_profiles", package=_api.__package__)
-        for p in sp.list_profiles():
-            detail = p.machine or p.vendor
-            items.append((p.name, p.name,
-                          f"{detail} (from {p.source_file}). "
-                          "Add more profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced"))
-    except Exception:
-        pass
-    return items
+def _slicer_profile_items(self, context) -> list[tuple[str, str, str]]:
+    # Combine the description parts into one string
+    desc = (
+        "Use the built-in Bambu A1 template. "
+        "Add your own profiles in Preferences → Add-ons → 3MF Format → Advanced"
+    )
+    items = [("NONE", "Built-in defaults", desc)]
 
+    import importlib
+
+    from .threemf_discovery import get_threemf_api
+
+    _api = get_threemf_api()
+    if _api is None:
+        return items
+
+    sp = importlib.import_module(".slicer_profiles", package=_api.__package__)
+    for p in sp.list_profiles():
+        detail = p.machine or p.vendor
+        desc = (
+            f"{detail} (from {p.source_file}). "
+            "Add more profiles in Preferences → Add-ons → 3MF Format → Advanced"
+        )
+        items.append((p.name, p.name, desc))
+
+    return items
 
 def shape_callback(self,context):
     #print(f"Shape: {self.shape}")
@@ -114,6 +120,98 @@ SHAPE_TEXT_STYLES = {
 }
 
 
+# Road type tiers shown in the Roads UIList. `road_id` is the stable lookup
+# key (mirrors utils.osm.roads.TIER_TAGS) -- it is never translated and never
+# shown, so lookups can't break if the display name changes with locale.
+# Order here is the order rows are populated/displayed in.
+ROAD_TYPE_DEFS = [
+    ("highways", _("Highways"),
+     "highway=motorway, motorway_link -- controlled-access highways"),
+    ("major", _("Major Roads"),
+     "highway=trunk, primary, trunk_link, primary_link -- arterial roads just below highway grade"),
+    ("minor", _("Minor Roads"),
+     "highway=secondary, tertiary, secondary_link, tertiary_link, unclassified"),
+    ("residential", _("Residential Roads"),
+     "highway=residential, living_street"),
+    ("service", _("Service Roads"),
+     "highway=service -- vehicle access roads to buildings, parking lots, business estates (see "
+     "Key:service on the OSM wiki). Split out from Residential Roads since alley/driveway/"
+     "parking_aisle ways are always filtered out of it (using OSM's own service=* sub-tag, not "
+     "geometry) rather than being lumped in with named residential streets."),
+    ("footway", _("Footways/Sidewalks"),
+     "highway=footway -- pedestrian sidewalks and paths, OSM's own separate non-vehicle category "
+     "(see Key:highway on the OSM wiki). Kept separate by default since footways trace almost every "
+     "street and are usually the biggest single source of visual clutter."),
+    ("cycle_bridle", _("Cycle/Bridle Paths"),
+     "highway=cycleway, bridleway -- dedicated bike and horse paths"),
+    ("track", _("Tracks"),
+     "highway=track -- unpaved access tracks/fire roads. Often the one long rural trail a user "
+     "actually wants, so this tier is exempt from the dense-road mapsize cutoff that drops "
+     "Residential/Service/Footway/Cycle-Bridle roads on larger maps (see STREETS_PRIMARY_THRESHOLD)."),
+    ("path", _("Trails/Paths"),
+     "highway=path -- generic multi-use/hiking trail, ambiguous length so kept in the normal "
+     "dense-road mapsize cutoff rather than being exempted like Tracks."),
+]
+
+_ROAD_TYPE_IDS = {d[0] for d in ROAD_TYPE_DEFS}
+
+
+class TP3D_RoadTypeItem(bpy.types.PropertyGroup):
+    """One row of the Roads UIList. `name` (inherited) holds the translated
+    display label; `road_id` is the stable, untranslated lookup key."""
+    road_id: StringProperty()  # type: ignore
+    active: BoolProperty(default=False)  # type: ignore
+    description: StringProperty()  # type: ignore
+
+
+def ensure_road_types(tp3d):
+    """Populate/repair `tp3d.road_types` from ROAD_TYPE_DEFS.
+
+    CollectionProperty starts empty on every new file/scene -- unlike an
+    EnumProperty there's no static item list Blender can draw on its own, so
+    this has to be called before the Roads UIList is drawn (and again after
+    file load, in case an older file predates a tier being added/removed).
+    Existing values are preserved by road_id; only missing ids are added and
+    stale ids (from a future addon downgrade) are dropped.
+    """
+    existing = {item.road_id: item.active for item in tp3d.road_types}
+    if existing.keys() == _ROAD_TYPE_IDS:
+        return
+    tp3d.road_types.clear()
+    for road_id, label, desc in ROAD_TYPE_DEFS:
+        item = tp3d.road_types.add()
+        item.road_id = road_id
+        item.name = label
+        item.description = desc
+        item.active = existing.get(road_id, False)
+
+
+def get_road_active(tp3d, road_id: str) -> bool:
+    """True if the given road tier (e.g. "highways", "track") is enabled.
+
+    Deliberately NOT tp3d.road_types.get(road_id) -- bpy_prop_collection.get()
+    matches by the item's `name` field (the translated display label, e.g.
+    "Highways"), not by our separate `road_id` field ("highways"). That
+    always misses, silently returning None -- which is why this used to
+    return False unconditionally regardless of what was actually checked.
+    """
+    for item in tp3d.road_types:
+        if item.road_id == road_id:
+            return bool(item.active)
+    return False
+
+
+def set_road_active(tp3d, road_id: str, value: bool) -> None:
+    for item in tp3d.road_types:
+        if item.road_id == road_id:
+            item.active = bool(value)
+            return
+
+
+def any_road_active(tp3d) -> bool:
+    return any(item.active for item in tp3d.road_types)
+
+
 def get_shape_text_style_items(self, context):
     # Items must be a callback (not a static list) since the available
     # styles depend on which base shape is currently selected.
@@ -176,13 +274,15 @@ def element_source_update(self, context):
         self.elementMode = 'PAINT'
 
 
-def get_effective_shape(tp3d):
+def get_effective_shape(tp3d) -> str:
     """The full shape identifier generation.py/metadata.py operate on
     (e.g. "HEXAGON OUTER TEXT"), composed from the base shape dropdown and
     the text-style dropdown. Falls back to the bare base shape if no style
     is selected, or if the stored style isn't valid for the current base
     shape (e.g. left over from a different shape)."""
-    base = tp3d.shape
+    base = "HEXAGON"
+    if tp3d.shape != "":
+        base = tp3d.shape
     style = tp3d.shapeTextStyle
     if style == "SHELL" and not temp.PREMIUMVERSION:
         # Guards against a SHELL value left over from a Premium session/preset
@@ -225,28 +325,6 @@ def repair_invalid_shape(scene):
     if tp3d is not None and not tp3d.shape:
         tp3d.shape = "HEXAGON"
 
-
-# Module-level lists keep items alive so Blender's enum cache never holds dangling pointers.
-_ELEMENT_MODE_ITEMS_BASE = [
-    ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
-    ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
-    # ('SINGLECOLORMODE', _("SingleColor (Alternative)"), "Use this SingleColorMode if the other one causes problems"),
-    ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')")),
-]
-_ELEMENT_MODE_ITEMS_WITH_TEXTURE = [
-    ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
-    ('CREATE_TEXTURE', _("Create Texture"), _("Rasterize OSM elements into a UV texture for multi-filament 3MF export")),
-    ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
-    # ('SINGLECOLORMODE', _("SingleColor (Alternative)"), "Use this SingleColorMode if the other one causes problems"),
-    ('SEPARATE', _("Separate objects"), _("Elements as separate objects (Increase Element Threshold to filter out unprintable element 'noise')")),
-]
-
-
-def _element_mode_items(self, context):
-    from . import temp
-    return _ELEMENT_MODE_ITEMS_WITH_TEXTURE if temp.has3mf else _ELEMENT_MODE_ITEMS_BASE
-
-
 # Define a Property Group to store variables
 class TP3D_PG_properties(bpy.types.PropertyGroup):
     file_path: StringProperty(
@@ -280,6 +358,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
             ("OCTAGON", _("Octagon"), _("Octagon Map")), #Premium
             ("ELLIPSE", _("Ellipse"), _("Ellipse Map")), #Premium
             ("HEART", _("Heart"), _("Heart Map")), #Premium
+            ("GEOJSON", _("GeoJSON"), _("Import a custom GeoJSON shape")),
+            ("SVG", _("SVG"), _("Import a custom SVG shape")),
         ],
         default = "HEXAGON",
         update = shape_update,
@@ -294,6 +374,11 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         # per-shape list in SHAPE_TEXT_STYLES, so it's the default.
     )# type: ignore
     shapeTextStyleCache: StringProperty(default="NONE", options={'HIDDEN'}) # type: ignore
+    customFilePath: bpy.props.StringProperty(
+        name="File Path",
+        description="Path to the GeoJSON or SVG file",
+        default="",
+    )
 
     api: bpy.props.EnumProperty(
         name = "api",
@@ -356,7 +441,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     objSize: IntProperty(name= _("Object Size in mm"), default = 100, min = 5, max = 10000,description = _("Size of the map in mm")) # type: ignore
     num_subdivisions: IntProperty(name = _("Resolution"), default = 8, min = 1, soft_max = 10, max = 50, description = _("(max recommended 8) Higher Number = more detailed terrain but slower generation. The slider caps at 10, but larger values can still be typed in directly.")) # type: ignore
     scaleElevation: FloatProperty(name = _("Elevation Scale"), default = 1, min = 0, max = 10000, description = _("Multiplier to the Elevation")) # type: ignore
-    pathThickness: FloatProperty(name = _("Path Thickness"), default = 1.2, min = 0.1, max = 5, description = _("Thickness of the path in mm")) # type: ignore
+    pathThickness: FloatProperty(name = _("Trail Width"), default = 1.2, min = 0.1, max = 5, description = _("Thickness of the path in mm")) # type: ignore
     shapeRotation: IntProperty(name = _("ShapeRotation"), default = 0, min = -360, max = 360, description = _("Rotation of the shape") ) # type: ignore
     overwritePathElevation: BoolProperty(name= _("Overwrite Path Elevation"), default=True, description = _("Cast each point of the trail onto the Terrain Mesh")) # type: ignore
     o_verticesPath: StringProperty(name="Path vertices ", default="") # type: ignore
@@ -513,8 +598,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     smoothTerrainStrength: IntProperty(name= _("Smoothing Strength"), default=2, min=1, max=10, description = _("Number of smoothing passes applied to the terrain top surface. Higher = smoother but less detailed")) # type: ignore
     singleColorMode: BoolProperty(name= _("SingleColorMode Trail"), default = False, description = _("Enable this if you don't have a Multicolor printer")) # type: ignore
     singleColorModeHeight: FloatProperty(name= _("Trail Height"), default = 0.4, min=0.0, max=10.0, description = _("How far the SCM trail strip rises above the terrain surface (mm). 0 = flush with terrain. Works the same as Road Height.")) # type: ignore
-    tolerance: FloatProperty(name= _("SingleColorMode Tolerance"), default = 0.2, description=_("Tolerance of the Trail for the SingleColorMode")) # type: ignore
-    toleranceElements: FloatProperty(name= _("ToleranceElements"), default = 0.4, description= _("Tolerance of the Elements (Water, Forest) for the SingleColorMode")) # type: ignore
+    tolerance: FloatProperty(name= _("SingleColorMode Tolerance"), default = 0.2, description=_("Tolerance of the Trail for the SingleColorMode"), min=0) # type: ignore
+    toleranceElements: FloatProperty(name= _("ToleranceElements"), default = 0.12, description= _("Tolerance of the Elements (Water, Forest) for the SingleColorMode"), min=0) # type: ignore
     disableCache: BoolProperty(name= _("disableCache"), default = False, description = _("Disable cache if you encounter random holes in your mesh")) # type: ignore
     disableElevationOutlierFix: BoolProperty(name= _("Disable Buggy Elevation Fixes"), default = False, description = _("Disable automatic correction of statistically outlying elevation values. Enable this if a real peak/valley is being incorrectly flattened")) # type: ignore
     ccacheSize: IntProperty(name = _("Cache Size"), default = 50000, min = 0) # type: ignore
@@ -522,9 +607,17 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
 
     elementMode: EnumProperty(
         name="Element handling",
-        items=_element_mode_items,
-        default=0
-    )# type: ignore
+        items=[
+            ('PAINT', _("Paint on Map"), _("Paint the Elements onto the map")),
+            ('SINGLECOLORMODE_REMESH', _("Single-Color mode"), _("Use this SingleColorMode, if it causes problems try the other one")),
+        ],
+        default='PAINT'
+    )
+    tex_use_texture: BoolProperty(
+        name=_("Create a texture"),
+               default=False,
+               description="Create a texture instead of painting individual faces."
+    )
     tex_include_roads: BoolProperty(  # type: ignore
         name=_("Roads in texture"),
         default=True,
@@ -535,7 +628,16 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=True,
         description=_("Rasterize the trail footprint into the paint texture (terrain under trail coloured red)")
     )
+    tex_resolution: IntProperty(
+        name=_("Texture Resolution"),
+        description= "Customize the resolution used when creating the texture.",
+        step= 1024,
+        min= 1024,
+        default= 2048,
+        max= 8192,
+    )
     elementModeInset: FloatProperty(name=_("Clip Inset"), default=2.0, min=0.0, description=_("Thickness of solid frame for SCM-elements"))# type: ignore
+    col_osmSmoothing: FloatProperty(name=_("Smoothing"), default=0.0, min=0.0, max=1.0, subtype='FACTOR', description=_("Rounds element polygons, ignores water. 0 = off, 0.5 = slight, 1.0 = heavy"))# type: ignore
 
     elementSource: EnumProperty(
         name=_("Element Source"),
@@ -556,17 +658,17 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_wSmallRiversActive: BoolProperty(name= _("Small Rivers"), default=False, description = _("smaller Streams, canals, ditches and other minor waterways are not included in default water setting")) # type: ignore
     col_wBigRiversActive: BoolProperty(name= _("Big Rivers"), default=False, description = _("Major named rivers (waterway with wikidata tag. Usually already part of water setting)")) # type: ignore
     col_fActive: BoolProperty(name= _("Include Forests"), default=False, description = _("For Maps < 50Km Recommended")) # type: ignore
-    col_fArea: FloatProperty(name= _("Threshold"), default = 10, description = _("Forests smaller than the threshold won't be included")) # type: ignore
+    col_fArea: FloatProperty(name= _("Threshold"), default = 10, description = _("Forests smaller than the threshold won't be included"), min=0) # type: ignore
     col_scrActive: BoolProperty(name= _("Include Scree"), default=False, description = _("Rocky/stony terrain. For Maps < 1000Km Recommended")) # type: ignore
-    col_scrArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Scree patches smaller than the threshold won't be included")) # type: ignore
+    col_scrArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Scree patches smaller than the threshold won't be included"), min=0) # type: ignore
     col_cActive: BoolProperty(name= _("Include City Boundaries"), default=False, description = _("For Maps < 100Km Recommended")) # type: ignore
-    col_cArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Cities smaller than the threshold won't be included")) # type: ignore
+    col_cArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Cities smaller than the threshold won't be included"), min=0) # type: ignore
     col_grActive: BoolProperty(name= _("Include Greenspaces"), default=False, description = _("Parks, gardens, grass and other urban green areas. For Maps < 100Km Recommended")) # type: ignore
-    col_grArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Greenspaces smaller than the threshold won't be included")) # type: ignore
+    col_grArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Greenspaces smaller than the threshold won't be included"), min=0) # type: ignore
     col_faActive: BoolProperty(name= _("Include Farmland"), default=False, description = _("Fetches landuse=farmland and landuse=farmyard. For Maps < 1000Km Recommended")) # type: ignore
-    col_faArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Farmland patches smaller than the threshold won't be included")) # type: ignore
+    col_faArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Farmland patches smaller than the threshold won't be included"), min=0) # type: ignore
     col_glActive: BoolProperty(name= _("Include Glaciers"), default=False, description = _("For Maps < 1000Km Recommended")) # type: ignore
-    col_glArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Glaciers smaller than the threshold won't be included")) # type: ignore
+    col_glArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Glaciers smaller than the threshold won't be included"), min=0) # type: ignore
     col_KeepManifold: BoolProperty(name= _("Keep Non-Manifold Objects"), default=False, description = _("Keep Broken/Non-Manifold objects")) # type: ignore
     el_bActive: BoolProperty(name= _("Include Buildings"), default=False, description = _("For Maps < 5Km Reccomended")) # type: ignore
     el_bHeightMultiplier: FloatProperty(name= _("Height Multiplier"), default=1.0, min=0.01, soft_max=10.0, description=_("Multiplies building height")) # type: ignore
@@ -575,14 +677,12 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     el_sMultiplier: FloatProperty(name= _("Road Width Multiplier"), default = 1, min=0.01, soft_max=100.0, description = _("To make Roads thicker or thinner")) # type: ignore
     el_sHeight: FloatProperty(name= _("Road Height"), default = 0.4, min=0.0, description = _("Height of road geometry above terrain")) # type: ignore
     el_sCutTolerance: FloatProperty(name= _("Road Cutout Tolerance"), default = 0.2, min=0.0, description = _("Extra clearance added around roads when cutting their footprint out of terrain/elements in SEPARATE/SingleColorMode, so the printed road piece seats without an overly tight fit. Same idea as Tolerance Elements, but for roads.")) # type: ignore
+    el_sCutDepth: FloatProperty(name= _("Road Cut Depth"), default = 0.05, min=0.0, description = _("Extra depth added below the road's bottom face when cutting its slot out of the terrain in SingleColorMode. Increase if the road piece binds vertically.")) # type: ignore
 
     show_water: BoolProperty(name= _("Water & Ocean"), default=False) # type: ignore
     show_roads: BoolProperty(name= _("Roads"), default=False) # type: ignore
-    el_sBigActive: BoolProperty(name= _("Big Roads"), default=False, description = f"primary, motorway, primary_link, motorway_link — limited to motorway only on maps < {const.ROADS_MAXSIZE}km") # type: ignore
-    el_sMedActive: BoolProperty(name= _("Medium Roads"), default=False, description = f"secondary, tertiary, secondary_link, tertiary_link — ignored on maps < {const.STREETS_MAJOR_ONLY_THRESHOLD}km") # type: ignore
-    el_sSmallActive: BoolProperty(name= _("Small Roads"), default=False, description = f"residential, living_street — ignored on maps < {const.STREETS_PRIMARY_THRESHOLD}km") # type: ignore
-    el_sServiceActive: BoolProperty(name= _("Service Roads"), default=False, description = f"highway=service -- vehicle access roads to buildings, parking lots, business estates (see Key:service on the OSM wiki). Split out from Small Roads since alley/driveway/parking_aisle ways are always filtered out of it (using OSM's own service=* sub-tag, not geometry) rather than being lumped in with named residential streets. Ignored on maps < {const.STREETS_PRIMARY_THRESHOLD}km") # type: ignore
-    el_sFootwaysActive: BoolProperty(name= _("Footways/Sidewalks"), default=False, description = f"highway=footway -- pedestrian sidewalks and paths, OSM's own separate non-vehicle category (see Key:highway on the OSM wiki). Kept out of Small Roads by default since footways trace almost every street and are usually the biggest single source of visual clutter. Ignored on maps < {const.STREETS_PRIMARY_THRESHOLD}km") # type: ignore
+    road_types: CollectionProperty(type=TP3D_RoadTypeItem) # type: ignore
+    road_types_index: IntProperty(default=0) # type: ignore
     el_oActive: BoolProperty(name=_("Include Ocean"), default=False, description=_("Generate ocean surface cut along the coastline. Experimental")) # type: ignore
     el_oMinIslandArea: FloatProperty(name=_("Min Island Area"), default=2.0, min=0.0, soft_max=100.0, description=_("Islands smaller than this area (in map units²) are not punched out of the ocean. At a 100mm map size, 1 map unit ≈ 1mm on the print, so the default 2.0 ≈ a ~1.4×1.4mm patch. Set to 0 to punch all islands.")) # type: ignore
     el_oRdpEpsilon: FloatProperty(name=_("Coastline Simplify"), default=0.1, min=0.0, soft_max=2.0, precision=3, description=_("Douglas-Peucker simplification tolerance (map units) applied to the coastline before building the ocean. Higher = fewer points but can introduce self-intersections on convoluted coasts. Set to 0 to disable simplification. Testing aid.")) # type: ignore
@@ -608,6 +708,11 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     show_export: BoolProperty(name=_("Export"), default=True) # type: ignore
     disable_auto_export: BoolProperty(name=_("Disable Auto Export"), default=False, description=_("Don't automatically export files after generation")) # type: ignore
     disable_3mf_export: BoolProperty(name=_("Disable 3MF Export"), default=False, description=_("Don't use 3MF format even if the addon is installed")) # type: ignore
+    keep_positions: BoolProperty(
+        name= _("Keep positions during export"),
+        default= False,
+        description=_("Enable this if you want the every item to keep it's position, instead of letting each piece remain separate in the slicer.")
+    )
     slicer_profile_name: EnumProperty(  # type: ignore
         name=_("Slicer Profile"),
         items=_slicer_profile_items,

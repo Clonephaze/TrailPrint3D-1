@@ -117,11 +117,15 @@ var COMPOSITE_ELEMENTS = {
     },
     roads: {
         checkboxes: [
-            { key: 'elSBigActive', label: 'Big Roads' },
-            { key: 'elSMedActive', label: 'Medium Roads' },
-            { key: 'elSSmallActive', label: 'Small Roads' },
+            { key: 'elSHighwaysActive', label: 'Highways' },
+            { key: 'elSMajorActive', label: 'Major Roads' },
+            { key: 'elSMinorActive', label: 'Minor Roads' },
+            { key: 'elSResidentialActive', label: 'Residential Roads' },
             { key: 'elSServiceActive', label: 'Service Roads' },
-            { key: 'elSFootwaysActive', label: 'Footways/Sidewalks' }
+            { key: 'elSFootwayActive', label: 'Footways/Sidewalks' },
+            { key: 'elSCycleBridleActive', label: 'Cycle/Bridle Paths' },
+            { key: 'elSTrackActive', label: 'Tracks' },
+            { key: 'elSPathActive', label: 'Trails/Paths' }
         ],
         numberFields: [
             { key: 'elSMultiplier', label: 'Width Multiplier', step: 0.1, min: 0 },

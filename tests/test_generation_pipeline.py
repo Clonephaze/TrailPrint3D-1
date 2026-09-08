@@ -76,7 +76,9 @@ _BUNDLE_DIR = os.path.join(_OUTPUT_DIR, "GenerationTests")
 if "TrailPrint3D" not in bpy.context.preferences.addons:
     bpy.ops.preferences.addon_enable(module="TrailPrint3D")
 
+from TrailPrint3D.props import set_road_active
 from TrailPrint3D.utils.generation import runGeneration
+from TrailPrint3D.utils.osm.roads import TIER_TAGS
 
 # ---------------------------------------------------------------------------
 # Minimal test runner (matches the pattern used by the other tests/*.py files)
@@ -134,9 +136,8 @@ def _reset_scene_defaults():
     tp3d.col_faActive = False
     tp3d.col_glActive = False
     tp3d.el_bActive = False
-    tp3d.el_sBigActive = False
-    tp3d.el_sMedActive = False
-    tp3d.el_sSmallActive = False
+    for _road_id in TIER_TAGS:
+        set_road_active(tp3d, _road_id, False)
     tp3d.el_oActive = False
     tp3d.ellipseRatio = 0.75
     tp3d.rectangleHeight = 100

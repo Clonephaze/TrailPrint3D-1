@@ -11,8 +11,11 @@ def writeMetadata(obj, type = "MAP"):
         return
 
     from ..props import (
-        get_effective_shape,  # deferred to avoid circular import at load time
+        any_road_active,  # deferred to avoid circular import at load time
+        get_effective_shape,
+        get_road_active,
     )
+    from .osm.roads import TIER_TAGS  # deferred to avoid circular import at load time
 
     if type == "MAP":
         obj["Object type"] = type
@@ -123,13 +126,10 @@ def writeMetadata(obj, type = "MAP"):
         obj["col_grArea"] = bpy.context.scene.tp3d.col_grArea
 
         obj["el_bActive"] = bpy.context.scene.tp3d.el_bActive
-        obj["el_sActive"] = any([bpy.context.scene.tp3d.el_sBigActive, bpy.context.scene.tp3d.el_sMedActive, bpy.context.scene.tp3d.el_sSmallActive, bpy.context.scene.tp3d.el_sServiceActive, bpy.context.scene.tp3d.el_sFootwaysActive])
+        obj["el_sActive"] = any_road_active(bpy.context.scene.tp3d)
         obj["el_sMultiplier"] = bpy.context.scene.tp3d.el_sMultiplier
-        obj["el_sBigActive"] = bpy.context.scene.tp3d.el_sBigActive
-        obj["el_sMedActive"] = bpy.context.scene.tp3d.el_sMedActive
-        obj["el_sSmallActive"] = bpy.context.scene.tp3d.el_sSmallActive
-        obj["el_sServiceActive"] = bpy.context.scene.tp3d.el_sServiceActive
-        obj["el_sFootwaysActive"] = bpy.context.scene.tp3d.el_sFootwaysActive
+        for _tier in TIER_TAGS:
+            obj[f"road_{_tier}_active"] = get_road_active(bpy.context.scene.tp3d, _tier)
         obj["el_oActive"] = bpy.context.scene.tp3d.el_oActive
 
         obj["elementMode"] = bpy.context.scene.tp3d.elementMode

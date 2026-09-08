@@ -587,6 +587,104 @@ def create_satellite_plane(landcover_tiled, min_lat, max_lat, min_lon, max_lon, 
     return obj
 
 
+def _landcover_image_and_world_bbox(min_lat, max_lat, min_lon, max_lon):
+    """Return (pixels, x0, y0, span_x, span_y) for the loaded
+    LANDCOVER_IMAGE_NAME image and its world-space footprint over bbox, or
+    None if the image hasn't been loaded yet or the bbox is degenerate.
+
+    pixels is the raw (height, width, 4) float32 RGBA array; (x0, y0) is the
+    image's world-space SW corner and (span_x, span_y) its world-space size,
+    both already including xTerrainOffset/yTerrainOffset -- so `(world_x -
+    x0) / span_x` / `(world_y - y0) / span_y` maps any world XY to normalized
+    image UV. Shared by paint_terrain_from_landcover() (per-face material
+    assignment, non-texture PAINT) and sample_landcover_classes() (per-pixel
+    classification, texture-mode PAINT) so both line up against the exact
+    same reference plane instead of two independently-maintained bbox calcs.
+    """
+    import bpy  # type: ignore
+
+    image = bpy.data.images.get(LANDCOVER_IMAGE_NAME)
+    if image is None:
+        return None
+
+    width, height = image.size
+    buf = np.empty(width * height * 4, dtype=np.float32)
+    image.pixels.foreach_get(buf)
+    pixels = buf.reshape(height, width, 4)
+
+    tp3d = bpy.context.scene.tp3d
+    offset_x = tp3d.get("xTerrainOffset", 0.0)
+    offset_y = tp3d.get("yTerrainOffset", 0.0)
+    sw = convert_to_blender_coordinates(min_lat, min_lon, 0, 0)
+    ne = convert_to_blender_coordinates(max_lat, max_lon, 0, 0)
+    x0, y0 = sw[0] + offset_x, sw[1] + offset_y
+    span_x = (ne[0] + offset_x) - x0
+    span_y = (ne[1] + offset_y) - y0
+    if span_x <= 0 or span_y <= 0:
+        return None
+
+    return pixels, x0, y0, span_x, span_y
+
+
+def sample_landcover_classes(resolution, cursor_x, cursor_y, min_x, min_y, width, height,
+                              min_lat, max_lat, min_lon, max_lon):
+    """Classify every pixel of a resolution x resolution paint-texture grid
+    against the land-cover reference image, for texture-mode PAINT.
+
+    texture.py's setup_paint_texture() bakes a flat 2D image rather than
+    assigning per-face materials, so paint_terrain_from_landcover()'s
+    bmesh-face approach doesn't apply -- this does the same bbox mapping and
+    nearest-_LANDCOVER_PALETTE-entry matching, vectorized over the whole
+    pixel grid at once. Uses the same local-space -> pixel convention as
+    texture.py's own OSM-polygon rasterizer (row 0 = min_y, increasing with
+    world Y) so the two layers line up pixel-for-pixel.
+
+    Returns an (resolution, resolution) int32 array of WorldCover class
+    values, with -1 marking pixels with no confident classification (off the
+    image, no-data, or too far from any palette entry) -- or None if
+    LANDCOVER_IMAGE_NAME hasn't been loaded (create_satellite_plane() wasn't
+    run this session) or the requested bbox is degenerate.
+    """
+    bbox = _landcover_image_and_world_bbox(min_lat, max_lat, min_lon, max_lon)
+    if bbox is None:
+        return None
+    pixels, x0, y0, span_x, span_y = bbox
+    img_h, img_w = pixels.shape[:2]
+
+    cols = np.arange(resolution, dtype=np.float64)
+    rows = np.arange(resolution, dtype=np.float64)
+    world_x = cursor_x + min_x + (cols + 0.5) / resolution * width
+    world_y = cursor_y + min_y + (rows + 0.5) / resolution * height
+    u = (world_x - x0) / span_x
+    v = (world_y - y0) / span_y
+
+    u_valid = (u >= 0.0) & (u <= 1.0)
+    v_valid = (v >= 0.0) & (v <= 1.0)
+    valid = v_valid[:, None] & u_valid[None, :]
+
+    col_idx = np.clip((u * img_w).astype(np.int32), 0, img_w - 1)
+    row_idx = np.clip((v * img_h).astype(np.int32), 0, img_h - 1)
+    col_grid = np.broadcast_to(col_idx[None, :], (resolution, resolution))
+    row_grid = np.broadcast_to(row_idx[:, None], (resolution, resolution))
+
+    sample_rgba = pixels[row_grid, col_grid]
+    valid = valid & (sample_rgba[..., 3] >= 0.5)
+    sample_rgb = sample_rgba[..., :3] * 255.0
+
+    best_dist = np.full((resolution, resolution), np.inf, dtype=np.float32)
+    best_class = np.full((resolution, resolution), -1, dtype=np.int32)
+    for class_id, rgba in _LANDCOVER_PALETTE.items():
+        diff = sample_rgb - np.array(rgba[:3], dtype=np.float32)
+        dist = np.sqrt((diff * diff).sum(axis=-1))
+        better = dist < best_dist
+        best_dist = np.where(better, dist, best_dist)
+        best_class = np.where(better, class_id, best_class)
+
+    valid = valid & (best_dist <= _LANDCOVER_MATCH_MAX_DIST)
+    best_class[~valid] = -1
+    return best_class
+
+
 def paint_terrain_from_landcover(map_obj, min_lat, max_lat, min_lon, max_lon, up_threshold=0.05):
     """Color map_obj's up-facing terrain faces by sampling the land-cover
     reference image, for PAINT elementMode.
@@ -611,25 +709,13 @@ def paint_terrain_from_landcover(map_obj, min_lat, max_lat, min_lon, max_lon, up
     import bmesh  # type: ignore
     import bpy  # type: ignore
 
-    image = bpy.data.images.get(LANDCOVER_IMAGE_NAME)
-    if image is None or map_obj is None or map_obj.type != 'MESH':
+    if map_obj is None or map_obj.type != 'MESH':
         return
-
-    width, height = image.size
-    buf = np.empty(width * height * 4, dtype=np.float32)
-    image.pixels.foreach_get(buf)
-    pixels = buf.reshape(height, width, 4)
-
-    tp3d = bpy.context.scene.tp3d
-    offset_x = tp3d.get("xTerrainOffset", 0.0)
-    offset_y = tp3d.get("yTerrainOffset", 0.0)
-    sw = convert_to_blender_coordinates(min_lat, min_lon, 0, 0)
-    ne = convert_to_blender_coordinates(max_lat, max_lon, 0, 0)
-    x0, y0 = sw[0] + offset_x, sw[1] + offset_y
-    span_x = (ne[0] + offset_x) - x0
-    span_y = (ne[1] + offset_y) - y0
-    if span_x <= 0 or span_y <= 0:
+    bbox = _landcover_image_and_world_bbox(min_lat, max_lat, min_lon, max_lon)
+    if bbox is None:
         return
+    pixels, x0, y0, span_x, span_y = bbox
+    height, width = pixels.shape[:2]
 
     class_ids = list(_LANDCOVER_PALETTE.keys())
     palette_rgb = np.array([_LANDCOVER_PALETTE[c][:3] for c in class_ids], dtype=np.float32)
