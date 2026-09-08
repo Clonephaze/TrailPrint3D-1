@@ -248,14 +248,15 @@ def setup_paint_texture(gen: GenerationContext):
     landcover_classes = None
     landcover_fill = {}
     if gen.settings.elementSource == "WORLDCOVER":
-        from .satellite import _LANDCOVER_MATERIAL_MAP, sample_landcover_classes
+        from .satellite import landcover_effective_material, sample_landcover_classes
         landcover_classes = sample_landcover_classes(
             resolution, cursor_x, cursor_y, min_x, min_y, width, height,
             gen.runtime.tbMinLat, gen.runtime.tbMaxLat, gen.runtime.tbMinLon, gen.runtime.tbMaxLon,
         )
         if landcover_classes is not None:
+            tp3d = bpy.context.scene.tp3d
             for _class_id in (int(c) for c in np.unique(landcover_classes) if c >= 0):
-                _mat_name = _LANDCOVER_MATERIAL_MAP.get(_class_id)
+                _mat_name = landcover_effective_material(_class_id, tp3d)
                 if _mat_name is None:
                     continue
                 _lc_srgb = _named_material_srgb(_mat_name)

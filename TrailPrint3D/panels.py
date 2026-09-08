@@ -17,6 +17,37 @@ from .props import (
 )
 
 
+# ESA WorldCover coloring panel rows: (tp3d BoolProperty, material name,
+# display label). Mirrors satellite.py's _LANDCOVER_TOGGLE_PROP -- kept as a
+# separate list (rather than iterating that dict) so display order/labels
+# are a UI concern, not tied to the addon's internal material-mapping order.
+# Ordered to match the OSM element sections below (Water & Ocean / Forests /
+# Scree / City Boundaries / Greenspaces / Farmland / Glaciers), with Scree's
+# MOUNTAIN material taking its place in that order.
+_LANDCOVER_COLOR_ROWS = (
+    ("col_lcWaterActive", "WATER", _("Water")),
+    ("col_lcForestActive", "FOREST", _("Forest")),
+    ("col_lcMountainActive", "MOUNTAIN", _("Mountain")),
+    ("col_lcCityActive", "CITY", _("City")),
+    ("col_lcGreenspaceActive", "GREENSPACE", _("Greenspace")),
+    ("col_lcFarmlandActive", "FARMLAND", _("Farmland")),
+    ("col_lcGlacierActive", "GLACIER", _("Glacier")),
+)
+
+
+def _material_preview_icon_id(mat_name):
+    """Icon id for a small render-preview swatch of material mat_name's
+    actual color, for use as `icon_value` in an icon/template_icon call --
+    read-only, unlike binding a row directly to the material's editable
+    diffuse_color, which wouldn't even reflect the node-based Base Color
+    these materials are actually defined by (see primitives.py)."""
+    mat = bpy.data.materials.get(mat_name)
+    if mat is None:
+        return 0
+    mat.preview_ensure()
+    return mat.preview.icon_id if mat.preview else 0
+
+
 class TP3D_UL_road_types(bpy.types.UIList):
     """Plain checkbox list of road tiers -- no add/remove, list only."""
     bl_idname = "TP3D_UL_road_types"
@@ -325,6 +356,15 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 box.prop(props, "elementMode")
                 # if "SINGLECOLORMODE" in props.elementMode:
                 #     box.prop(props, "elementModeInset")
+            elif props.elementSource == 'WORLDCOVER':
+                lc_box = box.box()
+                lc_box.label(text=_("Land-Cover Colors"), icon='COLOR')
+                for prop_name, mat_name, label in _LANDCOVER_COLOR_ROWS:
+                    row = lc_box.row(align=True)
+                    row.template_icon(icon_value=_material_preview_icon_id(mat_name), scale=1.0)
+                    is_active = getattr(props, prop_name)
+                    row.prop(props, prop_name, text=label,
+                             icon='CHECKBOX_HLT' if is_active else 'CHECKBOX_DEHLT')
             # Shown regardless of elementSource -- WorldCover forces PAINT
             # elementMode (see element_source_update() in props.py) and
             # texture-mode baking supports it just like OSM PAINT does, so

@@ -19,6 +19,14 @@ importlib.reload(TrailPrint3D.threemf_discovery)
 importlib.reload(TrailPrint3D.export)
 importlib.reload(TrailPrint3D.picker_server)
 
+# progress_win.py is normally spawned as its own subprocess (progress.py),
+# and only pulled into *this* process via picker_server.py's deferred
+# (function-scope) `from . import progress_win` for icon loading -- so like
+# satellite/texture/io_geojson below, it may not be an attribute of
+# TrailPrint3D yet on a fresh session. Import it explicitly before reloading.
+import TrailPrint3D.progress_win
+importlib.reload(TrailPrint3D.progress_win)
+
 # Utils sub-modules (all before utils/__init__)
 # dataclasses.py has no local deps and is imported at module scope by
 # geometry2d/primitives/terrain/elevation/generation.*/utils __init__ --
@@ -72,7 +80,7 @@ importlib.reload(TrailPrint3D.utils.terrain)
 # __init__.py's own imports, so reloading TrailPrint3D.utils.generation alone
 # does NOT refresh them -- each must be imported and reloaded explicitly, in
 # dependency order (input/terrain_gen/elements/output have no generation-
-# internal deps; orchestrator and generation_pe depend on those four).
+# internal deps; orchestrator and tile_orchestrator depend on those four).
 import TrailPrint3D.utils.generation.input
 import TrailPrint3D.utils.generation.terrain_gen
 import TrailPrint3D.utils.generation.elements

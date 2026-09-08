@@ -124,6 +124,39 @@ _LANDCOVER_MATERIAL_MAP = {
 # it already had.
 _LANDCOVER_MATCH_MAX_DIST = 30.0
 
+# _LANDCOVER_MATERIAL_MAP material name -> the tp3d BoolProperty (props.py)
+# that lets the user turn that category's color off -- see
+# landcover_effective_material() below.
+_LANDCOVER_TOGGLE_PROP = {
+    "FOREST": "col_lcForestActive",
+    "GREENSPACE": "col_lcGreenspaceActive",
+    "FARMLAND": "col_lcFarmlandActive",
+    "CITY": "col_lcCityActive",
+    "MOUNTAIN": "col_lcMountainActive",
+    "GLACIER": "col_lcGlacierActive",
+    "WATER": "col_lcWaterActive",
+}
+
+
+def landcover_effective_material(class_id, tp3d):
+    """Resolve a WorldCover class id to the material that should actually be
+    used to color it, honoring the per-category col_lc*Active toggles.
+
+    Returns "BASE" when the owning category has been switched off (falls
+    back to plain terrain color rather than vanishing or erroring), the
+    mapped material name when it's on, or None if class_id isn't a known
+    WorldCover class. Classification itself (which class_id a pixel/face
+    matches) is unaffected by these toggles -- only which color the match
+    resolves to.
+    """
+    mat_name = _LANDCOVER_MATERIAL_MAP.get(class_id)
+    if mat_name is None:
+        return None
+    toggle_prop = _LANDCOVER_TOGGLE_PROP.get(mat_name)
+    if toggle_prop is not None and not getattr(tp3d, toggle_prop, True):
+        return "BASE"
+    return mat_name
+
 
 class TiledCrop(NamedTuple):
     """Result of a (possibly multi-chunk) fetch -- consumed by _load_stitched_image()."""
@@ -720,10 +753,12 @@ def paint_terrain_from_landcover(map_obj, min_lat, max_lat, min_lon, max_lon, up
     class_ids = list(_LANDCOVER_PALETTE.keys())
     palette_rgb = np.array([_LANDCOVER_PALETTE[c][:3] for c in class_ids], dtype=np.float32)
 
+    tp3d = bpy.context.scene.tp3d
     mat_index_by_class = {}
     map_mesh = map_obj.data
-    for class_id, mat_name in _LANDCOVER_MATERIAL_MAP.items():
-        mat = bpy.data.materials.get(mat_name)
+    for class_id in _LANDCOVER_MATERIAL_MAP:
+        mat_name = landcover_effective_material(class_id, tp3d)
+        mat = bpy.data.materials.get(mat_name) if mat_name else None
         if mat is None:
             continue
         if mat.name not in [m.name for m in map_mesh.materials if m is not None]:

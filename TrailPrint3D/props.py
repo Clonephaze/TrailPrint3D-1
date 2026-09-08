@@ -670,6 +670,20 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_glActive: BoolProperty(name= _("Include Glaciers"), default=False, description = _("For Maps < 1000Km Recommended")) # type: ignore
     col_glArea: FloatProperty(name= _("Threshold"), default = 1, description = _("Glaciers smaller than the threshold won't be included"), min=0) # type: ignore
     col_KeepManifold: BoolProperty(name= _("Keep Non-Manifold Objects"), default=False, description = _("Keep Broken/Non-Manifold objects")) # type: ignore
+    # ESA WorldCover per-category color toggles -- unlike col_fActive/col_wPondsActive/
+    # etc. above (which gate whether OSM fetches a category's polygons at all, and are
+    # only consulted when elementSource == "OSM"), these gate whether an already-
+    # classified WorldCover category keeps its real color or falls back to the base
+    # color (see satellite.py's landcover_effective_material(), used by both
+    # paint_terrain_from_landcover() and texture.py's setup_paint_texture()). Default
+    # True so WorldCover coloring behaves exactly as before until turned off.
+    col_lcForestActive: BoolProperty(name= _("Forest"), default=True, description = _("Tree cover and mangroves keep their forest color; disable to fall back to the base color")) # type: ignore
+    col_lcGreenspaceActive: BoolProperty(name= _("Greenspace"), default=True, description = _("Shrubland and grassland keep their greenspace color; disable to fall back to the base color")) # type: ignore
+    col_lcFarmlandActive: BoolProperty(name= _("Farmland"), default=True, description = _("Cropland keeps its farmland color; disable to fall back to the base color")) # type: ignore
+    col_lcCityActive: BoolProperty(name= _("City"), default=True, description = _("Built-up areas keep their city color; disable to fall back to the base color")) # type: ignore
+    col_lcMountainActive: BoolProperty(name= _("Mountain"), default=True, description = _("Bare/sparse vegetation and moss/lichen keep their mountain color; disable to fall back to the base color")) # type: ignore
+    col_lcGlacierActive: BoolProperty(name= _("Glacier"), default=True, description = _("Snow and ice keep their glacier color; disable to fall back to the base color")) # type: ignore
+    col_lcWaterActive: BoolProperty(name= _("Water"), default=True, description = _("Permanent water bodies and herbaceous wetland keep their water color; disable to fall back to the base color")) # type: ignore
     el_bActive: BoolProperty(name= _("Include Buildings"), default=False, description = _("For Maps < 5Km Reccomended")) # type: ignore
     el_bHeightMultiplier: FloatProperty(name= _("Height Multiplier"), default=1.0, min=0.01, soft_max=10.0, description=_("Multiplies building height")) # type: ignore
     el_bMinPrintMM: FloatProperty(name= _("Min Footprint (mm)"), default=0.15, min=0.0, soft_max=5.0, precision=2, description=_("Buildings whose printed footprint side is smaller than this (in model mm) are skipped. Scale-aware: a larger real-world building on a bigger-km map prints smaller, so this threshold naturally culls more on larger maps.")) # type: ignore
