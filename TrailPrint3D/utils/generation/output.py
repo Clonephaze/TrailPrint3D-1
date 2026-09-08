@@ -37,13 +37,16 @@ def _rg_finalize_metadata(
 
 
 def _rg_apply_texture(gen: GenerationContext):
+    from mathutils import Vector  # deferred to avoid circular import at load time
+
+    from ..geometry2d import polylines_to_ribbon
     from ..mesh_ops import (  # deferred to avoid circular import at load time
         merge_with_map,
     )
     from ..scene import (  # deferred to avoid circular import at load time
         remove_objects,
     )
-    from ..texture import setup_paint_texture
+    from ..texture import bake_trail_into_texture, setup_paint_texture
 
     elements: dict[str, Any] = gen.runtime.elements
     _mmu_palette = setup_paint_texture(gen)
@@ -53,9 +56,29 @@ def _rg_apply_texture(gen: GenerationContext):
     # When tex_include_trail is off, keep curveObjs as PAINT-style overlay objects.
     _tex_trail = gen.texture.texTrail
     if gen.runtime.curveObjs and not gen.settings.singleColorMode and _tex_trail:
+        tp3d = bpy.context.scene.tp3d
         for tcrv in list(gen.runtime.curveObjs):
-            if tcrv and tcrv.name in bpy.data.objects:
-                bpy.data.objects.remove(tcrv, do_unlink=True)
+            if not (tcrv and tcrv.name in bpy.data.objects):
+                continue
+            # Rasterize this curve's own footprint into the just-baked terrain
+            # texture, using its own material (TRAIL/YELLOW/...) -- setup_paint_texture
+            # above has no notion of trail geometry at all (it only knows about
+            # _osm_polygons), so without this step the trail's shape and colour
+            # would simply vanish the moment its 3D curve is discarded below.
+            mw = tcrv.matrix_world
+            coords = []
+            for sp in tcrv.data.splines:
+                pts = sp.points if len(sp.points) > 0 else sp.bezier_points
+                if len(pts) >= 2:
+                    coords.append([(mw @ Vector((p.co.x, p.co.y, p.co.z)))[:2] for p in pts])
+            if coords:
+                ribbon = polylines_to_ribbon(
+                    coords, tp3d.pathThickness / 2 + tp3d.tolerance, quad_segs=4
+                )
+                if ribbon is not None and not ribbon.is_empty:
+                    mat = tcrv.data.materials[0] if tcrv.data.materials else None
+                    bake_trail_into_texture(gen.runtime.mapObject, ribbon, mat)
+            bpy.data.objects.remove(tcrv, do_unlink=True)
         gen.runtime.curveObjs.clear()
 
     if gen.runtime.curveObjs and type == 20:
