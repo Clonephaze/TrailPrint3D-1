@@ -68,9 +68,11 @@ for _mod in _addon_utils.modules():
         break
 
 from TrailPrint3D.export import is_3mf_extension_installed
+from TrailPrint3D.props import set_road_active
 from TrailPrint3D.utils import elevation as _elevation_module
 from TrailPrint3D.utils.dataclasses import GenerationContext
 from TrailPrint3D.utils.generation import runGeneration
+from TrailPrint3D.utils.osm.roads import TIER_TAGS
 
 # ---------------------------------------------------------------------------
 # Elevation stub — synthetic single-hill heightfield, no network.
@@ -176,9 +178,8 @@ def _reset_scene_defaults():
     tp3d.col_faActive = False
     tp3d.col_glActive = False
     tp3d.el_bActive = False
-    tp3d.el_sBigActive = False
-    tp3d.el_sMedActive = False
-    tp3d.el_sSmallActive = False
+    for _road_id in TIER_TAGS:
+        set_road_active(tp3d, _road_id, False)
     tp3d.el_oActive = False
     tp3d.ellipseRatio = 0.75
     tp3d.rectangleHeight = 100
