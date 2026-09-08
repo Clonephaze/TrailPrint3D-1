@@ -325,11 +325,16 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 box.prop(props, "elementMode")
                 # if "SINGLECOLORMODE" in props.elementMode:
                 #     box.prop(props, "elementModeInset")
-                if "PAINT" in props.elementMode:
-                    tex_row = box.row()
-                    tex_row.prop(props, "tex_use_texture")
-                    if props.tex_use_texture == True:
-                        tex_row.prop(props, "tex_resolution")
+            # Shown regardless of elementSource -- WorldCover forces PAINT
+            # elementMode (see element_source_update() in props.py) and
+            # texture-mode baking supports it just like OSM PAINT does, so
+            # this shouldn't be hidden just because elementMode itself is.
+            if "PAINT" in props.elementMode:
+                tex_row = box.row()
+                tex_row.prop(props, "tex_use_texture")
+                if props.tex_use_texture == True:
+                    tex_row.prop(props, "tex_resolution")
+            if props.elementSource == 'OSM':
                 box.prop(props, "col_osmSmoothing")
 
                 sub = box.box()
