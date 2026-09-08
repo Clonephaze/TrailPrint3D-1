@@ -347,6 +347,13 @@
             return { lat: (b.north + b.south) / 2, lng: (b.east + b.west) / 2 };
         }
 
+        // Wraps a longitude of any magnitude (Leaflet allows continuous
+        // panning, so raw values like 286 for -74 are possible) back into
+        // the standard -180..180 range.
+        function wrapLng(lng) {
+            return ((lng + 180) % 360 + 360) % 360 - 180;
+        }
+
         // Every shape but Rectangle keeps a 1:1 aspect ratio -- the backend
         // only ever builds a true regular circle/octagon/square from a single
         // size (utils.create_circle/create_octagon/create_rectangle(size,size)),
@@ -988,8 +995,19 @@
 
             if (coords) {
                 var eb = effectiveBounds(coords);
-                payload.bounds = { north: eb.north, south: eb.south, east: eb.east, west: eb.west };
-                payload.center = boundsCenter(eb);
+                // Leaflet lets the map pan across the antimeridian any number of
+                // times, so a box drawn after panning can carry a raw longitude
+                // like 286 instead of -74 (still correct width/shape, just not in
+                // -180..180). Re-base the whole box into that range by shifting
+                // both edges by whatever it takes to bring the center back in
+                // range, so backend code that assumes -180..180 doesn't choke.
+                var centerLngRaw = (eb.east + eb.west) / 2;
+                var shift = wrapLng(centerLngRaw) - centerLngRaw;
+                payload.bounds = {
+                    north: eb.north, south: eb.south,
+                    east: eb.east + shift, west: eb.west + shift
+                };
+                payload.center = boundsCenter(payload.bounds);
                 payload.type = currentShape;
             }
 

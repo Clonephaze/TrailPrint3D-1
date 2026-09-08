@@ -9,7 +9,22 @@ import textwrap
 
 from . import addon_preferences, temp, updater
 from . import constants as const
-from .props import SHAPE_TEXT_STYLES, get_effective_shape
+from .props import (
+    SHAPE_TEXT_STYLES,
+    any_road_active,
+    ensure_road_types,
+    get_effective_shape,
+)
+
+
+class TP3D_UL_road_types(bpy.types.UIList):
+    """Plain checkbox list of road tiers -- no add/remove, list only."""
+    bl_idname = "TP3D_UL_road_types"
+
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.prop(item, "active", text=item.name,
+                 icon='CHECKBOX_HLT' if item.active else 'CHECKBOX_DEHLT', emboss=False)
 
 
 def draw_wrapped_label(layout, context, text, icon='NONE'):
@@ -84,17 +99,12 @@ class TP3D_PT_generate(bpy.types.Panel):
             row.operator("tp3d.terrain_dummy", text=_("Multi"), icon='LOCKED')
             row.operator("tp3d.terrain_dummy", text=_("Terrain"), icon='LOCKED')
 
-        # --- Shapely / earcut status warnings ---
+        # --- Shapely status warning ---
         from .utils import geometry2d as _g2d
         if not _g2d._HAS_SHAPELY:
             row = layout.row()
             row.alert = True
             row.operator("tp3d.shapely_status", text=_("Shapely failed to load"), icon='ERROR')
-        if not _g2d._HAS_EARCUT:
-            row = layout.row()
-            row.alert = True
-            row.operator("tp3d.earcut_status", text=_("Earcut failed to load"), icon='ERROR')
-
         # --- Generate button ---
         col = layout.column()
         col.scale_y = 1.4
@@ -201,6 +211,14 @@ class TP3D_PT_generate(bpy.types.Panel):
             elif props.shape == "ELLIPSE":
                 col.prop(props, "objSize")
                 col.prop(props, "ellipseRatio")
+            elif props.shape in {"GEOJSON", "SVG"}:
+                row = col.row(align=True)
+                row.prop(props, "customFilePath", text=_("File"))
+                if props.shape == "SVG":
+                    row.operator("tp3d.pick_svg_shape_file", text="", icon='FILEBROWSER')
+                else:
+                    row.operator("tp3d.pick_geojson_shape_file", text="", icon='FILEBROWSER')
+                col.prop(props, "objSize")
             else:
                 col.prop(props, "objSize")
             col.prop(props, "num_subdivisions")
@@ -212,15 +230,17 @@ class TP3D_PT_generate(bpy.types.Panel):
             col.prop(props, "scaleElevation")
             col.prop(props, "pathThickness")
             _elem_scm = props.elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH")
+            if props.singleColorMode or _elem_scm:
+                col.prop(props, "singleColorModeHeight")
             scm_row = col.row()
             scm_row.enabled = not _elem_scm
             scm_row.prop(props, "singleColorMode")
             if _elem_scm:
                 col.label(text=_("Auto-enabled with SCM Elements"), icon='LOCKED')
-            if props.singleColorMode or _elem_scm:
-                col.prop(props, "singleColorModeHeight")
-            if props.elementMode == "CREATE_TEXTURE":
-                col.prop(props, "tex_include_trail", icon='CHECKBOX_HLT' if props.tex_include_trail else 'CHECKBOX_DEHLT')
+            if props.tex_use_texture == True:
+                trail_tex_row = col.row()
+                trail_tex_row.enabled = not _elem_scm
+                trail_tex_row.prop(props, "tex_include_trail", icon='CHECKBOX_HLT' if props.tex_include_trail else 'CHECKBOX_DEHLT')
 
             # Scale
             box = layout.box()
@@ -266,8 +286,10 @@ class TP3D_PT_advanced(bpy.types.Panel):
             box.prop(props, "disable_auto_export")
             if temp.has3mf:
                 box.prop(props, "disable_3mf_export")
-                if not props.disable_3mf_export:
-                    box.prop(props, "slicer_profile_name")
+            if props.elementMode == "SINGLECOLORMODE_REMESH":
+                box.prop(props, "keep_positions")
+            if temp.has3mf and not props.disable_3mf_export:
+                box.prop(props, "slicer_profile_name")
 
         # --- MAP ---
         layout.prop(props, "show_map", icon="TRIA_DOWN" if props.show_map else "TRIA_RIGHT", emboss=False)
@@ -303,6 +325,12 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 box.prop(props, "elementMode")
                 # if "SINGLECOLORMODE" in props.elementMode:
                 #     box.prop(props, "elementModeInset")
+                if "PAINT" in props.elementMode:
+                    tex_row = box.row()
+                    tex_row.prop(props, "tex_use_texture")
+                    if props.tex_use_texture == True:
+                        tex_row.prop(props, "tex_resolution")
+                box.prop(props, "col_osmSmoothing")
 
                 sub = box.box()
                 row = sub.row()
@@ -379,31 +407,26 @@ class TP3D_PT_advanced(bpy.types.Panel):
             #sub.operator("tp3d.remake_buildings", icon='FILE_REFRESH')
 
             sub = box.box()
+            ensure_road_types(props)
             row = sub.row()
             row.prop(props, "show_roads", icon="TRIA_DOWN" if props.show_roads else "TRIA_RIGHT", emboss=False, text=_("Roads"))
-            _any_road = (props.el_sBigActive or props.el_sMedActive or props.el_sSmallActive
-                         or props.el_sServiceActive or props.el_sFootwaysActive)
+            _any_road = any_road_active(props)
             row.label(text="", icon='CHECKBOX_HLT' if _any_road else 'CHECKBOX_DEHLT')
             if props.show_roads:
                 col = sub.column(align=True)
-                col.prop(props, "el_sBigActive", icon='CHECKBOX_HLT' if props.el_sBigActive else 'CHECKBOX_DEHLT')
-                col.prop(props, "el_sMedActive", icon='CHECKBOX_HLT' if props.el_sMedActive else 'CHECKBOX_DEHLT')
-                col.prop(props, "el_sSmallActive", icon='CHECKBOX_HLT' if props.el_sSmallActive else 'CHECKBOX_DEHLT')
-                col.prop(props, "el_sServiceActive", icon='CHECKBOX_HLT' if props.el_sServiceActive else 'CHECKBOX_DEHLT')
-                col.prop(props, "el_sFootwaysActive", icon='CHECKBOX_HLT' if props.el_sFootwaysActive else 'CHECKBOX_DEHLT')
-                if props.elementMode in ("PAINT", "CREATE_TEXTURE") and _any_road and props.el_sHeight == 0:
+                col.template_list("TP3D_UL_road_types", "", props, "road_types", props, "road_types_index", rows=5)
+                if props.elementMode == "PAINT" and _any_road and props.el_sHeight == 0 and props.tex_include_roads == False:
                     row = sub.row()
                     row.alert = True
                     row.label(text=_("Road Height must be > 0 in Paint mode"), icon='ERROR')
                 row = sub.row(align=True)
                 row.prop(props, "el_sMultiplier")
                 row.prop(props, "el_sHeight")
-                if props.elementMode not in ("PAINT", "CREATE_TEXTURE"):
+                if props.elementMode != "PAINT":
                     sub.prop(props, "el_sCutTolerance")
-                if props.elementMode == "CREATE_TEXTURE":
+                    sub.prop(props, "el_sCutDepth")
+                if props.tex_use_texture:
                     sub.prop(props, "tex_include_roads", icon='CHECKBOX_HLT' if props.tex_include_roads else 'CHECKBOX_DEHLT')
-                if props.el_sServiceActive:
-                    sub.prop(props, "el_sExcludeAlleys", icon='CHECKBOX_HLT' if props.el_sExcludeAlleys else 'CHECKBOX_DEHLT')
 
         # --- PIN ---
         layout.prop(props, "show_pin", icon="TRIA_DOWN" if props.show_pin else "TRIA_RIGHT", emboss=False)

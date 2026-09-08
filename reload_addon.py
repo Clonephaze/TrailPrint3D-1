@@ -20,6 +20,10 @@ importlib.reload(TrailPrint3D.export)
 importlib.reload(TrailPrint3D.picker_server)
 
 # Utils sub-modules (all before utils/__init__)
+# dataclasses.py has no local deps and is imported at module scope by
+# geometry2d/primitives/terrain/elevation/generation.*/utils __init__ --
+# must be reloaded before all of them.
+importlib.reload(TrailPrint3D.utils.dataclasses)
 importlib.reload(TrailPrint3D.utils.geo)
 importlib.reload(TrailPrint3D.utils.mesh_ops)
 importlib.reload(TrailPrint3D.utils.primitives)
@@ -30,15 +34,19 @@ importlib.reload(TrailPrint3D.utils.metadata)
 importlib.reload(TrailPrint3D.utils.presets)
 importlib.reload(TrailPrint3D.utils.elevation)
 importlib.reload(TrailPrint3D.utils.geometry2d)
+importlib.reload(TrailPrint3D.utils.ui_state)
 
-# satellite.py and texture.py are only pulled in via deferred (function-scope)
-# imports, so they may not be an attribute of TrailPrint3D.utils yet on a
-# fresh session. Import them explicitly before reloading, same as the osm
-# sub-package below.
+# satellite.py, texture.py, and io_geojson.py are only pulled in via deferred
+# (function-scope) imports (io_geojson.py specifically only via the premium
+# add-on's operators_pe.py), so they may not be an attribute of
+# TrailPrint3D.utils yet on a fresh session. Import them explicitly before
+# reloading, same as the osm sub-package below.
 import TrailPrint3D.utils.satellite
 importlib.reload(TrailPrint3D.utils.satellite)
 import TrailPrint3D.utils.texture
 importlib.reload(TrailPrint3D.utils.texture)
+import TrailPrint3D.utils.io_geojson
+importlib.reload(TrailPrint3D.utils.io_geojson)
 
 # osm sub-package: its submodules are only pulled in via deferred (function-
 # scope) imports, so reloading TrailPrint3D.utils.osm alone (its empty
@@ -59,6 +67,24 @@ importlib.reload(TrailPrint3D.utils.osm.buildings)
 importlib.reload(TrailPrint3D.utils.osm)
 
 importlib.reload(TrailPrint3D.utils.terrain)
+
+# generation sub-package: its submodules are only pulled in via generation/
+# __init__.py's own imports, so reloading TrailPrint3D.utils.generation alone
+# does NOT refresh them -- each must be imported and reloaded explicitly, in
+# dependency order (input/terrain_gen/elements/output have no generation-
+# internal deps; orchestrator and generation_pe depend on those four).
+import TrailPrint3D.utils.generation.input
+import TrailPrint3D.utils.generation.terrain_gen
+import TrailPrint3D.utils.generation.elements
+import TrailPrint3D.utils.generation.output
+import TrailPrint3D.utils.generation.orchestrator
+import TrailPrint3D.utils.generation.tile_orchestrator
+importlib.reload(TrailPrint3D.utils.generation.input)
+importlib.reload(TrailPrint3D.utils.generation.terrain_gen)
+importlib.reload(TrailPrint3D.utils.generation.elements)
+importlib.reload(TrailPrint3D.utils.generation.output)
+importlib.reload(TrailPrint3D.utils.generation.orchestrator)
+importlib.reload(TrailPrint3D.utils.generation.tile_orchestrator)
 importlib.reload(TrailPrint3D.utils.generation)
 
 # Package __init__ after all sub-modules

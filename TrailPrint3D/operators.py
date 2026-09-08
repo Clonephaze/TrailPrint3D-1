@@ -72,34 +72,6 @@ class TP3D_OT_shapely_status(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class TP3D_OT_earcut_status(bpy.types.Operator):
-    bl_idname = "tp3d.earcut_status"
-    bl_label = "Earcut failed to load"
-
-    @classmethod
-    def description(cls, context, properties):
-        from .utils import geometry2d as _g2d
-        err = str(_g2d._EARCUT_IMPORT_ERROR) if _g2d._EARCUT_IMPORT_ERROR is not None else _("Unknown error")
-        return _(
-            "Trail strips (Single-color mode) and 3D Elements will come out empty\n"
-            "{err}\n"
-            "Try reinstalling the addon or wait for an update"
-        ).format(err=err)
-
-    def execute(self, context):
-        from .utils import geometry2d as _g2d
-        err_text = str(_g2d._EARCUT_IMPORT_ERROR) if _g2d._EARCUT_IMPORT_ERROR is not None else _("Unknown error")
-
-        def _draw(popup_self, context):
-            col = popup_self.layout.column(align=True)
-            col.label(text=_("Trail strips (Single-color mode) and 3D Elements will come out empty"))
-            col.label(text=err_text)
-            col.label(text=_("Try reinstalling the addon or wait for an update"))
-
-        context.window_manager.popup_menu(_draw, title=_("Earcut failed to load"), icon='ERROR')
-        return {'FINISHED'}
-
-
 class TP3D_OT_export_stl(bpy.types.Operator):
     bl_idname = "tp3d.export_stl"
     bl_label = "Export STL"
@@ -1180,7 +1152,6 @@ class TP3D_OT_popup_merge(bpy.types.Operator):
         name="Type",
         items=[
             ("paint", "Paint on Surface", ""),
-            ("separate", "Separate Object", ""),
             ("singleColorMode_remesh","Single-Color-Mode (Remesh)",""),
             ("negative","Negative",""),
         ],
@@ -1355,7 +1326,6 @@ class TP3D_OT_popup_text(bpy.types.Operator):
         name="Type",
         items=[
             ("paint", "Paint on Surface", ""),
-            ("separate", "Separate Object", ""),
             ("singleColorMode_remesh","Single-Color-Mode (Remesh)",""),
             ("negative","Negative",""),
         ],
@@ -1597,7 +1567,6 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
         description= _("Choose how the SVG should be used"),
         items=[
             ("paint", "Paint on Surface", "Paints the SVG onto the surface"),
-            ("separate", "Separate Object", "SVG as Separate Object"),
             ("singleColorMode_remesh","Single-Color-Mode (Remesh)","Creates the SVG as a separate object using the remesh-based algorithm"),
             ("negative","Negative","Adds the SVG as a negative space"),
         ],
@@ -2033,6 +2002,40 @@ class TP3D_OT_pick_svg_file(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
 
+class TP3D_OT_pick_svg_shape_file(bpy.types.Operator):
+    bl_idname = "tp3d.pick_svg_shape_file"
+    bl_label = "Use SVG File"
+    bl_description = "Use the selected SVG file as the map's outline shape"
+
+    filepath: StringProperty(subtype='FILE_PATH')  # type: ignore
+    filter_glob: StringProperty(default="*.svg", options={'HIDDEN'})  # type: ignore
+
+    def execute(self, context):
+        context.scene.tp3d.customFilePath = self.filepath
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
+class TP3D_OT_pick_geojson_shape_file(bpy.types.Operator):
+    bl_idname = "tp3d.pick_geojson_shape_file"
+    bl_label = "Use GeoJSON File"
+    bl_description = "Use the selected GeoJSON file as the map's outline shape"
+
+    filepath: StringProperty(subtype='FILE_PATH')  # type: ignore
+    filter_glob: StringProperty(default="*.geojson;*.json", options={'HIDDEN'})  # type: ignore
+
+    def execute(self, context):
+        context.scene.tp3d.customFilePath = self.filepath
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
 class TP3D_OT_check_update(bpy.types.Operator):
     bl_idname = "tp3d.check_update"
     bl_label = "Check for Updates"
@@ -2141,10 +2144,12 @@ class TP3D_OT_remake_roads(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
+        from .props import any_road_active  # deferred to avoid circular import at load time
+
         tp3d = context.scene.tp3d
         m = tp3d.currentMap
         return (m is not None and m.name in bpy.data.objects
-                and any([tp3d.el_sBigActive, tp3d.el_sMedActive, tp3d.el_sSmallActive, tp3d.el_sServiceActive, tp3d.el_sFootwaysActive]))
+                and any_road_active(tp3d))
 
     def execute(self, context):
         from .utils.metadata import writeMetadata
@@ -2420,13 +2425,25 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         _generate_trails, merge_active_with_map) directly rather than
         refactoring that larger, already-working method.
         """
+        overlay = _progress.ProgressOverlay.get()
+        overlay.start()
+        _progress.WarningsOverlay.clear()
+        # Mirrors runGeneration's own try/finally -- guarantees the overlay
+        # always closes, even if something below raises an exception type
+        # this method doesn't explicitly handle (the modal's own outer
+        # except/finally reports the error but never touches the overlay).
+        try:
+            self._apply_puzzle_result_body(context, data)
+        finally:
+            overlay.finish()
+            _progress.WarningsOverlay.get().show()
+
+    def _apply_puzzle_result_body(self, context, data):
         from . import temp
         from .utils.geo import convert_to_neutral_coordinates
 
         props = context.scene.tp3d
         overlay = _progress.ProgressOverlay.get()
-        overlay.start()
-        _progress.WarningsOverlay.clear()
         start_time = time.time()
 
         # The puzzle cutter only knows how to cut terrain_obj itself apart --
@@ -2435,10 +2452,10 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # never get sliced along the jigsaw lines. Roads and Buildings are
         # handled separately: cut_into_puzzle_pieces re-clips their generated
         # geometry per piece after terrain cutting.
-        if props.elementMode not in ('PAINT', 'CREATE_TEXTURE'):
+        if props.elementMode != 'PAINT':
             props.elementMode = 'PAINT'
             _progress.WarningsOverlay.add_warning(
-                "Puzzles only support \"Paint on Map\" or \"Create Texture\" element mode — switched automatically.", "warn"
+                "Puzzles only support \"Paint on Map\" element mode — switched automatically.", "warn"
             )
         if props.singleColorMode:
             # Single-Color Mode builds each trail decal as its own standalone
@@ -2485,7 +2502,6 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
         if not bbox or not pieces:
             self.report({'WARNING'}, "Nothing to generate — draw a rectangle first")
-            overlay.finish()
             return
 
         south, north = bbox['south'], bbox['north']
@@ -2615,7 +2631,13 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
                            sub_percent=t, sub_label="Elevation tiles")
             overlay.set_fetch_progress('elevation', t)
 
-        preview_elevations, preview_diff = utils.get_tile_elevation(blank, progress_cb=_puzzle_elev_progress)
+        # Route through a real gen rather than a bare object: get_tile_elevation()
+        # supports both, but only a real gen gets buggyData/tileVerts/elDiff
+        # bookkeeping, and every other preview-fetch call site follows this pattern.
+        gen = utils._rg_validate_inputs(frozenset(), gen_type=0)
+        gen.runtime.mapObject = blank
+        utils.compute_and_store_tile_bounds(gen)
+        preview_elevations, preview_diff = utils.get_tile_elevation(gen, progress_cb=_puzzle_elev_progress)
         overlay.sub_percent = None
 
         if props.fixedElevationScale:
@@ -2648,14 +2670,14 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # any shortfall the recess check would catch is just float-precision
         # noise between this step's lowest_z and createTerrainFromSelected's
         # own re-derived one, not a real need to dig into the bottom.
-        utils.createTerrainFromSelected(manage_overlay=False, skip_bottom_recess=True)
+        utils.runTileGeneration(manage_overlay=False, skip_bottom_recess=True)
 
         # roads_obj was used as a boolean cutter during generation; delete it
         # now — per-piece road geometry is rebuilt from the polygon cache below.
         roads_obj = bpy.data.objects.get(f"{puzzle_name}_ROADS")
         if roads_obj is not None:
             bpy.data.objects.remove(roads_obj, do_unlink=True)
-        from .utils import generation as _gen_utils
+        from .utils.generation import elements as _gen_utils
         # In CREATE_TEXTURE mode roads are already baked into the UV texture
         # by createTerrainFromSelected above; skip the 3D per-piece rebuild.
         # (Trail handling is separate -- see the gpx_paths block below.)
@@ -2779,17 +2801,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         except (ReferenceError, AttributeError, IndexError):
             pass
 
-        # Material preview mode -- mirrors runGeneration's own finishing step
-        # (generation.py), which the puzzle flow doesn't go through at all.
-        for area in bpy.context.screen.areas:
-            if area.type == 'VIEW_3D':
-                for space in area.spaces:
-                    if space.type == 'VIEW_3D':
-                        space.shading.type = 'MATERIAL'
-
         bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
-        overlay.finish()
-        _progress.WarningsOverlay.get().show()
         self.report({'INFO'}, f"Generated {len(piece_objs)} puzzle piece(s)" + (" + holder" if holder_obj is not None else ""))
 
     def _cleanup(self, context):
@@ -2872,7 +2884,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
         # Multi-GPX import is a Premium feature -- the free page's own input
         # element is capped to a single file (see map_generator.html).
-        html_filename = 'premium/map_generator_pe.html' if temp.PREMIUMVERSION else 'map_generator.html'
+        html_filename = 'map_generator.html'
         html_path = pathlib.Path(__file__).parent / html_filename
         self._server = mp.start_picker(
             self._result_path,
@@ -2900,10 +2912,22 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         rather than the Premium multitile picker's grid/tile-spacing/extend
         logic -- this picker only ever produces exactly one fresh tile.
         """
-        props = context.scene.tp3d
         overlay = _progress.ProgressOverlay.get()
         overlay.start()
         _progress.WarningsOverlay.clear()
+        # Mirrors runGeneration's own try/finally -- guarantees the overlay
+        # always closes, even if something below raises an exception type
+        # this method doesn't explicitly handle (the modal's own outer
+        # except/finally reports the error but never touches the overlay).
+        try:
+            self._apply_result_body(context, data)
+        finally:
+            overlay.finish()
+            _progress.WarningsOverlay.get().show()
+
+    def _apply_result_body(self, context, data):
+        props = context.scene.tp3d
+        overlay = _progress.ProgressOverlay.get()
         start_time = time.time()
 
         bounds = data.get('bounds')
@@ -2911,7 +2935,6 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
         if not bounds and not gpx_paths:
             self.report({'WARNING'}, "Nothing to generate — draw a shape first")
-            overlay.finish()
             return
 
         if not bounds and gpx_paths:
@@ -2923,8 +2946,6 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 _progress.WarningsOverlay.add_warning("Single Color Mode is not applied automatically due to performance reasons.", "warn")
                 _progress.WarningsOverlay.add_warning("Use 'Merge with Map' to apply it manually.", "warn")
             bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
-            overlay.finish()
-            _progress.WarningsOverlay.get().show()
             self.report({'INFO'}, f"Generated {len(gpx_paths)} trail(s)")
             return
 
@@ -2999,7 +3020,13 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                            sub_percent=t, sub_label="Elevation tiles")
             overlay.set_fetch_progress('elevation', t)
 
-        preview_elevations, preview_diff = utils.get_tile_elevation(blank, progress_cb=_elev_progress)
+        # Route through a real gen rather than a bare object: get_tile_elevation()
+        # supports both, but only a real gen gets buggyData/tileVerts/elDiff
+        # bookkeeping, and every other preview-fetch call site follows this pattern.
+        gen = utils._rg_validate_inputs(frozenset(), gen_type=0)
+        gen.runtime.mapObject = blank
+        utils.compute_and_store_tile_bounds(gen)
+        preview_elevations, preview_diff = utils.get_tile_elevation(gen, progress_cb=_elev_progress)
         overlay.sub_percent = None
 
         if props.fixedElevationScale:
@@ -3029,7 +3056,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # skip_bottom_recess: this blank is always a fresh single tile with
         # additionalExtrusion locked to its OWN lowest point (set just
         # above), not an older neighbor's -- there's no seam to protect.
-        utils.createTerrainFromSelected(manage_overlay=False, skip_bottom_recess=True)
+        utils.runTileGeneration(manage_overlay=False, skip_bottom_recess=True)
 
         if gpx_paths:
             from .utils.osm import gen as _osm_gen
@@ -3046,8 +3073,6 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             pass
 
         bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
-        overlay.finish()
-        _progress.WarningsOverlay.get().show()
         self.report({'INFO'}, "Generated 1 tile")
 
     def _cleanup(self, context):
@@ -3089,6 +3114,18 @@ class TP3D_OT_append_collection(bpy.types.Operator):
         overlay = _progress.ProgressOverlay.get()
         overlay.start()
         _progress.WarningsOverlay.clear()
+        # Mirrors runGeneration's own try/finally -- guarantees the overlay
+        # always closes even if a step below (coordinate loading, scene
+        # cleanup, etc.) raises before reaching runGeneration's own
+        # self-contained finally.
+        try:
+            return self._execute_body(context)
+        finally:
+            overlay.finish()
+            _progress.WarningsOverlay.get().show()
+
+    def _execute_body(self, context):
+        overlay = _progress.ProgressOverlay.get()
 
         #Set the Mapsize to the Size in the Collection name
         collection_name = bpy.context.scene.tp3d.specialCollectionName
@@ -3106,17 +3143,16 @@ class TP3D_OT_append_collection(bpy.types.Operator):
         else:
             flags = utils._GEN_FLAGS[11]
 
-        props = utils._rg_validate_inputs(flags)
-        if props is None:
+        gen = utils._rg_validate_inputs(flags)
+        if gen is None:
             self.report({'WARNING'}, "Invalid input properties")
             return {'CANCELLED'}
 
-        coord_data = utils._rg_load_coordinates(flags, props)
-
-        coordinates, *_ = coord_data
+        utils._rg_load_coordinates(gen)
+        coordinates = gen.runtime.pathCoordinates
 
         print(f"Coord data: {coordinates}")
-        scaleHor = utils.calculate_scale(props['size'], coordinates, 10)
+        scaleHor = utils.calculate_scale(gen.settings.size, coordinates, 10)
         bpy.context.scene.tp3d["sScaleHor"] = scaleHor
 
 
@@ -3137,8 +3173,8 @@ class TP3D_OT_append_collection(bpy.types.Operator):
 
         # --- Phase 7: Remove previously generated objects at the same location ---
         overlay.update(0.28, "Scene Cleanup", "Removing previous objects…")
-        xOff = props['xTerrainOffset']
-        yOff = props['yTerrainOffset']
+        xOff = gen.settings.xTerrainOffset
+        yOff = gen.settings.yTerrainOffset
         target_2d        = Vector((centerx, centery))
         target_2d_offset = Vector((centerx + xOff, centery + yOff))
         for obs in bpy.data.objects:
