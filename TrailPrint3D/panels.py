@@ -365,6 +365,7 @@ class TP3D_PT_advanced(bpy.types.Panel):
                     is_active = getattr(props, prop_name)
                     row.prop(props, prop_name, text=label,
                              icon='CHECKBOX_HLT' if is_active else 'CHECKBOX_DEHLT')
+                    lc_box.prop(props, "el_wcMinFeatureArea")
             # Shown regardless of elementSource -- WorldCover forces PAINT
             # elementMode (see element_source_update() in props.py) and
             # texture-mode baking supports it just like OSM PAINT does, so

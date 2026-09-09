@@ -85,17 +85,17 @@ DEBUG_COLLECTION_NAME = "TP3D_Debug_Satellite"
 # legend (bright red Built-up, neon green Tree cover, etc.) with muted,
 # "natural" earth tones.
 _LANDCOVER_PALETTE = {
-    10: [34, 85, 34, 255],     # Tree cover -> dark green
-    20: [140, 125, 65, 255],   # Shrubland -> olive/tan
-    30: [178, 165, 89, 255],   # Grassland -> tan-yellow
+    10: [34, 85, 34, 255],  # Tree cover -> dark green
+    20: [140, 125, 65, 255],  # Shrubland -> olive/tan
+    30: [178, 165, 89, 255],  # Grassland -> tan-yellow
     40: [191, 173, 115, 255],  # Cropland -> wheat
-    50: [89, 89, 89, 255],     # Built-up -> dark gray
+    50: [89, 89, 89, 255],  # Built-up -> dark gray
     60: [153, 140, 115, 255],  # Bare/sparse vegetation -> light tan-gray
     70: [242, 242, 247, 255],  # Snow and ice -> white
-    80: [38, 89, 153, 255],    # Permanent water bodies -> blue
-    90: [64, 128, 128, 255],   # Herbaceous wetland -> teal
-    95: [38, 115, 89, 255],    # Mangroves -> teal-green
-    100: [166, 153, 115, 255], # Moss and lichen -> tan
+    80: [38, 89, 153, 255],  # Permanent water bodies -> blue
+    90: [64, 128, 128, 255],  # Herbaceous wetland -> teal
+    95: [38, 115, 89, 255],  # Mangroves -> teal-green
+    100: [166, 153, 115, 255],  # Moss and lichen -> tan
 }
 # Fill color for a chunk/pixel with no WorldCover coverage (missing tile, or
 # nodata within an otherwise-valid tile). WorldCover is a land-cover product
@@ -118,17 +118,17 @@ PHOTO_IMAGE_NAME = "TP3D_Satellite_Photo"
 # colors -- unlike the reference plane's own palette above, paint_terrain_
 # from_landcover() colors real, exported/printed terrain faces.
 _LANDCOVER_MATERIAL_MAP = {
-    10: "FOREST",      # Tree cover
+    10: "FOREST",  # Tree cover
     20: "GREENSPACE",  # Shrubland
     30: "GREENSPACE",  # Grassland
-    40: "FARMLAND",    # Cropland
-    50: "CITY",        # Built-up
-    60: "MOUNTAIN",    # Bare/sparse vegetation
-    70: "GLACIER",     # Snow and ice
-    80: "WATER",       # Permanent water bodies
-    90: "WATER",       # Herbaceous wetland
-    95: "FOREST",      # Mangroves
-    100: "MOUNTAIN",   # Moss and lichen
+    40: "FARMLAND",  # Cropland
+    50: "CITY",  # Built-up
+    60: "MOUNTAIN",  # Bare/sparse vegetation
+    70: "GLACIER",  # Snow and ice
+    80: "WATER",  # Permanent water bodies
+    90: "WATER",  # Herbaceous wetland
+    95: "FOREST",  # Mangroves
+    100: "MOUNTAIN",  # Moss and lichen
 }
 # Max per-pixel RGB distance (0-255 scale) to accept a sample as a real
 # palette match -- beyond this it's treated as unclassifiable (e.g. a
@@ -172,7 +172,8 @@ def landcover_effective_material(class_id, tp3d):
 
 class TiledCrop(NamedTuple):
     """Result of a (possibly multi-chunk) fetch -- consumed by _load_stitched_image()."""
-    tiles: list        # list of dicts: {row, col, path (str|None), width, height}
+
+    tiles: list  # list of dicts: {row, col, path (str|None), width, height}
     n_rows: int
     n_cols: int
     total_width: int
@@ -186,7 +187,9 @@ def _bbox_overlap_area(a, b):
     return ox * oy
 
 
-def _stac_search(collection, min_lat, max_lat, min_lon, max_lon, sortby=None, max_retries=3):
+def _stac_search(
+    collection, min_lat, max_lat, min_lon, max_lon, sortby=None, max_retries=3
+):
     """Query Planetary Computer's STAC API for the item that best covers bbox.
 
     Fetches a handful of candidates (limit=1 only guarantees *a* match, not
@@ -208,8 +211,10 @@ def _stac_search(collection, min_lat, max_lat, min_lon, max_lon, sortby=None, ma
     for attempt in range(max_retries):
         try:
             response = requests.post(
-                _STAC_SEARCH_URL, json=payload,
-                headers={"User-Agent": _USER_AGENT}, timeout=30,
+                _STAC_SEARCH_URL,
+                json=payload,
+                headers={"User-Agent": _USER_AGENT},
+                timeout=30,
             )
             if response.status_code == 200:
                 features = response.json().get("features", [])
@@ -217,19 +222,36 @@ def _stac_search(collection, min_lat, max_lat, min_lon, max_lon, sortby=None, ma
                     return None
                 return max(
                     features,
-                    key=lambda feat: _bbox_overlap_area(target, feat.get("bbox", target)),
+                    key=lambda feat: _bbox_overlap_area(
+                        target, feat.get("bbox", target)
+                    ),
                 )
             print(f"Satellite STAC search status {response.status_code}, retrying...")
         except requests.exceptions.Timeout:
-            print(f"Satellite STAC search timed out (attempt {attempt + 1}/{max_retries})")
+            print(
+                f"Satellite STAC search timed out (attempt {attempt + 1}/{max_retries})"
+            )
         except requests.RequestException as e:
             print(f"Satellite STAC search failed: {e}")
         time.sleep(3 + attempt)
     return None
 
 
-def _render_crop(collection, item, asset, width, height, min_lat, max_lat, min_lon, max_lon,
-                  out_path, colormap_name=None, colormap=None, max_retries=3):
+def _render_crop(
+    collection,
+    item,
+    asset,
+    width,
+    height,
+    min_lat,
+    max_lat,
+    min_lon,
+    max_lon,
+    out_path,
+    colormap_name=None,
+    colormap=None,
+    max_retries=3,
+):
     """Fetch a bbox-cropped, reprojected PNG (at the given pixel size) for a STAC item asset.
 
     Writes the PNG bytes to out_path. Returns True on success. The Data API
@@ -241,11 +263,15 @@ def _render_crop(collection, item, asset, width, height, min_lat, max_lat, min_l
         "properties": {},
         "geometry": {
             "type": "Polygon",
-            "coordinates": [[
-                [min_lon, min_lat], [max_lon, min_lat],
-                [max_lon, max_lat], [min_lon, max_lat],
-                [min_lon, min_lat],
-            ]],
+            "coordinates": [
+                [
+                    [min_lon, min_lat],
+                    [max_lon, min_lat],
+                    [max_lon, max_lat],
+                    [min_lon, max_lat],
+                    [min_lon, min_lat],
+                ]
+            ],
         },
     }
     url = f"{_DATA_API_BASE}/item/feature/{width}x{height}.png"
@@ -261,8 +287,11 @@ def _render_crop(collection, item, asset, width, height, min_lat, max_lat, min_l
     for attempt in range(max_retries):
         try:
             response = requests.post(
-                url, params=params, json=feature,
-                headers={"User-Agent": _USER_AGENT}, timeout=60,
+                url,
+                params=params,
+                json=feature,
+                headers={"User-Agent": _USER_AGENT},
+                timeout=60,
             )
             if response.status_code == 200 and response.content:
                 with open(out_path, "wb") as f:
@@ -279,7 +308,12 @@ def _render_crop(collection, item, asset, width, height, min_lat, max_lat, min_l
 
 def _cache_key(prefix, min_lat, max_lat, min_lon, max_lon, variant=None):
     payload = {
-        "bbox": [round(min_lat, 7), round(max_lat, 7), round(min_lon, 7), round(max_lon, 7)],
+        "bbox": [
+            round(min_lat, 7),
+            round(max_lat, 7),
+            round(min_lon, 7),
+            round(max_lon, 7),
+        ],
         "prefix": prefix,
         # Bump whenever fetch/selection logic changes (not just the palette)
         # so a fix like "pick the best-overlapping STAC item" actually takes
@@ -295,9 +329,22 @@ def _cache_key(prefix, min_lat, max_lat, min_lon, max_lon, variant=None):
     return hashlib.sha256(data).hexdigest()
 
 
-def _get_cached_crop(prefix, collection, asset, min_lat, max_lat, min_lon, max_lon,
-                      disable_cache, max_cache_age_hours, width, height,
-                      sortby=None, colormap_name=None, colormap=None):
+def _get_cached_crop(
+    prefix,
+    collection,
+    asset,
+    min_lat,
+    max_lat,
+    min_lon,
+    max_lon,
+    disable_cache,
+    max_cache_age_hours,
+    width,
+    height,
+    sortby=None,
+    colormap_name=None,
+    colormap=None,
+):
     """Shared cache-then-fetch logic for one chunk of either the land-cover or photo crop."""
     os.makedirs(const.satellite_cache_dir, exist_ok=True)
     variant = json.dumps(colormap, sort_keys=True) if colormap else colormap_name
@@ -317,8 +364,20 @@ def _get_cached_crop(prefix, collection, asset, min_lat, max_lat, min_lon, max_l
         print(f"No {collection} coverage found for this chunk")
         return None
 
-    if not _render_crop(collection, item, asset, width, height, min_lat, max_lat, min_lon, max_lon,
-                         cache_path, colormap_name=colormap_name, colormap=colormap):
+    if not _render_crop(
+        collection,
+        item,
+        asset,
+        width,
+        height,
+        min_lat,
+        max_lat,
+        min_lon,
+        max_lon,
+        cache_path,
+        colormap_name=colormap_name,
+        colormap=colormap,
+    ):
         return None
 
     return cache_path
@@ -350,10 +409,23 @@ def _grid_breaks(min_v, max_v, step_deg, snap_deg=None):
     return sorted(breaks)
 
 
-def _fetch_tiled(prefix, collection, asset, min_lat, max_lat, min_lon, max_lon,
-                  disable_cache, max_cache_age_hours, sortby=None,
-                  colormap_name=None, colormap=None, grid_snap_deg=None,
-                  chunk_km=_CHUNK_KM, progress_cb=None):
+def _fetch_tiled(
+    prefix,
+    collection,
+    asset,
+    min_lat,
+    max_lat,
+    min_lon,
+    max_lon,
+    disable_cache,
+    max_cache_age_hours,
+    sortby=None,
+    colormap_name=None,
+    colormap=None,
+    grid_snap_deg=None,
+    chunk_km=_CHUNK_KM,
+    progress_cb=None,
+):
     """Fetch bbox as a grid of chunk_km-sized chunks (1x1 for anything smaller),
     each independently STAC-searched + cropped, in parallel.
 
@@ -385,17 +457,23 @@ def _fetch_tiled(prefix, collection, asset, min_lat, max_lat, min_lon, max_lon,
 
     center_lat = (min_lat + max_lat) / 2.0
     lat_step_deg = chunk_km / _KM_PER_DEGREE_LAT
-    lon_step_deg = chunk_km / max(1e-6, _KM_PER_DEGREE_LAT * math.cos(math.radians(center_lat)))
+    lon_step_deg = chunk_km / max(
+        1e-6, _KM_PER_DEGREE_LAT * math.cos(math.radians(center_lat))
+    )
     lat_breaks = _grid_breaks(min_lat, max_lat, lat_step_deg, snap_deg=grid_snap_deg)
     lon_breaks = _grid_breaks(min_lon, max_lon, lon_step_deg, snap_deg=grid_snap_deg)
     n_rows = len(lat_breaks) - 1
     n_cols = len(lon_breaks) - 1
 
     total_w, total_h = _pixel_dims(lat_span, lon_span, _MAX_PX)
-    col_widths = [max(1, round(total_w * (lon_breaks[c + 1] - lon_breaks[c]) / lon_span))
-                  for c in range(n_cols)]
-    row_heights = [max(1, round(total_h * (lat_breaks[r + 1] - lat_breaks[r]) / lat_span))
-                   for r in range(n_rows)]
+    col_widths = [
+        max(1, round(total_w * (lon_breaks[c + 1] - lon_breaks[c]) / lon_span))
+        for c in range(n_cols)
+    ]
+    row_heights = [
+        max(1, round(total_h * (lat_breaks[r + 1] - lat_breaks[r]) / lat_span))
+        for r in range(n_rows)
+    ]
     total_w = sum(col_widths)
     total_h = sum(row_heights)
     col_offsets = [sum(col_widths[:c]) for c in range(n_cols)]
@@ -403,21 +481,37 @@ def _fetch_tiled(prefix, collection, asset, min_lat, max_lat, min_lon, max_lon,
 
     tasks = [
         {
-            "row": row, "col": col,
-            "min_lat": lat_breaks[row], "max_lat": lat_breaks[row + 1],
-            "min_lon": lon_breaks[col], "max_lon": lon_breaks[col + 1],
-            "width": col_widths[col], "height": row_heights[row],
-            "x0": col_offsets[col], "y0": row_offsets[row],
+            "row": row,
+            "col": col,
+            "min_lat": lat_breaks[row],
+            "max_lat": lat_breaks[row + 1],
+            "min_lon": lon_breaks[col],
+            "max_lon": lon_breaks[col + 1],
+            "width": col_widths[col],
+            "height": row_heights[row],
+            "x0": col_offsets[col],
+            "y0": row_offsets[row],
         }
-        for row in range(n_rows) for col in range(n_cols)
+        for row in range(n_rows)
+        for col in range(n_cols)
     ]
 
     def _fetch_one(t):
         t["path"] = _get_cached_crop(
-            prefix, collection, asset,
-            t["min_lat"], t["max_lat"], t["min_lon"], t["max_lon"],
-            disable_cache, max_cache_age_hours, t["width"], t["height"],
-            sortby=sortby, colormap_name=colormap_name, colormap=colormap,
+            prefix,
+            collection,
+            asset,
+            t["min_lat"],
+            t["max_lat"],
+            t["min_lon"],
+            t["max_lon"],
+            disable_cache,
+            max_cache_age_hours,
+            t["width"],
+            t["height"],
+            sortby=sortby,
+            colormap_name=colormap_name,
+            colormap=colormap,
         )
         return t
 
@@ -426,9 +520,13 @@ def _fetch_tiled(prefix, collection, asset, min_lat, max_lat, min_lon, max_lon,
         if progress_cb:
             progress_cb(1.0)
     else:
-        print(f"Satellite {prefix}: area exceeds one source tile, fetching {n_rows}x{n_cols} chunks")
+        print(
+            f"Satellite {prefix}: area exceeds one source tile, fetching {n_rows}x{n_cols} chunks"
+        )
         results = [None] * len(tasks)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(tasks))) as ex:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(6, len(tasks))
+        ) as ex:
             future_to_idx = {ex.submit(_fetch_one, t): i for i, t in enumerate(tasks)}
             completed = 0
             for future in concurrent.futures.as_completed(future_to_idx):
@@ -440,13 +538,24 @@ def _fetch_tiled(prefix, collection, asset, min_lat, max_lat, min_lon, max_lon,
     if not any(t["path"] for t in results):
         return None
 
-    return TiledCrop(tiles=results, n_rows=n_rows, n_cols=n_cols,
-                      total_width=total_w, total_height=total_h)
+    return TiledCrop(
+        tiles=results,
+        n_rows=n_rows,
+        n_cols=n_cols,
+        total_width=total_w,
+        total_height=total_h,
+    )
 
 
-def get_cached_landcover_image(min_lat, max_lat, min_lon, max_lon,
-                                disable_cache=False, max_cache_age_hours=720,
-                                progress_cb=None):
+def get_cached_landcover_image(
+    min_lat,
+    max_lat,
+    min_lon,
+    max_lon,
+    disable_cache=False,
+    max_cache_age_hours=720,
+    progress_cb=None,
+):
     """Return a TiledCrop for an ESA WorldCover land-cover map of bbox.
 
     Disk-cached per chunk (same convention as the Overpass cache). Safe to
@@ -459,15 +568,25 @@ def get_cached_landcover_image(min_lat, max_lat, min_lon, max_lon,
     docstring; called with a 0-1 float as each chunk finishes.
     """
     return _fetch_tiled(
-        "landcover", _LANDCOVER_COLLECTION, "map",
-        min_lat, max_lat, min_lon, max_lon, disable_cache, max_cache_age_hours,
-        colormap=_LANDCOVER_PALETTE, grid_snap_deg=_WORLDCOVER_GRID_DEG,
-        chunk_km=_LANDCOVER_CHUNK_KM, progress_cb=progress_cb,
+        "landcover",
+        _LANDCOVER_COLLECTION,
+        "map",
+        min_lat,
+        max_lat,
+        min_lon,
+        max_lon,
+        disable_cache,
+        max_cache_age_hours,
+        colormap=_LANDCOVER_PALETTE,
+        grid_snap_deg=_WORLDCOVER_GRID_DEG,
+        chunk_km=_LANDCOVER_CHUNK_KM,
+        progress_cb=progress_cb,
     )
 
 
-def get_cached_photo_image(min_lat, max_lat, min_lon, max_lon,
-                            disable_cache=False, max_cache_age_hours=720):
+def get_cached_photo_image(
+    min_lat, max_lat, min_lon, max_lon, disable_cache=False, max_cache_age_hours=720
+):
     """Return a TiledCrop for a true-color Sentinel-2 photo of bbox.
 
     Debug-only companion to get_cached_landcover_image() -- lets the WorldCover
@@ -475,8 +594,15 @@ def get_cached_photo_image(min_lat, max_lat, min_lon, max_lon,
     Same caching/threading/tiling contract as get_cached_landcover_image().
     """
     return _fetch_tiled(
-        "photo", _PHOTO_COLLECTION, "visual",
-        min_lat, max_lat, min_lon, max_lon, disable_cache, max_cache_age_hours,
+        "photo",
+        _PHOTO_COLLECTION,
+        "visual",
+        min_lat,
+        max_lat,
+        min_lon,
+        max_lon,
+        disable_cache,
+        max_cache_age_hours,
         sortby=[{"field": "eo:cloud_cover", "direction": "asc"}],
     )
 
@@ -521,7 +647,7 @@ def _load_stitched_image(name, tiled):
         if h > 0 and w > 0:
             chunk_slice = chunk_pixels[:h, :w, :]
             valid = chunk_slice[..., 3] > 0.5
-            canvas_slice = canvas[y0:y0 + h, x0:x0 + w, :]
+            canvas_slice = canvas[y0 : y0 + h, x0 : x0 + w, :]
             canvas_slice[valid] = chunk_slice[valid]
 
     img = bpy.data.images.new(name, tiled.total_width, tiled.total_height, alpha=True)
@@ -530,7 +656,9 @@ def _load_stitched_image(name, tiled):
     return img
 
 
-def _build_reference_plane(name, image, corners, x_shift, z_height, tp3d, collection, material_name):
+def _build_reference_plane(
+    name, image, corners, x_shift, z_height, tp3d, collection, material_name
+):
     """Build (replacing any prior object of the same name) a flat unlit
     image plane from 4 bbox corners (already in convert_to_blender_coordinates
     space), shifted x_shift along X so multiple planes can sit side by side.
@@ -543,7 +671,10 @@ def _build_reference_plane(name, image, corners, x_shift, z_height, tp3d, collec
     uv_coords = {"sw": (0.0, 0.0), "se": (1.0, 0.0), "ne": (1.0, 1.0), "nw": (0.0, 1.0)}
 
     bm = bmesh.new()
-    verts = {key: bm.verts.new((pos[0] + x_shift, pos[1], 0.0)) for key, pos in corners.items()}
+    verts = {
+        key: bm.verts.new((pos[0] + x_shift, pos[1], 0.0))
+        for key, pos in corners.items()
+    }
     bm.verts.ensure_lookup_table()
     face = bm.faces.new((verts["sw"], verts["se"], verts["ne"], verts["nw"]))
 
@@ -591,8 +722,252 @@ def _build_reference_plane(name, image, corners, x_shift, z_height, tp3d, collec
     return obj
 
 
-def create_satellite_plane(landcover_tiled, min_lat, max_lat, min_lon, max_lon, z_height,
-                            debug_photo_tiled=None):
+def _classify_pixels_to_ids(rgb_uint8):
+    """Vectorized nearest-_LANDCOVER_PALETTE-entry match over a whole
+    (h, w, 3) uint8-range float array. Returns an (h, w) int32 grid of class
+    ids, -1 where the pixel is farther than _LANDCOVER_MATCH_MAX_DIST from
+    every palette entry (shouldn't normally happen since the Data API
+    colorizes server-side to these exact colors, but PNG compression/resize
+    can shift a pixel slightly). Shared by the denoise pass below and could
+    replace the per-consumer distance loops in sample_landcover_classes() /
+    paint_terrain_from_landcover() in the future -- not touched here to keep
+    this change scoped to the denoise feature.
+    """
+    class_ids = list(_LANDCOVER_PALETTE.keys())
+    palette_rgb = np.array(
+        [_LANDCOVER_PALETTE[c][:3] for c in class_ids], dtype=np.float32
+    )
+
+    best_dist = np.full(rgb_uint8.shape[:2], np.inf, dtype=np.float32)
+    best_class = np.full(rgb_uint8.shape[:2], -1, dtype=np.int32)
+    for class_id, rgb in zip(class_ids, palette_rgb):
+        diff = rgb_uint8 - rgb
+        dist = np.sqrt((diff * diff).sum(axis=-1))
+        better = dist < best_dist
+        best_dist = np.where(better, dist, best_dist)
+        best_class = np.where(better, class_id, best_class)
+    best_class[best_dist > _LANDCOVER_MATCH_MAX_DIST] = -1
+    return best_class
+
+
+def _label_components(class_grid):
+    """4-connected connected-component labeling over class_grid (int32,
+    -1 = ignore). Pure numpy + a small Python-level union-find operating on
+    per-row runs (not per-pixel), so it stays fast without needing scipy.
+
+    Returns (labels, comp_class, comp_area):
+      labels     : (h, w) int64, -1 for ignore pixels, else a component id
+      comp_class : (n_components,) int32, the class id of each component
+      comp_area  : (n_components,) int64, pixel count of each component
+    """
+    h, w = class_grid.shape
+    valid = class_grid >= 0
+
+    # Horizontal runs: vectorized via a "new run starts here" boolean mask,
+    # cumsum'd per row, then offset so run ids are unique across the whole
+    # image (not just within a row).
+    same_as_left = np.zeros((h, w), dtype=bool)
+    same_as_left[:, 1:] = (
+        valid[:, 1:] & valid[:, :-1] & (class_grid[:, 1:] == class_grid[:, :-1])
+    )
+    new_run = ~same_as_left
+    run_id_in_row = np.cumsum(new_run.astype(np.int64), axis=1) - 1
+    runs_per_row = run_id_in_row[:, -1] + 1 if w > 0 else np.zeros(h, dtype=np.int64)
+    row_offsets = np.zeros(h, dtype=np.int64)
+    if h > 1:
+        row_offsets[1:] = np.cumsum(runs_per_row)[:-1]
+    run_id = run_id_in_row + row_offsets[:, None]
+    n_runs = int(run_id.max()) + 1 if run_id.size else 0
+
+    parent = np.arange(n_runs, dtype=np.int64)
+
+    def _find(x):
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:
+            nxt = parent[x]
+            parent[x] = root
+            x = nxt
+        return root
+
+    # Union runs that touch vertically (same class, row i and row i+1) --
+    # only a Python loop over the number of *runs* that touch, which for
+    # blocky land-cover data is far fewer than the total pixel count.
+    if h > 1:
+        vert_match = (
+            valid[1:, :] & valid[:-1, :] & (class_grid[1:, :] == class_grid[:-1, :])
+        )
+        rows_top, cols = np.nonzero(vert_match)
+        if rows_top.size:
+            run_top = run_id[rows_top, cols]
+            run_bottom = run_id[rows_top + 1, cols]
+            pairs = np.unique(np.stack([run_top, run_bottom], axis=1), axis=0)
+            for a, b in pairs.tolist():
+                ra, rb = _find(a), _find(b)
+                if ra != rb:
+                    parent[ra] = rb
+
+    if n_runs:
+        roots = np.array([_find(i) for i in range(n_runs)], dtype=np.int64)
+        _, comp_of_run = np.unique(roots, return_inverse=True)
+        n_components = int(comp_of_run.max()) + 1
+    else:
+        comp_of_run = np.zeros(0, dtype=np.int64)
+        n_components = 0
+
+    labels = np.full((h, w), -1, dtype=np.int64)
+    comp_class = np.full(n_components, -1, dtype=np.int32)
+    comp_area = np.zeros(n_components, dtype=np.int64)
+    if n_components:
+        labels[valid] = comp_of_run[run_id[valid]]
+        flat_labels = labels[valid]
+        flat_classes = class_grid[valid]
+        comp_area = np.bincount(flat_labels, minlength=n_components)
+        # Every pixel in a component shares the same class by construction
+        # (that's what makes it one component) -- take any one occurrence.
+        order = np.argsort(flat_labels, kind="stable")
+        first_idx = np.searchsorted(flat_labels[order], np.arange(n_components))
+        comp_class = flat_classes[order][first_idx].astype(np.int32)
+
+    return labels, comp_class, comp_area
+
+
+def _denoise_landcover_classes(class_grid, min_feature_area_px):
+    """Area-based despeckle: 4-connected components of class_grid smaller
+    than min_feature_area_px (pixels) get reassigned to whichever
+    neighboring component actually borders them, via iterative majority
+    vote. Components at or above the threshold are never touched regardless
+    of their shape -- unlike a fixed-radius morphological opening, this
+    can't runaway-erode a large real feature just because the threshold got
+    turned up; only genuinely small components are ever candidates.
+
+    class_grid : (h, w) int32, -1 = unclassifiable/leave alone
+    min_feature_area_px : area threshold in pixels. <= 0 disables and
+                           returns class_grid unchanged.
+    """
+    if min_feature_area_px <= 0:
+        return class_grid
+
+    labels, comp_class, comp_area = _label_components(class_grid)
+    if comp_area.size == 0:
+        return class_grid
+
+    is_small = comp_area < min_feature_area_px
+    if not is_small.any():
+        return class_grid
+
+    speck = (labels >= 0) & is_small[np.clip(labels, 0, None)]
+    if not speck.any():
+        return class_grid
+
+    result = class_grid.copy()
+    result[speck] = -2  # sentinel distinct from real -1 (unclassifiable) pixels
+    remaining = speck.copy()
+
+    class_ids = [int(c) for c in np.unique(comp_class) if c >= 0]
+    # Bound tied to image size, not a fixed radius -- a removed component's
+    # own diameter is what determines how many rings it takes to fill in
+    # from its (surviving, above-threshold) border, and that can't exceed
+    # the image dimensions.
+    max_iters = int(max(class_grid.shape)) + 4
+    for _ in range(max_iters):
+        if not remaining.any():
+            break
+        padded = np.pad(result, 1, mode="constant", constant_values=-1)
+        neighbors = np.stack(
+            [padded[:-2, 1:-1], padded[2:, 1:-1], padded[1:-1, :-2], padded[1:-1, 2:]],
+            axis=0,
+        )
+        best_val = np.full(result.shape, -2, dtype=result.dtype)
+        best_count = np.zeros(result.shape, dtype=np.int8)
+        for cid in class_ids:
+            cnt = (neighbors == cid).sum(axis=0)
+            better = cnt > best_count
+            best_val = np.where(better, cid, best_val)
+            best_count = np.where(better, cnt, best_count)
+        can_fill = remaining & (best_count > 0)
+        if not can_fill.any():
+            break
+        result = np.where(can_fill, best_val, result)
+        remaining = remaining & ~can_fill
+
+    if remaining.any():
+        # Pathological leftover -- e.g. the whole image was below threshold,
+        # so there's no surviving class anywhere to fill from. Don't leave
+        # the sentinel in the output; just give those pixels back their
+        # original (still "too small") class rather than guessing.
+        result = np.where(remaining, class_grid, result)
+
+    return result
+
+
+def _render_classes_to_rgba(class_grid, original_pixels):
+    """Rebuild an (h, w, 4) float32 RGBA image from a denoised class grid,
+    falling back to the original pixel wherever class_grid is -1
+    (unclassifiable -- left untouched rather than guessed at)."""
+    out = original_pixels.copy()
+    for class_id, rgba in _LANDCOVER_PALETTE.items():
+        mask = class_grid == class_id
+        if mask.any():
+            out[mask] = np.array(rgba, dtype=np.float32) / 255.0
+    return out
+
+
+def _denoise_landcover_image(image, corners):
+    """In-place despeckle of a loaded LANDCOVER_IMAGE_NAME image using
+    el_wcMinFeatureArea (map units²) converted to a pixel-area threshold
+    from the image's own real-world size -- so the same physical speck size
+    is cleared regardless of how many raster pixels the fetch happened to
+    return.
+
+    Runs once here (right after the image is loaded/stitched, before either
+    paint_terrain_from_landcover() or sample_landcover_classes() samples it)
+    so PAINT mode and texture mode both see the same cleaned-up
+    classification instead of each re-deriving it differently.
+
+    corners : the same convert_to_blender_coordinates() dict create_satellite_plane()
+              already built, reused here rather than recomputed.
+    """
+    import bpy  # type: ignore
+
+    tp3d = bpy.context.scene.tp3d
+    min_feature_units2 = float(getattr(tp3d, "el_wcMinFeatureArea", 0.0))
+    if min_feature_units2 <= 0:
+        return
+
+    local_width = corners["se"][0] - corners["sw"][0]
+    local_height = corners["ne"][1] - corners["se"][1]
+    img_w, img_h = image.size
+    if local_width <= 0 or local_height <= 0 or img_w <= 0 or img_h <= 0:
+        return
+
+    px_per_unit = 0.5 * (img_w / local_width + img_h / local_height)
+    min_feature_area_px = min_feature_units2 * (px_per_unit**2)
+
+    buf = np.empty(img_w * img_h * 4, dtype=np.float32)
+    image.pixels.foreach_get(buf)
+    pixels = buf.reshape(img_h, img_w, 4)
+
+    class_grid = _classify_pixels_to_ids(pixels[..., :3] * 255.0)
+    denoised = _denoise_landcover_classes(class_grid, min_feature_area_px)
+    if np.array_equal(denoised, class_grid):
+        return  # nothing changed -- skip the write-back
+
+    cleaned = _render_classes_to_rgba(denoised, pixels)
+    image.pixels.foreach_set(cleaned.reshape(-1))
+    image.update()
+
+
+def create_satellite_plane(
+    landcover_tiled,
+    min_lat,
+    max_lat,
+    min_lon,
+    max_lon,
+    z_height,
+    debug_photo_tiled=None,
+):
     """Create (or replace) a flat, unlit reference plane textured with the
     ESA WorldCover land-cover map.
 
@@ -629,20 +1004,34 @@ def create_satellite_plane(landcover_tiled, min_lat, max_lat, min_lon, max_lon, 
     if landcover_image is None:
         return None
 
+    _denoise_landcover_image(landcover_image, corners)
+
     obj = _build_reference_plane(
-        SATELLITE_PLANE_NAME, landcover_image, corners, x_shift=0.0,
-        z_height=z_height, tp3d=tp3d, collection=bpy.context.collection,
+        SATELLITE_PLANE_NAME,
+        landcover_image,
+        corners,
+        x_shift=0.0,
+        z_height=z_height,
+        tp3d=tp3d,
+        collection=bpy.context.collection,
         material_name="TP3D_Satellite",
     )
 
-    photo_image = _load_stitched_image(PHOTO_IMAGE_NAME, debug_photo_tiled) if (
-        bpy.app.debug and debug_photo_tiled) else None
+    photo_image = (
+        _load_stitched_image(PHOTO_IMAGE_NAME, debug_photo_tiled)
+        if (bpy.app.debug and debug_photo_tiled)
+        else None
+    )
 
     if photo_image is not None:
         width = corners["se"][0] - corners["sw"][0]
         _build_reference_plane(
-            DEBUG_RAW_PLANE_NAME, photo_image, corners, x_shift=width * 1.05,
-            z_height=z_height, tp3d=tp3d,
+            DEBUG_RAW_PLANE_NAME,
+            photo_image,
+            corners,
+            x_shift=width * 1.05,
+            z_height=z_height,
+            tp3d=tp3d,
             collection=debug_collection(DEBUG_COLLECTION_NAME),
             material_name="TP3D_Satellite_DebugRaw",
         )
@@ -697,8 +1086,19 @@ def _landcover_image_and_world_bbox(min_lat, max_lat, min_lon, max_lon):
     return pixels, x0, y0, span_x, span_y
 
 
-def sample_landcover_classes(resolution, cursor_x, cursor_y, min_x, min_y, width, height,
-                              min_lat, max_lat, min_lon, max_lon):
+def sample_landcover_classes(
+    resolution,
+    cursor_x,
+    cursor_y,
+    min_x,
+    min_y,
+    width,
+    height,
+    min_lat,
+    max_lat,
+    min_lon,
+    max_lon,
+):
     """Classify every pixel of a resolution x resolution paint-texture grid
     against the land-cover reference image, for texture-mode PAINT.
 
@@ -756,7 +1156,9 @@ def sample_landcover_classes(resolution, cursor_x, cursor_y, min_x, min_y, width
     return best_class
 
 
-def paint_terrain_from_landcover(map_obj, min_lat, max_lat, min_lon, max_lon, up_threshold=0.05):
+def paint_terrain_from_landcover(
+    map_obj, min_lat, max_lat, min_lon, max_lon, up_threshold=0.05
+):
     """Color map_obj's up-facing terrain faces by sampling the land-cover
     reference image, for PAINT elementMode.
 
@@ -780,7 +1182,7 @@ def paint_terrain_from_landcover(map_obj, min_lat, max_lat, min_lon, max_lon, up
     import bmesh  # type: ignore
     import bpy  # type: ignore
 
-    if map_obj is None or map_obj.type != 'MESH':
+    if map_obj is None or map_obj.type != "MESH":
         return
     bbox = _landcover_image_and_world_bbox(min_lat, max_lat, min_lon, max_lon)
     if bbox is None:
@@ -789,7 +1191,9 @@ def paint_terrain_from_landcover(map_obj, min_lat, max_lat, min_lon, max_lon, up
     height, width = pixels.shape[:2]
 
     class_ids = list(_LANDCOVER_PALETTE.keys())
-    palette_rgb = np.array([_LANDCOVER_PALETTE[c][:3] for c in class_ids], dtype=np.float32)
+    palette_rgb = np.array(
+        [_LANDCOVER_PALETTE[c][:3] for c in class_ids], dtype=np.float32
+    )
 
     tp3d = bpy.context.scene.tp3d
     mat_index_by_class = {}
