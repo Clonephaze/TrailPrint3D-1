@@ -36,6 +36,10 @@
         <button id="importGpx" style="padding: 12px 20px; background: #2a8a2a; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Import GPX</button>
         <div id="gpxList" style="display:none; font-size:11px; color:#aaa; line-height:1.8;"></div>
         <button id="clearGpx" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear GPX</button>
+        <input type="file" id="geojsonInput" accept=".geojson,.json" style="display: none;">
+        <button id="importGeojson" style="padding: 12px 20px; background: #2a5a8a; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Import GeoJSON</button>
+        <div id="geojsonList" style="display:none; font-size:11px; color:#aaa; line-height:1.8;"></div>
+        <button id="clearGeojson" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear GeoJSON</button>
         <hr class="sidebar-divider">
         <div id="status">Draw a shape to begin.</div>
         <button id="send" class="btn-send" disabled>Send to Blender</button>
@@ -120,6 +124,8 @@
         map.addLayer(moveHandleLayer);              // editHandles so clearing corner/edge handles doesn't drop it
         var gpxLayer = new L.FeatureGroup();
         map.addLayer(gpxLayer);
+        var geojsonLayer = new L.FeatureGroup();
+        map.addLayer(geojsonLayer);
         var existingMapsLayer = new L.FeatureGroup();
         map.addLayer(existingMapsLayer);
         var existingTrailsLayer = new L.FeatureGroup();
@@ -132,6 +138,8 @@
         var rectLayer = null; // the single L.Rectangle currently in drawnItems, if any
         var gpxPaths = [];
         var gpxNames = [];
+        var geojsonPaths = [];
+        var geojsonNames = [];
         var existingMaps = [];
 
         __LOCATION_PANEL_JS__
@@ -156,6 +164,28 @@
         document.getElementById('gpxList').addEventListener('click', function(e) {
             if (e.target.closest('.gpx-item-name') && gpxLayer.getBounds().isValid()) {
                 map.fitBounds(gpxLayer.getBounds(), { padding: [50, 50] });
+            }
+        });
+
+        function updateGeojsonList() {
+            // Like the GPX list above, the free map generator only ever holds
+            // one boundary at a time -- see the geojsonInput 'change' handler,
+            // which replaces rather than adds.
+            var listEl = document.getElementById('geojsonList');
+            var clearBtn = document.getElementById('clearGeojson');
+            if (geojsonNames.length === 0) {
+                listEl.style.display = 'none'; clearBtn.style.display = 'none'; return;
+            }
+            listEl.style.display = 'block';
+            clearBtn.style.display = 'block';
+            listEl.innerHTML = '<div class="gpx-item-name" title="' + geojsonNames[0] + '">+ ' + geojsonNames[0] + '</div>'
+                + '<div style="color:#888; font-style:italic; margin-top:2px;">'
+                + 'Upload Multiple GeoJSON files with the Premium Version</div>';
+        }
+
+        document.getElementById('geojsonList').addEventListener('click', function(e) {
+            if (e.target.closest('.gpx-item-name') && geojsonLayer.getBounds().isValid()) {
+                map.fitBounds(geojsonLayer.getBounds(), { padding: [50, 50] });
             }
         });
 
@@ -387,17 +417,20 @@
         }
 
         function updateSendState() {
-            var ready = !!coords;
+            var ready = !!coords || geojsonPaths.length > 0;
             document.getElementById('send').disabled = !ready;
         }
 
         function updateStatus() {
             var nGpx = gpxPaths.length;
+            var nGeojson = geojsonPaths.length;
             var extraSuffix = nGpx ? (' + ' + nGpx + ' trail(s)') : '';
             if (coords) {
                 document.getElementById('status').textContent = 'Area ready' + extraSuffix + '.';
+            } else if (nGeojson) {
+                document.getElementById('status').textContent = 'GeoJSON boundary ready' + extraSuffix + '.';
             } else if (nGpx) {
-                document.getElementById('status').textContent = nGpx + ' trail(s) imported — draw a shape to send.';
+                document.getElementById('status').textContent = nGpx + ' trail(s) imported — draw a shape or import a GeoJSON boundary to send.';
             } else {
                 document.getElementById('status').textContent = 'Draw a shape to begin.';
             }
@@ -501,6 +534,75 @@
             updateStatus();
         });
 
+        document.getElementById('importGeojson').addEventListener('click', function() {
+            document.getElementById('geojsonInput').click();
+        });
+
+        document.getElementById('geojsonInput').addEventListener('change', function(e) {
+            // Single-boundary only -- multi-file GeoJSON merge is a Premium
+            // feature (see premium/map_generator_pe.html).
+            var files = Array.from(e.target.files).slice(0, 1);
+            this.value = '';
+            if (!files.length) return;
+            if (geojsonPaths.length > 0) {
+                geojsonPaths = []; geojsonNames = [];
+                geojsonLayer.clearLayers();
+            }
+            var file = files[0];
+            var reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    var parsed = JSON.parse(event.target.result);
+                    // A GeoJSON boundary replaces the drawn area rather than
+                    // combining with it (this picker only ever sends one
+                    // tile, and the backend already prioritizes the GeoJSON
+                    // boundary over any drawn shape) -- drop it here too so
+                    // the map doesn't keep showing a shape that won't
+                    // actually be sent.
+                    if (coords) {
+                        clearDrawnArea();
+                        updateStatus();
+                        updateSendState();
+                    }
+                    // Leaflet's own GeoJSON renderer handles Polygon/
+                    // MultiPolygon/Feature/FeatureCollection natively.
+                    var layer = L.geoJSON(parsed, {
+                        style: { color: '#2a8adf', weight: 2.5, opacity: 0.9, fill: true, fillOpacity: 0.12, fillColor: '#2a8adf' }
+                    });
+                    layer.bindTooltip(file.name, { sticky: true });
+                    geojsonLayer.addLayer(layer);
+                    fetch('http://127.0.0.1:' + PORT + '/upload_geojson', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/geo+json', 'X-Filename': file.name },
+                        body: event.target.result
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(res) {
+                        geojsonPaths.push(res.path);
+                        geojsonNames.push(file.name);
+                        updateGeojsonList();
+                        updateSendState();
+                        updateStatus();
+                        saveState();
+                        if (geojsonLayer.getBounds().isValid()) {
+                            map.fitBounds(geojsonLayer.getBounds(), { padding: [50, 50] });
+                        }
+                    })
+                    .catch(function() { alert('Could not save GeoJSON to temp file.'); });
+                } catch (err) { alert('Error importing ' + file.name + ': ' + err.message); }
+            };
+            reader.readAsText(file);
+        });
+
+        document.getElementById('clearGeojson').addEventListener('click', function() {
+            geojsonPaths = []; geojsonNames = [];
+            geojsonLayer.clearLayers();
+            updateGeojsonList();
+            saveState();
+            updateSendState();
+            updateStatus();
+        });
+
         document.querySelectorAll('.shape-btn[data-shape]').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 // Just changes which shape the already-drawn area gets
@@ -532,7 +634,12 @@
             armDraw();
         });
 
-        document.getElementById('deleteBtn').addEventListener('click', function() {
+        // Also used to drop a drawn area when a GeoJSON boundary is imported
+        // instead (see the geojsonInput 'change' handler below) -- the two
+        // are mutually exclusive on this picker (it only ever sends one
+        // tile), so keeping both drawn at once would be misleading even
+        // though the backend already prioritizes the GeoJSON boundary.
+        function clearDrawnArea() {
             drawnItems.clearLayers();
             shapePreview.clearLayers();
             editHandles.clearLayers();
@@ -541,6 +648,10 @@
             rectLayer = null;
             coords = null;
             shapeCenter = null;
+        }
+
+        document.getElementById('deleteBtn').addEventListener('click', function() {
+            clearDrawnArea();
             updateStatus();
             updateSendState();
             saveState();
@@ -625,10 +736,11 @@
         });
 
         document.getElementById('send').onclick = function() {
-            if (!coords) return;
+            if (!coords && geojsonPaths.length === 0) return;
 
             var payload = {
                 gpx_paths: gpxPaths,
+                geojson_paths: geojsonPaths,
                 resolution: parseInt(document.getElementById('resolutionSlider').value) || 4,
                 objSize: parseFloat(document.getElementById('objSizeInput').value) || 100
             };

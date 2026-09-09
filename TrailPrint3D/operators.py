@@ -2934,12 +2934,13 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
         bounds = data.get('bounds')
         gpx_paths = data.get('gpx_paths', [])
+        geojson_paths = data.get('geojson_paths', [])
 
-        if not bounds and not gpx_paths:
+        if not bounds and not gpx_paths and not geojson_paths:
             self.report({'WARNING'}, "Nothing to generate — draw a shape first")
             return
 
-        if not bounds and gpx_paths:
+        if not bounds and not geojson_paths and gpx_paths:
             # Trail-only: no area was drawn — just add the trail(s) using
             # whatever map setup (scale, position) is already active in the
             # scene, same as the sidebar's "Generate Just Trail" button.
@@ -2950,9 +2951,6 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
             self.report({'INFO'}, f"Generated {len(gpx_paths)} trail(s)")
             return
-
-        shape_name = data.get('type', 'rectangle')
-        props.shape = self._TYPE_MAP.get(shape_name, 'SQUARE')
 
         if data.get('resolution') is not None:
             # Mirrors the scene's own "Resolution" sidebar property so the
@@ -2969,95 +2967,123 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             # Blank) in sync too, mirroring the Multi Tile Generator picker.
             props.rectangleHeight = _picked_size
 
-        south, north = bounds['south'], bounds['north']
-        west, east = bounds['west'], bounds['east']
+        # A GeoJSON boundary (if any) always wins over a drawn shape -- this
+        # picker only ever produces one tile, so the two are mutually
+        # exclusive rather than combined the way the Multi Tile Generator's
+        # picker can send both a grid batch and a GeoJSON batch together.
+        if geojson_paths:
+            from .utils import io_geojson
 
-        overlay.update(0.02, "Creating base tile…", "Building terrain…")
-        # sScaleHor must be set BEFORE the convert_to_blender_coordinates
-        # calls below, since that function reads it -- derive the scale from
-        # the unscaled convert_to_neutral_coordinates extent first, then set
-        # sScaleHor, and only then compute actual placement.
-        nx1, ny1, _ = utils.convert_to_neutral_coordinates(south, west, 0, 0)
-        nx2, ny2, _ = utils.convert_to_neutral_coordinates(north, east, 0, 0)
-        neutral_extent = max(abs(nx2 - nx1), abs(ny2 - ny1))
-        fixed_scale = props.objSize / neutral_extent if neutral_extent > 0 else 1.0
-        bpy.context.scene.tp3d["sScaleHor"] = fixed_scale
+            overlay.update(0.02, "Parsing GeoJSON…", f"Reading {len(geojson_paths)} file(s)…")
+            try:
+                polygon = io_geojson.read_geojson_files(geojson_paths)
+            except Exception as exc:  # noqa: BLE001 - surfaced to the user, not a bug to narrow
+                self.report({'ERROR'}, f"Could not parse GeoJSON: {exc}")
+                return
 
-        x1, y1, _ = utils.convert_to_blender_coordinates(south, west, 0, 0)
-        x2, y2, _ = utils.convert_to_blender_coordinates(north, east, 0, 0)
-        tile_w, tile_h = abs(x2 - x1), abs(y2 - y1)
-        center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
-        diameter = max(tile_w, tile_h)
-
-        if shape_name == 'circle':
-            blank = utils.create_circle(diameter / 2, props.num_subdivisions)
-            blank["Shape"] = "CIRCLE"
-        elif shape_name == 'octagon':
-            blank = utils.create_octagon(diameter / 2, props.num_subdivisions)
-            blank["Shape"] = "OCTAGON"
-        elif shape_name == 'square':
-            # Unlike 'rectangle' below, width and height are forced equal here
-            # -- the picker already squares the drawn area for every shape but
-            # Rectangle (see map_generator.html's effectiveBounds), this just
-            # doesn't additionally trust that to already be exact.
-            blank = utils.create_rectangle(diameter, diameter, props.num_subdivisions)
-            blank["Shape"] = "SQUARE"
+            overlay.update(0.06, "Creating base tile…", "Building terrain…")
+            blank = io_geojson.build_tile_from_polygon(
+                polygon, props.objSize, props.num_subdivisions,
+                name="GeoJSON_Boundary", simplify_tolerance=props.geojsonSimplifyTolerance,
+            )
+            if blank is None:
+                self.report({'ERROR'}, "GeoJSON boundary produced an empty/degenerate shape.")
+                return
         else:
-            blank = utils.create_rectangle(tile_w, tile_h, props.num_subdivisions)
-            blank["Shape"] = "SQUARE"
-        blank["objSize"] = diameter
-        blank["objType"] = "MAP"
-        blank["edge_south"], blank["edge_north"] = south, north
-        blank["edge_west"], blank["edge_east"] = west, east
-        blank.location = (center_x, center_y, 0)
+            shape_name = data.get('type', 'rectangle')
+            props.shape = self._TYPE_MAP.get(shape_name, 'SQUARE')
 
-        bpy.context.view_layer.objects.active = blank
-        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-        overlay.update(0.06, "Fetching Elevation", "Querying elevation API…")
-        overlay.set_fetch_progress('elevation', 0.0)
+            south, north = bounds['south'], bounds['north']
+            west, east = bounds['west'], bounds['east']
 
-        def _elev_progress(pct):
-            t = pct / 100.0
-            overlay.update(0.06 + t * (0.30 - 0.06), "Fetching Elevation", f"{pct}% complete…",
-                           sub_percent=t, sub_label="Elevation tiles")
-            overlay.set_fetch_progress('elevation', t)
+            overlay.update(0.02, "Creating base tile…", "Building terrain…")
+            # sScaleHor must be set BEFORE the convert_to_blender_coordinates
+            # calls below, since that function reads it -- derive the scale from
+            # the unscaled convert_to_neutral_coordinates extent first, then set
+            # sScaleHor, and only then compute actual placement.
+            nx1, ny1, _ = utils.convert_to_neutral_coordinates(south, west, 0, 0)
+            nx2, ny2, _ = utils.convert_to_neutral_coordinates(north, east, 0, 0)
+            neutral_extent = max(abs(nx2 - nx1), abs(ny2 - ny1))
+            fixed_scale = props.objSize / neutral_extent if neutral_extent > 0 else 1.0
+            bpy.context.scene.tp3d["sScaleHor"] = fixed_scale
 
-        # Route through a real gen rather than a bare object: get_tile_elevation()
-        # supports both, but only a real gen gets buggyData/tileVerts/elDiff
-        # bookkeeping, and every other preview-fetch call site follows this pattern.
-        gen = utils._rg_validate_inputs(frozenset(), gen_type=0)
-        gen.runtime.mapObject = blank
-        utils.compute_and_store_tile_bounds(gen)
-        preview_elevations, preview_diff = utils.get_tile_elevation(gen, progress_cb=_elev_progress)
-        overlay.sub_percent = None
+            x1, y1, _ = utils.convert_to_blender_coordinates(south, west, 0, 0)
+            x2, y2, _ = utils.convert_to_blender_coordinates(north, east, 0, 0)
+            tile_w, tile_h = abs(x2 - x1), abs(y2 - y1)
+            center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+            diameter = max(tile_w, tile_h)
 
-        if props.fixedElevationScale:
-            auto_scale = 10 / (preview_diff / 1000) if preview_diff > 0 else 10
-        else:
-            auto_scale = fixed_scale
-        props.sAutoScale = auto_scale
+            if shape_name == 'circle':
+                blank = utils.create_circle(diameter / 2, props.num_subdivisions)
+                blank["Shape"] = "CIRCLE"
+            elif shape_name == 'octagon':
+                blank = utils.create_octagon(diameter / 2, props.num_subdivisions)
+                blank["Shape"] = "OCTAGON"
+            elif shape_name == 'square':
+                # Unlike 'rectangle' below, width and height are forced equal here
+                # -- the picker already squares the drawn area for every shape but
+                # Rectangle (see map_generator.html's effectiveBounds), this just
+                # doesn't additionally trust that to already be exact.
+                blank = utils.create_rectangle(diameter, diameter, props.num_subdivisions)
+                blank["Shape"] = "SQUARE"
+            else:
+                blank = utils.create_rectangle(tile_w, tile_h, props.num_subdivisions)
+                blank["Shape"] = "SQUARE"
+            blank["objSize"] = diameter
+            blank["objType"] = "MAP"
+            blank["edge_south"], blank["edge_north"] = south, north
+            blank["edge_west"], blank["edge_east"] = west, east
+            blank.location = (center_x, center_y, 0)
 
-        overlay.update(0.32, "Analyzing terrain…", "Calculating elevation range…")
-        lowest_z = 1000
-        highest_z = 0
-        obj_matrix = blank.matrix_world
-        for i, vert in enumerate(blank.data.vertices):
-            world_co = obj_matrix @ vert.co
-            vert_lat, _ = utils.convert_to_geo(world_co.x, world_co.y)
-            merc = 1 / math.cos(math.radians(vert_lat))
-            val = preview_elevations[i] / 1000 * props.scaleElevation * auto_scale * merc
-            lowest_z = min(lowest_z, val)
-            highest_z = max(highest_z, val)
-        props.sAdditionalExtrusion = lowest_z
+            bpy.context.view_layer.objects.active = blank
+            bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+            overlay.update(0.06, "Fetching Elevation", "Querying elevation API…")
+            overlay.set_fetch_progress('elevation', 0.0)
 
-        overlay.add_completed_step(f"Preview elevation — z {lowest_z:.1f}-{highest_z:.1f}")
+            def _elev_progress(pct):
+                t = pct / 100.0
+                overlay.update(0.06 + t * (0.30 - 0.06), "Fetching Elevation", f"{pct}% complete…",
+                               sub_percent=t, sub_label="Elevation tiles")
+                overlay.set_fetch_progress('elevation', t)
+
+            # Route through a real gen rather than a bare object: get_tile_elevation()
+            # supports both, but only a real gen gets buggyData/tileVerts/elDiff
+            # bookkeeping, and every other preview-fetch call site follows this pattern.
+            gen = utils._rg_validate_inputs(frozenset(), gen_type=0)
+            gen.runtime.mapObject = blank
+            utils.compute_and_store_tile_bounds(gen)
+            preview_elevations, preview_diff = utils.get_tile_elevation(gen, progress_cb=_elev_progress)
+            overlay.sub_percent = None
+
+            if props.fixedElevationScale:
+                auto_scale = 10 / (preview_diff / 1000) if preview_diff > 0 else 10
+            else:
+                auto_scale = fixed_scale
+            props.sAutoScale = auto_scale
+
+            overlay.update(0.32, "Analyzing terrain…", "Calculating elevation range…")
+            lowest_z = 1000
+            highest_z = 0
+            obj_matrix = blank.matrix_world
+            for i, vert in enumerate(blank.data.vertices):
+                world_co = obj_matrix @ vert.co
+                vert_lat, _ = utils.convert_to_geo(world_co.x, world_co.y)
+                merc = 1 / math.cos(math.radians(vert_lat))
+                val = preview_elevations[i] / 1000 * props.scaleElevation * auto_scale * merc
+                lowest_z = min(lowest_z, val)
+                highest_z = max(highest_z, val)
+            props.sAdditionalExtrusion = lowest_z
+
+            overlay.add_completed_step(f"Preview elevation — z {lowest_z:.1f}-{highest_z:.1f}")
 
         bpy.ops.object.select_all(action='DESELECT')
         blank.select_set(True)
         bpy.context.view_layer.objects.active = blank
         # skip_bottom_recess: this blank is always a fresh single tile with
         # additionalExtrusion locked to its OWN lowest point (set just
-        # above), not an older neighbor's -- there's no seam to protect.
+        # above, either from the elevation-preview loop or, for a GeoJSON
+        # boundary, internally by build_tile_from_polygon), not an older
+        # neighbor's -- there's no seam to protect.
         utils.runTileGeneration(manage_overlay=False, skip_bottom_recess=True)
 
         if gpx_paths:
