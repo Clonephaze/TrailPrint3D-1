@@ -30,7 +30,9 @@ import requests
 
 from ... import constants as const
 
-OSMDATA_ZIP_URL = "https://osmdata.openstreetmap.de/download/simplified-water-polygons-split-3857.zip"
+OSMDATA_ZIP_URL = (
+    "https://osmdata.openstreetmap.de/download/simplified-water-polygons-split-3857.zip"
+)
 
 # WGS84 semi-major axis, in meters -- the sphere radius EPSG:3857 is defined
 # against. NOT the same as constants.R (6371.0 km), which is a different mean
@@ -138,7 +140,7 @@ def _convert_zip_to_wkb(zip_path, wkb_path):
     rejected). Deliberately does NOT build a bare MultiPolygon either --
     the dataset's split/overlapping world-edge pieces make that invalid.
     """
-    import shapefile  #type: ignore -- pyshp - pure Python, bundled as a wheel
+    import shapefile  # type: ignore -- pyshp - pure Python, bundled as a wheel
     import shapely as _shp
 
     # import since it's only needed for this one-time conversion step.
@@ -216,7 +218,9 @@ def ensure_water_dataset(progress_cb=None):
     if is_dataset_ready():
         return True
 
-    if not os.path.isfile(_zip_path()) and not download_dataset(progress_cb=progress_cb):
+    if not os.path.isfile(_zip_path()) and not download_dataset(
+        progress_cb=progress_cb
+    ):
         return False
 
     try:
@@ -263,9 +267,7 @@ def reset_water_index_cache():
 
 def _forward_3857(lat, lon):
     x = _EPSG3857_RADIUS_M * math.radians(lon)
-    y = _EPSG3857_RADIUS_M * math.log(
-        math.tan(math.pi / 4.0 + math.radians(lat) / 2.0)
-    )
+    y = _EPSG3857_RADIUS_M * math.log(math.tan(math.pi / 4.0 + math.radians(lat) / 2.0))
     return (x, y)
 
 
@@ -280,68 +282,191 @@ def _inverse_3857(x, y):
 def query_ocean_polygon(min_lat, min_lon, max_lat, max_lon, scaleHor):
     """Return the ocean/water Shapely (Multi)Polygon for the requested
     geographic bbox, already reprojected into TP3D's own local Blender-space
-    Mercator (same space _smoothed_ocean_polys() and the rest of createOcean
-    already operate in) -- or None if there's no water in range, or the
-    dataset isn't available.
+    Mercator.
 
-    NOTE -- antimeridian: TP3D's own bbox construction (osm/fetch_solo.py,
-    osm/fetch_group.py) currently clamps longitude to [-180, 180] rather than
-    wrapping, so a map straddling the antimeridian is already mishandled
-    upstream of this function today, coastline or not. This function does not
-    attempt to compensate for that; see TP3D_water_polygon_integration_plan.md
-    for the (cheap, but separate) fix: split into two real-3857 sub-bboxes at
-    the world edge and shift one side by ±2*_EPSG3857_WORLD_EXTENT_M before
-    unioning.
+    Longitude is treated as continuous rather than clamped to [-180, 180].
+    Requests crossing or extending beyond the antimeridian are split into
+    real EPSG:3857 world-space queries. Geometry from wrapped world copies is
+    shifted by whole-world widths before merging so the result remains in the
+    same continuous longitude space as the requested bbox.
+
+    For example:
+
+        min_lon=179, max_lon=181
+
+    is queried as:
+
+        [179, 180] and [-180, -179]
+
+    with the second result shifted +1 world width so it occupies:
+
+        [179, 181]
+
+    before being converted into TP3D's own Mercator coordinates.
     """
     if not ensure_water_dataset():
         return None
 
     polygons, tree = _load_water_index()
 
-    sw = _forward_3857(min_lat, min_lon)
-    ne = _forward_3857(max_lat, max_lon)
     from shapely.geometry import box as _box
+    from shapely.ops import transform as _shp_transform
 
-    bbox_3857 = _box(
-        min(sw[0], ne[0]), min(sw[1], ne[1]), max(sw[0], ne[0]), max(sw[1], ne[1])
-    )
+    # EPSG:3857 spans exactly one world from -WORLD_EXTENT to +WORLD_EXTENT.
+    world_width = 2.0 * _EPSG3857_WORLD_EXTENT_M
 
-    # No predicate kwarg -- per the existing comment in
-    # terrain.py::_polygonize_ocean_faces, STRtree's predicate kwarg is broken
-    # in Blender's bundled Shapely build. tree.query() with no predicate
-    # already returns bbox-only candidates, which is all we need since every
-    # candidate below still gets a real .intersection() call.
-    candidate_idx = tree.query(bbox_3857)
-    if len(candidate_idx) == 0:
+    # ------------------------------------------------------------------
+    # Build one or more query bboxes representing the requested longitude
+    # range, wrapping through the real EPSG:3857 world as necessary.
+    #
+    # Each entry is:
+    #
+    #     (bbox_3857, x_offset)
+    #
+    # x_offset moves geometry from that world copy back into the continuous
+    # longitude space of the original request.
+    # ------------------------------------------------------------------
+
+    # Keep the caller's longitude space intact. This matters because TP3D's
+    # own _ll_to_bl() treats longitude as continuous, so 181 degrees is
+    # intentionally to the east of 180 rather than becoming -179.
+    request_min_lon = min_lon
+    request_max_lon = max_lon
+
+    # Defensive normalization for callers that happen to provide reversed
+    # longitude bounds.
+    if request_max_lon < request_min_lon:
+        request_min_lon, request_max_lon = (
+            request_max_lon,
+            request_min_lon,
+        )
+
+    # Latitude is not periodic. Clamp to Web Mercator's practical limits so
+    # _forward_3857() cannot hit log(tan()) singularities at the poles.
+    mercator_max_lat = 85.0511287798066
+    query_min_lat = max(min(min_lat, max_lat), -mercator_max_lat)
+    query_max_lat = min(max(min_lat, max_lat), mercator_max_lat)
+
+    if query_min_lat >= query_max_lat:
+        return None
+
+    # Convert the requested continuous longitude interval into overlapping
+    # copies of the canonical [-180, 180] EPSG:3857 world.
+    #
+    # Example:
+    #
+    #   179 -> 181
+    #
+    # becomes:
+    #
+    #   canonical [179, 180], offset 0
+    #   canonical [-180, -179], offset +WORLD_WIDTH
+    #
+    # The result geometry is shifted back into the original continuous
+    # longitude space before unioning.
+    query_parts = []
+
+    start_world = math.floor((request_min_lon + 180.0) / 360.0)
+    end_world = math.floor((request_max_lon + 180.0) / 360.0)
+
+    # Avoid treating an exact world boundary as belonging exclusively to the
+    # next copy. A tiny epsilon only affects world-index selection, not the
+    # actual geometry coordinates.
+    if request_max_lon > request_min_lon:
+        end_world = math.floor(((request_max_lon + 180.0) - 1e-12) / 360.0)
+
+    for world_index in range(start_world, end_world + 1):
+        world_lon_min = -180.0 + world_index * 360.0
+        world_lon_max = 180.0 + world_index * 360.0
+
+        part_min_lon = max(request_min_lon, world_lon_min)
+        part_max_lon = min(request_max_lon, world_lon_max)
+
+        if part_max_lon < part_min_lon:
+            continue
+
+        # Convert this continuous-world longitude range back into canonical
+        # [-180, 180] longitude for querying the actual dataset.
+        canonical_min_lon = part_min_lon - world_index * 360.0
+        canonical_max_lon = part_max_lon - world_index * 360.0
+
+        sw = _forward_3857(query_min_lat, canonical_min_lon)
+        ne = _forward_3857(query_max_lat, canonical_max_lon)
+
+        bbox_3857 = _box(
+            min(sw[0], ne[0]),
+            min(sw[1], ne[1]),
+            max(sw[0], ne[0]),
+            max(sw[1], ne[1]),
+        )
+
+        query_parts.append(
+            (
+                bbox_3857,
+                world_index * world_width,
+            )
+        )
+
+    if not query_parts:
+        return None
+
+    # ------------------------------------------------------------------
+    # Query the STRtree and clip every candidate to its wrapped bbox.
+    # Geometry from wrapped copies is translated back into the requested
+    # continuous world before merging.
+    # ------------------------------------------------------------------
+
+    clipped = []
+
+    for bbox_3857, x_offset in query_parts:
+        candidate_idx = tree.query(bbox_3857)
+
+        for i in candidate_idx:
+            part = polygons[int(i)].intersection(bbox_3857)
+
+            if part.is_empty:
+                continue
+
+            if x_offset != 0.0:
+                # Avoid importing affinity just for this tiny translation and
+                # keep all operations inside Shapely's coordinate pipeline.
+                def _shift_x(x, y, z=None, _offset=x_offset):
+                    if z is None:
+                        return (x + _offset, y)
+                    return (x + _offset, y, z)
+
+                part = _shp_transform(_shift_x, part)
+
+            if not part.is_empty:
+                clipped.append(part)
+
+    if not clipped:
         return None
 
     from .. import geometry2d as _g2d
 
-    clipped = []
-    for i in candidate_idx:
-        part = polygons[int(i)].intersection(bbox_3857)
-        if not part.is_empty:
-            clipped.append(part)
-    if not clipped:
-        return None
-
     merged = _g2d.union(clipped)
     merged = _g2d.validate(merged)
+
     if merged is None or merged.is_empty:
         return None
 
-    from shapely.ops import transform as _shp_transform
+    # ------------------------------------------------------------------
+    # Convert from real EPSG:3857 into TP3D's own Mercator implementation.
+    #
+    # Important: the wrapped X coordinates may legitimately fall outside the
+    # normal +/- EPSG:3857 world extent. Convert X directly to continuous
+    # longitude rather than normalizing it back into [-180, 180].
+    # ------------------------------------------------------------------
 
     def _to_latlon(x, y):
         lat, lon = _inverse_3857(x, y)
         return (lon, lat)
 
     def _latlon_to_tp3d_local(lon, lat):
-        # Mirrors the _ll_to_bl closures in osm/gen.py and terrain.py exactly
-        # (R = constants.R, scaled by scaleHor) -- kept as its own tiny
-        # inline function here rather than imported, matching how those two
-        # existing call sites each define their own copy rather than sharing
-        # one.
+        # Mirrors the existing _ll_to_bl closures in osm/gen.py and
+        # terrain.py exactly. Longitude is intentionally NOT normalized:
+        # lon=181 should remain east of lon=180, matching the caller's bbox.
         x = const.R * math.radians(lon) * scaleHor
         y = (
             const.R
@@ -351,6 +476,9 @@ def query_ocean_polygon(min_lat, min_lon, max_lat, max_lon, scaleHor):
         return (x, y)
 
     latlon_geom = _shp_transform(_to_latlon, merged)
-    local_geom = _shp_transform(_latlon_to_tp3d_local, latlon_geom)
+    local_geom = _shp_transform(
+        _latlon_to_tp3d_local,
+        latlon_geom,
+    )
 
     return local_geom
