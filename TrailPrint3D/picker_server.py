@@ -88,6 +88,7 @@ _MAP_INIT_JS_PATH = _ASSETS_DIR / 'map_init.js'
 _LOCATION_PANEL_JS_PATH = _ASSETS_DIR / 'location_panel.js'
 _ELEMENT_STATUS_JS_PATH = _ASSETS_DIR / 'element_status.js'
 _SETTINGS_MODAL_JS_PATH = _ASSETS_DIR / 'settings_modal.js'
+_RECT_EDITOR_JS_PATH = _ASSETS_DIR / 'rect_editor.js'
 
 _element_icons_js_cache: str | None = None
 
@@ -339,6 +340,7 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__SETTINGS_STATE_JS__', 'var SETTINGS_STATE = ' + self.settings_state_json.decode('utf-8') + ';')
             .replace('__ADVANCED_SETTINGS_STATE_JS__', 'var ADVANCED_SETTINGS_STATE = ' + self.advanced_settings_json.decode('utf-8') + ';')
             .replace('__SETTINGS_MODAL_JS__', _SETTINGS_MODAL_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__RECT_EDITOR_JS__', _RECT_EDITOR_JS_PATH.read_text(encoding='utf-8'))
             .encode('utf-8')
         )
         self.send_response(200)

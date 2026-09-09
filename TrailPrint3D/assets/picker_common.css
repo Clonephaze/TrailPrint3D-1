@@ -230,6 +230,18 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
 #drawActions { position: absolute; top: 80px; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 6px;
     background: rgba(26,26,26,0.85); border: 1px solid #444; border-radius: 4px; padding: 6px; }
 #drawActions .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
+.shape-btn.active { background: #007bff; border-color: #007bff; }
+/* left/z-index/look shared by every page; each page's own <style> adds just
+   a `top` offset (170px on rectangle-only puzzle pages, 338px on pages with
+   an extra #shapeToggle row above it). */
+#drawModeToggle { position: absolute; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 6px;
+    background: rgba(26,26,26,0.85); border: 1px solid #444; border-radius: 4px; padding: 6px; }
+#drawModeToggle .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
+.edge-handle { width: 10px; height: 10px; background: #fff; border: 2px solid #007bff; border-radius: 2px;
+    box-shadow: 0 0 2px rgba(0,0,0,0.6); cursor: move; }
+.move-handle { width: 22px; height: 22px; background: #007bff; border: 2px solid #fff; border-radius: 50%;
+    box-shadow: 0 0 3px rgba(0,0,0,0.6); cursor: move; display: flex; align-items: center; justify-content: center; }
+.move-handle svg { pointer-events: none; }
 .btn-send { padding: 12px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: auto; }
 .btn-send:disabled { background: #444; cursor: not-allowed; }
 #status { padding: 10px; background: #2a2a2a; border-radius: 4px; font-size: 12px; text-align: center; }
