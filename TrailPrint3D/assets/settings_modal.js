@@ -1,6 +1,7 @@
 // Builds the "⚙️ Settings" button (appended into #elementStatus) and the
-// popup it opens -- reused by every 2D-map picker page via
-// __SETTINGS_MODAL_JS__ in picker_server.py. Requires PORT, SETTINGS_STATE
+// popup it opens, plus the standalone tp3dAlert() notice popup further
+// down -- both reused by every 2D-map picker page via __SETTINGS_MODAL_JS__
+// in picker_server.py. Requires PORT, SETTINGS_STATE
 // (from __SETTINGS_STATE_JS__), ADVANCED_SETTINGS_STATE (from
 // __ADVANCED_SETTINGS_STATE_JS__), ELEMENT_ICONS (from
 // __ELEMENT_ICONS_JS__) and the shared toggle helpers TP3D_ELEMENT_STATE /
@@ -30,6 +31,60 @@
 // saveState() can read TP3D_SETTINGS_TAB into its existing state blob, and
 // its restoreState() can call tp3dActivateSettingsTab(s.settingsTab) once
 // fetched, the same way it already restores the base layer, form fields, etc.
+// Small reusable notice/error popup in the same .tp3d-modal/.tp3d-modal-box
+// chrome the Settings popup above uses, so an in-page error reads as part
+// of this UI instead of a jarring browser-native alert() box. Lazily builds
+// and appends its DOM the first time it's called, then just updates and
+// re-shows the same modal on every later call.
+var _tp3dAlertModal = null;
+function tp3dAlert(message, title) {
+    if (!_tp3dAlertModal) {
+        var modal = document.createElement('div');
+        modal.className = 'tp3d-modal';
+
+        var box = document.createElement('div');
+        box.className = 'tp3d-modal-box';
+        box.style.width = '320px';
+        modal.appendChild(box);
+
+        var header = document.createElement('div');
+        header.className = 'modal-header';
+        var titleEl = document.createElement('span');
+        var closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'tp3d-modal-close-btn';
+        closeBtn.title = 'Close';
+        closeBtn.textContent = '✕';
+        header.appendChild(titleEl);
+        header.appendChild(closeBtn);
+        box.appendChild(header);
+
+        var body = document.createElement('div');
+        body.style.cssText = 'font-size:13px; color:#ccc; line-height:1.4; white-space:pre-wrap;';
+        box.appendChild(body);
+
+        var okBtn = document.createElement('button');
+        okBtn.type = 'button';
+        okBtn.className = 'btn-send';
+        okBtn.style.width = '100%';
+        okBtn.textContent = 'OK';
+        box.appendChild(okBtn);
+
+        function close() { modal.classList.remove('open'); }
+        closeBtn.addEventListener('click', close);
+        okBtn.addEventListener('click', close);
+        // Clicking the dimmed backdrop (i.e. anywhere that isn't the box
+        // itself) closes it too, matching the Settings popup's own feel.
+        modal.addEventListener('click', function(e) { if (e.target === modal) close(); });
+
+        document.body.appendChild(modal);
+        _tp3dAlertModal = { modal: modal, titleEl: titleEl, bodyEl: body };
+    }
+    _tp3dAlertModal.titleEl.textContent = title || 'Notice';
+    _tp3dAlertModal.bodyEl.textContent = message;
+    _tp3dAlertModal.modal.classList.add('open');
+}
+
 var TP3D_SETTINGS_TAB = 'elements';
 
 // Resolution deliberately isn't in this list -- every picker page already

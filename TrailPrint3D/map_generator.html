@@ -189,6 +189,37 @@
             }
         });
 
+        // Parses one already-loaded GeoJSON object into a flat list of
+        // [lat,lng] exterior rings (mirrors utils/io_geojson.py's own
+        // Polygon/MultiPolygon/Feature/FeatureCollection walk) -- used only
+        // to validate that the file actually contains a closed polygon
+        // boundary before accepting the import (a line or point has no
+        // rings, matching the backend's own rejection of non-area geometry).
+        function extractGeojsonRings(node) {
+            var rings = [];
+            function ring(coordsArr) {
+                return coordsArr.map(function(pt) { return [pt[1], pt[0]]; });
+            }
+            function collect(n) {
+                if (!n) return;
+                if (n.type === 'FeatureCollection') {
+                    (n.features || []).forEach(collect);
+                } else if (n.type === 'Feature') {
+                    collect(n.geometry);
+                } else if (n.type === 'GeometryCollection') {
+                    (n.geometries || []).forEach(collect);
+                } else if (n.type === 'Polygon') {
+                    if (n.coordinates && n.coordinates[0]) rings.push(ring(n.coordinates[0]));
+                } else if (n.type === 'MultiPolygon') {
+                    (n.coordinates || []).forEach(function(poly) {
+                        if (poly[0]) rings.push(ring(poly[0]));
+                    });
+                }
+            }
+            collect(node);
+            return rings;
+        }
+
         function saveState() {
             // gpxPaths/gpxNames are intentionally NOT persisted here — a GPX
             // import is session-only. Persisting it meant every time the picker
@@ -553,6 +584,10 @@
             reader.onload = function(event) {
                 try {
                     var parsed = JSON.parse(event.target.result);
+                    if (!extractGeojsonRings(parsed).length) {
+                        tp3dAlert(file.name + ' has no closed polygon boundary -- GeoJSON import needs a Polygon/MultiPolygon shape, not a line or point.', 'Import Error');
+                        return;
+                    }
                     // A GeoJSON boundary replaces the drawn area rather than
                     // combining with it (this picker only ever sends one
                     // tile, and the backend already prioritizes the GeoJSON
@@ -588,8 +623,8 @@
                             map.fitBounds(geojsonLayer.getBounds(), { padding: [50, 50] });
                         }
                     })
-                    .catch(function() { alert('Could not save GeoJSON to temp file.'); });
-                } catch (err) { alert('Error importing ' + file.name + ': ' + err.message); }
+                    .catch(function() { tp3dAlert('Could not save GeoJSON to temp file.', 'Import Error'); });
+                } catch (err) { tp3dAlert('Error importing ' + file.name + ': ' + err.message, 'Import Error'); }
             };
             reader.readAsText(file);
         });

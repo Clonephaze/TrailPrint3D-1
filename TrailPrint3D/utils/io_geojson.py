@@ -95,7 +95,10 @@ def _finalize_polygons(polygons, source_desc="file"):
     expects. Shared tail end of read_geojson_file/read_geojson_files.
     """
     if not polygons:
-        raise ValueError(f"No Polygon/MultiPolygon geometry found in {source_desc}")
+        raise ValueError(
+            f"No closed polygon boundary found in {source_desc} -- GeoJSON boundary "
+            "import needs a Polygon/MultiPolygon shape, not a line or point."
+        )
 
     merged = g2d.union(polygons) if len(polygons) > 1 else polygons[0]
     merged = g2d.validate(merged)

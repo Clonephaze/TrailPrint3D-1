@@ -442,7 +442,14 @@ def fetch_mapterhorn_tile_path(zoom, xtile, ytile):
     tile_path = os.path.join(const.terrarium_cache_dir, f"mapterhorn_{zoom}_{xtile}_{ytile}.webp")
     if not os.path.exists(tile_path) or disableCache:
         url = f"https://tiles.mapterhorn.com/{zoom}/{xtile}/{ytile}.webp"
-        response = requests.get(url)
+        # A single 512px tile should return almost instantly -- this timeout
+        # is just to stop a stalled connection (e.g. right after another
+        # tile's request got dropped mid-batch) from hanging the whole
+        # elevation fetch forever. requests.exceptions.Timeout is a
+        # RequestException subclass, so the existing per-tile except clause
+        # in get_elevation_Mapterhorn already catches it the same way it
+        # catches a hard connection failure.
+        response = requests.get(url, timeout=20)
         response.raise_for_status()
         with open(tile_path, "wb") as f:
             f.write(response.content)
