@@ -16,6 +16,7 @@ Added: Pin Socket cutting — carves a socket for the placed pin into the terrai
 Added: GeoJSON boundary import to the Single Tile Map Generator
 Added: OSM building can now show roof shapes (By Clonephaze)
 Added: OSM polygon smoothing control (Taubin smoothing) (By Clonephaze)
+Added: GeoJSON and SVG file import as custom map outline Shapes (By Clonephaze)
 Added: Option to smooth Terrain when elevation data hits the API's resolution limit
 Changed: Increased maximum River Width and Road Width Multiplier from 10 to 100
 Changed: Longitude now wraps at any magnitude in the map pickers, allowing continuous panning
