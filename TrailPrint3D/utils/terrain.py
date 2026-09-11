@@ -150,11 +150,11 @@ def smooth_terrain_top_z(x, y, z, iterations=2):
     # the border) so every cell's 8 neighbours are defined, then average
     # the 9 shifted copies of the grid.
     for _ in range(iterations):
-        padded = np.pad(grid, 1, mode='edge')
+        padded = np.pad(grid, 1, mode="edge")
         acc = np.zeros_like(grid)
         for dy in (-1, 0, 1):
             for dx in (-1, 0, 1):
-                acc += padded[1 + dy:1 + dy + res, 1 + dx:1 + dx + res]
+                acc += padded[1 + dy : 1 + dy + res, 1 + dx : 1 + dx + res]
         grid = acc / 9.0
 
     # Resample back to each vertex's fractional grid position via bilinear
@@ -307,7 +307,9 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
     return results
 
 
-def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, cutter_out=None):
+def coloring_main(
+    gen: GenerationContext, kind="WATER", prefetched_tiles=None, cutter_out=None
+):
     from . import geometry2d as _g2d  # Shapely-based 2D geometry helpers
     from .geo import (
         convert_to_blender_coordinates,  # deferred to avoid circular import at load time
@@ -355,9 +357,14 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, c
     _qb_margin = 1.0
     _qbx_lo, _qbx_hi = min(_qbx1, _qbx2) - _qb_margin, max(_qbx1, _qbx2) + _qb_margin
     _qby_lo, _qby_hi = min(_qby1, _qby2) - _qb_margin, max(_qby1, _qby2) + _qb_margin
-    _query_bbox_poly = _g2d.xy_ring_to_polygon([
-        (_qbx_lo, _qby_lo), (_qbx_hi, _qby_lo), (_qbx_hi, _qby_hi), (_qbx_lo, _qby_hi),
-    ])
+    _query_bbox_poly = _g2d.xy_ring_to_polygon(
+        [
+            (_qbx_lo, _qby_lo),
+            (_qbx_hi, _qby_lo),
+            (_qbx_hi, _qby_hi),
+            (_qbx_lo, _qby_hi),
+        ]
+    )
 
     def _clip_to_query_bbox(poly):
         """Intersect poly with the query bbox; returns None if fully outside."""
@@ -636,8 +643,14 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, c
     # that boundary, which the query-bbox clip above doesn't guarantee for non-rect maps.
     # mapOutline is in local space (origin-centered); translate to absolute Mercator so
     # it matches the coordinate space of final_geom (same space as convert_to_blender_coordinates).
-    if gen.runtime.mapOutline is not None and gen.runtime.mapObject is not None and final_geom is not None and not final_geom.is_empty:
+    if (
+        gen.runtime.mapOutline is not None
+        and gen.runtime.mapObject is not None
+        and final_geom is not None
+        and not final_geom.is_empty
+    ):
         from shapely.affinity import translate as _shp_translate
+
         _map_outline_abs = _shp_translate(
             gen.runtime.mapOutline,
             xoff=gen.runtime.mapObject.location.x,
@@ -660,9 +673,7 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, c
 
         _smoothed_result = None
         if _to_smooth is not None and not _to_smooth.is_empty:
-            smoothed_geom = _g2d.smooth_polygon_taubin(gen,
-                _to_smooth, steps=_smooth_r
-            )
+            smoothed_geom = _g2d.smooth_polygon_taubin(gen, _to_smooth, steps=_smooth_r)
             print(f"  [smoothing steps] Taubin smoothing steps={_smooth_r}  ")
             # force=True per-polygon before union: splits self-touching rings (figure-8
             # pinch points from Taubin) without touching already-valid unrelated polygons.
@@ -675,7 +686,9 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, c
             _smoothed_result = _g2d.validate(union_smoothed)
 
         _rejoin_parts = [
-            p for p in (_smoothed_result, _river_part) if p is not None and not p.is_empty
+            p
+            for p in (_smoothed_result, _river_part)
+            if p is not None and not p.is_empty
         ]
         if _rejoin_parts:
             final_geom = _g2d.validate(_g2d.union(_rejoin_parts))
@@ -705,7 +718,9 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, c
 
     if gen.texture.useTexture:
         if col_Area > 0:
-            filtered_parts = [p for p in _g2d.iter_polygons(final_geom, min_area=col_Area)]
+            filtered_parts = [
+                p for p in _g2d.iter_polygons(final_geom, min_area=col_Area)
+            ]
             final_geom = _g2d.union(filtered_parts) if filtered_parts else final_geom
         return _ColoringTextureResult(kind=kind, polygon=final_geom)
 
@@ -935,7 +950,7 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, c
         _prism.data = merged_object.data.copy()
         _prism.name = f"{name}_{kind}_prism"
         bpy.context.collection.objects.link(_prism)
-        cutter_out['prism'] = _prism
+        cutter_out["prism"] = _prism
 
     _t_bool = time.time()
 
@@ -1086,10 +1101,7 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, c
     min_z = min(v.co.z for v in bm.verts)
     lowestVert = 100
     for v in bm.verts:
-        if (
-            abs(v.co.z - min_z) > tol
-            and v.co.z >= bpy.context.scene.tp3d.minThickness
-        ):
+        if abs(v.co.z - min_z) > tol and v.co.z >= bpy.context.scene.tp3d.minThickness:
             lowestVert = min(lowestVert, v.co.z)
     for v in bm.verts:
         if abs(v.co.z - min_z) < tol:
@@ -1122,6 +1134,7 @@ def coloring_main(gen: GenerationContext, kind="WATER", prefetched_tiles=None, c
         f"  [coloring_main] TOTAL ({kind}, {elementMode}): {time.time() - _t_color:.3f}s"
     )
     return merged_object
+
 
 def _count_non_manifold(obj):
     bm_d = bmesh.new()
@@ -1299,7 +1312,9 @@ def _polygonize_ocean_faces(open_chains, closed_loops, bbox_bl, rdp_eps=0.0):
     min_x, min_y, max_x, max_y = bbox_bl
     if max_x <= min_x or max_y <= min_y:
         # Degenerate bbox — scaleHor is 0, or min/max lat or lon are identical.
-        print(f"  [ocean] WARNING: degenerate bbox_bl {bbox_bl!r} — skipping ocean polygon")
+        print(
+            f"  [ocean] WARNING: degenerate bbox_bl {bbox_bl!r} — skipping ocean polygon"
+        )
         return []
     tile_box = box(min_x, min_y, max_x, max_y)
 
@@ -1756,6 +1771,42 @@ def _debug_add_polyline(name, pts2d, z=0.0, offset=(0.0, 0.0, 0.0)):
     coll.objects.link(obj)
 
 
+def _taubin_smooth_ocean_polys(ocean_polys, bbox_bl):
+    """Taubin-smooth ocean-face polygons, pinning vertices on the tile bbox
+    edge so adjacent tiles keep stitching together seamlessly -- only
+    interior coastline/island edges actually move. Shared by every ocean
+    source (Overpass coastline chains via _smoothed_ocean_polys, and the
+    global water-polygon dataset via createOceanFromWaterPolygons) so the
+    col_osmSmoothing setting behaves identically regardless of which path
+    built the polygon.
+    """
+    from . import geometry2d as _g2d
+
+    _smooth_steps = int(
+        getattr(getattr(bpy.context.scene, "tp3d", None), "col_osmSmoothing", 0.0) * 20
+    )
+    if not ocean_polys or _smooth_steps <= 0:
+        return ocean_polys
+
+    _smoothed_polys = []
+    for poly in ocean_polys:
+        smoothed = _g2d.smooth_polygon_taubin_bbox_pinned(
+            poly, bbox_bl, steps=_smooth_steps
+        )
+        # force=True: splits self-touching rings (figure-8 pinch points
+        # from Taubin) without touching already-valid unrelated polygons.
+        _smoothed_polys.extend(
+            p
+            for p in (
+                _g2d.validate(part, force=True) for part in _g2d.iter_polygons(smoothed)
+            )
+            if p is not None and not p.is_empty
+        )
+    if not _smoothed_polys:
+        return ocean_polys
+    return list(_g2d.iter_polygons(_g2d.union(_smoothed_polys), min_area=1.0))
+
+
 def _smoothed_ocean_polys(open_chains, closed_loops, bbox_bl, rdp_eps):
     """Build closed ocean-face polygons from coastline chains and Taubin-smooth
     them, pinning vertices on the tile bbox edge so adjacent tiles keep
@@ -1767,27 +1818,10 @@ def _smoothed_ocean_polys(open_chains, closed_loops, bbox_bl, rdp_eps):
     rings, and _polygonize_ocean_faces() is the first point where the
     coastline chains have become closed ocean-face rings.
     """
-    from . import geometry2d as _g2d
-
     ocean_polys = _polygonize_ocean_faces(
         open_chains, closed_loops, bbox_bl, rdp_eps=rdp_eps
     )
-
-    _smooth_steps = int(getattr(getattr(bpy.context.scene, "tp3d", None), "col_osmSmoothing", 0.0) * 20)
-    if ocean_polys and _smooth_steps > 0:
-        _smoothed_polys = []
-        for poly in ocean_polys:
-            smoothed = _g2d.smooth_polygon_taubin_bbox_pinned(poly, bbox_bl, steps=_smooth_steps)
-            # force=True: splits self-touching rings (figure-8 pinch points
-            # from Taubin) without touching already-valid unrelated polygons.
-            _smoothed_polys.extend(
-                p for p in (_g2d.validate(part, force=True) for part in _g2d.iter_polygons(smoothed))
-                if p is not None and not p.is_empty
-            )
-        if _smoothed_polys:
-            ocean_polys = list(_g2d.iter_polygons(_g2d.union(_smoothed_polys), min_area=1.0))
-
-    return ocean_polys
+    return _taubin_smooth_ocean_polys(ocean_polys, bbox_bl)
 
 
 def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
@@ -1945,7 +1979,7 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
                 "Could not build ocean polygon — ocean layer skipped.", "warn"
             )
             return None
-        return _ColoringTextureResult(kind='OCEAN', polygon=union_all(_ct_polys))
+        return _ColoringTextureResult(kind="OCEAN", polygon=union_all(_ct_polys))
 
     ocean_obj = _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile)
     print(f"  [ocean] _build_ocean_mesh: {time.time() - _t_ocean:.3f}s")
@@ -1980,6 +2014,153 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
         # The recess itself is cut later by _rg_apply_single_color_mode's
         # TERRAIN_PRIORITY_ORDER loop, which handles 'ocean' like every other
         # element.
+        merge_with_map(tile, ocean_obj, True)
+        mat = bpy.data.materials.get("WATER")
+        ocean_obj.data.materials.clear()
+        ocean_obj.data.materials.append(mat)
+        return ocean_obj
+
+    return ocean_obj
+
+
+def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
+    """Build the ocean layer from the prebuilt global OSMData water-polygon
+    dataset instead of Overpass coastline ways.
+
+    Fallback path for maps above const.COASTLINE_MAXSIZE (see
+    utils/generation/elements.py) -- previously that size band just skipped
+    ocean generation entirely. The dataset gives the water area directly, so
+    unlike createOcean() there's no coastline-direction ("land-is-left")
+    convention to reconstruct and no stitching/polygonize step needed.
+
+    Returns the same shapes createOcean() does: a _ColoringTextureResult for
+    PAINT/texture mode, a merged-into-tile mesh object for single color mode,
+    or None if no water was found / the dataset couldn't be prepared.
+    """
+    from . import geometry2d as _g2d
+    from .mesh_ops import (
+        merge_objects,
+        merge_with_map,
+    )  # deferred, same convention as createOcean
+    from .osm.water_polygons import (
+        query_ocean_polygon,
+    )  # deferred to avoid circular import at load time
+    from .. import constants as _const  # deferred to avoid circular import at load time
+
+    _t_ocean = time.time()
+
+    poly = query_ocean_polygon(
+        gen.runtime.tbMinLat,
+        gen.runtime.tbMinLon,
+        gen.runtime.tbMaxLat,
+        gen.runtime.tbMaxLon,
+        scaleHor,
+    )
+    print(
+        f"  [ocean/waterpoly] query_ocean_polygon: {time.time() - _t_ocean:.3f}s "
+        f"({'found water' if poly is not None else 'no water in range'})"
+    )
+
+    if poly is None or poly.is_empty:
+        _progress.WarningsOverlay.add_warning(
+            "No ocean found in this area (water-polygon dataset).", "warn"
+        )
+        return None
+
+    tp3d_ctx = bpy.context.scene.tp3d
+
+    # Same local Blender-space bbox as createOcean() (see that function's
+    # comment) -- needed so Taubin smoothing below pins the tile-edge
+    # vertices correctly and adjacent tiles keep stitching together.
+    def _ll_to_bl(lat, lon):
+        x = _const.R * math.radians(lon) * scaleHor
+        y = (
+            _const.R
+            * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+            * scaleHor
+        )
+        return (x, y)
+
+    sw = _ll_to_bl(gen.runtime.tbMinLat, gen.runtime.tbMinLon)
+    ne = _ll_to_bl(gen.runtime.tbMaxLat, gen.runtime.tbMaxLon)
+    bbox_bl = (
+        min(sw[0], ne[0]),
+        min(sw[1], ne[1]),
+        max(sw[0], ne[0]),
+        max(sw[1], ne[1]),
+    )
+
+    # Respect the same three settings the Overpass path applies in
+    # _smoothed_ocean_polys / _polygonize_ocean_faces, in the same order:
+    # min island area -> RDP simplify -> Taubin smoothing. The water-polygon
+    # dataset hands back a ready-made polygon (holes = islands) rather than
+    # raw coastline chains, so "min island area" here means dropping small
+    # interior holes instead of folding small land faces back in -- same
+    # visible effect, different starting representation.
+    min_island_area = getattr(tp3d_ctx, "el_oMinIslandArea", 4.0)
+    poly = _g2d.drop_small_holes(poly, min_island_area)
+
+    rdp_eps = getattr(tp3d_ctx, "el_oRdpEpsilon", 0.1)
+    ocean_polys = list(_g2d.iter_polygons(poly, min_area=1.0))
+    if rdp_eps > 0:
+        simplified = [p.simplify(rdp_eps) for p in ocean_polys]
+        simplified = [p for p in simplified if p is not None and not p.is_empty]
+        if simplified:
+            merged = _g2d.validate(_g2d.union(simplified))
+            if merged is not None and not merged.is_empty:
+                ocean_polys = list(_g2d.iter_polygons(merged, min_area=1.0))
+
+    ocean_polys = _taubin_smooth_ocean_polys(ocean_polys, bbox_bl)
+    if not ocean_polys:
+        _progress.WarningsOverlay.add_warning(
+            "Could not build ocean polygon — ocean layer skipped.", "warn"
+        )
+        return None
+
+    elementMode = bpy.context.scene.tp3d.elementMode
+
+    if gen.texture.useTexture:
+        # Same texture-paint short-circuit as createOcean(): hand back the
+        # Shapely polygon for the rasterizer, no Blender mesh needed.
+        return _ColoringTextureResult(kind="OCEAN", polygon=union_all(ocean_polys))
+
+    face_meshes = []
+    for part in ocean_polys:
+        m = _g2d.polygon_to_mesh("_OceanFace", part)
+        if m is not None:
+            face_meshes.append(m)
+    if not face_meshes:
+        _progress.WarningsOverlay.add_warning(
+            "Could not build ocean polygon — ocean layer skipped.", "warn"
+        )
+        return None
+
+    ocean_obj = merge_objects(face_meshes) if len(face_meshes) > 1 else face_meshes[0]
+    if not ocean_obj or len(ocean_obj.data.vertices) == 0:
+        _progress.WarningsOverlay.add_warning(
+            "Could not build ocean polygon — ocean layer skipped.", "warn"
+        )
+        return None
+
+    ocean_obj.name = "Ocean"
+    # Same reasoning as createOcean(): vertices are already in absolute
+    # Mercator coordinates, keep origin at world zero.
+    ocean_obj.location = (0.0, 0.0, 0.0)
+    ocean_obj["_tp3d_is_ocean"] = True
+
+    mat = bpy.data.materials.get("WATER")
+    ocean_obj.data.materials.clear()
+    ocean_obj.data.materials.append(mat)
+
+    if elementMode == "PAINT":
+        from .mesh_ops import projection  # deferred, same convention as createOcean
+
+        projection("paint", tile, ocean_obj)
+        return None
+    elif elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
+        # Same ordering note as createOcean(): only clip to the plate's
+        # footprint here, the actual recess cut happens later in
+        # _rg_apply_single_color_mode's TERRAIN_PRIORITY_ORDER loop.
         merge_with_map(tile, ocean_obj, True)
         mat = bpy.data.materials.get("WATER")
         ocean_obj.data.materials.clear()

@@ -195,6 +195,39 @@ def iter_polygons(geom, min_area=0.0):
             yield from iter_polygons(part, min_area)
 
 
+def drop_small_holes(geom, min_area):
+    """Remove interior holes (islands) below *min_area* from a Polygon or
+    MultiPolygon, folding those small land pockets back into the surrounding
+    area instead of leaving them punched out.
+
+    This is the polygon-with-holes equivalent of the min_area island-skip
+    logic in terrain.py::_polygonize_ocean_faces (which works from
+    face-classification instead, since it builds the ocean polygon up from
+    raw coastline chains rather than receiving a finished polygon) -- used
+    for ocean sources that hand back a ready-made water polygon with real
+    holes for islands, e.g. the global water-polygon dataset.
+    """
+    _require_shapely()
+    if geom is None or geom.is_empty or min_area <= 0:
+        return geom
+
+    def _fix_poly(p):
+        if not p.interiors:
+            return p
+        kept = [r for r in p.interiors if Polygon(r).area >= min_area]
+        if len(kept) == len(p.interiors):
+            return p
+        return Polygon(p.exterior, kept)
+
+    if isinstance(geom, Polygon):
+        return _fix_poly(geom)
+    if isinstance(geom, (MultiPolygon, GeometryCollection)):
+        return MultiPolygon(
+            [_fix_poly(p) for p in geom.geoms if isinstance(p, Polygon)]
+        )
+    return geom
+
+
 def union(geoms):
     """Return the unary union of *geoms* (list / iterable of Shapely geometries).
 
@@ -279,7 +312,9 @@ def _smooth_polygon_taubin_pinned(geom, is_pinned, **taubin_kwargs):
     return geom
 
 
-def smooth_polygon_taubin(gen: GenerationContext, geom, pin_tolerance=1e-3, **taubin_kwargs):
+def smooth_polygon_taubin(
+    gen: GenerationContext, geom, pin_tolerance=1e-3, **taubin_kwargs
+):
     """Smooth a Shapely Polygon or MultiPolygon using Taubin smoothing
     (shapelysmooth), preserving vertex count/order so outline-touching
     vertices can be pinned back to their exact original position afterward.
@@ -297,8 +332,11 @@ def smooth_polygon_taubin(gen: GenerationContext, geom, pin_tolerance=1e-3, **ta
     # is in absolute Mercator space, so translate to match before pin-checking.
     if outline is not None and gen.runtime.mapObject is not None:
         from shapely.affinity import translate as _shp_translate
+
         outline = _shp_translate(
-            outline, xoff=gen.runtime.mapObject.location.x, yoff=gen.runtime.mapObject.location.y
+            outline,
+            xoff=gen.runtime.mapObject.location.x,
+            yoff=gen.runtime.mapObject.location.y,
         )
     pin_geom = (
         outline.boundary
@@ -1278,6 +1316,7 @@ def group_boundary_loops(edges):
 def get_map_polygon(obj) -> Polygon | MultiPolygon | None:
     """Retrieve the original 2D Shapely polygon stored on a map object."""
     from shapely import wkt
+
     if obj and "map_polygon_wkt" in obj:
         return wkt.loads(obj["map_polygon_wkt"])
     return None

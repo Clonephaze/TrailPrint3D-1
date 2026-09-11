@@ -152,6 +152,7 @@ def _rg_build_terrain_elements(
         _fetch_all_kinds_parallel,
         coloring_main,
         createOcean,
+        createOceanFromWaterPolygons,
     )
 
     tp3d = bpy.context.scene.tp3d
@@ -225,7 +226,7 @@ def _rg_build_terrain_elements(
         ]
         + (
             ["_ocean"]
-            if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE
+            if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_WATERPOLY_MAXSIZE
             else []
         )
         + (
@@ -261,7 +262,7 @@ def _rg_build_terrain_elements(
         )
         and map_km <= const.WATER_MAXSIZE
     )
-    _ocean_active = tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE
+    _ocean_active = tp3d.el_oActive == 1 and map_km <= const.COASTLINE_WATERPOLY_MAXSIZE
     _water_ocean_combined = _water_feat_active and _ocean_active
 
     # --------------------------------------------------
@@ -435,34 +436,49 @@ def _rg_build_terrain_elements(
             print("Create Ocean")
             _coastline_tiles = _all_prefetched.get("COASTLINE", {})
             terrain["ocean"] = createOcean(gen, _coastline_tiles, scaleHor, obj)
-            if isinstance(terrain["ocean"], _ColoringTextureResult):
-                terrain["_osm_polygons"][terrain["ocean"].kind] = terrain[
-                    "ocean"
-                ].polygon
-                terrain["ocean"] = None
-                _ov.set_fetch_done("water", success=True)
-            elif terrain["ocean"] is not None:
-                _ov.set_fetch_done("water", success=True)
-            elif _water_ocean_combined:
-                # No coastline nearby (or it failed to build) -- that's normal for
-                # an inland map, not a failure. Fall back to the water-features
-                # chip's own result instead of marking the combined chip red just
-                # because there's no ocean in this area.
-                if _water_result is _COLORING_EMPTY:
-                    _ov.set_fetch_empty("water")
-                elif _water_result is _COLORING_FILTERED:
-                    _ov.set_fetch_filtered("water")
-                else:
-                    _ov.set_fetch_done("water", success=_water_result is not None)
-            else:
-                _ov.set_fetch_done("water", success=False)
+        elif map_km <= const.COASTLINE_WATERPOLY_MAXSIZE:
+            # Too big for the Overpass coastline-way pipeline, but still within
+            # range of the prebuilt global water-polygon dataset -- use that
+            # instead of skipping ocean generation outright. See
+            # TP3D_water_polygon_integration_plan.md for why this is a
+            # separate, much larger size band than COASTLINE_MAXSIZE.
+            _advance_elem_progress("Ocean", "Creating ocean (water polygon dataset)…")
+            _ov.set_fetch_progress("water", 0.5 if _water_feat_active else 0.0)
+            print("Create Ocean (water polygon dataset fallback)")
+            terrain["ocean"] = createOceanFromWaterPolygons(gen, scaleHor, obj)
         else:
+            terrain["ocean"] = "_TOO_BIG"
+
+        if terrain["ocean"] == "_TOO_BIG":
+            terrain["ocean"] = None
             print(
-                f"INFO: MAP IS TOO BIG FOR COASTLINE (< {const.COASTLINE_MAXSIZE}km required)"
+                f"INFO: MAP IS TOO BIG FOR COASTLINE "
+                f"(< {const.COASTLINE_WATERPOLY_MAXSIZE}km required)"
             )
             _progress.WarningsOverlay.add_warning(
                 "Map too big for Ocean/Coastline layer.", "warn"
             )
+        elif isinstance(terrain["ocean"], _ColoringTextureResult):
+            terrain["_osm_polygons"][terrain["ocean"].kind] = terrain[
+                "ocean"
+            ].polygon
+            terrain["ocean"] = None
+            _ov.set_fetch_done("water", success=True)
+        elif terrain["ocean"] is not None:
+            _ov.set_fetch_done("water", success=True)
+        elif _water_ocean_combined:
+            # No coastline/water nearby (or it failed to build) -- that's normal
+            # for an inland map, not a failure. Fall back to the water-features
+            # chip's own result instead of marking the combined chip red just
+            # because there's no ocean in this area.
+            if _water_result is _COLORING_EMPTY:
+                _ov.set_fetch_empty("water")
+            elif _water_result is _COLORING_FILTERED:
+                _ov.set_fetch_filtered("water")
+            else:
+                _ov.set_fetch_done("water", success=_water_result is not None)
+        else:
+            _ov.set_fetch_done("water", success=False)
 
     print("Base elements Created")
 
