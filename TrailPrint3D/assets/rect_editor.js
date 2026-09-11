@@ -17,7 +17,8 @@
 //   Functions:  saveState, updateSendState, updateStatus, bindLiveEdit
 //               (the 'corner' mode counterpart to this file's bindCenterEdit
 //               -- enables leaflet-draw's own corner-handle editing on a
-//               layer and wires its 'edit' event back into `coords`)
+//               layer and wires its 'edit' event back into `coords`),
+//               renderShapePreview
 // and to define two small page-specific hooks used by this shared code:
 //   function tp3dOnShapeChanged() { ... }
 //       Called after any drag/resize of the shape (corner drag, edge-handle
@@ -29,6 +30,14 @@
 //       per page (e.g. a lighter fillOpacity on puzzle pages so piece cuts
 //       stay visible, or a weight/fill that depends on `currentShape` on
 //       pages with more than one selectable shape).
+//
+// The two picker pages that offer an importable "svg" shape (map_generator.html,
+// premium/map_generator_pe.html) additionally declare svgShapePath,
+// svgShapeName, svgAspect, svgDataUrl and a matching updateSvgShapeList(),
+// and call computeSvgAspectFromMarkup()/placeSvgBoxInViewport()/
+// clearSvgShapeImport() (all below) from their own svgShapeInput 'change'/
+// #clearSvgShape 'click' wiring (and, for a page that persists the SVG
+// selection across reopens, from restoreState's re-fetched-content handler).
 function boundsCenter(b) {
     return { lat: (b.north + b.south) / 2, lng: (b.east + b.west) / 2 };
 }
@@ -395,4 +404,123 @@ function makeDrawControl() {
         // would just be redundant UI.
         edit: false
     });
+}
+
+// Measures an imported SVG's TRUE geometric aspect ratio (width/height of its
+// actual drawn content), for the live preview to match what the backend will
+// actually generate.
+//
+// Deliberately does NOT trust the SVG's own declared viewBox/width/height --
+// those describe the nominal canvas, not the artwork's real extent (a common
+// mismatch: icon/logo SVGs often have padding, or hand-authored viewBoxes
+// that don't tightly fit the actual paths). The backend
+// (primitives.polygon_from_svg, via Blender's own curve importer) scales
+// strictly from the REAL geometry's bounding box, so previewing from the
+// declared canvas size instead can show a visibly different aspect ratio
+// than what actually gets generated -- confirmed with a 100x100 (1:1)
+// viewBox containing only a 40x20 (2:1) rect: the backend generates a 2:1
+// shape while a viewBox-based preview would have shown 1:1, i.e. a shape
+// that doesn't line up with the box the user actually drew/positioned.
+//
+// Works by briefly inserting the SVG into the live DOM (invisible, zero
+// layout footprint) and reading SVGGraphicsElement.getBBox() off the root
+// <svg> element, which computes the tight bounding box of its rendered
+// content -- the same kind of real-geometry measurement Blender's own
+// importer performs, just via the browser's SVG engine instead of Blender's.
+// Falls back to 1:1 if the markup fails to parse/render.
+function computeSvgAspectFromMarkup(svgText) {
+    var container = document.createElement('div');
+    container.style.cssText = 'position:absolute; width:0; height:0; overflow:hidden; visibility:hidden;';
+    document.body.appendChild(container);
+    var aspect = 1;
+    try {
+        container.innerHTML = svgText;
+        var svgEl = container.querySelector('svg');
+        if (svgEl && typeof svgEl.getBBox === 'function') {
+            var bbox = svgEl.getBBox();
+            if (bbox.width > 0 && bbox.height > 0) aspect = bbox.width / bbox.height;
+        }
+    } catch (err) { /* malformed/empty SVG -- keep the 1:1 fallback */ }
+    document.body.removeChild(container);
+    return aspect;
+}
+
+// Inscribes a WxH box (aspect = width/height, from computeSvgAspectFromMarkup)
+// centered within *b*, preserving the SVG's true proportions instead of
+// stretching it to fill a square box -- matches how the backend's own
+// create_custom_svg (primitives.polygon_from_svg -> clean_and_union_geometry)
+// scales the SVG uniformly to its longest dimension rather than independently
+// on each axis. Same equirectangular meters-per-degree approximation
+// squareBoundsFromRect uses elsewhere, good enough for this preview since the
+// backend re-derives the actual mesh itself from the real SVG geometry.
+function svgInscribedBounds(b, aspect) {
+    var midLat = (b.north + b.south) / 2;
+    var metersPerDegLat = 111320;
+    var metersPerDegLng = 111320 * Math.cos(midLat * Math.PI / 180);
+    var sideM = (b.north - b.south) * metersPerDegLat;
+    var wM = aspect >= 1 ? sideM : sideM * aspect;
+    var hM = aspect >= 1 ? sideM / aspect : sideM;
+    var halfLatDeg = (hM / metersPerDegLat) / 2;
+    var halfLngDeg = metersPerDegLng > 0 ? (wM / metersPerDegLng) / 2 : 0;
+    var centerLat = midLat, centerLng = (b.east + b.west) / 2;
+    return {
+        north: centerLat + halfLatDeg, south: centerLat - halfLatDeg,
+        east: centerLng + halfLngDeg, west: centerLng - halfLngDeg
+    };
+}
+
+// Auto-places a fresh box centered on the current viewport, sized to
+// *fraction* of it on each axis, so an imported SVG shape is immediately
+// visible without the user having to scroll to find it or draw an area
+// themselves first -- dragging/resizing/moving afterward works exactly like
+// any other freshly-drawn shape (same bind* calls the CREATED/finalizeCenterShape
+// paths use). Replaces whatever was previously drawn, same as importing a
+// GeoJSON boundary already replaces a drawn rectangle elsewhere.
+function placeSvgBoxInViewport(fraction) {
+    var vb = map.getBounds();
+    var centerLat = (vb.getNorth() + vb.getSouth()) / 2;
+    var centerLng = (vb.getEast() + vb.getWest()) / 2;
+    var halfLat = (vb.getNorth() - vb.getSouth()) / 2 * fraction;
+    var halfLng = (vb.getEast() - vb.getWest()) / 2 * fraction;
+    editHandles.clearLayers();
+    moveHandleLayer.clearLayers();
+    syncCenterHandles = null;
+    coords = {
+        north: centerLat + halfLat, south: centerLat - halfLat,
+        east: centerLng + halfLng, west: centerLng - halfLng,
+        type: currentShape
+    };
+    var rect = previewDrawnRect(coords);
+    if (drawMode === 'center') {
+        shapeCenter = boundsCenter(coords);
+        bindCenterEdit();
+    } else {
+        shapeCenter = null;
+        bindLiveEdit(rect);
+    }
+    bindCornerDrag(rect);
+    bindMoveHandle();
+}
+
+// Drops the imported SVG shape and its file, reverting to Rectangle if it
+// was the active shape (there's nothing meaningful left to show once the
+// file backing it is gone) -- shared 'Clear SVG Shape' button / per-item
+// "-" remove button logic for both picker pages that offer this shape.
+function clearSvgShapeImport() {
+    svgShapePath = null; svgShapeName = null; svgDataUrl = null; svgAspect = 1;
+    updateSvgShapeList();
+    if (currentShape === 'svg') {
+        currentShape = 'rectangle';
+        document.querySelectorAll('.shape-btn[data-shape]').forEach(function(b) {
+            b.classList.toggle('active', b.getAttribute('data-shape') === 'rectangle');
+        });
+        if (coords) {
+            coords.type = 'rectangle';
+            drawnItems.eachLayer(function(layer) { layer.setStyle({ weight: 3, fill: true }); });
+        }
+        renderShapePreview();
+    }
+    updateStatus();
+    updateSendState();
+    saveState();
 }

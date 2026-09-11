@@ -9,7 +9,6 @@ same createTerrainFromSelected() pipeline every other mapmode already uses.
 import json
 import math
 
-import bmesh  # type: ignore
 import bpy  # type: ignore
 
 from . import geometry2d as g2d
@@ -203,23 +202,24 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
     last with the wrong auto-scale/extrusion once createTerrainFromSelected()
     processes them all together.
 
-    The terrain mesh itself is a regular grid (primitives.create_rectangle,
-    the same well-shaped, evenly-subdivided primitive create_hexagon/
-    create_circle use), clipped down to the polygon's exact outline via a
-    boolean INTERSECT against a solid prism cut from the polygon. Earcut-
-    triangulating the real boundary directly (the first approach tried here)
-    produces long sliver triangles on a complex, concave real-world border --
-    up to 45:1 aspect ratio on a real French departement boundary -- which
-    fan out into visible spikes once each vertex gets its own independent
-    elevation sample. Clipping a regular grid instead keeps that well-shaped
-    topology through the whole interior, with only the boundary ring
-    affected by the cut -- the same technique already proven for jigsaw
-    pieces in mesh_ops.cut_into_puzzle_pieces().
+    The terrain mesh itself is a regular triangular lattice (same
+    build_triangular_lattice/clip_triangles_to_polygon pair the Shape="GEOJSON"
+    outline and every other primitives.create_* shape use, via
+    primitives.build_mesh_from_polygon), clipped directly to the polygon's
+    exact outline -- boundary-straddling cells get CDT-triangulated against
+    the real ring instead of earcut-triangulating the whole boundary
+    directly, which on a complex, concave real-world border produced long
+    sliver triangles -- up to 45:1 aspect ratio on a real French departement
+    boundary -- that fan out into visible spikes once each vertex gets its
+    own independent elevation sample. Clipping a regular lattice instead
+    keeps that well-shaped topology through the whole interior, with only
+    the boundary ring affected by the clip.
 
     Returns the new tagged "MAP" tile object (selected + active), or None on
     a degenerate/empty polygon.
     """
-    from . import mesh_ops  # deferred to avoid circular import at load time
+    from shapely.affinity import translate as _shp_translate  # deferred to avoid circular import at load time
+
     from .elevation import (  # deferred to avoid circular import at load time
         compute_and_store_tile_bounds,
         get_tile_elevation,
@@ -230,7 +230,7 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
         convert_to_neutral_coordinates,
     )
     from .primitives import (
-        create_rectangle,  # deferred to avoid circular import at load time
+        build_mesh_from_polygon,  # deferred to avoid circular import at load time
     )
 
     tp3d = bpy.context.scene.tp3d
@@ -258,9 +258,10 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
         return g2d.Polygon(ext_xy, holes_xy)
 
     # A MultiPolygon (mainland + islands) projects to one Blender-space part
-    # per input part -- iter_polygons/_extrude_flat_polygon further down
-    # already iterate over every part of a MultiPolygon transparently, so no
-    # other step needs to know how many separate landmasses there are.
+    # per input part -- clip_triangles_to_polygon (via build_mesh_from_polygon)
+    # and iter_polygons further down already iterate over every part of a
+    # MultiPolygon transparently, so no other step needs to know how many
+    # separate landmasses there are.
     parts_lonlat = list(polygon_lonlat.geoms) if isinstance(polygon_lonlat, g2d.MultiPolygon) else [polygon_lonlat]
     projected_parts = [_project_part(part) for part in parts_lonlat]
     projected = projected_parts[0] if len(projected_parts) == 1 else g2d.MultiPolygon(projected_parts)
@@ -274,10 +275,7 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
     if grid_w <= 0 or grid_h <= 0:
         return None
 
-    tile = create_rectangle(grid_w, grid_h, num_subdivisions, name)
-    tile.location = ((px1 + px2) / 2, (py1 + py2) / 2, 0)
-    bpy.context.view_layer.objects.active = tile
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+    center_x, center_y = (px1 + px2) / 2, (py1 + py2) / 2
 
     # writeMetadata() (utils/metadata.py) computes the tile's lat/long from
     # these two scene properties -- the only other writer is runGeneration's
@@ -286,49 +284,27 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
     # whatever a previous (differently-scaled) generation left behind; paired
     # with this tile's own fresh sScaleHor, convert_to_geo's Mercator formula
     # can overflow on the mismatch.
-    tp3d["o_centerx"] = (px1 + px2) / 2
-    tp3d["o_centery"] = (py1 + py2) / 2
+    tp3d["o_centerx"] = center_x
+    tp3d["o_centery"] = center_y
 
-    # Solid cutter prism from the (simplified) polygon -- generously tall so
-    # it fully spans the still-flat (z=0) grid regardless of scale.
-    cutter_verts, cutter_faces = [], []
-    for part in g2d.iter_polygons(projected):
-        mesh_ops._extrude_flat_polygon(g2d, part, -50.0, 50.0, cutter_verts, cutter_faces)
-    if not cutter_verts:
-        bpy.data.objects.remove(tile, do_unlink=True)
+    # Same cell-size convention primitives.create_rectangle uses for a
+    # bounding-box-shaped lattice (this polygon's own footprint plays the
+    # same role a rectangle's width/height do there).
+    cell_size = max(grid_w, grid_h) / (2 ** (num_subdivisions + 1))
+
+    # build_mesh_from_polygon (like every primitives.create_* shape) expects
+    # its polygon centered at the origin and positions the object via
+    # tile.location afterward -- re-center here rather than building directly
+    # in absolute projected space, so downstream consumers that read
+    # tile.location as the tile's center (multi-tile stitching, the picker's
+    # existing-maps layer, Extend Selected Tile) keep working unchanged.
+    centered = _shp_translate(projected, xoff=-center_x, yoff=-center_y)
+    tile = build_mesh_from_polygon(centered, cell_size, name)
+    if tile is None:
         return None
-
-    cutter_mesh = bpy.data.meshes.new(f"{name}_cutter")
-    cutter_mesh.from_pydata(cutter_verts, [], cutter_faces)
-    cutter_mesh.update()
-    mesh_ops._clean_solid_mesh(cutter_mesh)
-    cutter_obj = bpy.data.objects.new(cutter_mesh.name, cutter_mesh)
-    bpy.context.collection.objects.link(cutter_obj)
-
-    # EXACT (not MANIFOLD): the cutter, extruded from a real-world border,
-    # can still be non-manifold even after _clean_solid_mesh -- MANIFOLD
-    # silently no-ops on non-manifold input (same failure mode documented in
-    # mesh_ops.intersectWithTile), leaving the grid uncropped.
-    mesh_ops.boolean_operation(tile, cutter_obj, 'INTERSECT', solver='EXACT')
-    bpy.data.objects.remove(cutter_obj, do_unlink=True)
-
-    if len(tile.data.vertices) == 0:
-        bpy.data.objects.remove(tile, do_unlink=True)
-        return None
-
-
-    # The boolean can leave normals inconsistent -- flip if the average
-    # normal points down (same check create_circle runs after fill_grid).
-    bm = bmesh.new()
-    bm.from_mesh(tile.data)
-    bm.normal_update()
-    if bm.faces and sum(f.normal.z for f in bm.faces) / len(bm.faces) < 0:
-        for f in bm.faces:
-            f.normal_flip()
-        bm.normal_update()
-    bm.to_mesh(tile.data)
-    bm.free()
-    tile.data.update()
+    tile.location = (center_x, center_y, 0)
+    bpy.context.view_layer.objects.active = tile
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
 
     tile.name = name
     tile["objType"] = "MAP"

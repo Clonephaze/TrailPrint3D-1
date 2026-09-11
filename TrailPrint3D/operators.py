@@ -2821,8 +2821,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
     bl_idname = "tp3d.map_generator"
     bl_label = "Map Generator"
     bl_description = (
-        "Open an interactive map — draw a rectangle, square, circle, or octagon area, "
-        "then Send to Blender to generate a single map tile"
+        "Open an interactive map — draw a rectangle, square, circle, or octagon area "
+        "(or import an SVG shape), then Send to Blender to generate a single map tile"
     )
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -2835,6 +2835,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         'square':    'SQUARE',
         'circle':    'CIRCLE',
         'octagon':   'OCTAGON',
+        'svg':       'SVG',
     }
 
     def modal(self, context, event):
@@ -3019,6 +3020,22 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             elif shape_name == 'octagon':
                 blank = utils.create_octagon(diameter / 2, props.num_subdivisions)
                 blank["Shape"] = "OCTAGON"
+            elif shape_name == 'svg':
+                svg_path = data.get('svg_path')
+                if not svg_path:
+                    self.report({'ERROR'}, "No SVG file selected.")
+                    return
+                # Same helper (and the same uniform, aspect-preserving
+                # target_size scaling) the sidebar's Shape="SVG" option uses
+                # -- see primitives.create_custom_svg/polygon_from_svg.
+                blank = utils.create_custom_svg(svg_path, diameter, props.num_subdivisions)
+                if blank is None:
+                    self.report({'ERROR'}, "SVG file produced an empty/degenerate shape.")
+                    return
+                blank["Shape"] = "SVG"
+                # Keeps the sidebar's own Shape=SVG file field in sync, so
+                # reopening it later shows the file this tile actually used.
+                props.customFilePath = svg_path
             elif shape_name == 'square':
                 # Unlike 'rectangle' below, width and height are forced equal here
                 # -- the picker already squares the drawn area for every shape but

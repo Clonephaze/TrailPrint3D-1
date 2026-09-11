@@ -17,7 +17,7 @@
         #shapeToggle { position: absolute; top: 170px; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 6px;
             background: rgba(26,26,26,0.85); border: 1px solid #444; border-radius: 4px; padding: 6px; }
         #shapeToggle .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
-        #drawModeToggle { top: 338px; }
+        #drawModeToggle { top: 376px; }
     </style>
 </head>
 <body>
@@ -40,6 +40,10 @@
         <button id="importGeojson" style="padding: 12px 20px; background: #2a5a8a; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Import GeoJSON</button>
         <div id="geojsonList" style="display:none; font-size:11px; color:#aaa; line-height:1.8;"></div>
         <button id="clearGeojson" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear GeoJSON</button>
+        <input type="file" id="svgShapeInput" accept=".svg" style="display: none;">
+        <button id="importSvgShape" style="padding: 12px 20px; background: #8a5a2a; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Import SVG Shape</button>
+        <div id="svgShapeList" style="display:none; font-size:11px; color:#aaa; line-height:1.8;"></div>
+        <button id="clearSvgShape" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear SVG Shape</button>
         <hr class="sidebar-divider">
         <div id="status">Draw a shape to begin.</div>
         <button id="send" class="btn-send" disabled>Send to Blender</button>
@@ -84,6 +88,9 @@
             </button>
             <button class="shape-btn icon-btn" data-shape="octagon" title="Octagon (keeps aspect ratio 1:1)">
                 <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="17,12.9 12.9,17 7.1,17 3,12.9 3,7.1 7.1,3 12.9,3 17,7.1"/></svg>
+            </button>
+            <button class="shape-btn icon-btn" data-shape="svg" title="SVG shape (click to import, keeps its own proportions)">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="3.5" width="15" height="13" rx="1"/><circle cx="7" cy="8" r="1.6" fill="currentColor" stroke="none"/><path d="M3 14 L8 9.5 L11.5 12.5 L14 10 L17 13.5"/></svg>
             </button>
         </div>
         <div id="drawModeToggle">
@@ -141,6 +148,10 @@
         var geojsonPaths = [];
         var geojsonNames = [];
         var existingMaps = [];
+        var svgShapePath = null; // temp-file path returned by /upload_svg, or null
+        var svgShapeName = null;
+        var svgAspect = 1; // width/height parsed from the imported SVG's own viewBox/width+height
+        var svgDataUrl = null; // data: URI of the raw SVG, used as the L.imageOverlay preview source
 
         __LOCATION_PANEL_JS__
 
@@ -187,6 +198,25 @@
             if (e.target.closest('.gpx-item-name') && geojsonLayer.getBounds().isValid()) {
                 map.fitBounds(geojsonLayer.getBounds(), { padding: [50, 50] });
             }
+        });
+
+        function updateSvgShapeList() {
+            var listEl = document.getElementById('svgShapeList');
+            var clearBtn = document.getElementById('clearSvgShape');
+            if (!svgShapeName) {
+                listEl.style.display = 'none'; clearBtn.style.display = 'none'; return;
+            }
+            listEl.style.display = 'block';
+            clearBtn.style.display = 'block';
+            // Same per-item "-" remove affordance the GPX/GeoJSON lists use
+            // (only ever one item here -- a single tile has one outline
+            // shape -- so no <details> collapsing is needed).
+            listEl.innerHTML = '<div class="gpx-item"><span class="gpx-item-name" title="' + svgShapeName + '">+ ' + svgShapeName + '</span>'
+                + '<button type="button" class="gpx-remove-btn" title="Remove this SVG shape">-</button></div>';
+        }
+
+        document.getElementById('svgShapeList').addEventListener('click', function(e) {
+            if (e.target.closest('.gpx-remove-btn')) clearSvgShapeImport();
         });
 
         // Parses one already-loaded GeoJSON object into a flat list of
@@ -255,7 +285,13 @@
                         baseLayers[s.baseLayer].addTo(map);
                         activeBaseLayerName = s.baseLayer;
                     }
-                    if (s.shape) {
+                    // 'svg' is deliberately excluded here -- like gpxPaths/
+                    // geojsonPaths, the imported SVG's content is session-only
+                    // (never written to saveState/the state file), so restoring
+                    // 'svg' as the active shape on reopen would select a shape
+                    // with no file behind it. Falls back to the default
+                    // 'rectangle' the static HTML already marks active.
+                    if (s.shape && s.shape !== 'svg') {
                         currentShape = s.shape;
                         document.querySelectorAll('.shape-btn[data-shape]').forEach(function(b) {
                             b.classList.toggle('active', b.getAttribute('data-shape') === s.shape);
@@ -447,6 +483,10 @@
             return currentShape === 'rectangle' ? b : squareBoundsFromRect(b);
         }
 
+        // svgInscribedBounds/placeSvgBoxInViewport/clearSvgShapeImport live in
+        // __RECT_EDITOR_JS__ (assets/rect_editor.js), shared with
+        // premium/map_generator_pe.html.
+
         function updateSendState() {
             var ready = !!coords || geojsonPaths.length > 0;
             document.getElementById('send').disabled = !ready;
@@ -462,6 +502,8 @@
                 document.getElementById('status').textContent = 'GeoJSON boundary ready' + extraSuffix + '.';
             } else if (nGpx) {
                 document.getElementById('status').textContent = nGpx + ' trail(s) imported — draw a shape or import a GeoJSON boundary to send.';
+            } else if (currentShape === 'svg' && svgShapePath) {
+                document.getElementById('status').textContent = 'SVG shape imported — draw an area to place it.';
             } else {
                 document.getElementById('status').textContent = 'Draw a shape to begin.';
             }
@@ -640,10 +682,20 @@
 
         document.querySelectorAll('.shape-btn[data-shape]').forEach(function(btn) {
             btn.addEventListener('click', function() {
+                var shape = this.getAttribute('data-shape');
+                // The SVG shape needs a file behind it -- clicking the icon
+                // before one's been imported just opens the file dialog
+                // instead of selecting an empty shape (selection itself
+                // happens once svgShapeInput's 'change' handler finishes the
+                // upload, see below).
+                if (shape === 'svg' && !svgShapePath) {
+                    document.getElementById('svgShapeInput').click();
+                    return;
+                }
                 // Just changes which shape the already-drawn area gets
                 // interpreted as — does NOT start a new draw action (use the
                 // Draw button for that).
-                currentShape = this.getAttribute('data-shape');
+                currentShape = shape;
                 document.querySelectorAll('.shape-btn[data-shape]').forEach(function(b) { b.classList.remove('active'); });
                 this.classList.add('active');
                 if (coords) {
@@ -658,6 +710,66 @@
                 saveState();
             });
         });
+
+        document.getElementById('importSvgShape').addEventListener('click', function() {
+            document.getElementById('svgShapeInput').click();
+        });
+
+        document.getElementById('svgShapeInput').addEventListener('change', function(e) {
+            var files = Array.from(e.target.files).slice(0, 1);
+            this.value = '';
+            if (!files.length) return;
+            var file = files[0];
+            var reader = new FileReader();
+            reader.onload = function(event) {
+                var svgText = event.target.result;
+                try {
+                    var doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+                    if (doc.getElementsByTagName('parsererror').length) {
+                        tp3dAlert(file.name + ' is not a valid SVG file.', 'Import Error');
+                        return;
+                    }
+                } catch (err) {
+                    tp3dAlert('Error parsing ' + file.name + ': ' + err.message, 'Import Error');
+                    return;
+                }
+                // Measures the SVG's real geometric aspect ratio (not its
+                // declared viewBox/width/height, which can differ a lot from
+                // the actual artwork's extent) so the preview matches what
+                // the backend will actually generate -- see
+                // computeSvgAspectFromMarkup's own comment for why.
+                var aspect = computeSvgAspectFromMarkup(svgText);
+                fetch('http://127.0.0.1:' + PORT + '/upload_svg', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'image/svg+xml', 'X-Filename': file.name },
+                    body: svgText
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(res) {
+                    svgShapePath = res.path;
+                    svgShapeName = file.name;
+                    svgAspect = aspect;
+                    svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgText);
+                    currentShape = 'svg';
+                    document.querySelectorAll('.shape-btn[data-shape]').forEach(function(b) {
+                        b.classList.toggle('active', b.getAttribute('data-shape') === 'svg');
+                    });
+                    // Auto-places a fresh box centered in the current view (~40%
+                    // of it) so the shape is immediately visible instead of
+                    // requiring the user to draw/find an area for it first.
+                    placeSvgBoxInViewport(0.4);
+                    updateSvgShapeList();
+                    renderShapePreview();
+                    updateSendState();
+                    updateStatus();
+                    saveState();
+                })
+                .catch(function() { tp3dAlert('Could not save SVG to temp file.', 'Import Error'); });
+            };
+            reader.readAsText(file);
+        });
+
+        document.getElementById('clearSvgShape').addEventListener('click', clearSvgShapeImport);
 
         document.querySelectorAll('.draw-mode-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
@@ -709,6 +821,13 @@
         function renderShapePreview() {
             shapePreview.clearLayers();
             if (!coords || currentShape === 'rectangle') return;
+            if (currentShape === 'svg') {
+                if (!svgDataUrl) return;
+                var ib = svgInscribedBounds(effectiveBounds(coords), svgAspect);
+                L.imageOverlay(svgDataUrl, [[ib.south, ib.west], [ib.north, ib.east]], { opacity: 0.85 })
+                    .addTo(shapePreview);
+                return;
+            }
             makeShapeLayer(effectiveBounds(coords), currentShape, {
                 color: '#007bff', weight: 1.5, opacity: 0.9, fill: true, fillOpacity: 0.12
             }).addTo(shapePreview);
@@ -776,6 +895,7 @@
             var payload = {
                 gpx_paths: gpxPaths,
                 geojson_paths: geojsonPaths,
+                svg_path: svgShapePath,
                 resolution: parseInt(document.getElementById('resolutionSlider').value) || 4,
                 objSize: parseFloat(document.getElementById('objSizeInput').value) || 100
             };

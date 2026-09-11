@@ -422,12 +422,16 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'ok')
             return
-        if self.path == '/upload_gpx' or self.path == '/upload_geojson':
+        if self.path in ('/upload_gpx', '/upload_geojson', '/upload_svg'):
             import tempfile
             length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(length)
-            default_name = 'trail.gpx' if self.path == '/upload_gpx' else 'boundary.geojson'
-            raw_name = self.headers.get('X-Filename', default_name)
+            default_names = {
+                '/upload_gpx': 'trail.gpx',
+                '/upload_geojson': 'boundary.geojson',
+                '/upload_svg': 'shape.svg',
+            }
+            raw_name = self.headers.get('X-Filename', default_names[self.path])
             safe = ''.join(c if c.isalnum() or c in '-_.' else '_' for c in raw_name)
             out_path = pathlib.Path(tempfile.gettempdir()) / f'trailprint_{safe}'
             out_path.write_bytes(body)
