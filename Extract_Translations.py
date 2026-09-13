@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
 """Extract translatable strings from the TrailPrint3D addon and diff them
 against translation.py's existing dictionaries. Also flags text that bypasses
-Blender's translation system entirely (self.report / add_warning / raised
-exceptions), and text that skips the _() wrapper but is passed to a
-name=/text=/description=/bl_label/bl_description slot Blender translates
-automatically.
+Blender's translation system entirely.
 
-Read-only: never modifies the addon source. Writes one .xlsx report.
+Read-only: never modifies the addon source. Writes one .ods report.
+
+Requires odfpy (for writing the .ods report)
+`pip install odfpy`
 """
 
 import ast
 from pathlib import Path
 
-import openpyxl
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
+from odf.opendocument import OpenDocumentSpreadsheet
+from odf.style import Style, TableCellProperties, TableColumnProperties, TextProperties
+from odf.table import Table, TableCell, TableColumn, TableRow
+from odf.text import P
 
 ADDON_ROOT = Path("./TrailPrint3D")
 TRANSLATION_FILE = ADDON_ROOT / "translation.py"
-OUTPUT_XLSX = "./tp3d-translation-audit.xlsx"
+OUTPUT_ODS = "./tp3d-translation-audit.ods"
 
 # Directories/files not part of the addon's own translatable UI surface.
 EXCLUDE_DIRS = {"tests", "__pycache__"}
-EXCLUDE_FILES = {"translation.py"}  # the dictionary itself, not a source of strings
+EXCLUDE_FILES = {"translation.py"} 
 
 TRANSLATE_KWARGS = {"text", "name", "description"}
 BL_CLASS_ATTRS = {"bl_label", "bl_description"}
@@ -38,7 +39,6 @@ def iter_py_files():
 
 
 def is_wrapped_in_gettext(node):
-    """True if *node* is a call to _(...) (the pgettext_iface alias)."""
     return (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
@@ -71,59 +71,31 @@ class Extractor(ast.NodeVisitor):
                 self.tracked.append((s, self.rel, node.lineno))
             elif isinstance(arg, ast.JoinedStr):
                 self.needs_review.append(
-                    (
-                        "f-string still inside _()",
-                        self.rel,
-                        node.lineno,
-                        ast.unparse(arg)[:80],
-                    )
+                    ("f-string still inside _()", self.rel, node.lineno, ast.unparse(arg)[:80])
                 )
             else:
                 self.needs_review.append(
-                    (
-                        "non-literal argument to _()",
-                        self.rel,
-                        node.lineno,
-                        ast.unparse(arg)[:80],
-                    )
+                    ("non-literal argument to _()", self.rel, node.lineno, ast.unparse(arg)[:80])
                 )
 
-        if (
-            isinstance(node.func, ast.Attribute)
-            and node.func.attr == "report"
-            and len(node.args) >= 2
-        ):
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "report" and len(node.args) >= 2:
             msg = node.args[1]
             s = const_str(msg)
             if s is not None:
                 self.bypasses.append(("self.report", self.rel, node.lineno, s))
             elif isinstance(msg, ast.JoinedStr):
                 self.bypasses.append(
-                    (
-                        "self.report (f-string)",
-                        self.rel,
-                        node.lineno,
-                        ast.unparse(msg)[:100],
-                    )
+                    ("self.report (f-string)", self.rel, node.lineno, ast.unparse(msg)[:100])
                 )
 
-        if (
-            isinstance(node.func, ast.Attribute)
-            and node.func.attr == "add_warning"
-            and node.args
-        ):
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "add_warning" and node.args:
             msg = node.args[0]
             s = const_str(msg)
             if s is not None:
                 self.bypasses.append(("add_warning", self.rel, node.lineno, s))
             elif isinstance(msg, ast.JoinedStr):
                 self.bypasses.append(
-                    (
-                        "add_warning (f-string)",
-                        self.rel,
-                        node.lineno,
-                        ast.unparse(msg)[:100],
-                    )
+                    ("add_warning (f-string)", self.rel, node.lineno, ast.unparse(msg)[:100])
                 )
 
         for kw in node.keywords:
@@ -154,12 +126,7 @@ class Extractor(ast.NodeVisitor):
                 )
             elif isinstance(arg, ast.JoinedStr):
                 self.needs_review.append(
-                    (
-                        "raised exception (f-string)",
-                        self.rel,
-                        node.lineno,
-                        f"{exc_name}: {ast.unparse(arg)[:80]}",
-                    )
+                    ("raised exception (f-string)", self.rel, node.lineno, f"{exc_name}: {ast.unparse(arg)[:80]}")
                 )
         self.generic_visit(node)
 
@@ -192,111 +159,110 @@ def load_translation_dict():
     raise RuntimeError("translations_dict assignment not found in translation.py")
 
 
-def style_worksheet(ws):
-    """Applies professional styling to an openpyxl worksheet."""
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(
-        start_color="3F4B5B", end_color="3F4B5B", fill_type="solid"
-    )
-    alt_fill = PatternFill(start_color="F5F7FA", end_color="F5F7FA", fill_type="solid")
-    border_style = Side(border_style="thin", color="E0E0E0")
-    border = Border(
-        left=border_style, right=border_style, top=border_style, bottom=border_style
-    )
+def add_ods_sheet(doc, title, rows, header_style, alt_style):
+    table = Table(name=title)
+    
+    # Pre-calculate column widths based on content
+    col_widths = [0] * (len(rows[0]) if rows else 0)
+    for row in rows:
+        for col_idx, cell_data in enumerate(row):
+            col_widths[col_idx] = max(col_widths[col_idx], len(str(cell_data)))
+            
+    # Add width-styled columns before rows
+    for col_idx, char_count in enumerate(col_widths):
+        # Roughly 0.25cm per character, cap max width at 15cm for readability
+        width_cm = max(2.5, min((char_count + 2) * 0.25, 15.0))
+        
+        col_style = Style(name=f"{title}_Col_{col_idx}", family="table-column")
+        col_style.addElement(TableColumnProperties(columnwidth=f"{width_cm}cm"))
+        doc.automaticstyles.addElement(col_style)
+        
+        table.addElement(TableColumn(stylename=col_style))
 
-    # Freeze top row
-    ws.freeze_panes = "A2"
-
-    # Style header row
-    for cell in ws[1]:
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-        cell.border = border
-
-    # Apply alternating colors, borders, and auto-width
-    for col in ws.iter_cols(
-        min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column
-    ):
-        max_length = 0
-        column_letter = get_column_letter(col[0].column)
-
-        for idx, cell in enumerate(col):
-            if cell.row > 1:
-                cell.border = border
-                if cell.row % 2 == 0:
-                    cell.fill = alt_fill
-
-            try:
-                max_length = max(max_length, len(str(cell.value)))
-            except Exception as e:  # noqa: BLE001
-                print(f"Error calculating max length for cell {cell.coordinate}: {e}")
-
-        # Set dynamic width (capped at 60 characters for readability)
-        adjusted_width = min((max_length + 2), 60)
-        ws.column_dimensions[column_letter].width = adjusted_width
-
-    # Add auto-filters to the header
-    ws.auto_filter.ref = ws.dimensions
+    # Populate rows and cells
+    for row_idx, row_data in enumerate(rows):
+        tr = TableRow()
+        for cell_data in row_data:
+            if isinstance(cell_data, (int, float)):
+                tc = TableCell(valuetype="float", value=str(cell_data))
+            else:
+                tc = TableCell(valuetype="string")
+                
+            tc.addElement(P(text=str(cell_data)))
+            
+            if row_idx == 0:
+                tc.setAttribute("stylename", header_style)
+            elif row_idx % 2 == 0:
+                tc.setAttribute("stylename", alt_style)
+                
+            tr.addElement(tc)
+        table.addElement(tr)
+        
+    doc.spreadsheet.addElement(table)
 
 
-def write_excel_report(data, out_path):
-    wb = openpyxl.Workbook()
+def write_ods_report(data, out_path):
+    doc = OpenDocumentSpreadsheet()
 
-    # Overview Sheet
-    ws_overview = wb.active
-    ws_overview.title = "Overview"
-    ws_overview.append(["Metric", "Count"])
-    ws_overview.append(["Tracked Strings", len(data["master"])])
+    # Define Header Style
+    header_style = Style(name="HeaderStyle", family="table-cell")
+    header_style.addElement(TableCellProperties(backgroundcolor="#3F4B5B"))
+    header_style.addElement(TextProperties(fontweight="bold", color="#FFFFFF"))
+    doc.automaticstyles.addElement(header_style)
 
+    # Define Alternating Row Style
+    alt_style = Style(name="AltStyle", family="table-cell")
+    alt_style.addElement(TableCellProperties(backgroundcolor="#F5F7FA"))
+    doc.automaticstyles.addElement(alt_style)
+
+    # 1. Overview Sheet
+    overview_data = [
+        ["Metric", "Count"],
+        ["Tracked Strings", len(data["master"])]
+    ]
     for lang in data["languages"]:
-        ws_overview.append([f"[{lang}] Missing", len(data["per_lang_missing"][lang])])
-        ws_overview.append([f"[{lang}] Dead Keys", len(data["per_lang_dead"][lang])])
+        overview_data.append([f"[{lang}] Missing", len(data["per_lang_missing"][lang])])
+        overview_data.append([f"[{lang}] Dead Keys", len(data["per_lang_dead"][lang])])
+    overview_data.extend([
+        ["Bypasses", len(data["bypasses"])],
+        ["Unwrapped", len(data["unwrapped"])],
+        ["Needs Review", len(data["needs_review"])]
+    ])
+    add_ods_sheet(doc, "Overview", overview_data, header_style, alt_style)
 
-    ws_overview.append(["Bypasses", len(data["bypasses"])])
-    ws_overview.append(["Unwrapped", len(data["unwrapped"])])
-    ws_overview.append(["Needs Review", len(data["needs_review"])])
-    style_worksheet(ws_overview)
-
-    # Missing Strings Sheet
-    ws_missing = wb.create_sheet("Missing Translations")
-    ws_missing.append(["Language", "String", "File", "Line"])
+    # 2. Missing Strings Sheet
+    missing_data = [["Language", "String", "File", "Line"]]
     for lang in data["languages"]:
         for s in data["per_lang_missing"][lang]:
             info = data["master"].get(s, {})
-            ws_missing.append([lang, s, info.get("file", ""), info.get("line", "")])
-    style_worksheet(ws_missing)
+            missing_data.append([lang, s, info.get("file", ""), info.get("line", "")])
+    if len(missing_data) == 1: missing_data.append(["", "None", "", ""])
+    add_ods_sheet(doc, "Missing Translations", missing_data, header_style, alt_style)
 
-    # Dead Keys Sheet
-    ws_dead = wb.create_sheet("Dead Keys")
-    ws_dead.append(["Language", "String"])
+    # 3. Dead Keys Sheet
+    dead_data = [["Language", "String"]]
     for lang in data["languages"]:
         for s in data["per_lang_dead"][lang]:
-            ws_dead.append([lang, s])
-    style_worksheet(ws_dead)
+            dead_data.append([lang, s])
+    if len(dead_data) == 1: dead_data.append(["", "None"])
+    add_ods_sheet(doc, "Dead Keys", dead_data, header_style, alt_style)
 
-    # Bypasses Sheet
-    ws_bypass = wb.create_sheet("Bypasses")
-    ws_bypass.append(["Kind", "File", "Line", "Message"])
-    for b in data["bypasses"]:
-        ws_bypass.append(b)
-    style_worksheet(ws_bypass)
+    # 4. Bypasses Sheet
+    bypass_data = [["Kind", "File", "Line", "Message"]] + data["bypasses"]
+    if len(bypass_data) == 1: bypass_data.append(["", "None", "", ""])
+    add_ods_sheet(doc, "Bypasses", bypass_data, header_style, alt_style)
 
-    # Unwrapped Sheet
-    ws_unwrapped = wb.create_sheet("Unwrapped")
-    ws_unwrapped.append(["Keyword", "File", "Line", "String"])
-    for u in data["unwrapped"]:
-        ws_unwrapped.append(u)
-    style_worksheet(ws_unwrapped)
+    # 5. Unwrapped Sheet
+    unwrapped_data = [["Keyword", "File", "Line", "String"]] + data["unwrapped"]
+    if len(unwrapped_data) == 1: unwrapped_data.append(["", "None", "", ""])
+    add_ods_sheet(doc, "Unwrapped", unwrapped_data, header_style, alt_style)
 
-    # Needs Review Sheet
-    ws_review = wb.create_sheet("Needs Review")
-    ws_review.append(["Issue", "File", "Line", "Snippet"])
-    for r in data["needs_review"]:
-        ws_review.append(r)
-    style_worksheet(ws_review)
+    # 6. Needs Review Sheet
+    review_data = [["Issue", "File", "Line", "Snippet"]] + data["needs_review"]
+    if len(review_data) == 1: review_data.append(["", "None", "", ""])
+    add_ods_sheet(doc, "Needs Review", review_data, header_style, alt_style)
 
-    wb.save(out_path)
+    doc.save(out_path)
 
 
 def main():
@@ -348,6 +314,6 @@ if __name__ == "__main__":
     print(f"Unwrapped but likely fine: {len(result['unwrapped'])}")
     print(f"Needs manual review: {len(result['needs_review'])}")
 
-    print(f"\nWriting styled report to {OUTPUT_XLSX}...")
-    write_excel_report(result, OUTPUT_XLSX)
+    print(f"\nWriting styled report to {OUTPUT_ODS}...")
+    write_ods_report(result, OUTPUT_ODS)
     print("Done.")
