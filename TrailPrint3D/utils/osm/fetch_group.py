@@ -26,9 +26,10 @@ def _make_cache_path(bbox, kind, settings=None):
         exclude_alleys = settings.exclude_alleys
     else:
         mapsize = bpy.context.scene.tp3d.sMapInKm
-        water_ponds = bool(bpy.context.scene.tp3d.col_wBodiesActive)
-        water_small_rivers = bool(bpy.context.scene.tp3d.col_wMinorActive)
-        water_big_rivers = bool(bpy.context.scene.tp3d.col_wMajorActive)
+        _tp3d = bpy.context.scene.tp3d
+        water_ponds = bool(_tp3d.show_water and _tp3d.col_wBodiesActive)
+        water_small_rivers = bool(_tp3d.show_water and _tp3d.col_wMinorActive)
+        water_big_rivers = bool(_tp3d.show_water and _tp3d.col_wMajorActive)
         exclude_alleys = True
     road_tiers = resolve_road_tiers(settings)
 
@@ -70,10 +71,11 @@ def _build_union_query(south, west, north, east, kinds, settings=None):
         water_big_rivers = settings.water_big_rivers
         exclude_alleys = settings.exclude_alleys
     else:
-        mapsize = bpy.context.scene.tp3d.sMapInKm
-        water_ponds = bool(bpy.context.scene.tp3d.col_wBodiesActive)
-        water_small_rivers = bool(bpy.context.scene.tp3d.col_wMinorActive)
-        water_big_rivers = bool(bpy.context.scene.tp3d.col_wMajorActive)
+        _tp3d = bpy.context.scene.tp3d
+        mapsize = _tp3d.sMapInKm
+        water_ponds = bool(_tp3d.show_water and _tp3d.col_wBodiesActive)
+        water_small_rivers = bool(_tp3d.show_water and _tp3d.col_wMinorActive)
+        water_big_rivers = bool(_tp3d.show_water and _tp3d.col_wMajorActive)
         exclude_alleys = True
     road_tiers = resolve_road_tiers(settings)
 

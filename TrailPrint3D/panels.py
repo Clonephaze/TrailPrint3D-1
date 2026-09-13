@@ -94,16 +94,18 @@ def _draw_element_category(
     simplification threshold), plus a live size warning when the cached
     trail estimate exceeds this category's real cutoff from constants.py"""
     sub = box.box()
-    sub.label(text=label, icon=icon)
+    is_active = getattr(props, active_prop)
     row = sub.row(align=True)
+    row.label(text=label, icon=icon)
     row.prop(
         props,
         active_prop,
-        icon="CHECKBOX_HLT" if getattr(props, active_prop) else "CHECKBOX_DEHLT",
+        text="",
+        icon="CHECKBOX_HLT" if is_active else "CHECKBOX_DEHLT",
     )
-    if area_prop and getattr(props, active_prop):
-        row.prop(props, area_prop)
-    if getattr(props, active_prop):
+    if area_prop and is_active:
+        sub.prop(props, area_prop)
+    if is_active:
         est_km = estimate_map_km(props)
         if est_km is not None and est_km > max_size_const:
             warn_row = sub.row()
@@ -348,7 +350,7 @@ class TP3D_PT_generate(bpy.types.Panel):
                         col.label(
                             text=_("Trail area: ~%dkm")
                             % round(est_km * props.pathScale),
-                            icon="STATUS_INFO"
+                            icon="INFO"
                         )
             elif temp.PREMIUMVERSION:
                 col.label(text=_("GPX Folder Selection:"))
@@ -576,27 +578,18 @@ class TP3D_PT_generate(bpy.types.Panel):
                 elementSettings.prop(props, "col_osmSmoothing")
 
                 sub = box.box()
-                row = sub.row()
-                row.prop(
-                    props,
-                    "show_water",
-                    icon="TRIA_DOWN" if props.show_water else "TRIA_RIGHT",
-                    emboss=False,
-                    text=_("Water & Ocean"),
-                )
-                _any_water = (
-                    props.col_wBodiesActive
-                    or props.col_wMinorActive
-                    or props.col_wMajorActive
-                    or props.el_oActive
-                )
                 _any_water_not_ocean = (
                     props.col_wBodiesActive
                     or props.col_wMinorActive
                     or props.col_wMajorActive
                 )
-                row.label(
-                    text="", icon="CHECKBOX_HLT" if _any_water else "CHECKBOX_DEHLT"
+                row = sub.row(align=True)
+                row.label(text=_("Water & Ocean"), icon="MATFLUID")
+                row.prop(
+                    props,
+                    "show_water",
+                    text="",
+                    icon="CHECKBOX_HLT" if props.show_water else "CHECKBOX_DEHLT",
                 )
                 if props.show_water:
                     col = sub.column(align=True)
@@ -741,17 +734,14 @@ class TP3D_PT_generate(bpy.types.Panel):
 
                 sub = sub3d.box()
                 ensure_road_types(props)
-                row = sub.row()
+                _any_road = any_road_active(props)
+                row = sub.row(align=True)
+                row.label(text=_("Roads"), icon="AUTO")
                 row.prop(
                     props,
                     "show_roads",
-                    icon="TRIA_DOWN" if props.show_roads else "TRIA_RIGHT",
-                    emboss=False,
-                    text=_("Roads"),
-                )
-                _any_road = any_road_active(props)
-                row.label(
-                    text="", icon="CHECKBOX_HLT" if _any_road else "CHECKBOX_DEHLT"
+                    text="",
+                    icon="CHECKBOX_HLT" if props.show_roads else "CHECKBOX_DEHLT",
                 )
                 if props.show_roads:
                     col = sub.column(align=True)

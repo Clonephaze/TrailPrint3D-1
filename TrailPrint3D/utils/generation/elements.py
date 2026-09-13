@@ -174,7 +174,7 @@ def _rg_build_terrain_elements(
         ),
         (
             "water",
-            lambda t: (
+            lambda t: t.show_water and (
                 t.col_wBodiesActive or t.col_wMinorActive or t.col_wMajorActive
             ),
             const.WATER_MAXSIZE,
@@ -226,7 +226,7 @@ def _rg_build_terrain_elements(
         ]
         + (
             ["_ocean"]
-            if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_WATERPOLY_MAXSIZE
+            if tp3d.show_water and tp3d.el_oActive == 1 and map_km <= const.COASTLINE_WATERPOLY_MAXSIZE
             else []
         )
         + (
@@ -255,6 +255,7 @@ def _rg_build_terrain_elements(
 
     _water_feat_active = (
         gen.settings.elementSource == "OSM"
+        and tp3d.show_water
         and (
             tp3d.col_wBodiesActive
             or tp3d.col_wMinorActive
@@ -262,7 +263,7 @@ def _rg_build_terrain_elements(
         )
         and map_km <= const.WATER_MAXSIZE
     )
-    _ocean_active = tp3d.el_oActive == 1 and map_km <= const.COASTLINE_WATERPOLY_MAXSIZE
+    _ocean_active = tp3d.show_water and tp3d.el_oActive == 1 and map_km <= const.COASTLINE_WATERPOLY_MAXSIZE
     _water_ocean_combined = _water_feat_active and _ocean_active
 
     # --------------------------------------------------
@@ -292,9 +293,9 @@ def _rg_build_terrain_elements(
             api_retries=tp3d.apiRetries,
             mapsize=tp3d.sMapInKm,
             road_tiers={tier: get_road_active(tp3d, tier) for tier in TIER_TAGS},
-            water_ponds=bool(tp3d.col_wBodiesActive),
-            water_small_rivers=bool(tp3d.col_wMinorActive),
-            water_big_rivers=bool(tp3d.col_wMajorActive),
+            water_ponds=bool(tp3d.show_water and tp3d.col_wBodiesActive),
+            water_small_rivers=bool(tp3d.show_water and tp3d.col_wMinorActive),
+            water_big_rivers=bool(tp3d.show_water and tp3d.col_wMajorActive),
             exclude_alleys=True,
         )
         _active_kind_tasks = (
@@ -319,7 +320,7 @@ def _rg_build_terrain_elements(
             _active_kind_tasks.append(("BUILDINGS", _tile_tasks))
         if any_road_active(tp3d) and map_km <= const.ROADS_MAXSIZE:
             _active_kind_tasks.append(("STREETS", _tile_tasks))
-        if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE:
+        if tp3d.show_water and tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE:
             _active_kind_tasks.append(("COASTLINE", _tile_tasks))
         _all_prefetched = _fetch_all_kinds_parallel(
             _active_kind_tasks, _overpass_semaphore, settings=_fetch_settings
@@ -358,7 +359,8 @@ def _rg_build_terrain_elements(
         ):
             _ov.set_fetch_ready("roads")
         if (
-            tp3d.el_oActive == 1
+            tp3d.show_water
+            and tp3d.el_oActive == 1
             and map_km <= const.COASTLINE_MAXSIZE
             and _all_prefetched.get("COASTLINE")
         ):
@@ -429,7 +431,7 @@ def _rg_build_terrain_elements(
     # Ocean — unique creation logic.
     # --------------------------------------------------
     terrain["ocean"] = None
-    if tp3d.el_oActive == 1:
+    if tp3d.show_water and tp3d.el_oActive == 1:
         if map_km <= const.COASTLINE_MAXSIZE:
             _advance_elem_progress("Ocean", "Creating ocean…")
             _ov.set_fetch_progress("water", 0.5 if _water_feat_active else 0.0)

@@ -197,9 +197,9 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
         api_retries=tp3d.apiRetries,
         mapsize=tp3d.sMapInKm,
         road_tiers={tier: get_road_active(tp3d, tier) for tier in TIER_TAGS},
-        water_ponds=bool(tp3d.col_wBodiesActive),
-        water_small_rivers=bool(tp3d.col_wMinorActive),
-        water_big_rivers=bool(tp3d.col_wMajorActive),
+        water_ponds=bool(tp3d.show_water and tp3d.col_wBodiesActive),
+        water_small_rivers=bool(tp3d.show_water and tp3d.col_wMinorActive),
+        water_big_rivers=bool(tp3d.show_water and tp3d.col_wMajorActive),
         exclude_alleys=True,
     )
     map_km = gen.runtime.mapKm if gen.runtime.mapKm is not None else tp3d.sMapInKm
@@ -217,7 +217,7 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
         _active_kind_tasks.append(("BUILDINGS", _tile_tasks))
     if any_road_active(tp3d) and map_km <= const.ROADS_MAXSIZE:
         _active_kind_tasks.append(("STREETS", _tile_tasks))
-    if tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE:
+    if tp3d.show_water and tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE:
         _active_kind_tasks.append(("COASTLINE", _tile_tasks))
     if not _active_kind_tasks:
         return None, {}

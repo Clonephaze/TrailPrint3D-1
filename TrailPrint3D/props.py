@@ -244,7 +244,7 @@ def set_road_active(tp3d, road_id: str, value: bool) -> None:
 
 
 def any_road_active(tp3d) -> bool:
-    return any(item.active for item in tp3d.road_types)
+    return tp3d.show_roads and any(item.active for item in tp3d.road_types)
 
 
 def get_shape_text_style_items(self, context):
