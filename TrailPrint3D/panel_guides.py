@@ -74,38 +74,26 @@ classes = [
     make_help_panel(
         "TP3D_PT_help_scale",
         "About: Scale",
-        "Decides how much real-world ground your print represents. "
-        "Two modes: Map Scale sets it based on your GPX trail's own "
-        "size; Coordinates instead calculates it from two exact "
-        "latitude/longitude points you enter.\n\n"
-        "This section comes after Shape on purpose — the "
-        "calculation needs the object size you set there.\n\n"
-        "[YOUR CALL: when you'd reach for Coordinates over Map "
-        "Scale in practice.]",
+        "Decides how much real-world ground your print represents.\n\nTwo modes: \n- Map Scale: sets the maps to scale itself so the trail fits this percentage of the print area.\n- Coordinates: Calculates the maps scale from two exact latitude/longitude points you enter."
     ),
     make_help_panel(
         "TP3D_PT_help_trail",
         "About: Trail",
-        "Settings for the printed trail line itself.  \n\nSet the mm width of the trail, choose if you want it to be made in Single-color mode, and adjust its height from the terrain if applicable.",
+        "Settings for the printed trail line.\n\nSet your desired width in mm.\n\nIf you don't have a multicolor printer, you'll want to turn on 'Single Extruder Mode' which will generate the trail as a seperate printable object. You can adjust the trails height, how far it extends above the terrain, and the trails clearance to help fit the pieces together after printing."
     ),
     make_help_panel(
         "TP3D_PT_help_terrain",
         "About: Terrain",
-        "Controls for the terrain surrounding the trail. \n\nAdjust the height, smoothing, and other terrain-specific settings to achieve the desired topography.",
+        "Set how you want the surrounding terrain to be represented in your print.\nChoose between:\n- Proportional elevation: Just a scaled version of the real-world terrain\n- Fixed height: Sets the terrain to a specific height, with the highest point of the terrain being exactly this high above the lowest point.\n\nExtra map height allows you to add additional height below the terrain, effectively raising the entire print.\n\nShape Rotation allows you to rotate the shape around the trail/map area\nX and Y offsets let you shift the map within the print area.\n\nSmooth Terrain applies a smoothing algorithm to the terrain surface, reducing blockiness and grid lines or letting lower resolution terrain appear smoother.",
     ),
     make_help_panel(
         "TP3D_PT_help_elements",
-        "About: Elements",
-        "Settings for the various map elements such as roads, buildings, and vegetation. \n\nAdjust their visibility, height, and other properties to customize the map's appearance.",
+        "About: Map Elements",
+        "Elements are used when you want to represent specific features on the map, such as roads and buildings, water bodies, forests, and other geographical elements. You can toggle each element on or off depending on what you want to include in your print. Each also comes with a threshold slider, smaller values remove smaller areas.\n\nElement Source:\n- OSM: Open Street Map data, which provides detailed information about roads, buildings, and other man-made features. Recommended most of the time, especially for close up and urban areas.\n- WorldCover: Satellite land-cover data that colors the terrain based on real-world land cover types.\n\n OSM also includes shape smoothing, rounds off the sharp points of the element shapes, and offers a Single Extruder mode which generates each element as individually printable objects.\nRoads in this mode will get their own tolerance slider, and a special depth slider. The depth is to help not cut through every other element unintentionally.",
     ),
     make_help_panel(
         "TP3D_PT_help_appearance",
         "About: Appearance",
-        "Settings for the visual appearance of the map. \n\nColors, textures, and other aesthetic options to enhance the overall look of the printed map.",
-    ),
-    make_help_panel(
-        "TP3D_PT_help_elementSource",
-        "About: Element Sources",
-        "Choose the source of map elements \n\nOSM: OpenStreetMap, good for maps less than 500km (310 miles) in size",
+        "Changes how included elements get drawn, wether they are formed with a texture or as flat per-face colors. A texture gives a more accurate representation of the element data, regardless of the resolution of the underlying mesh.\nYou can increase the texture resolution to get finer details, but this will increase export and slicing times.\n\nYou can optionally set your trail and road objects to be included in the texture, which will stop them from being seperate objects.",
     ),
 ]

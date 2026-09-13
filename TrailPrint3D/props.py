@@ -621,11 +621,11 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         description=_("Thickness of the path in mm"),
     )  # type: ignore
     shapeRotation: IntProperty(
-        name=_("ShapeRotation"),
+        name=_("Shape Rotation"),
         default=0,
         min=-360,
         max=360,
-        description=_("Rotation of the shape"),
+        description=_("Rotate the shape around the trail/map center"),
     )  # type: ignore
     overwritePathElevation: BoolProperty(
         name=_("Overwrite Path Elevation"),
@@ -890,27 +890,27 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
 
     tileSpacing: FloatProperty(
-        name=_("tileSpacing"),
+        name=_("Tile Spacing"),
         default=0,
         description=_("Distance between Tiles when Extending"),
     )  # type: ignore
 
     minThickness: FloatProperty(
-        name=_("minThickness"),
+        name=_("Extra Map Height"),
         default=2,
         min=0.5,
         max=1000,
-        description=_("Additional Thickness on lowest point"),
+        description=_("Extra height added to the map, below the terrain"),
     )  # type: ignore
     xTerrainOffset: FloatProperty(
-        name=_("xTerrainOffset"),
+        name=_("Map X Offset"),
         default=0,
-        description=_("Gives the map an Offset in X-Direction from the path"),
+        description=_("Gives the map an Offset in X-Direction from the path, positive values move it to the right"),
     )  # type: ignore
     yTerrainOffset: FloatProperty(
-        name=_("yTerrainOffset"),
+        name=_("Map Y Offset"),
         default=0,
-        description=_("Gives the map an Offset in Y-Direction from the path"),
+        description=_("Gives the map an Offset in Y-Direction from the path, positive values move it up"),
     )  # type: ignore
 
     rescaleMultiplier: FloatProperty(name=_("scale"), default=1, min=0, max=10000)  # type: ignore
