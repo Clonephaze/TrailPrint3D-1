@@ -393,101 +393,96 @@ class TP3D_PT_generate(bpy.types.Panel):
         col.prop(props, "num_subdivisions")
 
         # Shape extras
-        extras = box.box()
-        header = extras.row(align=True)
-        header.label(text=_("Shape Extras"), icon="OUTLINER_OB_FONT")
-        construct_popover(header, "TP3D_PT_help_shape_extras")
         effective_shape = get_effective_shape(props)
-        if effective_shape in {
-            "HEXAGON INNER TEXT",
-            "HEXAGON OUTER TEXT",
-            "OCTAGON OUTER TEXT",
-            "HEXAGON FRONT TEXT",
-            "CIRCLE OUTER TEXT",
-        }:
-            row = extras.row(align=True)
-            row.prop(props, "textFont")
-            row.operator("tp3d.pick_font_file", text="", icon="FILEBROWSER")
-            row = extras.row(align=True)
-            row.prop(props, "textSizeTitle")
-            row.prop(props, "textSize")
-            extras.label(text=_("Plate text (Goes Counter-Clockwise):"))
-            col = extras.column()
-            if temp.PREMIUMVERSION:
-                row = col.row()
-                split = row.split(factor=0.3)
-                split.prop(props, "titleIcon", text="")
-                split.prop(props, "titlefield", text="")
-                if effective_shape == "HEXAGON OUTER TEXT":
-                    row = col.row()
-                    split = row.split(factor=0.3)
-                    split.prop(props, "iconText5", text="")
-                    split.prop(props, "textfield5", text="")
-                row = col.row()
-                split = row.split(factor=0.3)
-                split.prop(props, "iconText1", text="")
-                split.prop(props, "textfield1", text="")
-                row = col.row()
-                split = row.split(factor=0.3)
-                split.prop(props, "iconText2", text="")
-                split.prop(props, "textfield2", text="")
-                row = col.row()
-                split = row.split(factor=0.3)
-                split.prop(props, "iconText3", text="")
-                split.prop(props, "textfield3", text="")
-                if effective_shape == "HEXAGON OUTER TEXT":
-                    row = col.row()
-                    split = row.split(factor=0.3)
-                    split.prop(props, "iconText4", text="")
-                    split.prop(props, "textfield4", text="")
-            else:
-                row = col.row()
-                split = row.split(factor=0.3)
-                split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
-                split.prop(props, "titlefield", text="")
-                row = col.row()
-                split = row.split(factor=0.3)
-                split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
-                split.prop(props, "textfield1", text="")
-                row = col.row()
-                split = row.split(factor=0.3)
-                split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
-                split.prop(props, "textfield2", text="")
-                row = col.row()
-                split = row.split(factor=0.3)
-                split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
-                split.prop(props, "textfield3", text="")
-                if effective_shape == "HEXAGON OUTER TEXT":
-                    row = col.row()
-                    split = row.split(factor=0.3)
-                    split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
-                    split.prop(props, "textfield4", text="")
-                    row = col.row()
-                    split = row.split(factor=0.3)
-                    split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
-                    split.prop(props, "textfield5", text="")
-            col = extras.column(align=True)
-            col.prop(props, "plateThickness")
-            col.prop(props, "outerBorderSize")
-            col.prop(props, "plateInsertValue")
-            # col.prop(props, "text_angle_preset") | Can't tell what the purpose of this is, disabled for now. TODO
-            if effective_shape in {
-                "HEXAGON OUTER TEXT",
-                "HEXAGON FRONT TEXT",
-                "OCTAGON OUTER TEXT",
-                "CIRCLE OUTER TEXT",
-            }:
-                col.prop(props, "plateBevel")
-                extras.label(text=_("Medal Handle"))
+        if effective_shape.endswith((" TEXT", " SHELL")):
+            extras = box.box()
+            header = extras.row(align=True)
+            header.label(text=_("Shape Extras"), icon="OUTLINER_OB_FONT")
+            construct_popover(header, "TP3D_PT_help_shape_extras")
+            if effective_shape.endswith(" TEXT"):
                 row = extras.row(align=True)
+                row.prop(props, "textFont")
+                row.operator("tp3d.pick_font_file", text="", icon="FILEBROWSER")
+                row = extras.row(align=True)
+                row.prop(props, "textSizeTitle")
+                row.prop(props, "textSize")
+                extras.label(text=_("Plate text (Goes Counter-Clockwise):"))
+                col = extras.column()
                 if temp.PREMIUMVERSION:
-                    row.prop(props, "handleStyle", expand=True)
+                    row = col.row()
+                    split = row.split(factor=0.3)
+                    split.prop(props, "titleIcon", text="")
+                    split.prop(props, "titlefield", text="")
+                    if effective_shape == "HEXAGON OUTER TEXT":
+                        row = col.row()
+                        split = row.split(factor=0.3)
+                        split.prop(props, "iconText5", text="")
+                        split.prop(props, "textfield5", text="")
+                    row = col.row()
+                    split = row.split(factor=0.3)
+                    split.prop(props, "iconText1", text="")
+                    split.prop(props, "textfield1", text="")
+                    row = col.row()
+                    split = row.split(factor=0.3)
+                    split.prop(props, "iconText2", text="")
+                    split.prop(props, "textfield2", text="")
+                    row = col.row()
+                    split = row.split(factor=0.3)
+                    split.prop(props, "iconText3", text="")
+                    split.prop(props, "textfield3", text="")
+                    if effective_shape == "HEXAGON OUTER TEXT":
+                        row = col.row()
+                        split = row.split(factor=0.3)
+                        split.prop(props, "iconText4", text="")
+                        split.prop(props, "textfield4", text="")
                 else:
-                    row.prop_enum(props, "handleStyle", "NONE")
-                    row.operator("tp3d.terrain_dummy", text=_("Round"), icon="LOCKED")
-                    row.operator("tp3d.terrain_dummy", text=_("Flat"), icon="LOCKED")
-        elif effective_shape.endswith(" SHELL"):
-            extras.prop(props, "shellWallThickness")
+                    row = col.row()
+                    split = row.split(factor=0.3)
+                    split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
+                    split.prop(props, "titlefield", text="")
+                    row = col.row()
+                    split = row.split(factor=0.3)
+                    split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
+                    split.prop(props, "textfield1", text="")
+                    row = col.row()
+                    split = row.split(factor=0.3)
+                    split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
+                    split.prop(props, "textfield2", text="")
+                    row = col.row()
+                    split = row.split(factor=0.3)
+                    split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
+                    split.prop(props, "textfield3", text="")
+                    if effective_shape == "HEXAGON OUTER TEXT":
+                        row = col.row()
+                        split = row.split(factor=0.3)
+                        split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
+                        split.prop(props, "textfield4", text="")
+                        row = col.row()
+                        split = row.split(factor=0.3)
+                        split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
+                        split.prop(props, "textfield5", text="")
+                col = extras.column(align=True)
+                col.prop(props, "plateThickness")
+                col.prop(props, "outerBorderSize")
+                col.prop(props, "plateInsertValue")
+                # col.prop(props, "text_angle_preset") | Can't tell what the purpose of this is, disabled for now. TODO
+                if effective_shape in {
+                    "HEXAGON OUTER TEXT",
+                    "HEXAGON FRONT TEXT",
+                    "OCTAGON OUTER TEXT",
+                    "CIRCLE OUTER TEXT",
+                }:
+                    col.prop(props, "plateBevel")
+                    extras.label(text=_("Medal Handle"))
+                    row = extras.row(align=True)
+                    if temp.PREMIUMVERSION:
+                        row.prop(props, "handleStyle", expand=True)
+                    else:
+                        row.prop_enum(props, "handleStyle", "NONE")
+                        row.operator("tp3d.terrain_dummy", text=_("Round"), icon="LOCKED")
+                        row.operator("tp3d.terrain_dummy", text=_("Flat"), icon="LOCKED")
+            elif effective_shape.endswith(" SHELL"):
+                extras.prop(props, "shellWallThickness")
 
         # 3. Scale -- after Shape, not before: calculate_scale() needs
         # objSize (Shape's own field) as an input for FACTOR mode
