@@ -1992,6 +1992,23 @@ class TP3D_OT_pick_gpx_file(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
 
+class TP3D_OT_pick_font_file(bpy.types.Operator):
+    bl_idname = "tp3d.pick_font_file"
+    bl_label = "Use Font File"
+    bl_description = "Use the selected font file"
+
+    filepath: StringProperty(subtype='FILE_PATH')  # type: ignore
+    filter_glob: StringProperty(default="*.ttf;*.otf;*.woff;*.woff2", options={'HIDDEN'})  # type: ignore
+
+    def execute(self, context):
+        context.scene.tp3d.textFont = self.filepath
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
 class TP3D_OT_pick_svg_file(bpy.types.Operator):
     bl_idname = "tp3d.pick_svg_file"
     bl_label = "Use SVG File"
@@ -3079,11 +3096,11 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             preview_elevations, preview_diff = utils.get_tile_elevation(gen, progress_cb=_elev_progress)
             overlay.sub_percent = None
 
-        if props.elevationMode == "FIXED":
-            auto_scale = props.fixedHeightMM / (preview_diff / 1000) if preview_diff > 0 else props.fixedHeightMM
-        else:
-            auto_scale = fixed_scale
-        props.sAutoScale = auto_scale
+            if props.elevationMode == "FIXED":
+                auto_scale = props.fixedHeightMM / (preview_diff / 1000) if preview_diff > 0 else props.fixedHeightMM
+            else:
+                auto_scale = fixed_scale
+            props.sAutoScale = auto_scale
 
             overlay.update(0.32, "Analyzing terrain…", "Calculating elevation range…")
             lowest_z = 1000

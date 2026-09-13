@@ -70,6 +70,7 @@ classes = [
     operators.TP3D_OT_install_three_mf,
     operators.TP3D_OT_pick_gpx_file,
     operators.TP3D_OT_pick_svg_file,
+    operators.TP3D_OT_pick_font_file,
     operators.TP3D_OT_pick_svg_shape_file,
     operators.TP3D_OT_pick_geojson_shape_file,
     operators.TP3D_OT_check_update,

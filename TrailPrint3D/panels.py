@@ -373,14 +373,14 @@ class TP3D_PT_generate(bpy.types.Panel):
         col.separator(factor=0.5)
         if props.shape == "SQUARE":
             row = col.row(align=True)
-            row.prop(props, "objSize", text=_("Width"))
-            row.prop(props, "rectangleHeight", text=_("Height"))
+            row.prop(props, "objSize", text=_("Width (mm)"))
+            row.prop(props, "rectangleHeight", text=_("Height (mm)"))
         elif props.shape == "ELLIPSE":
-            col.prop(props, "objSize")
-            col.prop(props, "ellipseRatio")
+            col.prop(props, "objSize", text=_("Width (mm)"))
+            col.prop(props, "ellipseRatio", text=_("Ellipse Height Ratio"))
         elif props.shape in {"GEOJSON", "SVG"}:
             row = col.row(align=True)
-            row.prop(props, "customFilePath", text=_("File"))
+            row.prop(props, "customFilePath", text=_("File Path"))
             if props.shape == "SVG":
                 row.operator("tp3d.pick_svg_shape_file", text="", icon="FILEBROWSER")
             else:
@@ -393,6 +393,10 @@ class TP3D_PT_generate(bpy.types.Panel):
         col.prop(props, "num_subdivisions")
 
         # Shape extras
+        extras = box.box()
+        header = extras.row(align=True)
+        header.label(text=_("Shape Extras"), icon="OUTLINER_OB_FONT")
+        construct_popover(header, "TP3D_PT_help_shape_extras")
         effective_shape = get_effective_shape(props)
         if effective_shape in {
             "HEXAGON INNER TEXT",
@@ -401,76 +405,79 @@ class TP3D_PT_generate(bpy.types.Panel):
             "HEXAGON FRONT TEXT",
             "CIRCLE OUTER TEXT",
         }:
-            extras = box.box()
-            extras.label(text=_("Shape Extras"), icon="OUTLINER_OB_FONT")
-            extras.prop(props, "textFont")
-            extras.prop(props, "textSizeTitle")
-            extras.prop(props, "textSize")
-            extras.separator()
-            extras.label(text=_("Plate text:"))
+            row = extras.row(align=True)
+            row.prop(props, "textFont")
+            row.operator("tp3d.pick_font_file", text="", icon="FILEBROWSER")
+            row = extras.row(align=True)
+            row.prop(props, "textSizeTitle")
+            row.prop(props, "textSize")
+            extras.label(text=_("Plate text (Goes Counter-Clockwise):"))
+            col = extras.column()
             if temp.PREMIUMVERSION:
-                row = extras.row()
+                row = col.row()
                 split = row.split(factor=0.3)
                 split.prop(props, "titleIcon", text="")
                 split.prop(props, "titlefield", text="")
-                row = extras.row()
+                if effective_shape == "HEXAGON OUTER TEXT":
+                    row = col.row()
+                    split = row.split(factor=0.3)
+                    split.prop(props, "iconText5", text="")
+                    split.prop(props, "textfield5", text="")
+                row = col.row()
                 split = row.split(factor=0.3)
                 split.prop(props, "iconText1", text="")
                 split.prop(props, "textfield1", text="")
-                row = extras.row()
+                row = col.row()
                 split = row.split(factor=0.3)
                 split.prop(props, "iconText2", text="")
                 split.prop(props, "textfield2", text="")
-                row = extras.row()
+                row = col.row()
                 split = row.split(factor=0.3)
                 split.prop(props, "iconText3", text="")
                 split.prop(props, "textfield3", text="")
                 if effective_shape == "HEXAGON OUTER TEXT":
-                    row = extras.row()
+                    row = col.row()
                     split = row.split(factor=0.3)
                     split.prop(props, "iconText4", text="")
                     split.prop(props, "textfield4", text="")
-                    row = extras.row()
-                    split = row.split(factor=0.3)
-                    split.prop(props, "iconText5", text="")
-                    split.prop(props, "textfield5", text="")
             else:
-                row = extras.row()
+                row = col.row()
                 split = row.split(factor=0.3)
                 split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
                 split.prop(props, "titlefield", text="")
-                row = extras.row()
+                row = col.row()
                 split = row.split(factor=0.3)
                 split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
                 split.prop(props, "textfield1", text="")
-                row = extras.row()
+                row = col.row()
                 split = row.split(factor=0.3)
                 split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
                 split.prop(props, "textfield2", text="")
-                row = extras.row()
+                row = col.row()
                 split = row.split(factor=0.3)
                 split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
                 split.prop(props, "textfield3", text="")
                 if effective_shape == "HEXAGON OUTER TEXT":
-                    row = extras.row()
+                    row = col.row()
                     split = row.split(factor=0.3)
                     split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
                     split.prop(props, "textfield4", text="")
-                    row = extras.row()
+                    row = col.row()
                     split = row.split(factor=0.3)
                     split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
                     split.prop(props, "textfield5", text="")
-            extras.prop(props, "plateThickness")
-            extras.prop(props, "outerBorderSize")
-            extras.prop(props, "plateInsertValue")
-            extras.prop(props, "text_angle_preset")
+            col = extras.column(align=True)
+            col.prop(props, "plateThickness")
+            col.prop(props, "outerBorderSize")
+            col.prop(props, "plateInsertValue")
+            # col.prop(props, "text_angle_preset") | Can't tell what the purpose of this is, disabled for now. TODO
             if effective_shape in {
                 "HEXAGON OUTER TEXT",
                 "HEXAGON FRONT TEXT",
                 "OCTAGON OUTER TEXT",
                 "CIRCLE OUTER TEXT",
             }:
-                extras.prop(props, "plateBevel")
+                col.prop(props, "plateBevel")
                 extras.label(text=_("Medal Handle"))
                 row = extras.row(align=True)
                 if temp.PREMIUMVERSION:
@@ -480,8 +487,6 @@ class TP3D_PT_generate(bpy.types.Panel):
                     row.operator("tp3d.terrain_dummy", text=_("Round"), icon="LOCKED")
                     row.operator("tp3d.terrain_dummy", text=_("Flat"), icon="LOCKED")
         elif effective_shape.endswith(" SHELL"):
-            extras = box.box()
-            extras.label(text=_("Shape Extras"), icon="OUTLINER_OB_FONT")
             extras.prop(props, "shellWallThickness")
 
         # 3. Scale -- after Shape, not before: calculate_scale() needs
@@ -495,7 +500,7 @@ class TP3D_PT_generate(bpy.types.Panel):
         row = col.row(align=True)
         row.label(icon="BLANK1")
         row.prop(props, "scalemode")
-        if props.scalemode in {"FACTOR", "SCALE"}:
+        if props.scalemode == "FACTOR":
             col.prop(props, "pathScale")
         elif props.scalemode == "COORDINATES":
             row = col.row(align=True)
@@ -504,8 +509,8 @@ class TP3D_PT_generate(bpy.types.Panel):
             row = col.row(align=True)
             row.prop(props, "scaleLat2")
             row.prop(props, "scaleLon2")
-        if props.cachedTrailBoundsValid and est_km is not None:
-            col.label(text=_("Estimated Map Size: %.1f km") % est_km)
+        if props.cachedTrailBoundsValid and est_km is not None: # pyright: ignore[reportPossiblyUnboundVariable]
+            col.label(text=_("Estimated Map Size: %.1f km") % est_km) # pyright: ignore[reportPossiblyUnboundVariable]
         # 4. Trail -- structural properties of the printed trail line
         box = layout.box()
         header = box.row()
@@ -518,8 +523,9 @@ class TP3D_PT_generate(bpy.types.Panel):
         scm_row.enabled = not _elem_scm
         scm_row.prop(props, "singleColorMode")
         if props.singleColorMode or _elem_scm:
-            col.prop(props, "singleColorModeHeight")
-            col.prop(props, "tolerance")
+            scm_settings = col.row(align=True)
+            scm_settings.prop(props, "singleColorModeHeight")
+            scm_settings.prop(props, "tolerance")
 
         if _elem_scm:
             col.label(text=_("Auto-enabled with SCM Elements"), icon="LOCKED")

@@ -54,16 +54,12 @@ def calculate_scale(mapSize, coordinates, gen_type, diagonal=False):
     scale = 1
     if scalemode == "COORDINATES" or gen_type == 2 or gen_type == 3:
         if bpy.app.debug:
-            print("scalemode1")
+            print("Scale Mode: Coordinates")
         scale = mapSize / maxer
-    elif scalemode == "FACTOR":
+    else:  # scalemode == "FACTOR"
         if bpy.app.debug:
-            print("scalemode2")
+            print("Scale Mode: Factor")
         scale = (mapSize * pathScale) / maxer
-    elif scalemode == "SCALE":
-        if bpy.app.debug:
-            print("scalemode3")
-        scale = pathScale * mf
     if bpy.app.debug:
         print(f"Scale: {scale}")
 

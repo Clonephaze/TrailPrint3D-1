@@ -555,14 +555,18 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_(""),
         items=[
             (
-                "FACTOR", 
-                _("Map Scale"), 
-                _("Set a scale based on the Map size")
+                "FACTOR",
+                _("Map Scale"),
+                _(
+                    "Set the map scale based on how much of the generated area the trail should occupy."
+                ),
             ),
             (
                 "COORDINATES",
                 _("Coordinates"),
-                _("Calculate the scale by using 2 Coordinates (Lat/lon)"),
+                _(
+                    "Calculate the map scale using two geographic coordinates. (Lat/lon)"
+                ),
             ),
         ],
         default="FACTOR",
@@ -571,9 +575,11 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_("Path Scale"),
         default=0.8,
         min=0.01,
+        soft_max=1.0,
         description=_(
-            "Scale of Path in Relation to the Mapsize/GlobalScale (depending on scalemode)"
+            "How much of the map area the trail should occupy, as a percentage"
         ),
+        subtype="FACTOR",
     )  # type: ignore
     scaleLon1: FloatProperty(
         name="Lon1", default=0, description=_("The Longitude of the first coordinate")
@@ -597,7 +603,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
 
     objSize: IntProperty(
-        name=_("Object Size in mm"),
+        name=_("Object Size (mm)"),
         default=100,
         min=5,
         max=10000,
@@ -679,12 +685,15 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     ellipseRatio: FloatProperty(
         name=_("Ellipse Aspect Ratio"),
         default=0.75,
-        description=_("0.75 means the ellipse height is 0.75 x objSize"),
+        soft_max=1.0,
+        min=0.1,
+        description=_("0.75 means the ellipse height is 75 percent of its width"),
+        subtype="FACTOR",
     )  # type: ignore
     rectangleHeight: IntProperty(
-        name=_("Rectangle Height"),
+        name=_("Rectangle Height (mm)"),
         default=100,
-        description=_("Height of the Rectangle"),
+        description=_("Height of the Rectangle in mm"),
     )  # type: ignore
 
     textFont: StringProperty(
@@ -692,9 +701,13 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         description=_("Select a file"),
         default="",
         maxlen=1024,
-        subtype="FILE_PATH",  # Enables file selection
     )  # type: ignore
-    textSize: IntProperty(name=_("Text Size"), default=5, min=0, max=1000)  # type: ignore
+    textSize: IntProperty(
+        name=_("Text Size"), 
+        default=5, 
+        min=0, 
+        max=1000
+    )  # type: ignore
     textSizeTitle: IntProperty(
         name=_("Title Text Size"),
         default=0,
@@ -835,11 +848,13 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     # overwriteTime: StringProperty(name= _("text3"), default = "")
 
     outerBorderSize: IntProperty(
-        name=_("BorderSize in %"),
+        name=_("Border Thickness (%)"),
         default=20,
+        subtype='PERCENTAGE',
         min=0,
+        soft_max=100,
         max=1000,
-        description=_("Only for Shapes with Plate"),
+        description=_("How thick the border is, as a percentage of the plate size"),
     )  # type: ignore
     text_angle_preset: IntProperty(
         name=_("Text Angle"),
@@ -849,14 +864,14 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         max=260,
     )  # type: ignore
     plateThickness: FloatProperty(
-        name=_("plateThickness"),
+        name=_("Plate Height (mm)"),
         default=5,
-        description=_("Thickness of the Additional Plate"),
+        description=_("How tall the plate is"),
     )  # type: ignore
     plateInsertValue: FloatProperty(
-        name=_("plateInsertValue"),
+        name=_("Map Inset Depth (mm)"),
         default=0,
-        description=_("Depth of Cutout for the Map in the Plate, 0  to ignore"),
+        description=_("How far down the map object should be in the plate"),
     )  # type: ignore
     plateBevel: FloatProperty(
         name=_("Plate Bevel"),
@@ -1107,7 +1122,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=1.0,
         min=0.1,
         max=100.0,
-        description=_("Adjusts the thickness of all waterways, including Major Rivers."),
+        description=_(
+            "Adjusts the thickness of all waterways, including Major Rivers."
+        ),
     )  # type: ignore
     col_wFlattenTop: BoolProperty(
         name=_("Flatten Water Surface"),
@@ -1139,9 +1156,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_wMajorActive: BoolProperty(
         name=_("Major Rivers"),
         default=False,
-        description=_(
-            "Major named rivers, rivers with significant waterway tags"
-        ),
+        description=_("Major named rivers, rivers with significant waterway tags"),
     )  # type: ignore
     col_fActive: BoolProperty(
         name=_("Include Forests"),
