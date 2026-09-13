@@ -8,19 +8,43 @@ from bpy.app.translations import (  # type: ignore
 
 
 def draw_wrapped_text(layout, text):
-    wrapper = textwrap.TextWrapper(width=50)
-    # Split on single newlines to catch any manual line breaks
-    lines = text.split("\n")
+    body_wrap = textwrap.TextWrapper(width=50)
+    bullet_wrap = textwrap.TextWrapper(width=43)
 
-    for line in lines:
-        if not line.strip():
-            # If it's an empty line (like from a \n\n), just add a blank label
-            layout.label(text="")
+    lines = text.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        i += 1
+
+        if not line:
+            layout.separator(factor=0.4)
             continue
 
-        wrapped_lines = wrapper.wrap(text=line)
-        for w_line in wrapped_lines:
-            layout.label(text=w_line)
+        # Sub-header: short line ending with ':'
+        if line.endswith(":") and not line.startswith("-"):
+            layout.separator(factor=0.2)
+            layout.label(text=line, icon="TRIA_RIGHT")
+            continue
+
+        # Bullet list: collect the full run into a single box
+        if line.startswith("- "):
+            bullet_lines = [line]
+            while i < len(lines) and lines[i].strip().startswith("- "):
+                bullet_lines.append(lines[i].strip())
+                i += 1
+            box = layout.box()
+            col = box.column(align=True)
+            for b in bullet_lines:
+                content = b[2:]
+                wrapped = bullet_wrap.wrap(content) or [content]
+                col.label(text=wrapped[0], icon="DOT")
+                for continuation in wrapped[1:]:
+                    col.label(text=f"    {continuation}")
+            continue
+
+        for w in body_wrap.wrap(line) or [line]:
+            layout.label(text=w)
 
 
 def make_help_panel(
@@ -31,11 +55,25 @@ def make_help_panel(
 ):
     def draw(self, context):
         layout = self.layout
+        text = _(text_content)
 
-        # The main tutorial text
-        draw_wrapped_text(layout, _(text_content))
+        # First line → callout box with INFO icon
+        raw_lines = text.split("\n")
+        intro = raw_lines[0].strip()
+        body = "\n".join(raw_lines[1:]).strip()
 
-        # Optional Link to full documentation/video
+        intro_wrap = textwrap.TextWrapper(width=46)
+        box = layout.box()
+        col = box.column(align=True)
+        intro_lines = intro_wrap.wrap(intro) or [intro]
+        col.label(text=intro_lines[0], icon="INFO")
+        for line in intro_lines[1:]:
+            col.label(text=f"   {line}")
+
+        if body:
+            layout.separator(factor=0.3)
+            draw_wrapped_text(layout, body)
+
         if doc_url:
             layout.separator()
             op = layout.operator("wm.url_open", text="Read More", icon="URL")
@@ -59,41 +97,85 @@ classes = [
     make_help_panel(
         "TP3D_PT_help_source",
         "About: Source",
-        "Start here. \n\nPick your GPX file, give the trail a name (or leave it blank to reuse the filename), and set where your generated objects should be exported.",
+        "Load your trail file and set where the result gets saved.\n"
+        "\n"
+        "Both GPX and IGC files are supported. The name is optional — "
+        "leave it blank to use the filename from your trail file.",
     ),
     make_help_panel(
         "TP3D_PT_help_shape",
         "About: Shape",
-        "Choose your shape from a list of available shapes, such as Circle, Hexagon, Square, Ellipse, and custom file-based shapes like SVG and GeoJSON. Some shapes have extra customization options.\n\nSet the shape dimensions you want your final print to have.\n\nThe resolution slider controls the level of detail your shape will have, which affects how much detail your final object will have. Larger values result in higher detail but increase processing time.",
+        "Choose the map shape and physical size of your 3D print.\n"
+        "\n"
+        "Resolution controls how smooth edges and terrain curves look. "
+        "Higher values give more detail but take longer to process — "
+        "for most prints, a value around 7 is a good starting point.",
+        doc_url="https://trailprint3d.com/howto.html#ht-resolution",
     ),
     make_help_panel(
         "TP3D_PT_help_shape_extras",
         "About: Shape Extras",
-        "Here you can adjust fonts, text sizes, symbols where applicable, and other shape-specific extras.\n\nThe text fields go in counter-clockwise order on your shape. You can enter anything you want, or use the special formatting tokens:\n- {name} uses the trail name entered in step 1\n- {length} uses the trail length\n- {elevation} uses the trail elevation\n- {date} uses the trail date\n- {speed} uses the trail speed\n- {scale} uses the trail scale.\nNote: These values are derived from your GPX trail data.",
+        "Add text or symbols around the border of your shape.\n"
+        "\n"
+        "Use formatting tokens to "
+        "pull data directly from your trail file:\n"
+        "- {name} — trail name\n"
+        "- {length} — total distance\n"
+        "- {elevation} — elevation gain\n"
+        "- {date} — recorded date\n"
+        "- {speed} — average speed\n"
+        "- {scale} — map scale",
     ),
     make_help_panel(
         "TP3D_PT_help_scale",
         "About: Scale",
-        "Decides how much real-world ground your print represents.\n\nTwo modes: \n- Map Scale: sets the maps to scale itself so the trail fits this percentage of the print area.\n- Coordinates: Calculates the maps scale from two exact latitude/longitude points you enter."
+        "Controls how much real-world area fits into your print.\n"
+        "\n"
+        "Two modes:\n"
+        "- Map Scale: auto-fits the trail to fill a set percentage of the print.\n"
+        "- Coordinates: pin two real GPS points to exact spots on your print "
+        "for a precise, fixed scale.",
     ),
     make_help_panel(
         "TP3D_PT_help_trail",
         "About: Trail",
-        "Settings for the printed trail line.\n\nSet your desired width in mm.\n\nIf you don't have a multicolor printer, you'll want to turn on 'Single Extruder Mode' which will generate the trail as a seperate printable object. You can adjust the trails height, how far it extends above the terrain, and the trails clearance to help fit the pieces together after printing."
+        "Controls how the trail line is printed.\n"
+        "\n"
+        "On single-color printers, enable Single Extruder Mode — the trail "
+        "becomes a separate object with a matching cutout in the map, so you "
+        "can print both pieces in different colors and snap them together.",
     ),
     make_help_panel(
         "TP3D_PT_help_terrain",
         "About: Terrain",
-        "Set how you want the surrounding terrain to be represented in your print.\nChoose between:\n- Proportional elevation: Just a scaled version of the real-world terrain\n- Fixed height: Sets the terrain to a specific height, with the highest point of the terrain being exactly this high above the lowest point.\n\nExtra map height allows you to add additional height below the terrain, effectively raising the entire print.\n\nShape Rotation allows you to rotate the shape around the trail/map area\nX and Y offsets let you shift the map within the print area.\n\nSmooth Terrain applies a smoothing algorithm to the terrain surface, reducing blockiness and grid lines or letting lower resolution terrain appear smoother.",
+        "Controls how the landscape is shaped in your print.\n"
+        "\n"
+        "Elevation modes:\n"
+        "- Proportional: terrain heights stay true to real-world ratios.\n"
+        "- Fixed height: the tallest point is scaled to an exact height.\n"
+        "\n"
+        "Use Extra Height to add thickness below the terrain, and Smooth "
+        "Terrain to reduce blockiness on lower-resolution elevation data.",
     ),
     make_help_panel(
         "TP3D_PT_help_elements",
         "About: Map Elements",
-        "Elements are used when you want to represent specific features on the map, such as roads and buildings, water bodies, forests, and other geographical elements. You can toggle each element on or off depending on what you want to include in your print. Each also comes with a threshold slider, smaller values remove smaller areas.\n\nElement Source:\n- OSM: Open Street Map data, which provides detailed information about roads, buildings, and other man-made features. Recommended most of the time, especially for close up and urban areas.\n- WorldCover: Satellite land-cover data that colors the terrain based on real-world land cover types.\n\n OSM also includes shape smoothing, rounds off the sharp points of the element shapes, and offers a Single Extruder mode which generates each element as individually printable objects.\nRoads in this mode will get their own tolerance slider, and a special depth slider. The depth is to help not cut through every other element unintentionally.",
+        "Adds real-world features like roads, buildings, and forests to your print.\n"
+        "\n"
+        "Data sources:\n"
+        "- OSM: detailed map data, best for urban or close-up areas.\n"
+        "- WorldCover: satellite land-cover, better for wide natural landscapes.\n"
+        "\n"
+        "In Single Extruder mode, each element is generated as its own "
+        "separate printable object.",
     ),
     make_help_panel(
         "TP3D_PT_help_appearance",
         "About: Appearance",
-        "Changes how included elements get drawn, wether they are formed with a texture or as flat per-face colors. A texture gives a more accurate representation of the element data, regardless of the resolution of the underlying mesh.\nYou can increase the texture resolution to get finer details, but this will increase export and slicing times.\n\nYou can optionally set your trail and road objects to be included in the texture, which will stop them from being seperate objects.",
+        "Controls whether map elements use a texture or flat per-face colors.\n"
+        "\n"
+        "Textures produce more accurate results regardless of mesh resolution, "
+        "but increase export and slicing time. Including the trail or roads in "
+        "the texture merges them into a single object instead of separate parts.",
     ),
 ]
