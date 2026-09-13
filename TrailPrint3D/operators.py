@@ -1970,14 +1970,38 @@ def _redraw_all_areas():
 
 class TP3D_OT_pick_gpx_file(bpy.types.Operator):
     bl_idname = "tp3d.pick_gpx_file"
-    bl_label = "Use GPX File"
+    bl_label = "Select a GPX File"
     bl_description = "Use the selected GPX file"
 
     filepath: StringProperty(subtype='FILE_PATH')  # type: ignore
     filter_glob: StringProperty(default="*.gpx;*.igc", options={'HIDDEN'})  # type: ignore
 
     def execute(self, context):
-        context.scene.tp3d.file_path = self.filepath
+        tp3d = context.scene.tp3d
+        tp3d.file_path = self.filepath
+        bounds = utils.compute_gpx_bounds(self.filepath)
+        if bounds is not None:
+            tp3d.cachedTrailMinLat, tp3d.cachedTrailMaxLat, tp3d.cachedTrailMinLon, tp3d.cachedTrailMaxLon = bounds
+            tp3d.cachedTrailBoundsValid = True
+        else:
+            tp3d.cachedTrailBoundsValid = False
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
+class TP3D_OT_pick_font_file(bpy.types.Operator):
+    bl_idname = "tp3d.pick_font_file"
+    bl_label = "Use Font File"
+    bl_description = "Use the selected font file"
+
+    filepath: StringProperty(subtype='FILE_PATH')  # type: ignore
+    filter_glob: StringProperty(default="*.ttf;*.otf;*.woff;*.woff2", options={'HIDDEN'})  # type: ignore
+
+    def execute(self, context):
+        context.scene.tp3d.textFont = self.filepath
         return {'FINISHED'}
 
     def invoke(self, context, event):
@@ -2640,8 +2664,8 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         preview_elevations, preview_diff = utils.get_tile_elevation(gen, progress_cb=_puzzle_elev_progress)
         overlay.sub_percent = None
 
-        if props.fixedElevationScale:
-            auto_scale = 10 / (preview_diff / 1000) if preview_diff > 0 else 10
+        if props.elevationMode == "FIXED":
+            auto_scale = props.fixedHeightMM / (preview_diff / 1000) if preview_diff > 0 else props.fixedHeightMM
         else:
             auto_scale = fixed_scale
         props.sAutoScale = auto_scale
@@ -3072,8 +3096,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             preview_elevations, preview_diff = utils.get_tile_elevation(gen, progress_cb=_elev_progress)
             overlay.sub_percent = None
 
-            if props.fixedElevationScale:
-                auto_scale = 10 / (preview_diff / 1000) if preview_diff > 0 else 10
+            if props.elevationMode == "FIXED":
+                auto_scale = props.fixedHeightMM / (preview_diff / 1000) if preview_diff > 0 else props.fixedHeightMM
             else:
                 auto_scale = fixed_scale
             props.sAutoScale = auto_scale

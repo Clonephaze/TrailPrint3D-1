@@ -26,9 +26,10 @@ def _make_cache_path(bbox, kind, settings=None):
         exclude_alleys = settings.exclude_alleys
     else:
         mapsize = bpy.context.scene.tp3d.sMapInKm
-        water_ponds = bool(bpy.context.scene.tp3d.col_wPondsActive)
-        water_small_rivers = bool(bpy.context.scene.tp3d.col_wSmallRiversActive)
-        water_big_rivers = bool(bpy.context.scene.tp3d.col_wBigRiversActive)
+        _tp3d = bpy.context.scene.tp3d
+        water_ponds = bool(_tp3d.show_water and _tp3d.col_wBodiesActive)
+        water_small_rivers = bool(_tp3d.show_water and _tp3d.col_wMinorActive)
+        water_big_rivers = bool(_tp3d.show_water and _tp3d.col_wMajorActive)
         exclude_alleys = True
     road_tiers = resolve_road_tiers(settings)
 
@@ -70,10 +71,11 @@ def _build_union_query(south, west, north, east, kinds, settings=None):
         water_big_rivers = settings.water_big_rivers
         exclude_alleys = settings.exclude_alleys
     else:
-        mapsize = bpy.context.scene.tp3d.sMapInKm
-        water_ponds = bool(bpy.context.scene.tp3d.col_wPondsActive)
-        water_small_rivers = bool(bpy.context.scene.tp3d.col_wSmallRiversActive)
-        water_big_rivers = bool(bpy.context.scene.tp3d.col_wBigRiversActive)
+        _tp3d = bpy.context.scene.tp3d
+        mapsize = _tp3d.sMapInKm
+        water_ponds = bool(_tp3d.show_water and _tp3d.col_wBodiesActive)
+        water_small_rivers = bool(_tp3d.show_water and _tp3d.col_wMinorActive)
+        water_big_rivers = bool(_tp3d.show_water and _tp3d.col_wMajorActive)
         exclude_alleys = True
     road_tiers = resolve_road_tiers(settings)
 
@@ -94,18 +96,21 @@ def _build_union_query(south, west, north, east, kinds, settings=None):
 
     if "WATER" in kinds:
         if water_ponds:
+            # 2D Polygons: Lakes, ponds, reservoirs, wide rivers
             filters += [
                 'way["natural"="water"]',
                 'relation["natural"="water"]',
                 'way["water"~"river|lake|stream|canal"]',
                 'relation["water"~"river|lake|stream|canal"]',
             ]
+            
+        if water_big_rivers:
+            # 1D Lines: Major waterways only
+            filters.append('way["waterway"~"river|canal"]')
+            
         if water_small_rivers:
-            filters.append('way["waterway"~"stream|river|canal|ditch|drain"]')
-        elif water_big_rivers:
-            filters.append(
-                'way["waterway"~"stream|river|canal|ditch|drain"]["wikidata"]'
-            )
+            # 1D Lines: Minor waterways only
+            filters.append('way["waterway"~"stream|ditch|drain"]')
 
     if "SCREE" in kinds:
         filters += [
