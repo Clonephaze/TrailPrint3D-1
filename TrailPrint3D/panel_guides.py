@@ -59,19 +59,29 @@ classes = [
     make_help_panel(
         "TP3D_PT_help_source",
         "About: Source",
-        "Choose your GPX file, an export path, and a name \n\n"
-        "Your GPX file ",
-        "https://example.com/source-guide",
+        "Start here. \n\nPick your GPX file, give the trail a name (or leave it blank to reuse the filename), and set where your generated objects should be exported.",
     ),
     make_help_panel(
         "TP3D_PT_help_shape",
         "About: Shape",
-        "The physical footprint of the print. \n\nText-based shapes (e.g. Hexagon Outer Text) add a backplate for a title — their extra settings appear below once you pick one. Shell styles add a hollow wall instead of a solid print.",
+        "Choose your shape from a list of available shapes, such as Circle, Hexagon, Square, Ellipse, and custom file-based shapes like SVG and GeoJSON. Some shapes have extra customization options.\n\nSet the shape dimensions you want your final print to have.\n\nThe resolution slider controls the level of detail your shape will have, which affects how much detail your final object will have. Larger values result in higher detail but increase processing time.",
+    ),
+    make_help_panel(
+        "TP3D_PT_help_shape_extras",
+        "About: Shape Extras",
+        "Here you can adjust fonts, text sizes, symbols where applicable, and other shape-specific extras.\n\nThe text fields go in counter-clockwise order on your shape. You can enter anything you want, or use the special formatting tokens:\n- {name} uses the trail name entered in step 1\n- {length} uses the trail length\n- {elevation} uses the trail elevation\n- {date} uses the trail date\n- {speed} uses the trail speed\n- {scale} uses the trail scale.\nNote: These values are derived from your GPX trail data.",
     ),
     make_help_panel(
         "TP3D_PT_help_scale",
         "About: Scale",
-        "Choose how to find the area of your map. \n\nMap Scale: Scale your map so the trail fits to this amount of your maps area. \nCoordinates: Calculate the scale by using four Latitude/Longitude coordinates.",
+        "Decides how much real-world ground your print represents. "
+        "Two modes: Map Scale sets it based on your GPX trail's own "
+        "size; Coordinates instead calculates it from two exact "
+        "latitude/longitude points you enter.\n\n"
+        "This section comes after Shape on purpose — the "
+        "calculation needs the object size you set there.\n\n"
+        "[YOUR CALL: when you'd reach for Coordinates over Map "
+        "Scale in practice.]",
     ),
     make_help_panel(
         "TP3D_PT_help_trail",

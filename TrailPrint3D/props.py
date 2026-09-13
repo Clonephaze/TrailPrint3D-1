@@ -47,21 +47,6 @@ def _slicer_profile_items(self, context) -> list[tuple[str, str, str]]:
     return items
 
 
-def shape_callback(self, context):
-    # print(f"Shape: {self.shape}")
-    # if self.shape == "HEXAGON INNER TEXT" or self.shape == "HEXAGON OUTER TEXT" or self.shape =="OCTAGON OUTER TEXT" or self.shape == "HEXAGON FRONT TEXT":
-    #    try:
-    #        bpy.utils.register_class(panels.TP3D_P_Shapes)
-    #    except:
-    #        pass
-    # else:
-    #    try:
-    #        bpy.utils.unregister_class(panels.TP3D_P_Shapes)
-    #    except:
-    #        pass
-    pass
-
-
 def get_special_blend_items(self, context):
     # puzzles.blend itself (the hand-crafted jigsaw/sliding-puzzle templates)
     # stays Premium-exclusive and is stripped from free builds by build.py --
@@ -110,25 +95,25 @@ _SHELL_ITEM = (
 SHAPE_TEXT_STYLES = {
     "HEXAGON": [
         ("NONE", _("None"), _("Plain hexagonal map, no text overlay")),
-        ("INNER TEXT", _("Inner text"), _("Hexagonal map with inserted text")),
-        ("OUTER TEXT", _("Outer text"), _("Hexagonal map with backplate and text")),
+        ("INNER TEXT", _("Text on Map Object"), _("Hexagonal map with inserted text")),
+        ("OUTER TEXT", _("Plate With Text on Top"), _("Hexagonal map with backplate and text")),
         (
             "FRONT TEXT",
-            _("Front text"),
+            _("Plate With Text on Front"),
             _("Hexagonal map with backplate and text on the front"),
         ),
         _SHELL_ITEM,
     ],
     "OCTAGON": [
         ("NONE", _("None"), _("Plain octagon map, no text overlay")),
-        ("OUTER TEXT", _("Outer text"), _("Octagon map with backplate and text")),
+        ("OUTER TEXT", _("Plate With Text on Front"), _("Octagon map with backplate and text")),
         _SHELL_ITEM,
     ],
     "CIRCLE": [
         ("NONE", _("None"), _("Plain circular map, no text overlay")),
         (
             "OUTER TEXT",
-            _("Outer text"),
+            _("Plate With Text on Front"),
             _("Circular map with backplate and curved text"),
         ),
         _SHELL_ITEM,
@@ -419,27 +404,27 @@ def repair_invalid_shape(scene):
 # Define a Property Group to store variables
 class TP3D_PG_properties(bpy.types.PropertyGroup):
     file_path: StringProperty(
-        name=_("File Path"),
+        name=_(""),
         description=_("Select a GPX file"),
         default="",
         maxlen=1024,
     )  # type: ignore
     export_path: StringProperty(
-        name=_("Export Path"),
-        description=_("Where to save the STL file"),
+        name=_(""),
+        description=_("Where to save the exported files"),
         default="",
         maxlen=1024,
         subtype="DIR_PATH",  # Enables folder selection
     )  # type: ignore
     chain_path: StringProperty(
-        name=_("Folder Path"),
+        name=_(""),
         description=_("Select a folder that contains multiple GPX files"),
         default="",
         maxlen=1024,
         subtype="DIR_PATH",  # Enables folder selection
     )  # type: ignore
     trailName: StringProperty(
-        name=_("Name"), default="", description=_("Leave empty to use the Filename")
+        name=_(""), default="", description=_("Leave empty to use the Filename")
     )  # type: ignore
 
     # Cached GPX trail bounding box, populated by TP3D_OT_pick_gpx_file at

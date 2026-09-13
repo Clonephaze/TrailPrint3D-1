@@ -1970,7 +1970,7 @@ def _redraw_all_areas():
 
 class TP3D_OT_pick_gpx_file(bpy.types.Operator):
     bl_idname = "tp3d.pick_gpx_file"
-    bl_label = "Use GPX File"
+    bl_label = "Select a GPX File"
     bl_description = "Use the selected GPX file"
 
     filepath: StringProperty(subtype='FILE_PATH')  # type: ignore
