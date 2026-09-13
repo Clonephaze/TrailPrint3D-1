@@ -136,7 +136,7 @@ def extract_all():
     for path in iter_py_files():
         rel = str(path.relative_to(ADDON_ROOT))
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
+            tree = ast.parse(path.read_text(encoding="utf-8-sig"))
         except SyntaxError as e:
             needs_review.append(("FILE FAILED TO PARSE", rel, e.lineno or 0, str(e)))
             continue
@@ -150,7 +150,7 @@ def extract_all():
 
 
 def load_translation_dict():
-    tree = ast.parse(TRANSLATION_FILE.read_text(encoding="utf-8"))
+    tree = ast.parse(TRANSLATION_FILE.read_text(encoding="utf-8-sig"))
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             for target in node.targets:
