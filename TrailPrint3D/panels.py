@@ -611,6 +611,22 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 else:
                     col.label(text=_("API key set"), icon='CHECKMARK')
                 col.operator("screen.userpref_show", text=_("Open Preferences"), icon='PREFERENCES')
+            if props.api == "LOCAL_DEM":
+                box2 = box.box()
+                col = box2.column(align=True)
+                row = col.row(align=True)
+                row.prop(props, "demFilePath", text=_("DEM File"))
+                row.operator("tp3d.pick_dem_file", text="", icon='FILEBROWSER')
+                row.operator("tp3d.pick_dem_folder", text="", icon='FILE_FOLDER')
+                col.separator(factor=0.5)
+                draw_wrapped_label(col, context, _(
+                    "GeoTIFF only — WGS84 lat/lon, or UTM in WGS84 (EPSG:32601-32660 N / "
+                    "32701-32760 S), ETRS89 (EPSG:25828-25838), or NAD83 (EPSG:26901-26923)"
+                ), icon='INFO')
+                draw_wrapped_label(col, context, _(
+                    "Can also point at a folder of tiled GeoTIFFs (e.g. a bulk multi-tile "
+                    "download) — only the tile(s) covering the generated area are read"
+                ), icon='FILE_FOLDER')
             if props.api in {"OPENTOPODATA", "TERRAIN-TILES", "MAPTERHORN"}:
                 col = box.column(align=True)
                 col.prop(props, "disableCache")

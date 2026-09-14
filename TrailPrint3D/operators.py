@@ -2002,6 +2002,39 @@ class TP3D_OT_pick_svg_file(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
 
+class TP3D_OT_pick_dem_file(bpy.types.Operator):
+    bl_idname = "tp3d.pick_dem_file"
+    bl_label = "Use DEM File"
+    bl_description = "Use the selected GeoTIFF DEM file"
+
+    filepath: StringProperty(subtype='FILE_PATH')  # type: ignore
+    filter_glob: StringProperty(default="*.tif;*.tiff", options={'HIDDEN'})  # type: ignore
+
+    def execute(self, context):
+        context.scene.tp3d.demFilePath = self.filepath
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
+class TP3D_OT_pick_dem_folder(bpy.types.Operator):
+    bl_idname = "tp3d.pick_dem_folder"
+    bl_label = "Use DEM Tile Folder"
+    bl_description = "Use a folder of tiled GeoTIFF DEM files (e.g. a bulk multi-tile download)"
+
+    directory: StringProperty(subtype='DIR_PATH')  # type: ignore
+
+    def execute(self, context):
+        context.scene.tp3d.demFilePath = self.directory
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
 class TP3D_OT_pick_svg_shape_file(bpy.types.Operator):
     bl_idname = "tp3d.pick_svg_shape_file"
     bl_label = "Use SVG File"
@@ -2262,6 +2295,49 @@ def _collect_existing_maps():
     return maps
 
 
+def _dem_coverage_overlay():
+    """If the Local DEM File API is active with a readable file or tile folder, return
+    its lat/lon coverage extent(s) for the map picker to draw as a reference overlay --
+    so the user can see which area actually has data before drawing their trail's
+    bounding box (see __DEM_BOUNDS_JS__ in picker_server.py / assets/map_init.js).
+
+    A single file returns {"footprint", "name"}; a folder of tiles returns
+    {"tiles": [{"footprint", "name"}, ...], "name"} -- one polygon per tile, drawn
+    separately rather than as one bounding box, since gaps between tiles (a
+    non-rectangular bulk-download area) would otherwise silently look covered.
+    "footprint" is each tile's actual 4 corners (see get_geotiff_footprint) rather
+    than an axis-aligned box, so neighboring UTM tiles -- which are very slightly
+    rotated relative to true north away from their zone's central meridian -- still
+    line up edge-to-edge on the map instead of showing a brick-like stagger.
+
+    None if a different API is selected, no path is set, or nothing in it could be
+    read (the picker just opens without the overlay in that case -- the same error
+    will surface properly, with detail, once generation actually tries to sample it).
+    """
+    tp3d = bpy.context.scene.tp3d
+    if tp3d.api != "LOCAL_DEM" or not tp3d.demFilePath:
+        return None
+    import struct
+    import zlib
+
+    from .utils.geotiff import GeoTiffError, build_tile_index, get_geotiff_footprint
+
+    if os.path.isdir(tp3d.demFilePath):
+        index = build_tile_index(tp3d.demFilePath)
+        if not index:
+            print(f"[TP3D] No readable DEM tiles found in {tp3d.demFilePath} for picker overlay")
+            return None
+        tiles = [{"footprint": e["footprint"], "name": os.path.basename(e["path"])} for e in index]
+        return {"tiles": tiles, "name": f"{len(tiles)} tiles in {os.path.basename(tp3d.demFilePath.rstrip(os.sep))}"}
+
+    try:
+        footprint = get_geotiff_footprint(tp3d.demFilePath)
+    except (GeoTiffError, OSError, struct.error, zlib.error) as e:
+        print(f"[TP3D] Could not read DEM coverage bounds for picker overlay: {e}")
+        return None
+    return {"footprint": footprint, "name": os.path.basename(tp3d.demFilePath)}
+
+
 def _collect_existing_trails():
     """Gather geographic paths of trail curves already in the scene, so the
     map picker can show them for reference instead of re-sending/duplicating
@@ -2406,6 +2482,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             element_states=utils.build_element_toggle_states(context.scene.tp3d),
             settings_state=utils.build_settings_row_state(context.scene.tp3d),
             advanced_settings=utils.build_advanced_settings_state(context.scene.tp3d),
+            dem_bounds=_dem_coverage_overlay(),
         )
 
         wm = context.window_manager
@@ -2898,6 +2975,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             element_states=utils.build_element_toggle_states(context.scene.tp3d),
             settings_state=utils.build_settings_row_state(context.scene.tp3d),
             advanced_settings=utils.build_advanced_settings_state(context.scene.tp3d),
+            dem_bounds=_dem_coverage_overlay(),
         )
 
         wm = context.window_manager
