@@ -2,8 +2,8 @@ import math
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
+from bpy.app.translations import pgettext as _
 from mathutils import Vector  # type: ignore
-from shapely import wkt
 
 from . import geometry2d as g2d  # deferred-safe: pure-Python, no bpy-time side effects
 from .dataclasses import GenerationContext
@@ -75,7 +75,7 @@ def create_curve_from_coordinates(gen: GenerationContext, coordinates):
     curve_object.data.bevel_depth = pathThickness / 2  # Set the thickness of the curve
     curve_object.data.bevel_resolution = 4  # Set the resolution for smoothness
 
-    mod = curve_object.modifiers.new(name="Remesh", type="REMESH")
+    mod = curve_object.modifiers.new(name=(_("Remesh")), type="REMESH")
     mod.mode = "VOXEL"
     mod.voxel_size = 0.05 * pathThickness * 10 / 2
     mod.adaptivity = 0.0
@@ -280,7 +280,7 @@ def build_mesh_from_polygon(polygon, cell_size: float, name: str = "Shape"):
 
 
 def clean_and_union_geometry(
-    geometries, target_size: float = None, min_area_ratio: float = 0.001
+    geometries, target_size: float | None = None, min_area_ratio: float = 0.001
 ):
     from shapely import Polygon, make_valid, normalize, set_precision
     from shapely.affinity import scale as af_scale
@@ -383,7 +383,7 @@ def clean_and_union_geometry(
 # ── GeoJSON Importer ──────────────────────────────────────────────────────────
 
 
-def polygon_from_geojson(filepath: str, target_size: float = None):
+def polygon_from_geojson(filepath: str, target_size: float | None = None):
     """Loads a GeoJSON file using Shapely's C-accelerated parser, projects it
     from lon/lat degrees into local Mercator distance units (same projection
     convert_to_blender_coordinates uses for every other geo-sourced shape in
@@ -423,7 +423,7 @@ def polygon_from_geojson(filepath: str, target_size: float = None):
 # ── SVG Importer (via Blender SVG curve import) ───────────────────────────────
 
 
-def polygon_from_svg(filepath: str, target_size: float = None):
+def polygon_from_svg(filepath: str, target_size: float | None = None):
     """Imports an SVG, evaluates smooth Bezier geometry via Blender's 2D engine,
     polygonizes raw stroke networks, and returns a clean normalized geometry.
     """
@@ -595,7 +595,7 @@ def col_create_line_curve(name, coords, close=False, collection=None, bevel_dept
     bevel_depth: >0 will give the curve thickness
     """
     if not coords:
-        raise ValueError("coords is empty")
+        raise ValueError(_("coords is empty"))
 
     # normalize coords to 3-tuples
     pts = []
@@ -635,7 +635,7 @@ def curve_to_mesh_object(curve_obj, name=None, apply_modifiers=True):
     - apply_modifiers: if True, evaluate modifiers and use new_from_object (recommended)
     """
     if curve_obj.type != "CURVE":
-        raise ValueError("curve_obj must be a Curve object")
+        raise ValueError(_("curve_obj must be a Curve object"))
 
     mesh_name = name if name else curve_obj.name + "_mesh"
     coll = bpy.context.collection

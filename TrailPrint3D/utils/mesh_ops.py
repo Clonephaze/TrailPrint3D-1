@@ -2,7 +2,7 @@ import math
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
-from bpy.app.translations import pgettext_iface as _  # type: ignore
+from bpy.app.translations import pgettext as _  # type: ignore
 from mathutils import Matrix, Vector, bvhtree  # type: ignore
 
 
@@ -347,7 +347,7 @@ def boolean_operation(obj_a, obj_b, operation="DIFFERENCE", solver="MANIFOLD"):
         return None
 
     # Add Boolean modifier to obj_a
-    mod = obj_a.modifiers.new(name="BooleanManifold", type="BOOLEAN")
+    mod = obj_a.modifiers.new(name=_("BooleanManifold"), type="BOOLEAN")
     mod.object = obj_b
     mod.operation = operation
     mod.solver = solver
@@ -747,13 +747,17 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
 
         if tile.type != "MESH":
             raise ValueError(
-                f"Tile object '{tile.name}' is not a mesh (type={tile.type})."
+                _("Tile object '{name}' is not a mesh (type={type}).").format(
+                    name=tile.name, type=tile.type
+                )
             )
 
         if element.type != "MESH":
             print("Obj is not a mesh")
             raise ValueError(
-                f"Element object '{element.name}' is not a mesh (type={element.type})."
+                _("Element object '{name}' is not a mesh (type={type}).").format(
+                    name=element.name, type=element.type
+                )
             )
 
         # Remember current mode and active object so we can restore later
@@ -800,7 +804,7 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
         element.select_set(True)
         bpy.context.view_layer.objects.active = element
 
-        bool_mod = element.modifiers.new(name="__auto_boolean__", type="BOOLEAN")
+        bool_mod = element.modifiers.new(name=(_("__auto_boolean__")), type="BOOLEAN")
         bool_mod.operation = "INTERSECT"
         bool_mod.object = dup
         # EXACT (not MANIFOLD): buildings/roads footprints can be non-manifold
@@ -952,7 +956,7 @@ def intersect_alltrails_with_existing_box(cutobject):
 
         merged_object = bpy.context.active_object
 
-        bool_mod = cube.modifiers.new(name="Intersect", type="BOOLEAN")
+        bool_mod = cube.modifiers.new(name=(_("Intersect")), type="BOOLEAN")
         bool_mod.operation = "INTERSECT"
         bool_mod.object = merged_object
         bpy.context.view_layer.objects.active = cube
@@ -1101,7 +1105,7 @@ def intersect_trail_with_existing_box(cutobject, trail):
 
         merged_object = bpy.context.active_object
 
-        bool_mod = cube.modifiers.new(name="Intersect", type="BOOLEAN")
+        bool_mod = cube.modifiers.new(name=(_("Intersect")), type="BOOLEAN")
         bool_mod.operation = "INTERSECT"
         bool_mod.object = merged_object
         bpy.context.view_layer.objects.active = cube
@@ -1449,15 +1453,22 @@ def _cut_terrain_slab(terrain_obj, poly, bottom_z, top_z, name):
     obj = bpy.data.objects.new(mesh.name, mesh)
     bpy.context.collection.objects.link(obj)
 
-    boolean_operation(obj, terrain_obj, 'INTERSECT')
+    boolean_operation(obj, terrain_obj, "INTERSECT")
     if len(obj.data.vertices) == 0:
         bpy.data.objects.remove(obj, do_unlink=True)
         return None
     return obj
 
 
-def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=None, buildings_data=None,
-                            piece_bounds=None, keep_terrain_obj=False):
+def cut_into_puzzle_pieces(
+    terrain_obj,
+    pieces,
+    tolerance_mm=0.3,
+    roads_data=None,
+    buildings_data=None,
+    piece_bounds=None,
+    keep_terrain_obj=False,
+):
     """Cut a single finished map tile into separate jigsaw puzzle piece objects.
 
     `terrain_obj` -- a normal, already-generated (and trail-merged, if
@@ -1523,9 +1534,12 @@ def cut_into_puzzle_pieces(terrain_obj, pieces, tolerance_mm=0.3, roads_data=Non
     if piece_bounds is not None:
         x_min, x_max, y_min, y_max = piece_bounds
     else:
-        x_min = min(v.x for v in mc); x_max = max(v.x for v in mc)
-        y_min = min(v.y for v in mc); y_max = max(v.y for v in mc)
-    z_min = min(v.z for v in mc); z_max = max(v.z for v in mc)
+        x_min = min(v.x for v in mc)
+        x_max = max(v.x for v in mc)
+        y_min = min(v.y for v in mc)
+        y_max = max(v.y for v in mc)
+    z_min = min(v.z for v in mc)
+    z_max = max(v.z for v in mc)
     bottom_z = z_min - 10.0
     top_z = z_max + 10.0
 
@@ -1763,8 +1777,17 @@ def _resolve_holder_font(font_filename):
     return candidate if os.path.isfile(candidate) else None
 
 
-def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_z,
-                         font="", text_size_mm=None, y_offset=0.0):
+def _emboss_holder_text(
+    holder_obj,
+    text,
+    available_w,
+    outer_h,
+    wall_width,
+    top_z,
+    font="",
+    text_size_mm=None,
+    y_offset=0.0,
+):
     """Emboss *text* centered on the front (south, -Y) rim of holder_obj and
     join it in as one printable part, in the WHITE material.
 
@@ -1828,7 +1851,11 @@ def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_
     # Z is set so the text is embedded well into the wall and only
     # ~raised_height pokes up above its top surface, regardless of whether
     # Curve.extrude turns out to be one- or two-sided.
-    text_obj.location = (0, -outer_h / 2 + wall_width / 2 + y_offset, top_z - 1.0 + raised_height)
+    text_obj.location = (
+        0,
+        -outer_h / 2 + wall_width / 2 + y_offset,
+        top_z - 1.0 + raised_height,
+    )
 
     bpy.context.view_layer.objects.active = text_obj
     txt.convert_text_to_mesh(text_obj.name, holder_obj.name, False)
@@ -1847,72 +1874,83 @@ def _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, top_
     return holder_obj
 
 
-def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
-                         floor_thickness=2.0, clearance=0.1, corner_radius=5.0,
-                         pocket_corner_radius=0.0, font="", text_size_mm=None,
-                         piece_seam_polys=None, seam_width=0.6, seam_depth=0.4,
-                         frame_terrain_obj=None):
+def build_puzzle_holder(
+    piece_objs,
+    text="",
+    wall_width=4.0,
+    wall_height=4.0,
+    floor_thickness=2.0,
+    clearance=0.1,
+    corner_radius=5.0,
+    pocket_corner_radius=0.0,
+    font="",
+    text_size_mm=None,
+    piece_seam_polys=None,
+    seam_width=0.6,
+    seam_depth=0.4,
+    frame_terrain_obj=None,
+):
     """Build a rounded-rectangle tray sized to hold an already-generated
-    jigsaw puzzle (cut_into_puzzle_pieces' output).
+        jigsaw puzzle (cut_into_puzzle_pieces' output).
 
-    The combined world-space XY bounding box of every object in *piece_objs*
-    reconstructs the puzzle's true assembled footprint -- every outer grid
-    edge is always straight, only internal seams have tabs, so the union of
-    every piece's own bbox equals the original rectangle's footprint
-    regardless of the per-piece tolerance shrink. The inner pocket is that
-    footprint plus *clearance*; the outer footprint adds *wall_width* of rim
-    on every side, with the OUTSIDE corners rounded to *corner_radius*. The
-    pocket's own corners are rounded separately to *pocket_corner_radius* --
-    normally passed in matching the puzzle's own corner radius (the puzzle
-    itself is rounded client-side, baked directly into each piece's
-    polygon), so the pocket visually matches whatever the puzzle's actual
-    outer corners look like instead of always being sharp.
-    The pocket is recessed `wall_height - floor_thickness` deep into the
-    top, leaving a solid floor of *floor_thickness* underneath -- the rim
-    outside the pocket keeps the full *wall_height*. The holder's own block
-    (rim AND pocket floor) gets the BLACK material -- or, whenever
-    *frame_terrain_obj* is given, frame_terrain_obj's own plain BASE material
-    instead, so the pocket floor blends with the terrain-colored rim rather
-    than showing black underneath it (see that parameter's own paragraph
-    below). Embossed text (see `_emboss_holder_text`) gets WHITE.
+        The combined world-space XY bounding box of every object in *piece_objs*
+        reconstructs the puzzle's true assembled footprint -- every outer grid
+        edge is always straight, only internal seams have tabs, so the union of
+        every piece's own bbox equals the original rectangle's footprint
+        regardless of the per-piece tolerance shrink. The inner pocket is that
+        footprint plus *clearance*; the outer footprint adds *wall_width* of rim
+        on every side, with the OUTSIDE corners rounded to *corner_radius*. The
+        pocket's own corners are rounded separately to *pocket_corner_radius* --
+        normally passed in matching the puzzle's own corner radius (the puzzle
+        itself is rounded client-side, baked directly into each piece's
+        polygon), so the pocket visually matches whatever the puzzle's actual
+        outer corners look like instead of always being sharp.
+        The pocket is recessed `wall_height - floor_thickness` deep into the
+        top, leaving a solid floor of *floor_thickness* underneath -- the rim
+        outside the pocket keeps the full *wall_height*. The holder's own block
+        (rim AND pocket floor) gets the BLACK material -- or, whenever
+        *frame_terrain_obj* is given, frame_terrain_obj's own plain BASE material
+        instead, so the pocket floor blends with the terrain-colored rim rather
+        than showing black underneath it (see that parameter's own paragraph
+        below). Embossed text (see `_emboss_holder_text`) gets WHITE.
 
-    If *piece_seam_polys* is given (cut_into_puzzle_pieces' own second return
-    value -- each piece's true, pre-tolerance-shrink world-space polygon,
-    tabs/blanks included), every one of those polygons' boundary rings gets
-    engraved as a shallow groove into the pocket floor, so the jigsaw layout
-    is visible even with the pieces lifted out. Clipped to the pocket itself,
-    so a seam within `seam_width` of the wall doesn't cut into it.
+        If *piece_seam_polys* is given (cut_into_puzzle_pieces' own second return
+        value -- each piece's true, pre-tolerance-shrink world-space polygon,
+        tabs/blanks included), every one of those polygons' boundary rings gets
+        engraved as a shallow groove into the pocket floor, so the jigsaw layout
+        is visible even with the pieces lifted out. Clipped to the pocket itself,
+        so a seam within `seam_width` of the wall doesn't cut into it.
 
-    If *frame_terrain_obj* is given -- an already-elevation-generated terrain
-    tile covering at least the holder's own outer footprint, positioned in
-    world space (same shape createTerrainFromSelected produces for a normal
-    map tile) -- an annulus (outer_poly minus pocket_poly) terrain slab gets
-    cut from it and UNIONed onto the rim's own flat top, the same technique
-    (and the same _cut_terrain_slab helper, for the same material-preserving
-    reason) the premium sliding-puzzle frame uses. Unlike that frame, no
-    Z re-anchoring is needed here: the slab's own natural flat bottom always
-    lands at world Z=0 (see createTerrainFromSelected/_ctfs_apply_elevation
-    -- the bottom face is always seated there regardless of minThickness).
-*wall_height* is itself overridden to floor_thickness (see that override's
-    own comment) whenever *frame_terrain_obj* is given, BEFORE any of the
-    rim/pocket geometry above is even built -- otherwise a boolean UNION,
-    which can only ADD material, would leave the un-shortened flat
-    wall_height top exposed as a flat shelf wherever the real terrain dips
-    below it. Built short from the start, the terrain cap becomes the rim's
-    ONLY visible top surface almost everywhere, with the (now much shorter)
-    rim only showing through as a fallback floor wherever terrain dips below
-    floor_thickness itself. The holder's own base material is
-    frame_terrain_obj's own plain BASE material (not BLACK) in this case --
-    see the docstring paragraph above -- so the pocket floor, untouched by
-    this union, blends with the terrain-colored rim instead of showing black
-    underneath it. *text* is silently ignored
-    whenever *frame_terrain_obj* is given -- same reasoning as the sliding
-    puzzle frame's own top_bevel_mm: there's no flat surface left to emboss
-    into once the rim is real elevation-following terrain instead.
-    Consumes (removes) frame_terrain_obj either way.
+        If *frame_terrain_obj* is given -- an already-elevation-generated terrain
+        tile covering at least the holder's own outer footprint, positioned in
+        world space (same shape createTerrainFromSelected produces for a normal
+        map tile) -- an annulus (outer_poly minus pocket_poly) terrain slab gets
+        cut from it and UNIONed onto the rim's own flat top, the same technique
+        (and the same _cut_terrain_slab helper, for the same material-preserving
+        reason) the premium sliding-puzzle frame uses. Unlike that frame, no
+        Z re-anchoring is needed here: the slab's own natural flat bottom always
+        lands at world Z=0 (see createTerrainFromSelected/_ctfs_apply_elevation
+        -- the bottom face is always seated there regardless of minThickness).
+    *wall_height* is itself overridden to floor_thickness (see that override's
+        own comment) whenever *frame_terrain_obj* is given, BEFORE any of the
+        rim/pocket geometry above is even built -- otherwise a boolean UNION,
+        which can only ADD material, would leave the un-shortened flat
+        wall_height top exposed as a flat shelf wherever the real terrain dips
+        below it. Built short from the start, the terrain cap becomes the rim's
+        ONLY visible top surface almost everywhere, with the (now much shorter)
+        rim only showing through as a fallback floor wherever terrain dips below
+        floor_thickness itself. The holder's own base material is
+        frame_terrain_obj's own plain BASE material (not BLACK) in this case --
+        see the docstring paragraph above -- so the pocket floor, untouched by
+        this union, blends with the terrain-colored rim instead of showing black
+        underneath it. *text* is silently ignored
+        whenever *frame_terrain_obj* is given -- same reasoning as the sliding
+        puzzle frame's own top_bevel_mm: there's no flat surface left to emboss
+        into once the rim is real elevation-following terrain instead.
+        Consumes (removes) frame_terrain_obj either way.
 
-    Reuses the same flat-prism + boolean technique as
-    `cut_into_puzzle_pieces` / `single_color_mode_curve`.
+        Reuses the same flat-prism + boolean technique as
+        `cut_into_puzzle_pieces` / `single_color_mode_curve`.
     """
     from shapely.affinity import translate as _shapely_translate
 
@@ -1985,7 +2023,11 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
         # sides of that eventual UNION need to already be multi-material for
         # Blender to carry per-face material_index through correctly (see
         # _cut_terrain_slab's own docstring).
-        base_mat = frame_terrain_obj.data.materials[0] if frame_terrain_obj.data.materials else None
+        base_mat = (
+            frame_terrain_obj.data.materials[0]
+            if frame_terrain_obj.data.materials
+            else None
+        )
         if base_mat is None:
             base_mat = bpy.data.materials.get("BLACK")
         if base_mat is not None:
@@ -2063,9 +2105,19 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
         # Must run BEFORE holder_obj.location is set below -- _emboss_holder_
         # text places the text at a fixed offset from LOCAL (0, 0), matching
         # outer_poly/pocket_poly's own local-origin-centered construction.
-        available_w = max(1.0, outer_w - 6.0)  # margin so text clears the rim's outer/inner edges
-        _emboss_holder_text(holder_obj, text, available_w, outer_h, wall_width, wall_height,
-                             font=font, text_size_mm=text_size_mm)
+        available_w = max(
+            1.0, outer_w - 6.0
+        )  # margin so text clears the rim's outer/inner edges
+        _emboss_holder_text(
+            holder_obj,
+            text,
+            available_w,
+            outer_h,
+            wall_width,
+            wall_height,
+            font=font,
+            text_size_mm=text_size_mm,
+        )
 
     # Positioned at the puzzle's own XY center; Z so the pocket floor's TOP
     # surface (local Z = floor_thickness, where an assembled puzzle would
@@ -2084,12 +2136,19 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
         world_pocket = _shapely_translate(pocket_poly, xoff=center_x, yoff=center_y)
         annulus = g2d.validate(world_outer.difference(world_pocket))
 
-        ft_corners = [frame_terrain_obj.matrix_world @ Vector(c) for c in frame_terrain_obj.bound_box]
+        ft_corners = [
+            frame_terrain_obj.matrix_world @ Vector(c)
+            for c in frame_terrain_obj.bound_box
+        ]
         ft_z_min = min(c.z for c in ft_corners)
         ft_z_max = max(c.z for c in ft_corners)
 
         cutter_obj = _cut_terrain_slab(
-            frame_terrain_obj, annulus, ft_z_min - 10.0, ft_z_max + 10.0, "PuzzleHolderTerrainCutter"
+            frame_terrain_obj,
+            annulus,
+            ft_z_min - 10.0,
+            ft_z_max + 10.0,
+            "PuzzleHolderTerrainCutter",
         )
         if cutter_obj is not None:
             # No Z re-anchoring needed (unlike the sliding puzzle frame's own
@@ -2098,7 +2157,7 @@ def build_puzzle_holder(piece_objs, text="", wall_width=4.0, wall_height=4.0,
             # safely embedded in the rim's own solid Z range (already only
             # floor_thickness tall to begin with -- see wall_height's own
             # override above).
-            boolean_operation(holder_obj, cutter_obj, 'UNION')
+            boolean_operation(holder_obj, cutter_obj, "UNION")
             bpy.data.objects.remove(cutter_obj, do_unlink=True)
             _clean_solid_mesh(holder_obj.data, dist=1e-3)
         if bpy.app.debug:
@@ -2420,7 +2479,7 @@ def single_color_mode_mesh_wireframe(original, map, tolerance=None):
         _extrude_height = 50.0
 
     # Apply Wireframe modifier with -tolerance as thickness
-    wire = obj.modifiers.new(name="Wireframe", type="WIREFRAME")
+    wire = obj.modifiers.new(name=(_("Wireframe")), type="WIREFRAME")
     wire.thickness = -tolerance
     wire.offset = 0
     wire.use_replace = True
@@ -2462,7 +2521,7 @@ def single_color_mode_mesh_wireframe(original, map, tolerance=None):
     loose_parts = list(bpy.context.selected_objects)
 
     for part in loose_parts:
-        boolean = map.modifiers.new(name="Boolean", type="BOOLEAN")
+        boolean = map.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
         boolean.operation = "DIFFERENCE"
         boolean.object = part
         boolean.solver = "MANIFOLD"
@@ -2498,12 +2557,12 @@ def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
 
     if tolerance > 0:
         # Solidify to create the tolerance thickness
-        solid = obj.modifiers.new(name="Solidify", type="SOLIDIFY")
+        solid = obj.modifiers.new(name=(_("Solidify")), type="SOLIDIFY")
         solid.offset = 1.0
         solid.thickness = -tolerance / 2
         applyModifier(obj, solid)
 
-    remesh = obj.modifiers.new(name="Remesh", type="REMESH")
+    remesh = obj.modifiers.new(name=(_("Remesh")), type="REMESH")
     remesh.mode = "VOXEL"
     remesh.voxel_size = voxelSize2
     remesh.use_smooth_shade = False
@@ -2556,7 +2615,7 @@ def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
 
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
-    bool_mod = obj.modifiers.new(name="_BoolCube", type="BOOLEAN")
+    bool_mod = obj.modifiers.new(name=(_("BoolCube")), type="BOOLEAN")
     bool_mod.operation = "DIFFERENCE"
     bool_mod.object = cube_obj
     bool_mod.solver = "MANIFOLD"
@@ -2611,7 +2670,9 @@ def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
     recalculateNormals(obj)
 
 
-def single_color_mode_mesh_remesh(original, map, tolerance=None, map_outline=None, shared_bottom_z=None):
+def single_color_mode_mesh_remesh(
+    original, map, tolerance=None, map_outline=None, shared_bottom_z=None
+):
 
     # Original = Element usually
 
@@ -2662,6 +2723,7 @@ def single_color_mode_mesh_remesh(original, map, tolerance=None, map_outline=Non
         # both polygons share the same coordinate space before intersecting.
         _EDGE_EPS = 0.02
         from shapely.affinity import translate as _shp_translate
+
         map_outline_ws = _shp_translate(
             map_outline, xoff=map.location.x, yoff=map.location.y
         )
@@ -2691,10 +2753,18 @@ def single_color_mode_mesh_remesh(original, map, tolerance=None, map_outline=Non
     if map is not None and map.data.vertices:
         mw_map = map.matrix_world
         map_top_z = max((mw_map @ v.co).z for v in map.data.vertices)
-        bottom_z = shared_bottom_z if shared_bottom_z is not None else min((mw @ v.co).z for v in original.data.vertices)
+        bottom_z = (
+            shared_bottom_z
+            if shared_bottom_z is not None
+            else min((mw @ v.co).z for v in original.data.vertices)
+        )
         PRISM_HEIGHT = max(10.0, map_top_z - bottom_z + 2.0)
     else:
-        bottom_z = shared_bottom_z if shared_bottom_z is not None else min((mw @ v.co).z for v in original.data.vertices)
+        bottom_z = (
+            shared_bottom_z
+            if shared_bottom_z is not None
+            else min((mw @ v.co).z for v in original.data.vertices)
+        )
         PRISM_HEIGHT = 30.0
 
     # Build each polygon part as its own mesh so _clean_solid_mesh only welds
@@ -2739,7 +2809,7 @@ def single_color_mode_mesh_remesh(original, map, tolerance=None, map_outline=Non
         bpy.ops.object.mode_set(mode="OBJECT")
 
     # Boolean subtract from map
-    boolean = map.modifiers.new(name="Boolean", type="BOOLEAN")
+    boolean = map.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
     boolean.operation = "DIFFERENCE"
     boolean.object = obj
     boolean.solver = "MANIFOLD"
@@ -2809,7 +2879,7 @@ def separate_mode_recess_cutter(original, map, tolerance=None):
         return None
     keep = set(bottom_faces)
     to_delete = [f for f in bm.faces if f not in keep]
-    bmesh.ops.delete(bm, geom=to_delete, context='FACES')
+    bmesh.ops.delete(bm, geom=to_delete, context="FACES")
     if not bm.verts:
         bm.free()
         bpy.data.objects.remove(cutter, do_unlink=True)
@@ -2842,10 +2912,10 @@ def separate_mode_recess_cutter(original, map, tolerance=None):
     bm.free()
     cutter.data.update()
 
-    boolean = map.modifiers.new(name="Boolean", type='BOOLEAN')
-    boolean.operation = 'DIFFERENCE'
+    boolean = map.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
+    boolean.operation = "DIFFERENCE"
     boolean.object = cutter
-    boolean.solver = 'MANIFOLD'
+    boolean.solver = "MANIFOLD"
     applyModifier(map, boolean)
 
     if "type" in original and original["type"] == "OTHER":
@@ -2903,16 +2973,21 @@ def separate_mode_recess_cutter_from_prism(prism, original, map):
     bm.free()
     cutter.data.update()
 
-    boolean = map.modifiers.new(name="Boolean", type='BOOLEAN')
-    boolean.operation = 'DIFFERENCE'
+    boolean = map.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
+    boolean.operation = "DIFFERENCE"
     boolean.object = cutter
-    boolean.solver = 'MANIFOLD'
+    boolean.solver = "MANIFOLD"
     applyModifier(map, boolean)
 
     return cutter
 
 
-def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode = False,):
+def merge_with_map(
+    mapobject,
+    mergeobject,
+    flatBottom=False,
+    singleColorMode=False,
+):
 
     if mergeobject == None:
         print("func merge_with_map: No Object to merge with Map")
@@ -2960,7 +3035,7 @@ def merge_with_map(mapobject, mergeobject, flatBottom = False, singleColorMode =
     recalculateNormals(mergeobject)
 
     # Add boolean modifier
-    bool_mod = mergeobject.modifiers.new(name="Boolean", type="BOOLEAN")
+    bool_mod = mergeobject.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
     bool_mod.object = mapobject
     bool_mod.operation = "INTERSECT"
     bool_mod.solver = "MANIFOLD"
@@ -3141,20 +3216,24 @@ def projection(operation, Mapobject, obj):
 
     for label, o in (("Mapobject", Mapobject), ("obj", obj)):
         if o is None:
-            raise ValueError(f"projection: '{label}' is None")
+            raise ValueError(_("projection: '%s' is None") % label)
         try:
             name = o.name  # raises ReferenceError if the Blender object was removed
         except ReferenceError:
             raise ValueError(
-                f"projection: '{label}' refers to a removed Blender object"
+                _("projection: '%s' refers to a removed Blender object") % label
             )
         if name not in bpy.data.objects:
             raise ValueError(
-                f"projection: '{label}' ('{name}') is not in the current scene"
+                _(
+                    "projection: '{label}' ('{name}') is not in the current scene"
+                ).format(label=label, name=name)
             )
         if o.type not in ("MESH", "FONT") or o.data is None:
             raise ValueError(
-                f"projection: '{label}' ('{name}') is not a valid mesh object (type={o.type!r})"
+                _(
+                    "projection: '{label}' ('{name}') is not a valid mesh object (type={type!r})"
+                ).format(label=label, name=name, type=o.type)
             )
 
     if operation == "paint":

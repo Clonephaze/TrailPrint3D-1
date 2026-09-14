@@ -5,6 +5,7 @@
 
 
 import bpy  # type: ignore
+from bpy.app.translations import pgettext as _
 from mathutils import Vector  # type: ignore
 
 from . import addon_preferences, temp
@@ -29,7 +30,7 @@ def export_to_STL(zobj, force="STL"):
     if not exportPath:
         exportPath = addon_preferences.get_prefs().default_export_folder
     if not exportPath:
-        _progress.WarningsOverlay.add_warning("Export folder not set — please set an export path", "error")
+        _progress.WarningsOverlay.add_warning(_("Export folder not set"), "error")
         return
     bpy.ops.object.select_all(action='DESELECT')
     zobj.select_set(True)
@@ -57,7 +58,7 @@ def export_selected_to_STL(force="STL"):
     if not exportPath:
         exportPath = addon_preferences.get_prefs().default_export_folder
     if not exportPath:
-        _progress.WarningsOverlay.add_warning("Export folder not set — please set an export path", "error")
+        _progress.WarningsOverlay.add_warning(_("Export folder not set"), "error")
         return {'FINISHED'}
     selected_objects = bpy.context.selected_objects
     active_obj = bpy.context.active_object
@@ -106,7 +107,7 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False):
     if not exportPath:
         exportPath = addon_preferences.get_prefs().default_export_folder
     if not exportPath:
-        _progress.WarningsOverlay.add_warning("Export folder not set — please set an export path", "error")
+        _progress.WarningsOverlay.add_warning(_("Export folder not set"), "error")
         return {'FINISHED'}
 
     selected_objects = bpy.context.selected_objects
@@ -259,7 +260,7 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False):
 
     _3mf_api = get_threemf_api()
     if _3mf_api is None:
-        _progress.WarningsOverlay.add_warning("3MF Addon not installed", "error")
+        _progress.WarningsOverlay.add_warning(_("3MF Addon not installed"), "error")
         return
 
     try:
@@ -287,18 +288,18 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False):
         if has_threemf_capability("slicer_profile"):
             export_kwargs["slicer_profile"] = tp3d.slicer_profile_name
         else:
-            _progress.WarningsOverlay.add_warning("3MF Addon update available (slicer profiles)", "warn")
+            _progress.WarningsOverlay.add_warning(_("3MF Addon update available"), "warn")
 
         result = _3mf_api.export_3mf(**export_kwargs)
         if result.status == "FINISHED":
             print(f"Successfully exported to: {full_path}")
-            _progress.WarningsOverlay.add_warning("Exported as 3mf", "ok")
+            _progress.WarningsOverlay.add_warning(_("Exported as 3mf"), "ok")
         else:
             print("Export Error:\n" + "\n".join(result.warnings))
-            _progress.WarningsOverlay.add_warning("Exporting as 3mf Failed", "error")
+            _progress.WarningsOverlay.add_warning(_("Exporting as 3mf Failed"), "error")
     except Exception as e:
         print(f"Export Error: {e}")
-        _progress.WarningsOverlay.add_warning("Exporting as 3mf Failed", "error")
+        _progress.WarningsOverlay.add_warning(_("Exporting as 3mf Failed"), "error")
 
     # 5. Cleanup (delete duplicates and temporary empties)
     for obj in duplicates + temp_empties:

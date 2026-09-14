@@ -27,6 +27,7 @@ import os
 import zipfile
 
 import requests
+from bpy.app.translations import pgettext as _
 
 from ... import constants as const
 
@@ -163,7 +164,7 @@ def _convert_zip_to_wkb(zip_path, wkb_path):
                 break
         if shp_path is None:
             raise FileNotFoundError(
-                "No .shp file found inside the downloaded water-polygon zip"
+                _("No .shp file found inside the downloaded water-polygon zip")
             )
 
         polygons = []
@@ -186,7 +187,7 @@ def _convert_zip_to_wkb(zip_path, wkb_path):
                 f"{invalid_count} invalid source polygon(s) via buffer(0)"
             )
         if not polygons:
-            raise ValueError("Water polygon shapefile contained no usable polygons")
+            raise ValueError(_("Water polygon shapefile contained no usable polygons"))
 
         collection = GeometryCollection(polygons)
         wkb_bytes = _shp.to_wkb(collection)

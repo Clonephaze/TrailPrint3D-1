@@ -25,6 +25,7 @@ import time
 import blf
 import bpy
 import gpu
+from bpy.app.translations import pgettext as _
 from gpu_extras.batch import batch_for_shader
 
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == 'win32' else 0
@@ -627,7 +628,7 @@ class WarningsOverlay:
 class TP3D_OT_warnings_mouse(bpy.types.Operator):
     """Modal that dismisses the warnings overlay on any mouse click."""
     bl_idname  = "tp3d.warnings_mouse"
-    bl_label   = "Warnings Mouse Watcher"
+    bl_label   = _("Warnings Mouse Watcher")
     bl_options = {'INTERNAL'}
 
     def modal(self, context, event):

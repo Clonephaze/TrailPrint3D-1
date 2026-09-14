@@ -4,6 +4,7 @@ import time
 
 import bpy  # type: ignore
 import numpy as np  # type: ignore
+from bpy.app.translations import pgettext as _
 
 from ... import addon_preferences
 from ... import progress as _progress
@@ -113,42 +114,40 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
 
     if elementMode and el_sActive and el_sHeight == 0:
         raise ValidationError(
-            "Road Height is 0 in Paint mode — this produces degenerate geometry. "
-            "Set Road Height above 0 or disable roads."
+            _("Road Height is 0 in Paint mode — this produces degenerate geometry. Set Road Height above 0 or disable roads.")
         )
 
     if api == "OPENTOPOGRAPHY" and not _ot_api_key:
         print("No OPENTOPOGRAPHY API key entered")
         raise ValidationError(
-            "OpenTopography requires an API key. "
-            "Get a free key at portal.opentopography.org and set it in the addon preferences."
+            _("OpenTopography requires an API key. \nGet a free key at portal.opentopography.org and set it in the addon preferences.")
         )
 
     if "gpx_file" in flags:
         if not gpx_file_path or gpx_file_path == "":
-            raise ValidationError("File path is empty! Please select a valid file.")
+            raise ValidationError(_("File path is empty! Please select a valid file."))
         if not os.path.isfile(gpx_file_path):
             raise ValidationError(
-                f"Invalid file path: {gpx_file_path}. Please select a valid file."
+                _("Invalid file path: {gpx_file_path}. Please select a valid file.").format(gpx_file_path=gpx_file_path)
             )
         gpx_file_path = bpy.path.abspath(gpx_file_path)
         file_extension = os.path.splitext(gpx_file_path)[1].lower()
         if file_extension != ".gpx" and file_extension != ".igc":
-            raise ValidationError("Invalid file format. Please Use a .GPX file")
+            raise ValidationError(_("Invalid file format. Please Use a .GPX or .IGC file"))
     if "gpx_chain" in flags:
         if not gpx_chain_path or gpx_chain_path == "":
-            raise ValidationError("CHAIN path is empty! Please select a valid folder.")
+            raise ValidationError(_("CHAIN path is empty! Please select a valid folder."))
         gpx_chain_path = bpy.path.abspath(gpx_chain_path)
     if not exportPath:
         exportPath = addon_preferences.get_prefs().default_export_folder
     if not exportPath:
-        raise ValidationError("Export path cant be empty")
+        raise ValidationError(_("Export path cant be empty"))
     exportPath = bpy.path.abspath(exportPath)
     if not exportPath or exportPath == "":
-        raise ValidationError("Export path is empty! Please select a valid folder.")
+        raise ValidationError(_("Export path is empty! Please select a valid folder."))
     if not os.path.isdir(exportPath):
         raise ValidationError(
-            f"Invalid export Directory: {exportPath}. Please select a valid Directory."
+            _("Invalid export Directory: {exportPath}. Please select a valid Directory.").format(exportPath=exportPath)
         )
     try:
         test_path = os.path.join(exportPath, ".tp3d_write_test")
@@ -157,7 +156,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         os.remove(test_path)
     except OSError:
         raise ValidationError(
-            f"No write permission for export folder: {exportPath}. Please select a different folder."
+            _("No write permission for export folder: {exportPath}. Please select a different folder.").format(exportPath=exportPath)
         )
 
     # --- Default font ---

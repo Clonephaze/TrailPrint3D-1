@@ -24,6 +24,7 @@ try:
 except ImportError:
     picker_server = None
 from bpy.app.handlers import persistent
+from bpy.app.translations import pgettext as _
 
 from . import export, operators, panels
 
@@ -77,8 +78,6 @@ classes = [
     operators.TP3D_OT_install_update,
     operators.TP3D_OT_open_premium_update,
     operators.TP3D_OT_dismiss_update,
-    operators.TP3D_OT_remake_buildings,
-    operators.TP3D_OT_remake_roads,
     operators.TP3D_OT_puzzle_configurator,
     operators.TP3D_OT_map_generator,
     operators.TP3D_OT_special_collection,
@@ -161,7 +160,7 @@ def register():
     bpy.app.translations.register(const.ADDON_NAME, translation.translations_dict)
     bpy.types.Scene.tp3d = bpy.props.PointerProperty(type=props.TP3D_PG_properties)
     bpy.types.Scene.preset_list = bpy.props.EnumProperty(
-        name="Presets",
+        name=_("(Presets)"),
         items=utils.list_files_callback,
     )
 

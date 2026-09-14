@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 import bpy  # type: ignore
 import requests  # type: ignore
+from bpy.app.translations import pgettext as _
 
 from .. import constants as const
 from .. import progress as _progress
@@ -314,7 +315,7 @@ def parse_png_rgb_data(png_bytes):
         offset += 12 + length
 
         if chunk_type == b'IHDR':
-            width, height, bit_depth, color_type, _, _, _ = struct.unpack(">IIBBBBB", data)
+            width, height, bit_depth, color_type, _unused, _unused2, _unused3 = struct.unpack(">IIBBBBB", data)
             assert bit_depth == 8 and color_type == 2, "Only 8-bit RGB PNGs supported"
         elif chunk_type == b'IDAT':
             idat_data += data
@@ -356,7 +357,7 @@ def parse_png_rgb_data(png_bytes):
                 c = prev_row[i - 3] if i >= 3 else 0
                 recon[i] = (scanline[i] + paeth_predictor(a, b, c)) % 256
         else:
-            raise ValueError(f"Unsupported filter type {filter_type}")
+            raise ValueError(_("Unsupported filter type %s") % filter_type)
 
         # Convert scanline to list of (R, G, B) tuples
         row = [(recon[i], recon[i+1], recon[i+2]) for i in range(0, stride, 3)]
@@ -416,7 +417,7 @@ def get_elevation_TerrainTiles(bounds, coords, lenv=0, pointsDone=0, zoom=10, pr
             rgb_array:list[list[tuple[int, int]]] = parse_png_rgb_data(png_bytes)
         except (requests.RequestException, OSError, AssertionError, ValueError, struct.error, zlib.error) as e:
             print(f"Failed to fetch or parse tile {zoom}/{xtile}/{ytile}: {e}")
-            for idx, _, _ in idx_lat_lon_list:
+            for idx, _lat, _long in idx_lat_lon_list:
                 elevations[idx] = 0
             continue
 
@@ -547,7 +548,7 @@ def get_elevation_Mapterhorn(bounds, coords, lenv=0, pointsDone=0, zoom=10, prog
 
         if tile_path is None:
             invalidElevations += len(idx_lat_lon_list)
-            for idx, _, _ in idx_lat_lon_list:
+            for idx, _lat, _long in idx_lat_lon_list:
                 elevations[idx] = 0
             continue
 
@@ -556,7 +557,7 @@ def get_elevation_Mapterhorn(bounds, coords, lenv=0, pointsDone=0, zoom=10, prog
         except (OSError, RuntimeError, ValueError, AttributeError) as e:
             print(f"Failed to parse Mapterhorn tile {actual_zoom}/{actual_xtile}/{actual_ytile}: {e}")
             invalidElevations += len(idx_lat_lon_list)
-            for idx, _, _ in idx_lat_lon_list:
+            for idx, _lat, _long in idx_lat_lon_list:
                 elevations[idx] = 0
             continue
 
@@ -623,13 +624,13 @@ def get_elevation_openTopography(coords, lenv=0, pointsDone=0, progress_cb=None)
         )
         if response.status_code == 401:
             _progress.WarningsOverlay.add_warning(
-                "OpenTopography: invalid or missing API key (401). "
-                "Get a free key at portal.opentopography.org", "error")
+                _("OpenTopography: invalid or missing API key (401). "
+                "Get a free key at portal.opentopography.org", "error"))
             return [0.0] * len(coords)
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         _progress.WarningsOverlay.add_warning(
-            f"OpenTopography: request failed — {e}", "error")
+            _("OpenTopography: request failed — {e}", "error").format(e=e))
         return [0.0] * len(coords)
 
     if progress_cb:
@@ -642,7 +643,7 @@ def get_elevation_openTopography(coords, lenv=0, pointsDone=0, progress_cb=None)
             asc_name = next((n for n in zf.namelist() if n.lower().endswith('.asc')), None)
             if asc_name is None:
                 _progress.WarningsOverlay.add_warning(
-                    "OpenTopography: no .asc file found in ZIP response", "error")
+                    _("OpenTopography: no .asc file found in ZIP response", "error"))
                 return [0.0] * len(coords)
             asc_data = zf.read(asc_name).decode('utf-8')
     except zipfile.BadZipFile:
@@ -651,13 +652,13 @@ def get_elevation_openTopography(coords, lenv=0, pointsDone=0, progress_cb=None)
             asc_data = content.decode('utf-8')
         except (UnicodeDecodeError, AttributeError) as e:
             _progress.WarningsOverlay.add_warning(
-                f"OpenTopography: could not decode response — {e}", "error")
+                _("OpenTopography: could not decode response — {e}", "error").format(e=e))
             return [0.0] * len(coords)
         # Sanity-check: if it looks like an error page rather than a grid, bail out
         if 'ncols' not in asc_data[:500].lower():
             print(f"OpenTopography unexpected response: {asc_data[:300]}")
             _progress.WarningsOverlay.add_warning(
-                "OpenTopography: unexpected response format (check API key / bbox)", "error")
+                _("OpenTopography: unexpected response format (check API key / bbox)", "error"))
             return [0.0] * len(coords)
 
     # --- Parse ASCII Grid header ---

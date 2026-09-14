@@ -4,6 +4,7 @@ import webbrowser
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
+from bpy.app.translations import pgettext as _
 from mathutils import Vector, bvhtree  # type: ignore
 
 
@@ -118,7 +119,7 @@ def get_random_world_vertices(obj, count=5):
 def get_object_surface_area(obj, apply_modifiers=True, z_threshold = 0.00):
 
     if obj.type != 'MESH':
-        raise TypeError(f"Object '{obj.name}' is not a mesh.")
+        raise TypeError(_("Object '{name}' is not a mesh.").format(name=obj.name))
 
     obj_eval = None
     if apply_modifiers:
@@ -256,7 +257,7 @@ def setOriginToTerrainFace(obj,tol=0.1,seed=None,max_tries=200):
 def closest_distance_between_objects(obj_a, obj_b, apply_modifiers=True):
 
     if obj_a.type != 'MESH' or obj_b.type != 'MESH':
-        raise TypeError("Both objects must be mesh objects")
+        raise TypeError(_("Both objects must be mesh objects"))
 
     depsgraph = bpy.context.evaluated_depsgraph_get()
 
@@ -294,7 +295,7 @@ def closest_distance_between_objects(obj_a, obj_b, apply_modifiers=True):
         hit = bvh_a.find_nearest(world_co)
 
         if hit:
-            _, _, _, dist = hit
+            _unused, _unused2, _unused3, dist = hit
             if dist < min_dist:
                 min_dist = dist
                 if min_dist == 0.0:

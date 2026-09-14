@@ -10,6 +10,7 @@ import json
 import math
 
 import bpy  # type: ignore
+from bpy.app.translations import pgettext as _
 
 from . import geometry2d as g2d
 
@@ -95,8 +96,11 @@ def _finalize_polygons(polygons, source_desc="file"):
     """
     if not polygons:
         raise ValueError(
-            f"No closed polygon boundary found in {source_desc} -- GeoJSON boundary "
-            "import needs a Polygon/MultiPolygon shape, not a line or point."
+            _(
+                "No closed polygon boundary found in %s -- GeoJSON boundary "
+                "import needs a Polygon/MultiPolygon shape, not a line or point."
+            )
+            % source_desc
         )
 
     merged = g2d.union(polygons) if len(polygons) > 1 else polygons[0]
@@ -104,7 +108,7 @@ def _finalize_polygons(polygons, source_desc="file"):
 
     parts = list(g2d.iter_polygons(merged))
     if not parts:
-        raise ValueError(f"{source_desc} contains no usable polygon area")
+        raise ValueError(_("%s contains no usable polygon area") % source_desc)
 
     return _polygon_or_multipolygon(parts)
 
@@ -143,7 +147,7 @@ def read_geojson_files(filepaths):
     """
     g2d._require_shapely()
     if not filepaths:
-        raise ValueError("No GeoJSON files given")
+        raise ValueError(_("No GeoJSON files given"))
 
     all_polygons = []
     for filepath in filepaths:
@@ -151,7 +155,7 @@ def read_geojson_files(filepaths):
             data = json.load(f)
         all_polygons.extend(_extract_polygons_from_geojson(data))
 
-    return _finalize_polygons(all_polygons, source_desc=f"{len(filepaths)} file(s)")
+    return _finalize_polygons(all_polygons, source_desc=_("%i file(s)") % len(filepaths))
 
 
 def simplify_boundary(polygon, tolerance):
@@ -174,8 +178,15 @@ def simplify_boundary(polygon, tolerance):
     return _polygon_or_multipolygon(parts)
 
 
-def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="GeoJSON",
-                             simplify_tolerance=0.1, scale_hor=None, set_auto_scale=True):
+def build_tile_from_polygon(
+    polygon_lonlat,
+    obj_size,
+    num_subdivisions,
+    name="GeoJSON",
+    simplify_tolerance=0.1,
+    scale_hor=None,
+    set_auto_scale=True,
+):
     """Build a flat MAP tile mesh shaped like *polygon_lonlat* (lon/lat degrees).
 
     Derives scene.tp3d.sScaleHor from the polygon's own bounding box and
@@ -218,7 +229,9 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
     Returns the new tagged "MAP" tile object (selected + active), or None on
     a degenerate/empty polygon.
     """
-    from shapely.affinity import translate as _shp_translate  # deferred to avoid circular import at load time
+    from shapely.affinity import (
+        translate as _shp_translate,  # deferred to avoid circular import at load time
+    )
 
     from .elevation import (  # deferred to avoid circular import at load time
         compute_and_store_tile_bounds,
@@ -262,9 +275,17 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
     # and iter_polygons further down already iterate over every part of a
     # MultiPolygon transparently, so no other step needs to know how many
     # separate landmasses there are.
-    parts_lonlat = list(polygon_lonlat.geoms) if isinstance(polygon_lonlat, g2d.MultiPolygon) else [polygon_lonlat]
+    parts_lonlat = (
+        list(polygon_lonlat.geoms)
+        if isinstance(polygon_lonlat, g2d.MultiPolygon)
+        else [polygon_lonlat]
+    )
     projected_parts = [_project_part(part) for part in parts_lonlat]
-    projected = projected_parts[0] if len(projected_parts) == 1 else g2d.MultiPolygon(projected_parts)
+    projected = (
+        projected_parts[0]
+        if len(projected_parts) == 1
+        else g2d.MultiPolygon(projected_parts)
+    )
     projected = g2d.validate(projected)
     projected = simplify_boundary(projected, simplify_tolerance)
     if projected is None or projected.is_empty:
@@ -320,12 +341,14 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
     # Leaflet's L.polygon reads a 2-level [ring, ring] list as one polygon
     # with the second ring as a HOLE, so mainland+island parts must each get
     # their own ring-array to render as separate shapes instead.
-    tile["BoundaryPolygon"] = json.dumps([
-        [[convert_to_geo(x, y) for x, y in part.exterior.coords]]
-        for part in g2d.iter_polygons(projected)
-    ])
+    tile["BoundaryPolygon"] = json.dumps(
+        [
+            [[convert_to_geo(x, y) for x, y in part.exterior.coords]]
+            for part in g2d.iter_polygons(projected)
+        ]
+    )
 
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     tile.select_set(True)
     bpy.context.view_layer.objects.active = tile
 
@@ -336,6 +359,7 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
         from .. import (
             progress as _progress,  # deferred to avoid circular import at load time
         )
+
         _progress.WarningsOverlay.add_warning(
             f"This boundary spans ~{map_km:.0f} km — fetching roads/water/forest over "
             "an area this large can take a while (or time out on the Overpass API).",
@@ -357,17 +381,27 @@ def build_tile_from_polygon(polygon_lonlat, obj_size, num_subdivisions, name="Ge
     if set_auto_scale:
         auto_scale = scale_hor
         additional_extrusion = 0.0
-        if tp3d.get('elevationMode', 'PROPORTIONAL') == 'FIXED':
+        if tp3d.get("elevationMode", "PROPORTIONAL") == "FIXED":
             preview_elevations, preview_diff = get_tile_elevation(tile)
-            target_height_mm = tp3d.get('fixedHeightMM', 10)
-            auto_scale = target_height_mm / (preview_diff / 1000) if preview_diff > 0 else target_height_mm
+            target_height_mm = tp3d.get("fixedHeightMM", 10)
+            auto_scale = (
+                target_height_mm / (preview_diff / 1000)
+                if preview_diff > 0
+                else target_height_mm
+            )
             lowest_z = 1000.0
             obj_matrix = tile.matrix_world
             for i, vert in enumerate(tile.data.vertices):
                 world_co = obj_matrix @ vert.co
                 vert_lat, _lon = convert_to_geo(world_co.x, world_co.y)
                 merc = 1 / math.cos(math.radians(vert_lat))
-                val = preview_elevations[i] / 1000 * tp3d.scaleElevation * auto_scale * merc
+                val = (
+                    preview_elevations[i]
+                    / 1000
+                    * tp3d.scaleElevation
+                    * auto_scale
+                    * merc
+                )
                 lowest_z = min(lowest_z, val)
             additional_extrusion = lowest_z
 

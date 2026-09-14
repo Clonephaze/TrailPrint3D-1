@@ -19,6 +19,7 @@ from typing import Any
 import bmesh  # type: ignore
 import bpy  # type: ignore
 import numpy as np  # type: ignore
+from bpy.app.translations import pgettext as _
 
 from .dataclasses import GenerationContext
 
@@ -148,7 +149,10 @@ def _require_shapely():
 
     if _SHAPELY_IMPORT_ERROR is not None:
         raise ImportError(
-            f"{_SHAPELY_ERR}\n(Underlying error: {_SHAPELY_IMPORT_ERROR})"
+            _("{main_err}\n(Underlying error: {sub_err})").format(
+                main_err=_SHAPELY_ERR, 
+                sub_err=_SHAPELY_IMPORT_ERROR
+            )
         ) from _SHAPELY_IMPORT_ERROR
     raise ImportError(_SHAPELY_ERR)
 

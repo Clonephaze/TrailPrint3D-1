@@ -2,6 +2,7 @@ import math
 
 import bpy  # type: ignore
 import numpy as np  # type: ignore
+from bpy.app.translations import pgettext as _
 
 from .. import constants as const
 
@@ -270,7 +271,7 @@ def move_coordinates(lat, lon, distance_km, direction):
     elif direction == "w":
         lon_rad -= distance_km / (R * math.cos(lat_rad))
     else:
-        raise ValueError("Direction must be 'n', 's', 'e', or 'w'")
+        raise ValueError(_("Direction must be 'n', 's', 'e', or 'w'"))
 
     # Convert radians back to degrees
     new_lat = math.degrees(lat_rad)

@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
+from bpy.app.translations import pgettext as _
 from mathutils import Vector  # type: ignore
 from shapely import clip_by_rect
 from shapely.geometry import LineString, Point, Polygon, box
@@ -971,7 +972,7 @@ def coloring_main(
     # ────────────────────────────────────────────────────────────────────────
 
     def _apply_boolean(obj, solver):
-        mod = obj.modifiers.new(name="Boolean", type="BOOLEAN")
+        mod = obj.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
         mod.object = map
         mod.operation = "INTERSECT"
         mod.solver = solver
@@ -1186,7 +1187,7 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
     if terrain_obj.active_material:
         mat = terrain_obj.active_material
     else:
-        mat = bpy.data.materials.new(name="TerrainColor")
+        mat = bpy.data.materials.new(name=(_("TerrainColor")))
         terrain_obj.data.materials.append(mat)
 
     if mat.name not in [m.name for m in map_mesh.materials if m is not None]:
@@ -1250,7 +1251,7 @@ def plateInsert(plate, map):
     plate.select_set(True)
     bpy.context.view_layer.objects.active = plate
 
-    mod = plate.modifiers.new(name="Boolean", type="BOOLEAN")
+    mod = plate.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
     mod.operation = "DIFFERENCE"
     mod.solver = "MANIFOLD"
     mod.object = map_copy
@@ -2221,7 +2222,7 @@ def exaggeratedLayers(objs):
         plane.location.z += 0.1 + layerThickness / 2
 
         # Add Array modifier in Z direction
-        array_mod = plane.modifiers.new(name="ArrayZ", type="ARRAY")
+        array_mod = plane.modifiers.new(name=(_("ArrayZ")), type="ARRAY")
         array_mod.relative_offset_displace = (0, 0, 0)  # disable relative offset
         array_mod.constant_offset_displace = (0, 0, layerThickness)  # fixed step in Z
         array_mod.use_relative_offset = False
@@ -2233,7 +2234,7 @@ def exaggeratedLayers(objs):
         bpy.ops.object.modifier_apply(modifier=array_mod.name)
 
         # Add Boolean modifier with INTERSECT mode
-        bool_mod = plane.modifiers.new(name="Boolean", type="BOOLEAN")
+        bool_mod = plane.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
         bool_mod.operation = "INTERSECT"
         bool_mod.solver = "FLOAT"  # or 'EXACT'
         bool_mod.use_self = False
@@ -2245,7 +2246,7 @@ def exaggeratedLayers(objs):
         bpy.ops.object.modifier_apply(modifier=bool_mod.name)
 
         # Add Solidify modifier for thickness
-        solidify_mod = plane.modifiers.new(name="Solidify", type="SOLIDIFY")
+        solidify_mod = plane.modifiers.new(name=(_("Solidify")), type="SOLIDIFY")
         solidify_mod.thickness = layerThickness
         solidify_mod.offset = 0
 
@@ -2363,7 +2364,7 @@ def contourLines(objs):
         plane.location.z += cl_offset_eff
 
         # Add Array modifier in Z direction
-        array_mod = plane.modifiers.new(name="ArrayZ", type="ARRAY")
+        array_mod = plane.modifiers.new(name=(_("ArrayZ")), type="ARRAY")
         array_mod.relative_offset_displace = (0, 0, 0)  # disable relative offset
         array_mod.constant_offset_displace = (0, 0, cl_distance_eff)  # fixed step in Z
         array_mod.use_relative_offset = False
@@ -2371,7 +2372,7 @@ def contourLines(objs):
         array_mod.count = 100  # you can adjust how many slices
 
         # Add Solidify modifier for thickness
-        solidify_mod = plane.modifiers.new(name="Solidify", type="SOLIDIFY")
+        solidify_mod = plane.modifiers.new(name=(_("Solidify")), type="SOLIDIFY")
         solidify_mod.thickness = cl_thickness
 
         # Apply modifiers up to solidify
@@ -2390,7 +2391,7 @@ def contourLines(objs):
         cutter.name = "CuttingPlaneCutter"
 
         # Add Boolean modifier with INTERSECT mode
-        bool_mod = plane.modifiers.new(name="Boolean", type="BOOLEAN")
+        bool_mod = plane.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
         bool_mod.operation = "INTERSECT"
         bool_mod.solver = "MANIFOLD"  # or 'EXACT'
         bool_mod.use_self = False

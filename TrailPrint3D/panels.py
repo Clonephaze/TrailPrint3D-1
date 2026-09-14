@@ -7,7 +7,7 @@ import textwrap
 
 import bpy  # type: ignore
 from bpy.app.translations import (  # type: ignore
-    pgettext_iface as _,  # For Translation of Text Required
+    pgettext as _,  # For Translation of Text Required
 )
 
 from . import addon_preferences, temp, updater
@@ -119,7 +119,7 @@ def _draw_element_category(
 
 
 class TP3D_PT_generate(bpy.types.Panel):
-    bl_label = "Create"
+    bl_label = _("Create")
     bl_idname = "TP3D_PT_generate"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -360,7 +360,7 @@ class TP3D_PT_generate(bpy.types.Panel):
             else:
                 col.label(text=_("Exclusive for Patreon Supporters"), icon="FUND")
                 col.label(text=_("- Chain together multiple Trails"))
-            col.label(text="Export Path:")
+            col.label(text=_("Export Path:"))
             row = col.row(align=True)
             row.label(icon="BLANK1")
             row.prop(props, "export_path")
@@ -813,7 +813,7 @@ class TP3D_PT_generate(bpy.types.Panel):
 
 
 class TP3D_PT_advanced(bpy.types.Panel):
-    bl_label = "Advanced"
+    bl_label = _("Advanced")
     bl_idname = "TP3D_PT_advanced"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -834,9 +834,9 @@ class TP3D_PT_advanced(bpy.types.Panel):
             box = layout.box()
             row = box.row(align=True)
             if temp.has3mf and not props.disable_3mf_export:
-                row.operator("tp3d.export_three_mf", text="3MF")
-            row.operator("tp3d.export_obj", text="OBJ")
-            row.operator("tp3d.export_stl", text="STL")
+                row.operator("tp3d.export_three_mf", text=_("3MF"))
+            row.operator("tp3d.export_obj", text=_("OBJ"))
+            row.operator("tp3d.export_stl", text=_("STL"))
             if not temp.has3mf:
                 box.operator(
                     "tp3d.install_three_mf",
@@ -847,9 +847,9 @@ class TP3D_PT_advanced(bpy.types.Panel):
             if temp.has3mf:
                 box.prop(props, "disable_3mf_export")
             if props.elementMode == "SINGLECOLORMODE_REMESH":
-                box.prop(props, "keep_positions")
+                box.prop(props, "keep_positions", text=_("Keep Positions"))
             if temp.has3mf and not props.disable_3mf_export:
-                box.prop(props, "slicer_profile_name")
+                box.prop(props, "slicer_profile_name", text=_("Slicer Profile Name"))
 
         # --- Advanced Generation Settings
         layout.prop(
@@ -926,7 +926,7 @@ class TP3D_PT_advanced(bpy.types.Panel):
             box.separator(factor=0.5)
             col = box.column(align=True)
             col.prop(props, "specialBlendFile")
-            col.prop(props, "specialCollectionName", text="Collection")
+            col.prop(props, "specialCollectionName", text=_("Collection"))
             if props.specialBlendFile == "puzzles.blend":
                 box.operator(
                     "tp3d.append_collection", text=_("Import + Generate"), icon="IMPORT"
@@ -1087,7 +1087,7 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 col.prop(props, "ccacheSize")
             box.prop(props, "disableElevationOutlierFix")
             box.separator(factor=0.5)
-            box.label(text=_("Elements (Water,forest,...) runs on the Overpass API"))
+            box.label(text=_("Elements (Water, forest, ...) runs on the Overpass API"))
             box.prop(props, "apiRetries")
             box.separator(factor=0.5)
             box.operator("tp3d.clear_cache", icon="BRUSH_DATA")
@@ -1116,9 +1116,9 @@ class TP3D_PT_advanced(bpy.types.Panel):
             col.label(text=props.o_time)
             box.separator(factor=0.5)
             col = box.column(align=True)
-            col.label(text="Opentopodata:")
+            col.label(text=_("Opentopodata:"))
             col.label(text=props.o_apiCounter_OpenTopoData)
-            col.label(text="OpenElevation:")
+            col.label(text=_("OpenElevation:"))
             col.label(text=props.o_apiCounter_OpenElevation)
             box.separator(factor=0.5)
             col = box.column(align=True)

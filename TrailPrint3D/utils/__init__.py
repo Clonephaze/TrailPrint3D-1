@@ -22,7 +22,6 @@ from .generation.elements import (
     _rg_apply_single_color_mode,
     _rg_build_terrain_elements,
 )
-from .generation.tile_orchestrator import runTileGeneration, generateJustTrail
 from .generation.input import (
     _rg_compute_trail_stats,
     _rg_load_coordinates,
@@ -31,6 +30,7 @@ from .generation.input import (
 from .generation.orchestrator import _GEN_FLAGS, runGeneration
 from .generation.output import _rg_assign_materials, _rg_export
 from .generation.terrain_gen import _rg_create_map_object
+from .generation.tile_orchestrator import generateJustTrail, runTileGeneration
 from .geo import *
 from .geometry2d import *
 from .io_gpx import *

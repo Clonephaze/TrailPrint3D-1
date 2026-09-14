@@ -4,6 +4,7 @@ import platform
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
+from bpy.app.translations import pgettext as _
 from mathutils import Vector  # type: ignore
 
 from .. import temp
@@ -207,7 +208,7 @@ def convert_text_to_mesh(text_obj_name, mesh_obj_name, merge = True):
 
     if merge == True:
         # Add boolean modifier
-        bool_mod = text_obj.modifiers.new(name="Boolean", type='BOOLEAN')
+        bool_mod = text_obj.modifiers.new(name=(_("Boolean")), type='BOOLEAN')
         bool_mod.object = mesh_obj
         bool_mod.operation = 'INTERSECT'
         bool_mod.solver = 'MANIFOLD'

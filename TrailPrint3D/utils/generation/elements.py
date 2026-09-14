@@ -3,6 +3,7 @@ import threading
 from typing import Any, cast
 
 import bpy  # type: ignore
+from bpy.app.translations import pgettext as _
 from bpy.types import Object  # type: ignore
 
 from ... import constants as const
@@ -216,7 +217,7 @@ def _rg_build_terrain_elements(
     _ELEM_PHASE_START = phase_start
     _ELEM_PHASE_END = phase_end
     if map_km is None:
-        raise GenerationError("map_km value not set properly.")
+        raise GenerationError(_("map_km value not set properly."))
     _active_elem_flags = (
         [
             flag
@@ -333,7 +334,7 @@ def _rg_build_terrain_elements(
     # The final set_fetch_done/empty/filtered below flips each badge to ✓ once
     # the mesh operations for that kind are complete.
     if _ov.active:
-        for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS:
+        for key, flag_attr, max_size, _unused, _unused2 in COLORING_ELEMENTS:
             if (
                 (
                     flag_attr(tp3d)
@@ -520,7 +521,7 @@ def _rg_build_terrain_elements(
             _ov.set_fetch_progress("roads", 0.0)
             _ov.set_fetch_ready("roads")
             if gen.runtime.sScaleHor is None:
-                raise GenerationError("ScaleHor not Set")
+                raise GenerationError(_("ScaleHor not Set"))
             # Cache the terrain's own triangulated grid NOW, while terrain is
             # still pristine (no boolean cuts yet) -- both create_roads' own
             # cutter (so it stops exactly at the terrain surface instead of
@@ -667,7 +668,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
             return thickerCurves, trail_thick_ribbons
 
         except Exception as e:
-            raise GenerationError(f"Failed to process curve projections: {e}") from e
+            raise GenerationError(_("Failed to process curve projections: {e}").format(e=str(e))) from e
 
     def _clip_paint_trail_curves_to_map(gen: GenerationContext, map_obj):
         """Trim each PAINT-mode trail curve's spline points to the map's true
@@ -715,9 +716,13 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
         from shapely.affinity import translate as _shp_translate
         from shapely.geometry import LineString
 
-        from ..mesh_ops import _clean_solid_mesh, _extrude_flat_polygon, boolean_operation
-        from ..scene import remove_objects
         from .. import geometry2d as _g2d
+        from ..mesh_ops import (
+            _clean_solid_mesh,
+            _extrude_flat_polygon,
+            boolean_operation,
+        )
+        from ..scene import remove_objects
 
         def _iter_lines(geom):
             if geom is None or geom.is_empty:
@@ -823,7 +828,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
 
             gen.runtime.curveObjs = clipped_objs
         except Exception as e:
-            raise GenerationError(f"Failed to clip trail to map shape: {e}") from e
+            raise GenerationError(_("Failed to clip trail to map shape: {e}").format(e=str(e))) from e
 
     def _collect_paint_trail_ribbons(gen: GenerationContext):
         """In PAINT mode, derive 2D ribbon footprints from _Trail curve objects."""
@@ -862,7 +867,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
             return trail_thick_ribbons
 
         except Exception as e:
-            raise GenerationError(f"Failed to collect paint trail ribbons: {e}") from e
+            raise GenerationError(_("Failed to collect paint trail ribbons: {e}").format(e=str(e))) from e
 
     def _store_trail_union_for_texture(
         gen: GenerationContext, terrain: dict, trail_thick_ribbons
@@ -878,7 +883,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
             osm_polygons["TRAIL"] = _g2d.union(trail_thick_ribbons)
         except Exception as e:
             raise GenerationError(
-                f"Failed to store trail union for texture: {e}"
+                _("Failed to store trail union for texture: {e}").format(e=str(e))
             ) from e
 
     def _apply_single_color_mode_booleans(
@@ -961,7 +966,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
 
         except Exception as e:
             raise GenerationError(
-                f"Failed to apply single-color mode booleans: {e}"
+                _("Failed to apply single-color mode booleans: {e}").format(e=str(e))
             ) from e
 
     def _cut_roads_from_terrain_and_elements(
@@ -1012,7 +1017,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                         ]
                         _ec = _g2d._cdt_triangulate(_part, _ext, _holes)
                         if _ec:
-                            _v2, _t2, _ = _ec
+                            _v2, _t2, _unused = _ec
                             _base = len(_all_v2d)
                             _all_v2d.extend(_v2)
                             _all_tris += [
@@ -1069,7 +1074,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
 
         except Exception as e:
             raise GenerationError(
-                f"Failed to cut roads from terrain and elements: {e}"
+                _("Failed to cut roads from terrain and elements: {e}").format(e=str(e))
             ) from e
 
     def _subtract_trail_from_buildings(
@@ -1096,7 +1101,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
 
         except Exception as e:
             raise GenerationError(
-                f"Failed to subtract trail from buildings: {e}"
+                _("Failed to subtract trail from buildings: {e}").format(e=str(e))
             ) from e
 
     def _finalise_roads(gen: GenerationContext, terrain: dict, trail_thick_ribbons):
@@ -1172,7 +1177,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
             bpy.ops.object.mode_set(mode="OBJECT")
 
         except Exception as e:
-            raise GenerationError(f"Failed to finalise roads: {e}") from e
+            raise GenerationError(_("Failed to finalise roads: {e}").format(e=str(e))) from e
 
     def _cleanup_thicker_curves(thickerCurves, debug: bool, map_size: float):
         """Either move thicker curves aside (debug) or delete them."""
@@ -1185,7 +1190,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
 
                 remove_objects(thickerCurves)
         except Exception as e:
-            raise GenerationError(f"Failed to clean up thicker curves: {e}") from e
+            raise GenerationError(_("Failed to clean up thicker curves: {e}").format(e=str(e))) from e
 
     obj = gen.runtime.mapObject
     terrain: dict[str, Any] = cast(dict[str, Any], gen.runtime.elements)

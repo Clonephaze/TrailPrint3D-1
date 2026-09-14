@@ -5,6 +5,7 @@ import os
 import time
 
 import bpy  # type: ignore
+from bpy.app.translations import pgettext as _
 
 from ... import constants as const
 from ... import progress as _progress
@@ -124,10 +125,10 @@ def fetch_osm_data(
         """
 
     OSM_QUERY_BUILDERS = {
-        "WATER": lambda s, w, n, e, ponds=True, small_rivers=True, big_rivers=True, **_: (
+        "WATER": lambda s, w, n, e, ponds=True, small_rivers=True, big_rivers=True, **ctx: (
         _build_water_query(s, w, n, e, ponds, small_rivers, big_rivers)
         ),
-        "FOREST": lambda s, w, n, e, **_: _simple_query(
+        "FOREST": lambda s, w, n, e, **ctx: _simple_query(
             s,
             w,
             n,
@@ -139,7 +140,7 @@ def fetch_osm_data(
                 'relation["landuse"="forest"]',
             ],
         ),
-        "SCREE": lambda s, w, n, e, **_: _simple_query(
+        "SCREE": lambda s, w, n, e, **ctx: _simple_query(
             s,
             w,
             n,
@@ -152,7 +153,7 @@ def fetch_osm_data(
                 'nwr["natural"="bare_rock"]',
             ],
         ),
-        "CITY": lambda s, w, n, e, **_: _simple_query(
+        "CITY": lambda s, w, n, e, **ctx: _simple_query(
             s,
             w,
             n,
@@ -162,7 +163,7 @@ def fetch_osm_data(
                 'relation["landuse"~"residential|urban|commercial|industrial"]',
             ],
         ),
-        "GREENSPACE": lambda s, w, n, e, **_: _simple_query(
+        "GREENSPACE": lambda s, w, n, e, **ctx: _simple_query(
             s,
             w,
             n,
@@ -180,7 +181,7 @@ def fetch_osm_data(
                 'relation["landuse"="village_green"]',
             ],
         ),
-        "FARMLAND": lambda s, w, n, e, **_: _simple_query(
+        "FARMLAND": lambda s, w, n, e, **ctx: _simple_query(
             s,
             w,
             n,
@@ -192,7 +193,7 @@ def fetch_osm_data(
                 'relation["landuse"="farmyard"]',
             ],
         ),
-        "GLACIER": lambda s, w, n, e, **_: _simple_query(
+        "GLACIER": lambda s, w, n, e, **ctx: _simple_query(
             s,
             w,
             n,
@@ -202,7 +203,7 @@ def fetch_osm_data(
                 'relation["natural"="glacier"]',
             ],
         ),
-        "COASTLINE": lambda s, w, n, e, **_: _simple_query(
+        "COASTLINE": lambda s, w, n, e, **ctx: _simple_query(
             s,
             w,
             n,
@@ -211,7 +212,7 @@ def fetch_osm_data(
                 'way["natural"="coastline"]',
             ],
         ),
-        "BUILDINGS": lambda s, w, n, e, **_: _simple_query(
+        "BUILDINGS": lambda s, w, n, e, **ctx: _simple_query(
             s,
             w,
             n,
@@ -221,7 +222,7 @@ def fetch_osm_data(
                 'nwr["building:part"]',
             ],
         ),
-        "STREETS": lambda s, w, n, e, mapsize=0, tier_active=None, exclude_alleys=True, **_: (
+        "STREETS": lambda s, w, n, e, mapsize=0, tier_active=None, exclude_alleys=True, **ctx: (
             _build_streets_query(s, w, n, e, mapsize, tier_active, exclude_alleys)
         ),
     }
@@ -286,7 +287,7 @@ def fetch_osm_data(
 
     builder = OSM_QUERY_BUILDERS.get(kind)
     if builder is None:
-        raise ValueError(f"Unknown OSM kind: {kind}")
+        raise ValueError(_("Unknown OSM kind: {kind}").format(kind=kind))
     query = builder(
         south,
         west,

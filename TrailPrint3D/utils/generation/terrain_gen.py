@@ -4,6 +4,7 @@ import time
 
 import bpy  # type: ignore
 import numpy as np  # type: ignore
+from bpy.app.translations import pgettext as _
 from mathutils import Vector  # type: ignore
 
 from ... import constants as const
@@ -230,7 +231,7 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
         )
         result.update(fetched)
 
-    t = threading.Thread(target=_run, daemon=True, name="osm-prefetch")
+    t = threading.Thread(target=_run, daemon=True, name=_("osm-prefetch"))
     t.start()
     gen.fetch.fetchThread = t
     gen.fetch.fetchResult = result
@@ -279,7 +280,7 @@ def _rg_start_satellite_prefetch(gen: GenerationContext):
         result["landcover"] = landcover
         result["photo"] = photo
 
-    t = threading.Thread(target=_run, daemon=True, name="satellite-prefetch")
+    t = threading.Thread(target=_run, daemon=True, name=_("satellite-prefetch"))
     t.start()
     gen.fetch.satelliteThread = t
     gen.fetch.satelliteResult = result
@@ -347,7 +348,7 @@ def _rg_fetch_elevation(gen: GenerationContext):
 
     if gen.runtime.elDiff is None:
         raise GenerationError(
-            "Elevation fetch returned no data — check your API settings and connection"
+            _("Elevation fetch returned no data — check your API settings and connection")
         )
     if gen.settings.elevationMode == "FIXED":
         autoScale = gen.settings.fixedHeightMM / (gen.runtime.elDiff / 1000) if gen.runtime.elDiff > 0 else gen.settings.fixedHeightMM
@@ -358,14 +359,14 @@ def _rg_fetch_elevation(gen: GenerationContext):
 
     if gen.runtime.tileVerts and len(gen.runtime.tileVerts) < 1000:
         warning.add_warning(
-            f"Mesh has only {len(gen.runtime.tileVerts)} Points. Increase Resolution for higher Quality",
+            _("Mesh has only {num_points} Points. Increase Resolution for higher Quality").format(num_points=len(gen.runtime.tileVerts)),
             "warn",
         )
     if gen.settings.elevationMode != "FIXED" and (
         gen.runtime.elDiff == 0 or (gen.runtime.elDiff / 1000) * autoScale * gen.settings.scaleElevation < 2
     ):
         warning.add_warning(
-            "Terrain seems to be really flat. If not intended, increase Elevation scale",
+            _("Terrain seems to be really flat. If not intended, increase Elevation scale"),
             icon="warn",
         )
 
@@ -564,17 +565,17 @@ def _rg_build_trail_curves(gen: GenerationContext):
             curveObjs = [bpy.context.view_layer.objects.active]
     except RuntimeError:
         raise GenerationError(
-            "Bad Response from API while creating the curve. If this happens everytime contact dev"
+            _("Bad Response from API while creating the curve. If this happens every time contact dev")
         )
 
     if curveObj is None and curveObjs is None:
-        raise GenerationError("No trail curves created")
+        raise GenerationError(_("No trail curves created"))
 
     if curveObj is not None and curveObjs is None:
         curveObjs = splitCurves(curveObj)
 
     if curveObjs is None:
-        raise GenerationError("Failed to split curveObj")
+        raise GenerationError(_("Failed to split curveObj"))
 
     gen.runtime.curveObjs = curveObjs
     print(f"Curve objects created: {len(curveObjs) or 'unknown'}")
@@ -594,24 +595,24 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
 
     # --- Validate input ---
     if gen.runtime.mapObject is None:
-        raise GenerationError("No map object assigned; cannot displace terrain.")
+        raise GenerationError(_("No map object assigned; cannot displace terrain."))
     if gen.runtime.mapObject.type != "MESH":
-        raise GenerationError(f"Map object '{gen.runtime.mapObject.name}' is not a mesh.")
+        raise GenerationError(_("Map object '{map_name}' is not a mesh.").format(map_name=gen.runtime.mapObject.name))
     if (
         not hasattr(gen.runtime, "tileVerts")
         or gen.runtime.tileVerts is None
         or len(gen.runtime.tileVerts) == 0
     ):
         raise GenerationError(
-            "Missing or empty 'tileVerts' – elevation data not available."
+            _("Missing or empty 'tileVerts' — elevation data not available.")
         )
 
     mesh = gen.runtime.mapObject.data
     _total_verts = len(mesh.vertices)
     if _total_verts == 0:
-        raise GenerationError("Map object has no vertices.")
+        raise GenerationError(_("Map object has no vertices."))
 
-    print(f"Displacing terrain: {mesh.name} ({_total_verts} vertices)")
+    print(_("Displacing terrain: {mesh_name} ({num_verts} vertices)").format(mesh_name=mesh.name, num_verts=_total_verts))
 
     # --- Bulk read vertex coordinates ---
     co_flat = np.empty(_total_verts * 3, dtype=np.float64)
@@ -624,7 +625,7 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
         co_h = np.hstack([co, np.ones((_total_verts, 1), dtype=np.float64)])
         world_y = (m @ co_h.T).T[:, 1]
     except Exception as e:  # noqa: BLE001
-        raise GenerationError(f"Failed to transform vertex coordinates: {e}")
+        raise GenerationError(_("Failed to transform vertex coordinates: {error}").format(error=e))
 
     # --- Mercator latitude correction ---
     try:
@@ -633,15 +634,15 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
         )
         merc = 1.0 / np.cos(lat_rad)
     except Exception as e:  # noqa: BLE001
-        raise GenerationError(f"Mercator correction failed: {e}")
+        raise GenerationError(_("Mercator correction failed: {error}").format(error=e))
 
     # --- Compute new Z for all vertices ---
     try:
         tile_verts = np.array(gen.runtime.tileVerts, dtype=np.float64)
         if tile_verts.shape != (_total_verts,):
-            # if tileVerts is a list of lists? adapt as needed – here assume flat array
+            # if tileVerts is a list of lists? adapt as needed — here assume flat array
             raise ValueError(
-                f"tileVerts length {len(tile_verts)} doesn't match vertices {_total_verts}"
+                _("tileVerts length {tile_verts_len} doesn't match vertices {total_verts}").format(tile_verts_len=len(tile_verts), total_verts=_total_verts)
             )
         new_z = (tile_verts / 1000.0) * gen.settings.scaleElevation * gen.runtime.autoScale * merc
         if gen.settings.smoothTerrainTop:
@@ -654,7 +655,7 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
         mesh.vertices.foreach_set("co", co.ravel())
         mesh.update()
     except Exception as e:  # noqa: BLE001
-        raise GenerationError(f"Failed to apply elevation displacement: {e}")
+        raise GenerationError(_("Failed to apply elevation displacement: {error}").format(error=e))
 
     # --- Store min/max and extrusion offset ---
     lowestZ = float(new_z.min())
@@ -693,7 +694,7 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
                     f"[DEBUG] Terrain avg slope: {_avg_t:.4f}  ({math.degrees(math.atan(_avg_t)):.2f}°)"
                 )
         except Exception as e:  # noqa: BLE001
-            raise GenerationError(f"[DEBUG] Slope computation failed: {e}")
+            raise GenerationError(_("Slope computation failed: {error}").format(error=e))
 
     # --- Snap trail curves to the displaced surface ---
     if gen.settings.overwritePathElevation:
@@ -714,7 +715,7 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
                         RaycastCurveToMesh(curve, gen.runtime.mapObject)
                     except Exception as e:  # noqa: BLE001
                         raise GenerationError(
-                            f"Failed to snap curve '{curve.name}' to terrain: {e}"
+                            _("Failed to snap curve '{curve_name}' to terrain: {error}").format(curve_name=curve.name, error=e)
                         )
                 else:
                     print(f"Skipping invalid curve object: {curve}")
