@@ -731,7 +731,7 @@ def get_elevation_localDem(coords, lenv=0, pointsDone=0, progress_cb=None):
         progress_cb(10)
 
     # deferred to avoid import cost when unused
-    from .geotiff import GeoTiffError, build_tile_index, read_geotiff, sample_geotiff, sample_tile_index
+    from .geotiff import GeoTiffError, build_tile_index, dem_contains_point, read_geotiff, sample_geotiff, sample_tile_index
 
     if os.path.isdir(demFilePath):
         index = build_tile_index(demFilePath)
@@ -774,7 +774,13 @@ def get_elevation_localDem(coords, lenv=0, pointsDone=0, progress_cb=None):
     if progress_cb:
         progress_cb(50)
 
+    missing = sum(1 for lat, lon in coords if not dem_contains_point(dem, lat, lon))
     elevations = [sample_geotiff(dem, lat, lon) for lat, lon in coords]
+
+    if missing:
+        _progress.WarningsOverlay.add_warning(
+            f"Local DEM: {missing} of {len(coords)} points fell outside the DEM file's coverage "
+            "(edge-clamped) — you're generating outside this dataset", "warn")
 
     if progress_cb:
         progress_cb(100)

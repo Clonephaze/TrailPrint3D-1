@@ -514,7 +514,7 @@ def _project_query_point(dem, lat, lon):
     return lon, lat
 
 
-def _dem_contains_point(dem, lat, lon):
+def dem_contains_point(dem, lat, lon):
     """True if (lat, lon) falls within dem's actual raster extent, tested in its own
     native coordinate space rather than lat/lon.
 
@@ -528,6 +528,10 @@ def _dem_contains_point(dem, lat, lon):
     along every tile border. Testing containment in the tile's own easting/northing
     (where it really is an axis-aligned rectangle, by construction) is exact, so only
     the one tile that genuinely contains the point passes.
+
+    Also used by get_elevation_path_localDem for the single-file case, to flag points
+    that fall outside the DEM's coverage instead of silently edge-clamping them via
+    sample_geotiff.
     """
     x, y = _project_query_point(dem, lat, lon)
     x0, y0 = dem["origin_x"], dem["origin_y"]
@@ -541,10 +545,11 @@ def sample_geotiff(dem, lat, lon):
 
     For a UTM-projected DEM, lat/lon is first converted to that zone's easting/northing.
     Points outside the raster are clamped to the nearest edge pixel rather than
-    failing -- fine for a single standalone DEM, but callers sampling a multi-tile
-    folder should verify containment with _dem_contains_point first (see
-    sample_tile_index) so a boundary point is never silently clamped onto the wrong
-    neighboring tile's edge instead of read from the tile it's actually in.
+    failing -- callers that care whether a point is actually covered (a multi-tile
+    folder, or flagging out-of-coverage points for a single file) should verify
+    containment with dem_contains_point first (see sample_tile_index) so a boundary
+    point is never silently clamped onto the wrong neighboring tile's edge instead of
+    read from the tile it's actually in.
     """
     x, y = _project_query_point(dem, lat, lon)
     col = round((x - dem["origin_x"]) / dem["pixel_scale_x"])
@@ -617,7 +622,7 @@ def build_tile_index(folder):
     tile's actual four corners (see get_geotiff_footprint) for drawing an overlay that
     lines up edge-to-edge with its neighbors; "header" is the full header_only
     read_geotiff() result, kept so sample_tile_index can test *exact* containment (via
-    _dem_contains_point) without re-reading the file or needing its pixel data.
+    dem_contains_point) without re-reading the file or needing its pixel data.
 
     A tile whose header can't be parsed (corrupt download, wrong format, a stray
     non-DEM .tif, ...) is skipped with a printed warning rather than failing the
@@ -646,7 +651,7 @@ def sample_tile_index(index, lat, lon, cache):
     Each candidate is checked two ways: first the cheap "bounds" lat/lon box (a slight
     over-approximation for a UTM tile, so this only narrows the search -- see
     get_geotiff_footprint), then an exact test in that tile's own native coordinate
-    space (_dem_contains_point) using its already-known header, before ever reading its
+    space (dem_contains_point) using its already-known header, before ever reading its
     pixel data. Skipping straight to sample_geotiff on the first bounds-only match would
     let a point in the thin overlap band between two neighboring tiles' bounding boxes
     get silently edge-clamped onto the WRONG tile's boundary pixel -- exactly the
@@ -662,7 +667,7 @@ def sample_tile_index(index, lat, lon, cache):
         b = entry["bounds"]
         if not (b["south"] <= lat <= b["north"] and b["west"] <= lon <= b["east"]):
             continue
-        if not _dem_contains_point(entry["header"], lat, lon):
+        if not dem_contains_point(entry["header"], lat, lon):
             continue
         path = entry["path"]
         if path not in cache:

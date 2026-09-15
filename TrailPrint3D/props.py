@@ -399,7 +399,6 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
                         "covering a larger area, in WGS84 lat/lon or a WGS84/ETRS89/NAD83 UTM zone"),
         default="",
         maxlen=1024,
-        subtype='FILE_PATH'
     )# type: ignore
 
     openTopographyDataset: bpy.props.EnumProperty(

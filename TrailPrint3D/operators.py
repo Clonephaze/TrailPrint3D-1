@@ -2002,35 +2002,33 @@ class TP3D_OT_pick_svg_file(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
 
-class TP3D_OT_pick_dem_file(bpy.types.Operator):
-    bl_idname = "tp3d.pick_dem_file"
-    bl_label = "Use DEM File"
-    bl_description = "Use the selected GeoTIFF DEM file"
+class TP3D_OT_pick_dem_path(bpy.types.Operator):
+    bl_idname = "tp3d.pick_dem_path"
+    bl_label = "Use DEM File or Tile Folder"
+    bl_description = (
+        "Use a single GeoTIFF DEM file, or navigate into a folder of tiled GeoTIFF "
+        "DEM files (e.g. a bulk multi-tile download) and accept without selecting a file"
+    )
 
-    filepath: StringProperty(subtype='FILE_PATH')  # type: ignore
+    filepath: StringProperty(subtype='FILE_PATH', options={'SKIP_SAVE'})  # type: ignore
+    directory: StringProperty(subtype='DIR_PATH', options={'SKIP_SAVE'})  # type: ignore
+    filename: StringProperty(options={'SKIP_SAVE'})  # type: ignore
     filter_glob: StringProperty(default="*.tif;*.tiff", options={'HIDDEN'})  # type: ignore
 
     def execute(self, context):
-        context.scene.tp3d.demFilePath = self.filepath
+        # filename/filepath can retain a stale value from a previous invocation even
+        # when the user only browsed into a folder this time, so verify the file
+        # actually exists rather than trusting filename's truthiness.
+        context.scene.tp3d.demFilePath = self.filepath if os.path.isfile(self.filepath) else self.directory
         return {'FINISHED'}
 
     def invoke(self, context, event):
-        context.window_manager.fileselect_add(self)
-        return {'RUNNING_MODAL'}
-
-
-class TP3D_OT_pick_dem_folder(bpy.types.Operator):
-    bl_idname = "tp3d.pick_dem_folder"
-    bl_label = "Use DEM Tile Folder"
-    bl_description = "Use a folder of tiled GeoTIFF DEM files (e.g. a bulk multi-tile download)"
-
-    directory: StringProperty(subtype='DIR_PATH')  # type: ignore
-
-    def execute(self, context):
-        context.scene.tp3d.demFilePath = self.directory
-        return {'FINISHED'}
-
-    def invoke(self, context, event):
+        current = context.scene.tp3d.demFilePath
+        if current:
+            if os.path.isfile(current):
+                self.filepath = current
+            elif os.path.isdir(current):
+                self.directory = current
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
 

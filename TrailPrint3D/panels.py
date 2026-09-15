@@ -616,8 +616,7 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 col = box2.column(align=True)
                 row = col.row(align=True)
                 row.prop(props, "demFilePath", text=_("DEM File"))
-                row.operator("tp3d.pick_dem_file", text="", icon='FILEBROWSER')
-                row.operator("tp3d.pick_dem_folder", text="", icon='FILE_FOLDER')
+                row.operator("tp3d.pick_dem_path", text="", icon='FILEBROWSER')
                 col.separator(factor=0.5)
                 draw_wrapped_label(col, context, _(
                     "GeoTIFF only — WGS84 lat/lon, or UTM in WGS84 (EPSG:32601-32660 N / "
