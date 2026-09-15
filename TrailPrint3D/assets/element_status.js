@@ -7,11 +7,11 @@
 // __ELEMENT_STATES_JS__) to already be defined -- both are per-request
 // snapshots the server inlines earlier in the same <script> block.
 //
-// 'elevation' is deliberately left out of this row -- it has no toggle of
-// its own (the base terrain height is always fetched), so there was
-// nothing meaningful to show/click; its own quick setting (Elevation
+// 'elevation' is deliberately left out of both of these -- it has no
+// toggle of its own (the base terrain height is always fetched), so there
+// was nothing meaningful to show/click; its own quick setting (Elevation
 // Scale) lives in the Settings modal's Map tab instead.
-var ELEMENT_STATUS_ORDER = [
+var ELEMENT_STATUS_ORDER_OSM = [
     ['water', 'Water'],
     ['forest', 'Forest'],
     ['scree', 'Scree'],
@@ -22,6 +22,32 @@ var ELEMENT_STATUS_ORDER = [
     ['buildings', 'Buildings'],
     ['roads', 'Roads']
 ];
+
+// ESA WorldCover's own chip set -- mirrors panels.py's _LANDCOVER_COLOR_ROWS
+// (same order). Shares the 'water'/'forest'/'city'/'greenspace'/'farmland'/
+// 'glacier' keys with the OSM order above on purpose (same on-screen
+// concept, different data source, and this page only ever shows one order
+// at a time -- see ELEMENT_SOURCE below), reusing the same ELEMENT_ICONS
+// entries; 'mountain' is WorldCover-only.
+var ELEMENT_STATUS_ORDER_WORLDCOVER = [
+    ['water', 'Water'],
+    ['forest', 'Forest'],
+    ['mountain', 'Mountain'],
+    ['city', 'City Boundaries'],
+    ['greenspace', 'Greenspace'],
+    ['farmland', 'Farmland'],
+    ['glacier', 'Glacier']
+];
+
+// ELEMENT_SOURCE (from __ELEMENT_SOURCE_JS__) is only inlined by
+// premium/map_generator_pe.html today -- every other picker page leaves it
+// undefined and keeps the OSM order, unaffected by whatever elementSource
+// the scene happens to have.
+function tp3dIsWorldCover() {
+    return typeof ELEMENT_SOURCE !== 'undefined' && ELEMENT_SOURCE === 'WORLDCOVER';
+}
+
+var ELEMENT_STATUS_ORDER = tp3dIsWorldCover() ? ELEMENT_STATUS_ORDER_WORLDCOVER : ELEMENT_STATUS_ORDER_OSM;
 
 // Shared mutable copy of ELEMENT_STATES so a click anywhere (this strip, or
 // a card in the Settings modal's Elements tab) can repaint every element
@@ -48,7 +74,12 @@ var TP3D_COMPOSITE_FLAGS = {
     roads: { subflags: ['elSHighwaysActive', 'elSMajorActive', 'elSMinorActive', 'elSResidentialActive', 'elSServiceActive', 'elSFootwayActive', 'elSCycleBridleActive', 'elSTrackActive', 'elSPathActive'], bootstrap: 'elSResidentialActive' }
 };
 
+// TP3D_COMPOSITE_FLAGS is an OSM-only concept -- under WorldCover, 'water'
+// is just another single-flag category (see _LANDCOVER_SINGLE_FLAGS in
+// utils/ui_state.py), so the lookup must never apply here even though the
+// key string is shared between the two orders above.
 function tp3dCompositeIsActive(key) {
+    if (tp3dIsWorldCover()) return false;
     var def = TP3D_COMPOSITE_FLAGS[key];
     return !!def && typeof ADVANCED_SETTINGS_STATE !== 'undefined'
         && def.subflags.some(function(f) { return !!ADVANCED_SETTINGS_STATE[f]; });
@@ -94,7 +125,7 @@ function tp3dToggleElement(key) {
     TP3D_ELEMENT_STATE[key] = !TP3D_ELEMENT_STATE[key];
     tp3dRepaintElementToggle(key);
 
-    var def = TP3D_COMPOSITE_FLAGS[key];
+    var def = tp3dIsWorldCover() ? null : TP3D_COMPOSITE_FLAGS[key];
     if (def && typeof ADVANCED_SETTINGS_STATE !== 'undefined') {
         ADVANCED_SETTINGS_STATE._compositeRemembered = ADVANCED_SETTINGS_STATE._compositeRemembered || {};
         if (tp3dCompositeIsActive(key)) {
@@ -121,9 +152,18 @@ function tp3dToggleElement(key) {
     }).catch(function() {});
 }
 
-(function renderElementStatus() {
+// Named (not an IIFE) so premium/map_generator_pe.html's OSM/ESA WorldCover
+// switch (settings_modal.js) can call this again after patching
+// ELEMENT_SOURCE/ELEMENT_STATUS_ORDER/TP3D_ELEMENT_STATE in place, instead
+// of reloading the whole page (which used to close the Settings modal the
+// switch was clicked from).
+function tp3dRenderElementStatus() {
     var container = document.getElementById('elementStatus');
     if (!container) return;
+    // Clears only the previously-rendered chips -- not the Settings gear
+    // button, which settings_modal.js prepends into this same container --
+    // so a re-render after switching source doesn't disturb it.
+    container.querySelectorAll('.element-chip').forEach(function(el) { el.remove(); });
 
     ELEMENT_STATUS_ORDER.forEach(function(entry) {
         var key = entry[0], label = entry[1];
@@ -147,4 +187,5 @@ function tp3dToggleElement(key) {
         container.appendChild(chip);
         tp3dRepaintElementToggle(key);
     });
-})();
+}
+tp3dRenderElementStatus();

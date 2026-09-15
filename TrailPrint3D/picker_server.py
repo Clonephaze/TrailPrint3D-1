@@ -73,6 +73,39 @@ def drain_pending_advanced_settings() -> list:
     return updates
 
 
+def refresh_state_snapshots(element_states: dict | None = None, settings_state: dict | None = None,
+                             advanced_settings: dict | None = None, element_source: str | None = None) -> None:
+    """Re-point the running server's cached page-load snapshots (ELEMENT_STATES/
+    SETTINGS_STATE/ADVANCED_SETTINGS_STATE/ELEMENT_SOURCE, see start_picker's
+    own docstring) at fresh dicts, so a later browser reload of '/' serves
+    current scene state instead of whatever was true when start_picker() was
+    first called.
+
+    Needed for premium/map_generator_pe.html's OSM/ESA WorldCover switch
+    (settings_modal.js): flipping tp3d.elementSource via /update_setting only
+    changes the scene property (applied on the calling operator's modal()
+    timer tick, via apply_setting_update) -- it does NOT by itself update
+    what a fresh GET '/' would serve, since those were snapshotted once at
+    start_picker() time. The switch's own JS reloads the page a moment after
+    posting the change; call this from the same modal() tick that drains the
+    pending update (right after applying it) so that reload actually sees
+    the new source's chips/cards instead of the stale ones.
+
+    Same main-thread-only reasoning as apply_element_toggle et al. -- call
+    only from the calling operator's modal() timer tick, never from the HTTP
+    server's own background thread. Any argument left None keeps that
+    snapshot as it was.
+    """
+    if element_states is not None:
+        _Handler.element_states_json = json.dumps(element_states).encode('utf-8')
+    if settings_state is not None:
+        _Handler.settings_state_json = json.dumps(settings_state).encode('utf-8')
+    if advanced_settings is not None:
+        _Handler.advanced_settings_json = json.dumps(advanced_settings).encode('utf-8')
+    if element_source is not None:
+        _Handler.element_source = element_source
+
+
 _HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'multitile_generator.html'
 
 # Markup shared by every picker page (puzzleGenerator.html,
@@ -257,6 +290,7 @@ class _Handler(BaseHTTPRequestHandler):
     element_states_json: bytes = b'{}'
     settings_state_json: bytes = b'{}'
     advanced_settings_json: bytes = b'{}'
+    element_source: str = 'OSM'
     dem_bounds_json: bytes = b'null'
     obj_size: float = 100.0
     html_path: pathlib.Path = _HTML_PATH
@@ -266,6 +300,28 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        if self.path == '/get_source_state':
+            # premium/map_generator_pe.html's OSM/ESA WorldCover switch
+            # (settings_modal.js) polls this after posting the switch to
+            # /update_setting, instead of reloading the whole page (which
+            # closed the Settings modal it was clicked from -- unintuitive,
+            # since the point was to keep tweaking settings). Combines the
+            # 3 snapshots refresh_state_snapshots keeps current into one
+            # response so the page can patch its own ELEMENT_SOURCE/
+            # ELEMENT_STATES/SETTINGS_STATE/ADVANCED_SETTINGS_STATE in place
+            # and just re-render the chip strip + Elements tab.
+            body = json.dumps({
+                'elementSource': self.element_source,
+                'elementStates': json.loads(self.element_states_json.decode('utf-8')),
+                'settingsState': json.loads(self.settings_state_json.decode('utf-8')),
+                'advancedSettings': json.loads(self.advanced_settings_json.decode('utf-8')),
+            }).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == '/get_existing_maps':
             body = self.existing_maps_json
             self.send_response(200)
@@ -337,6 +393,7 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__LOCATION_PANEL_JS__', _LOCATION_PANEL_JS_PATH.read_text(encoding='utf-8'))
             .replace('__ELEMENT_ICONS_JS__', _element_icons_js())
             .replace('__ELEMENT_STATES_JS__', 'var ELEMENT_STATES = ' + self.element_states_json.decode('utf-8') + ';')
+            .replace('__ELEMENT_SOURCE_JS__', 'var ELEMENT_SOURCE = ' + json.dumps(self.element_source) + ';')
             .replace('__ELEMENT_STATUS_JS__', _ELEMENT_STATUS_JS_PATH.read_text(encoding='utf-8'))
             .replace('__SETTINGS_STATE_JS__', 'var SETTINGS_STATE = ' + self.settings_state_json.decode('utf-8') + ';')
             .replace('__ADVANCED_SETTINGS_STATE_JS__', 'var ADVANCED_SETTINGS_STATE = ' + self.advanced_settings_json.decode('utf-8') + ';')
@@ -472,7 +529,8 @@ class _Handler(BaseHTTPRequestHandler):
 def start_picker(result_path: str, existing_maps: list | None = None, existing_trails: list | None = None,
                   obj_size: float = 100.0, html_path: 'pathlib.Path | str | None' = None,
                   element_states: dict | None = None, settings_state: dict | None = None,
-                  advanced_settings: dict | None = None, dem_bounds: dict | None = None) -> HTTPServer:
+                  advanced_settings: dict | None = None, dem_bounds: dict | None = None,
+                  element_source: str | None = None) -> HTTPServer:
     """Start the HTTP server, open the page in the browser, and return the server.
 
     The server writes confirmed coordinate JSON to *result_path* on POST /confirm,
@@ -533,6 +591,15 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     which area the file has data for while drawing their own selection. None (the
     default) draws nothing -- either a different elevation API is active, or nothing
     could be read.
+
+    *element_source*, if given, is the scene's tp3d.elementSource ("OSM" or
+    "WORLDCOVER") -- inlined into the page as ELEMENT_SOURCE. Only
+    premium/map_generator_pe.html actually carries the __ELEMENT_SOURCE_JS__
+    token in its script block (see element_status.js/settings_modal.js), so
+    this is a no-op substitution for every other picker page: their
+    element-status strip and Settings modal Elements tab keep behaving
+    exactly as before, undisturbed by whatever elementSource the scene
+    happens to have.
     """
     global _active_server, _pending_toggles, _pending_settings, _pending_advanced_settings
     if _active_server is not None:
@@ -564,6 +631,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     _Handler.element_states_json = json.dumps(element_states or {}).encode('utf-8')
     _Handler.settings_state_json = json.dumps(settings_state or {}).encode('utf-8')
     _Handler.advanced_settings_json = json.dumps(advanced_settings or {}).encode('utf-8')
+    _Handler.element_source = element_source or 'OSM'
     _Handler.dem_bounds_json = json.dumps(dem_bounds).encode('utf-8')
     _Handler.obj_size = obj_size or 100.0
     _Handler.html_path = html_path

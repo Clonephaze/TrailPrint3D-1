@@ -474,13 +474,6 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     api: bpy.props.EnumProperty(
         name="api",
         items=[
-            ("OPENTOPODATA", "Opentopodata", _("Slower but more accurate elevation")),
-            (
-                "OPEN-ELEVATION",
-                "Open-Elevation",
-                _("Faster but some regions are low quality"),
-            ),
-            ("TERRAIN-TILES", "Terrain-Tiles", _("Currently Fastest available set")),
             (
                 "MAPTERHORN",
                 "Mapterhorn",
@@ -488,6 +481,13 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
                     "Mapterhorn terrain tiles — 512px WebP, Terrarium encoding, free & open-source"
                 ),
             ),
+            ("OPENTOPODATA", "Opentopodata", _("Slower but more accurate elevation")),
+            (
+                "OPEN-ELEVATION",
+                "Open-Elevation",
+                _("Faster but some regions are low quality"),
+            ),
+            ("TERRAIN-TILES", "Terrain-Tiles", _("Currently Fastest available set")),
             (
                 "OPENTOPOGRAPHY",
                 "OpenTopography",

@@ -137,6 +137,25 @@ _ELEMENT_SINGLE_FLAGS = {
     "glacier": "col_glActive",
     "buildings": "el_bActive",
 }
+
+# ESA WorldCover's own element flags -- each a single BoolProperty (unlike
+# OSM's 'water', there's no composite/sub-checkbox breakdown per category),
+# used instead of _ELEMENT_SINGLE_FLAGS/_ELEMENT_COMPOSITE_FLAGS whenever
+# tp3d.elementSource == "WORLDCOVER". Shares 'water'/'forest'/'city'/
+# 'greenspace'/'farmland'/'glacier' keys with the OSM side on purpose (same
+# on-screen concept, different data source -- the picker page only ever
+# shows one set of chips at a time, per ELEMENT_SOURCE) so ELEMENT_ICONS/
+# ELEMENT_CARD_LABELS can be reused as-is; 'mountain' is WorldCover-only,
+# mirrors panels.py's _LANDCOVER_COLOR_ROWS.
+_LANDCOVER_SINGLE_FLAGS = {
+    "water": "col_lcWaterActive",
+    "forest": "col_lcForestActive",
+    "mountain": "col_lcMountainActive",
+    "city": "col_lcCityActive",
+    "greenspace": "col_lcGreenspaceActive",
+    "farmland": "col_lcFarmlandActive",
+    "glacier": "col_lcGlacierActive",
+}
 _ELEMENT_COMPOSITE_FLAGS = {
     "water": (
         (
@@ -182,9 +201,12 @@ def _set_composite_flag(tp3d, key, subflag, value):
 
 
 def build_element_toggle_states(tp3d=None):
-    """Which of the 10 progress-icon element categories are currently
-    toggled on in the scene settings, keyed the same as build_fetch_items /
-    progress_win._ICON_MAP.
+    """Which of the element categories are currently toggled on in the
+    scene settings, keyed the same as build_fetch_items / progress_win._ICON_MAP
+    for OSM, or _LANDCOVER_SINGLE_FLAGS's own keys when
+    tp3d.elementSource == "WORLDCOVER" -- the picker pages' element-status
+    strip and Settings modal Elements tab pick whichever set applies
+    (element_status.js's ELEMENT_SOURCE).
 
     Unlike build_fetch_items, this ignores per-category map-size cutoffs
     (const.FOREST_MAXSIZE etc.) -- those only matter once a map_km is known,
@@ -194,6 +216,10 @@ def build_element_toggle_states(tp3d=None):
     if tp3d is None:
         tp3d = bpy.context.scene.tp3d
     states = {"elevation": True}
+    if tp3d.elementSource == "WORLDCOVER":
+        for key, attr in _LANDCOVER_SINGLE_FLAGS.items():
+            states[key] = bool(getattr(tp3d, attr))
+        return states
     for key, attr in _ELEMENT_SINGLE_FLAGS.items():
         states[key] = bool(getattr(tp3d, attr))
     for key, (subflags, _) in _ELEMENT_COMPOSITE_FLAGS.items():
@@ -220,7 +246,17 @@ def apply_element_toggle(tp3d, key):
     instead of resetting to some fixed default. First-ever toggle-ON with
     nothing remembered (and nothing already set) falls back to enabling
     just the category's single most common sub-flag.
+
+    ESA WorldCover (tp3d.elementSource == "WORLDCOVER") has none of the OSM
+    composites -- every _LANDCOVER_SINGLE_FLAGS category is a plain
+    BoolProperty, so it's just inverted directly, same as an OSM single flag.
     """
+    if tp3d.elementSource == "WORLDCOVER":
+        attr = _LANDCOVER_SINGLE_FLAGS.get(key)
+        if attr:
+            setattr(tp3d, attr, not getattr(tp3d, attr))
+        return
+
     if key in _ELEMENT_SINGLE_FLAGS:
         attr = _ELEMENT_SINGLE_FLAGS[key]
         setattr(tp3d, attr, not getattr(tp3d, attr))
@@ -253,14 +289,20 @@ def apply_element_toggle(tp3d, key):
 # build_settings_row_state / apply_setting_update stay in sync by
 # construction.
 _SETTINGS_ROW_FIELDS = {
+    "elementSource": ("elementSource", str),
     "scaleElevation": ("scaleElevation", float),
     "elevationMode": ("elevationMode", str),
     "fixedHeightMM": ("fixedHeightMM", float),
+    "minThickness": ("minThickness", float),
+    "shapeRotation": ("shapeRotation", int),
+    "smoothTerrainTop": ("smoothTerrainTop", bool),
+    "smoothTerrainStrength": ("smoothTerrainStrength", int),
     "pathThickness": ("pathThickness", float),
     "overwritePathElevation": ("overwritePathElevation", bool),
     "objSize": ("objSize", int),
     "resolution": ("num_subdivisions", int),
     "singleColorMode": ("singleColorMode", bool),
+    "singleColorModeHeight": ("singleColorModeHeight", float),
     "singleColorModeTolerance": ("tolerance", float),
 }
 
@@ -354,6 +396,12 @@ _ADVANCED_SETTINGS_FIELDS = [
     {"key": "colGrArea", "attr": "col_grArea", "type": float, "group": "Greenspace"},
     {"key": "colFaArea", "attr": "col_faArea", "type": float, "group": "Farmland"},
     {"key": "colGlArea", "attr": "col_glArea", "type": float, "group": "Glacier"},
+    {
+        "key": "elWcMinFeatureArea",
+        "attr": "el_wcMinFeatureArea",
+        "type": float,
+        "group": "Land Cover",
+    },
     {
         "key": "elBHeightMultiplier",
         "attr": "el_bHeightMultiplier",

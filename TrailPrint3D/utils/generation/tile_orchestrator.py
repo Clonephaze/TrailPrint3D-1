@@ -520,6 +520,16 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
     skip_bottom_recess: forwarded to _rtg_apply_elevation -- see its
     docstring. Pass True for fresh single-tile callers with no neighbor
     baseline to protect (e.g. the puzzle generator).
+
+    Does NOT export -- unlike runGeneration's own Phase 18, a single call
+    here doesn't necessarily mean the caller's final deliverable is ready
+    (the puzzle generator's blank, for instance, is a single tile here but
+    goes on to be cut into multiple pieces afterward). Returns the built
+    GenerationContext on success (None on early-exit/failure) so a caller
+    whose tile(s) really are the finished, exportable result -- e.g. the map
+    picker's normal single map tile -- can pass it to _rg_export itself once
+    any of its own post-processing (like merging an imported GPX trail) is
+    done.
     """
     from ..primitives import (
         setupColors,  # deferred to avoid circular import at load time
@@ -558,7 +568,7 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
             )
 
             show_message_box("No objects selected")
-            return {"FINISHED"}
+            return None
 
         bpy.ops.object.select_all(action="DESELECT")
 
@@ -653,19 +663,20 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
         _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
         _m, _s = divmod(_elapsed, 60)
         overlay.add_completed_step(f"Done  —  {_m:02d}:{_s:02d} total")
-        _progress.WarningsOverlay.add_warning(
-            "Multi-tile maps are not exported automatically — please use the Export buttons to export your tiles manually.",
-            "warn",
-        )
-        return {"FINISHED"}
+        if n_tiles > 1:
+            _progress.WarningsOverlay.add_warning(
+                "Multi-tile maps are not exported automatically — please use the Export buttons to export your tiles manually.",
+                "warn",
+            )
+        return gen
     except ValidationError as e:
         print(f"Validation Failed: {e}")
         _progress.WarningsOverlay.add_warning(f"Error: {e}")
-        return {"CANCELLED"}
+        return None
     except GenerationError as e:
         print(f"Generation phase failed: {e}")
         _progress.WarningsOverlay.add_warning(str(e), icon="error")
-        return {"CANCELLED"}
+        return None
     except Exception as e:  # noqa: BLE001 - createTerrainFromSelected could raise many kinds of errors, mirrors runGeneration's own bare catch-all
         import traceback
 
@@ -674,7 +685,7 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
         _progress.WarningsOverlay.add_warning(
             "Generation failed, check console for details"
         )
-        return {"CANCELLED"}
+        return None
     finally:
         if manage_overlay:
             overlay.finish()

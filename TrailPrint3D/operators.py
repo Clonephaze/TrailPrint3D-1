@@ -2948,6 +2948,15 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             utils.apply_setting_update(context.scene.tp3d, key, value)
         for key, value in mp.drain_pending_advanced_settings():
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
+        # Keeps a later page reload (premium/map_generator_pe.html's OSM/ESA
+        # WorldCover switch, settings_modal.js) in sync with whatever was
+        # just applied above -- see refresh_state_snapshots' own docstring.
+        mp.refresh_state_snapshots(
+            element_states=utils.build_element_toggle_states(context.scene.tp3d),
+            settings_state=utils.build_settings_row_state(context.scene.tp3d),
+            advanced_settings=utils.build_advanced_settings_state(context.scene.tp3d),
+            element_source=context.scene.tp3d.elementSource,
+        )
 
         rp = pathlib.Path(self._result_path)
         if not (rp.exists() and rp.stat().st_size > 0):
@@ -2998,6 +3007,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             settings_state=utils.build_settings_row_state(context.scene.tp3d),
             advanced_settings=utils.build_advanced_settings_state(context.scene.tp3d),
             dem_bounds=_dem_coverage_overlay(),
+            element_source=context.scene.tp3d.elementSource,
         )
 
         wm = context.window_manager
@@ -3201,7 +3211,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # above, either from the elevation-preview loop or, for a GeoJSON
         # boundary, internally by build_tile_from_polygon), not an older
         # neighbor's -- there's no seam to protect.
-        utils.runTileGeneration(manage_overlay=False, skip_bottom_recess=True)
+        tile_gen = utils.runTileGeneration(manage_overlay=False, skip_bottom_recess=True)
 
         if gpx_paths:
             from .utils.osm import gen as _osm_gen
@@ -3216,6 +3226,18 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             utils.zoom_camera_to_selected(blank)
         except (ReferenceError, AttributeError):
             pass
+
+        # The map picker always produces a single, finished map tile (never
+        # a multi-tile result awaiting manual arrangement/export like the
+        # puzzle generator's blank), so it's safe to export it here -- after
+        # any imported GPX trail above has already been merged in, so the
+        # exported file reflects the final result. _rg_export itself still
+        # honors the "Don't automatically export" preference.
+        if tile_gen is not None:
+            bpy.ops.object.select_all(action='DESELECT')
+            blank.select_set(True)
+            bpy.context.view_layer.objects.active = blank
+            utils._rg_export(tile_gen)
 
         bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
         self.report({'INFO'}, "Generated 1 tile")

@@ -514,6 +514,9 @@ _ICON_MAP = {
     'farmland':   'prog_farmland.svg',
     'glacier':    'prog_glacier.svg',
     'city':       'prog_cityBoundaries.svg',
+    # ESA WorldCover's "Mountain" category reuses OSM's Scree icon -- close
+    # enough visually (rocky/high terrain) and there's no dedicated asset.
+    'mountain':   'prog_scree.svg',
 }
 
 def _process_svg(content, color='white'):
