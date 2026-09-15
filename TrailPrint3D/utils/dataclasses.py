@@ -168,3 +168,7 @@ class GenerationError(Exception):
     Caught by runGeneration's outer try/except and surfaced as a named warning
     rather than the generic 'check console' fallback.
     """
+
+
+class ExportError(Exception):
+    """Custom exception for export-related errors."""

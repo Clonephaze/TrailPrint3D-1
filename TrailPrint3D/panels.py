@@ -199,6 +199,18 @@ class TP3D_PT_generate(bpy.types.Panel):
             row.operator(
                 "tp3d.shapely_status", text=_("Shapely failed to load"), icon="ERROR"
             )
+
+        # --- Linux + Python 3.14 mismatch warning ---
+        # (repackaged Blender builds like Flatpak, not blender.org's own)
+        if const.LINUX_PYTHON314_MISMATCH:
+            row = layout.row()
+            row.alert = True
+            row.operator(
+                "tp3d.python_mismatch_status",
+                text=_("Unsupported Blender build detected"),
+                icon="ERROR",
+            )
+
         # --- Generate button ---
         col = layout.column()
         col.scale_y = 1.4
@@ -350,7 +362,7 @@ class TP3D_PT_generate(bpy.types.Panel):
                         col.label(
                             text=_("Trail area: ~%dkm")
                             % round(est_km * props.pathScale),
-                            icon="INFO"
+                            icon="INFO",
                         )
             elif temp.PREMIUMVERSION:
                 col.label(text=_("GPX Folder Selection:"))

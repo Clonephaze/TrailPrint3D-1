@@ -95,7 +95,7 @@ def export_selected_to_STL(force="STL"):
     active_obj = bpy.context.active_object
 
 
-def export_selected_to_3mf(filename: str = "", is_auto: bool = False):
+def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bool = False):
     import os
     import tempfile
 
@@ -272,31 +272,30 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False):
             def _on_progress(percent: int, message: str) -> None:
                 _overlay.update(0.97 + (percent / 100.0) * 0.03, "3MF Export", message)
 
-        export_kwargs = dict(
-            filepath=full_path,
-            objects=export_roots,
-            use_mesh_modifiers=True,
-            global_scale=0.001,
-            coordinate_precision=4,
-            thumbnail_mode="NONE" if bpy.app.background else "CUSTOM",
-            thumbnail_image=thumbnail_path if not bpy.app.background else "",
-            thumbnail_resolution=256,
-            use_orca_format="PAINT" if _is_texture_mode else "AUTO",
-            progress_mode="NONE" if is_auto else "AUTO",
-            on_progress=_on_progress,
-        )
+        export_kwargs = {
+            'filepath': full_path,
+            'objects': export_roots,
+            'use_mesh_modifiers': True,
+            'global_scale': 0.001,
+            'coordinate_precision': 4,
+            'thumbnail_mode': "NONE" if bpy.app.background else "CUSTOM",
+            'thumbnail_image': thumbnail_path if not bpy.app.background else "",
+            'thumbnail_resolution': 256,
+            'use_orca_format': "PAINT" if _is_texture_mode else "AUTO",
+            'progress_mode': "NONE" if is_auto else "AUTO",
+            'on_progress': _on_progress,
+        }
         if has_threemf_capability("slicer_profile"):
             export_kwargs["slicer_profile"] = tp3d.slicer_profile_name
         else:
             _progress.WarningsOverlay.add_warning(_("3MF Addon update available"), "warn")
 
         result = _3mf_api.export_3mf(**export_kwargs)
-        if result.status == "FINISHED":
-            print(f"Successfully exported to: {full_path}")
-            _progress.WarningsOverlay.add_warning(_("Exported as 3mf"), "ok")
-        else:
+        if result.status != "FINISHED":
             print("Export Error:\n" + "\n".join(result.warnings))
-            _progress.WarningsOverlay.add_warning(_("Exporting as 3mf Failed"), "error")
+            raise Exception("3MF export failed")  # noqa: TRY002
+        if not manual:
+            _progress.WarningsOverlay.add_warning(_("Exported as 3mf"), "ok")
     except Exception as e:
         print(f"Export Error: {e}")
         _progress.WarningsOverlay.add_warning(_("Exporting as 3mf Failed"), "error")

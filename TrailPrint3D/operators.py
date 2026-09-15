@@ -21,6 +21,9 @@ from mathutils import Euler, Quaternion, Vector  # type: ignore
 from . import addon_preferences, utils
 from . import constants as const
 from . import progress as _progress
+from .utils.dataclasses import ExportError, GenerationError
+
+_warn = _progress.WarningsOverlay.add_warning
 
 
 # Define the operator (script execution)
@@ -30,169 +33,224 @@ class TP3D_OT_run_generation(bpy.types.Operator):
     bl_description = _("Generate the Path and the Map with current Settings")
 
     def execute(self, context):
-        if context.scene.tp3d.elementMode == "CREATE_TEXTURE":
-            from .threemf_discovery import has_threemf_capability, is_threemf_available
 
-            if not is_threemf_available():
-                self.report(
-                    {"ERROR"},
-                    "Create Texture mode requires the 3MF Import/Export addon. Please install it.",
-                )
-                return {"CANCELLED"}
-            if not has_threemf_capability("slicer_profile"):
-                self.report(
-                    {"ERROR"},
-                    "Create Texture mode requires a newer version of the 3MF addon. Please update it.",
-                )
-                return {"CANCELLED"}
-        utils.runGeneration(0)
+        self._handler = getattr(self, "_handler", None)
 
+        _progress.WarningsOverlay.clear()
+        try:
+            if context.scene.tp3d.elementMode == "CREATE_TEXTURE":
+                from .threemf_discovery import (
+                    has_threemf_capability,
+                    is_threemf_available,
+                )
+
+                if not is_threemf_available():
+                    raise GenerationError(
+                        _(
+                            "Create Texture mode requires the 3MF Import/Export addon. Please install it."
+                        )
+                    )
+                if not has_threemf_capability("slicer_profile"):
+                    raise GenerationError(
+                        _(
+                            "Create Texture mode requires a newer version of the 3MF addon. Please update it."
+                        )
+                    )
+        except GenerationError as e:
+            _warn(str(e))
+            self.report({"ERROR"}, str(e))
+            return {"CANCELLED"}
+        finally:
+            _progress.WarningsOverlay.get().show()
+            utils.runGeneration(0)
         return {"FINISHED"}
 
 
 class TP3D_OT_shapely_status(bpy.types.Operator):
     bl_idname = "tp3d.shapely_status"
-    bl_label = _("Shapely failed to load")
-    # TODO: CLEAN THIS WHOLE CLASS
+    bl_label = _("Shapely Status")
+    bl_description = _("Check or display Shapely library load status")
+
+    @classmethod
+    def _get_shapely_error(cls) -> str | None:
+        from .utils import geometry2d as _g2d
+
+        return str(_g2d._SHAPELY_IMPORT_ERROR) if _g2d._SHAPELY_IMPORT_ERROR else None
 
     @classmethod
     def description(cls, context, properties):
-        from .utils import geometry2d as _g2d
-
-        err = (
-            str(_g2d._SHAPELY_IMPORT_ERROR)
-            if _g2d._SHAPELY_IMPORT_ERROR is not None
-            else _("Unknown error")
-        )
-        return _(
-            "Elements and Single-color mode might not work properly\n"
-            "{err}\n"
-            "Try reinstalling the addon or wait for an update"
-        ).format(err=err)
+        err = cls._get_shapely_error()
+        if err:
+            return (
+                f"{_('Elements and Single-color mode might not work properly.')}\n{err}"
+            )
+        return _("Shapely is loaded and operational.")
 
     def execute(self, context):
-        from .utils import geometry2d as _g2d
 
-        _err_text = (
-            str(_g2d._SHAPELY_IMPORT_ERROR)
-            if _g2d._SHAPELY_IMPORT_ERROR is not None
-            else _("Unknown error")
-        )
+        self._handler = getattr(self, "_handler", None)
 
-        def _draw(popup_self, context):
-            col = popup_self.layout.column(align=True)
-            col.label(text=_("Elements and Single-color mode might not work properly"))
-            col.label(text=_("The issue is known and im looking for a solution"))
-            # col.label(text=err_text)
-            col.label(text=_("Try reinstalling the addon or wait for an update"))
+        _progress.WarningsOverlay.clear()
+        try:
+            err = self._get_shapely_error()
+            if err:
+                raise GenerationError(
+                    _(
+                        "Shapely failed to load: {error}. Reinstall the addon or check dependencies."
+                    ).format(error=err)
+                )
+        except GenerationError as e:
+            msg = str(e)
+            _warn(msg)
+            self.report({"ERROR"}, msg)
+            return {"CANCELLED"}
+        finally:
+            _progress.WarningsOverlay.get().show()
 
-        context.window_manager.popup_menu(
-            _draw, title=_("Shapely failed to load"), icon="ERROR"
-        )
+        self.report({"INFO"}, _("Shapely is working properly."))
         return {"FINISHED"}
 
 
-class TP3D_OT_export_stl(bpy.types.Operator):
+class TP3D_OT_python_mismatch_status(bpy.types.Operator):
+    bl_idname = "tp3d.python_mismatch_status"
+    bl_label = _("Unsupported Blender build detected")
+
+    @classmethod
+    def description(cls, context, properties):
+        import platform
+
+        return _(
+            "This Blender is running Python {ver}, not the Python Blender's "
+            "official build ships with.\n"
+            "Click for details on why, and how to fix it."
+        ).format(ver=platform.python_version())
+
+    def execute(self, context):
+        import platform
+
+        self._handler = getattr(self, "_handler", None)
+
+        _progress.WarningsOverlay.clear()
+
+        try:
+            print(
+                f"[TrailPrint3D] Detected Linux + Python {platform.python_version()} -- "
+                "this usually means Blender came from an unofficial source (e.g. "
+                "Flatpak) that bundles a different Python than the official "
+                "blender.org build. This breaks most of TrailPrint3D's feature set. "
+                "Please install Blender from blender.org instead."
+            )
+            raise GenerationError(
+                _(
+                    "Running Python {ver} instead of Blender's official version. "
+                    "Linux package sources (like Flatpak) sometimes swap it out, which breaks "
+                    "TrailPrint3D's bundled libraries (e.g. Shapely). "
+                    "Fix: install Blender directly from blender.org instead."
+                ).format(ver=platform.python_version())
+            )
+        except GenerationError as e:
+            _warn(str(e))
+            self.report({"ERROR"}, str(e))
+            return {"CANCELLED"}
+        finally:
+            _progress.WarningsOverlay.get().show()
+
+
+class TP3D_ExportBase:
+    """Mixin class for shared export validation logic."""
+
+    _messages = []
+    _handler = None
+
+    def get_valid_export_path(self, context):
+        if not context.selected_objects:
+            raise ExportError(_("Please select the object(s) you want to export."))
+
+        tp3d = context.scene.tp3d
+        raw_path = (
+            tp3d.get("export_path")
+            or addon_preferences.get_prefs().default_export_folder
+        )
+
+        if not raw_path:
+            raise ExportError(
+                _("Export path is empty! Please select a valid directory.")
+            )
+
+        export_path = bpy.path.abspath(raw_path)
+
+        if not os.path.isdir(export_path):
+            raise ExportError(
+                _("Invalid export directory: {path}").format(path=export_path)
+            )
+
+        return export_path
+
+
+class TP3D_OT_export_stl(bpy.types.Operator, TP3D_ExportBase):
     bl_idname = "tp3d.export_stl"
     bl_label = _("Export STL")
     bl_description = _("Export Selected Objects as Separate STL (Will lose Colors)")
 
     def execute(self, context):
-        tp3d = context.scene.tp3d  # Access stored variables
+        self._handler = getattr(self, "_handler", None)
+        _progress.WarningsOverlay.clear()
 
-        exportPath = tp3d.get("export_path", None)
+        try:
+            # If this fails, it automatically throws the specific ExportError
+            export_path = self.get_valid_export_path(context)
 
-        if not exportPath:
-            exportPath = addon_preferences.get_prefs().default_export_folder
+            utils.export_selected_to_STL("STL")
 
-        if not exportPath:
-            self.report(
-                {"ERROR"},
-                "'Export path' is Empty. Please select a Directory For the finished files",
+            count = len(context.selected_objects)
+            _warn(
+                _("{count} STL file(s) exported to: {path}").format(
+                    count=count, path=export_path
+                ),
+                icon="ok",
             )
+        except ExportError as e:
+            _warn(str(e))
+            self.report({"ERROR"}, str(e))
             return {"CANCELLED"}
-
-        exportPath = bpy.path.abspath(exportPath)
-
-        if not exportPath or exportPath == "":
-            self.report(
-                {"ERROR"}, "Export path is empty! Please select a valid folder."
-            )
-            return {"CANCELLED"}
-        if not os.path.isdir(exportPath):
-            self.report(
-                {"ERROR"},
-                f"Invalid export Directory: {exportPath}. Please select a valid Directory.",
-            )
-            return {"CANCELLED"}
-
-        if not context.selected_objects:
-            self.report({"ERROR"}, "Please select the Object you want to Export")
-            return {"CANCELLED"}
-
-        utils.export_selected_to_STL("STL")
-
-        utils.show_message_box(
-            f"{len(context.selected_objects)} file(s) exported to: {exportPath}",
-            "INFO",
-            "Export Complete",
-        )
+        finally:
+            _progress.WarningsOverlay.get().show()
 
         return {"FINISHED"}
 
 
-class TP3D_OT_export_obj(bpy.types.Operator):
+class TP3D_OT_export_obj(bpy.types.Operator, TP3D_ExportBase):
     bl_idname = "tp3d.export_obj"
     bl_label = _("Export OBJ")
     bl_description = _("Export Selected Objects as Separate OBJ")
 
     def execute(self, context):
-        tp3d = context.scene.tp3d  # Access stored variables
+        self._handler = getattr(self, "_handler", None)
+        _progress.WarningsOverlay.clear()
 
-        exportPath = tp3d.get("export_path", None)
+        try:
+            export_path = self.get_valid_export_path(context)
 
-        if not exportPath:
-            exportPath = addon_preferences.get_prefs().default_export_folder
+            utils.export_selected_to_STL("OBJ")
 
-        if not exportPath:
-            self.report(
-                {"ERROR"},
-                "'Export path' is Empty. Please select a Directory For the finished files",
+            count = len(context.selected_objects)
+            _warn(
+                _("{count} OBJ file(s) exported to: {path}").format(
+                    count=count, path=export_path
+                ),
+                icon="ok",
             )
+        except ExportError as e:
+            _warn(str(e))
+            self.report({"ERROR"}, str(e))
             return {"CANCELLED"}
-
-        exportPath = bpy.path.abspath(exportPath)
-
-        if not exportPath or exportPath == "":
-            self.report(
-                {"ERROR"}, "Export path is empty! Please select a valid folder."
-            )
-            return {"CANCELLED"}
-        if not os.path.isdir(exportPath):
-            self.report(
-                {"ERROR"},
-                f"Invalid export Directory: {exportPath}. Please select a valid Directory.",
-            )
-            return {"CANCELLED"}
-
-        if not context.selected_objects:
-            self.report({"ERROR"}, "Please select the Object you want to Export")
-            return {"CANCELLED"}
-
-        utils.export_selected_to_STL("OBJ")
-
-        utils.show_message_box(
-            _("{} file(s) exported to: {}").format(
-                len(context.selected_objects), exportPath
-            ),
-            "INFO",
-            _("Export Complete"),
-        )
+        finally:
+            _progress.WarningsOverlay.get().show()
 
         return {"FINISHED"}
 
 
-class TP3D_OT_export_three_mf(bpy.types.Operator):
+class TP3D_OT_export_three_mf(bpy.types.Operator, TP3D_ExportBase):
     bl_idname = "tp3d.export_three_mf"
     bl_label = _("Export 3mf")
     bl_description = _(
@@ -211,52 +269,25 @@ class TP3D_OT_export_three_mf(bpy.types.Operator):
         return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
-        tp3d = context.scene.tp3d  # Access stored variables
+        self._handler = getattr(self, "_handler", None)
+        _progress.WarningsOverlay.clear()
 
-        installed = utils.is_3mf_extension_installed()
-
-        if installed:
-            exportPath = tp3d.get("export_path", None)
-
-            if not exportPath:
-                exportPath = addon_preferences.get_prefs().default_export_folder
-
-            if not exportPath:
-                self.report(
-                    {"ERROR"},
-                    "'Export path' is Empty. Please select a Directory For the finished files",
-                )
-                return {"CANCELLED"}
-
-            exportPath = bpy.path.abspath(exportPath)
-
-            if not exportPath or exportPath == "":
-                self.report(
-                    {"ERROR"}, "Export path is empty! Please select a valid folder."
-                )
-                return {"CANCELLED"}
-            if not os.path.isdir(exportPath):
-                self.report(
-                    {"ERROR"},
-                    f"Invalid export Directory: {exportPath}. Please select a valid Directory.",
-                )
-                return {"CANCELLED"}
-
-            if not context.selected_objects:
-                self.report({"ERROR"}, "Please select the Object you want to Export")
-                return {"CANCELLED"}
+        try:
+            if not utils.is_3mf_extension_installed():
+                raise ExportError(_("3MF extension is not installed."))
 
             if not self.filename:
-                self.report({"ERROR"}, "Please enter a filename")
-                return {"CANCELLED"}
+                raise ExportError(_("Please enter a filename."))
 
-            utils.export_selected_to_3mf(self.filename)
+            utils.export_selected_to_3mf(self.filename, manual=True)
+            _warn(_("Exported as 3mf"), "ok")
 
-            utils.show_message_box(
-                _("Exported to: {}").format(exportPath), "INFO", _("Export Complete")
-            )
-        else:
-            print("Addon not Installed")
+        except ExportError as e:
+            _warn(str(e))
+            self.report({"ERROR"}, str(e))
+            return {"CANCELLED"}
+        finally:
+            _progress.WarningsOverlay.get().show()
 
         return {"FINISHED"}
 
@@ -293,69 +324,6 @@ class TP3D_OT_info_video(bpy.types.Operator):
     def execute(self, context):
 
         utils.open_website(self, context, self.url)
-        return {"FINISHED"}
-
-
-class TP3D_OT_rescale(bpy.types.Operator):
-    bl_idname = "tp3d.rescale"
-    bl_label = _("Rescale the z value")
-    bl_description = _("Rescales the Elevation the Currently selected objects")
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        multiZ = context.scene.tp3d.get("rescaleMultiplier", 1)
-
-        selected_objects = [
-            obj for obj in bpy.context.selected_objects if obj.type in {"MESH", "CURVE"}
-        ]
-        lowestZ = 1000
-
-        print("Rescaling")
-        for obj in selected_objects:
-            if obj.type == "MESH":
-                mesh = obj.data
-                for i, vert in enumerate(mesh.vertices):
-                    if vert.co.z < lowestZ and vert.co.z > 0.1:
-                        lowestZ = vert.co.z
-            if obj.type == "CURVE" and lowestZ == 1000:
-                for spline in obj.data.splines:
-                    for point in spline.bezier_points:
-                        if point.co.z > 0.1 and point.co.z < lowestZ:
-                            lowestZ = point.co.z
-
-        print(f"lowestZ: {lowestZ}")
-
-        for obj in selected_objects:
-            print(obj.name)
-            if lowestZ != 1000 and obj.type == "MESH":
-                bpy.context.view_layer.objects.active = obj  # Make it active
-                bpy.ops.object.mode_set(mode="EDIT")
-                # Access mesh data
-                mesh = bmesh.from_edit_mesh(obj.data)
-                for v in mesh.verts:
-                    if v.co.z > 0.1:
-                        v.co.z = (v.co.z - lowestZ) * (multiZ) + lowestZ
-                bmesh.update_edit_mesh(obj.data)
-                bpy.ops.object.mode_set(mode="OBJECT")  # Exit Edit Mode
-            if lowestZ != 1000 and obj.type == "CURVE":
-                # Access curve splines
-                for spline in obj.data.splines:
-                    for point in spline.bezier_points:
-                        if point.co.z > -0.5:
-                            point.co.z = (point.co.z - lowestZ) * (multiZ) + lowestZ
-                    for point in spline.points:  # For NURBS
-                        if point.co.z > -0.5:
-                            point.co.z = (point.co.z - lowestZ) * (multiZ) + lowestZ
-
-            bpy.ops.object.mode_set(mode="OBJECT")  # Exit Edit Mode
-
-            if "Elevation Scale" in obj:
-                obj["Elevation Scale"] *= multiZ
-
-        print(
-            f"Scaled all elevation points by Factor {multiZ} on {len(selected_objects)} object(s)."
-        )
-
         return {"FINISHED"}
 
 
@@ -442,68 +410,6 @@ class TP3D_OT_clear_cache(bpy.types.Operator):
 
         return {"FINISHED"}
 
-
-class TP3D_OT_thicken(bpy.types.Operator):
-    bl_idname = "tp3d.thicken"
-    bl_label = _("Thicken Map")
-    bl_description = _("Make the selected Map thicker")
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-
-        selected_objects = context.selected_objects
-        val = context.scene.tp3d.thickenValue
-
-        bpy.context.tool_settings.mesh_select_mode = (False, False, True)
-
-        bpy.ops.object.select_all(action="DESELECT")
-        for zobj in selected_objects:
-            zobj.select_set(False)
-
-        if not selected_objects:
-            utils.show_message_box("No objects selected.")
-            return {"CANCELLED"}
-
-        for zobj in selected_objects:
-            # Check if the custom property 'Object type' exists
-            if "Object type" in zobj:
-                print(zobj.name)
-                if (
-                    zobj["Object type"] == "TRAIL"
-                    or zobj["Object type"] == "WATER"
-                    or zobj["Object type"] == "FOREST"
-                    or zobj["Object type"] == "CITY"
-                    or zobj["Object type"] == "FARMLAND"
-                    or zobj["Object type"] == "GREENSPACE"
-                ):
-                    zobj.location.z += val
-                elif zobj["Object type"] == "MAP":
-                    zobj.select_set(True)
-                    bpy.context.view_layer.objects.active = zobj
-                    utils.selectBottomFaces(zobj)
-                    bpy.ops.mesh.select_more()
-                    bpy.ops.mesh.select_all(action="INVERT")
-                    mesh = bmesh.from_edit_mesh(zobj.data)
-
-                    verts_to_move = set()
-                    for face in mesh.faces:
-                        if face.select:
-                            verts_to_move.update(face.verts)
-
-                    for vert in verts_to_move:
-                        vert.co.z += val
-                    bpy.ops.object.mode_set(mode="OBJECT")
-                    bpy.ops.object.select_all(action="DESELECT")
-                    zobj.select_set(False)
-                    zobj["minThickness"] += val
-
-        bpy.context.view_layer.objects.active = selected_objects[0]
-        for zobj in selected_objects:
-            zobj.select_set(True)
-        return {"FINISHED"}
-
-
-class TP3D_OT_pin_coords(bpy.types.Operator):
     bl_idname = "tp3d.pin_coords"
     bl_label = _("PinCoords")
     bl_description = _("Place a Pin on a Coordinate")
@@ -1066,7 +972,7 @@ class TP3D_OT_terrain_dummy(bpy.types.Operator):
     bl_label = _("Premium Feature")
 
     def execute(self, context):
-        self.report({"INFO"}, "This Feature is Exclusive for Patreon Supporters")
+        self.report({"INFO"}, _("This Feature is Exclusive for Patreon Supporters"))
         return {"FINISHED"}
 
 
@@ -1536,7 +1442,9 @@ class TP3D_OT_popup_text(bpy.types.Operator):
         obj = context.active_object
 
         if obj is None:
-            self.report({"WARNING"}, "Failed to create text object, no active object")
+            self.report(
+                {"WARNING"}, _("Failed to create text object, no active object")
+            )
             return {"CANCELLED"}
 
         if "type" not in obj:
@@ -1771,13 +1679,13 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
         svg.data.materials.clear()
 
         if svg is None:
-            self.report({"WARNING"}, "No Valid object selected")
-            utils.show_message_box("No valid Map selected")
+            self.report({"WARNING"}, _("No Valid object selected"))
+            utils.show_message_box(_("No valid Map selected"))
             return {"CANCELLED"}
 
         obj = context.active_object
         if not obj or obj == 0:
-            self.report({"WARNING"}, "No object selected")
+            self.report({"WARNING"}, _("No object selected"))
             return {"CANCELLED"}
 
         if "highestZ" in map:
@@ -1953,7 +1861,7 @@ class TP3D_OT_popup_pin(bpy.types.Operator):
         )
         obj = context.active_object
         if not obj:
-            self.report({"WARNING"}, "Failed to create pin object")
+            self.report({"WARNING"}, _("Failed to create pin object"))
             return {"CANCELLED"}
         obj.name = "Pin_Placement"
         mat = bpy.data.materials.get("TRAIL")
@@ -2198,13 +2106,15 @@ class TP3D_OT_install_update(bpy.types.Operator):
             return {"CANCELLED"}
         from . import updater
 
-        self.report({"INFO"}, "Downloading update, please wait...")
+        self.report({"INFO"}, _("Downloading update, please wait..."))
         success, err = updater.download_and_install()
         if success:
             updater.status = "installed"
-            self.report({"INFO"}, "Update installed. Please restart Blender to apply.")
+            self.report(
+                {"INFO"}, _("Update installed. Please restart Blender to apply.")
+            )
         else:
-            self.report({"ERROR"}, f"Update failed: {err}")
+            self.report({"ERROR"}, _("Update failed: {err}").format(err=err))
         return {"FINISHED"}
 
 
@@ -2505,7 +2415,9 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         if props.elementMode != "PAINT":
             props.elementMode = "PAINT"
             _progress.WarningsOverlay.add_warning(
-                _('Puzzles only support "Paint on Map" element mode — switched automatically.'),
+                _(
+                    'Puzzles only support "Paint on Map" element mode — switched automatically.'
+                ),
                 "warn",
             )
         if props.singleColorMode:
@@ -2518,7 +2430,9 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             # the regular merge_with_map path puzzles are actually built for.
             props.singleColorMode = False
             _progress.WarningsOverlay.add_warning(
-                _("Single Extruder Mode isn't supported in puzzles — disabled automatically."),
+                _(
+                    "Single Extruder Mode isn't supported in puzzles — disabled automatically."
+                ),
                 "warn",
             )
 
@@ -3056,7 +2970,9 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             _generate_trails(context, gpx_paths, overlay, 0.1, 0.95)
             if props.singleColorMode:
                 _progress.WarningsOverlay.add_warning(
-                    _("Single Extruder Mode is not applied automatically due to performance reasons."),
+                    _(
+                        "Single Extruder Mode is not applied automatically due to performance reasons."
+                    ),
                     "warn",
                 )
                 _progress.WarningsOverlay.add_warning(

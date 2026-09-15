@@ -564,65 +564,68 @@ class WarningsOverlay:
 
     # ------------------------------------------------------------------
     def _draw_cb(self):
-        if not self.active:
-            return
+        try:
+            if not self.active:
+                return
 
-        region = bpy.context.region
-        if region is None:
-            return
+            region = bpy.context.region
+            if region is None:
+                return
 
-        msgs = self.__class__._messages
-        n    = len(msgs)
-        h    = self.HEADER_H + self.PAD + n * self.ROW_H + self.PAD
-        p    = self.PAD
-        r    = self.RADIUS
-        x    = self.MARGIN_X
-        y    = self.MARGIN_Y
-        
-        max_chars=60
-        wrapped_msgs = []
-        for msg, icon in msgs:
-            lines=textwrap.wrap(msg, width=max_chars) or [""]
-            wrapped_msgs.append((lines, icon))
+            msgs = self.__class__._messages
+            n    = len(msgs)
+            h    = self.HEADER_H + self.PAD + n * self.ROW_H + self.PAD
+            p    = self.PAD
+            r    = self.RADIUS
+            x    = self.MARGIN_X
+            y    = self.MARGIN_Y
             
-        # Dynamic height calculation based on total wrapped text lines
-        total_lines = sum(len(lines) for lines, _ in wrapped_msgs)
-        h = self.HEADER_H + self.PAD + (total_lines * self.ROW_H) + self.PAD
-
-        gpu.state.blend_set('ALPHA')
-
-        # 1px dark border
-        _rounded_rect(x - 1, y - 1, self.W + 2, h + 2, self.COL_BORDER, r + 1)
-
-        # Main panel background
-        _rounded_rect(x, y, self.W, h, self.COL_BG, r)
-
-        # Header background (rounded at top only)
-        header_y = y + h - self.HEADER_H
-        _rounded_rect_top(x, header_y, self.W, self.HEADER_H, self.COL_HEADER_BG, r)
-        _rect(x, header_y, self.W, 1, self.COL_SEPARATOR)
-
-        # Header: title left, dismiss hint right
-        label_y = header_y + (self.HEADER_H - 13) // 2
-        _text("Info", x + p, label_y, 13, self.COL_ACCENT)
-        _text_right("click to dismiss", x + self.W - p, label_y, 11, self.COL_MUTED)
-
-        # Warning rows (drawn bottom to top, newest at top)
-        cur_y = y + p
-        for lines, icon in reversed(wrapped_msgs):
-            char, col = self.ICONS.get(icon, self.ICONS["warn"])
-            
-            # Draw lines of the entry bottom-up
-            for line_idx, line in enumerate(reversed(lines)):
-                # Draw the icon only on the top/first line of the message
-                is_first_line = (line_idx == len(lines) - 1)
-                if is_first_line:
-                    _text(char, x + p, cur_y + 3, 11, col)
+            max_chars=60
+            wrapped_msgs = []
+            for msg, icon in msgs:
+                lines=textwrap.wrap(msg, width=max_chars) or [""]
+                wrapped_msgs.append((lines, icon))
                 
-                _text(line, x + p + 14, cur_y + 3, 11, self.COL_TEXT)
-                cur_y += self.ROW_H
+            # Dynamic height calculation based on total wrapped text lines
+            total_lines = sum(len(lines) for lines, _ in wrapped_msgs)
+            h = self.HEADER_H + self.PAD + (total_lines * self.ROW_H) + self.PAD
 
-        gpu.state.blend_set('NONE')
+            gpu.state.blend_set('ALPHA')
+
+            # 1px dark border
+            _rounded_rect(x - 1, y - 1, self.W + 2, h + 2, self.COL_BORDER, r + 1)
+
+            # Main panel background
+            _rounded_rect(x, y, self.W, h, self.COL_BG, r)
+
+            # Header background (rounded at top only)
+            header_y = y + h - self.HEADER_H
+            _rounded_rect_top(x, header_y, self.W, self.HEADER_H, self.COL_HEADER_BG, r)
+            _rect(x, header_y, self.W, 1, self.COL_SEPARATOR)
+
+            # Header: title left, dismiss hint right
+            label_y = header_y + (self.HEADER_H - 13) // 2
+            _text("Info", x + p, label_y, 13, self.COL_ACCENT)
+            _text_right("click to dismiss", x + self.W - p, label_y, 11, self.COL_MUTED)
+
+            # Warning rows (drawn bottom to top, newest at top)
+            cur_y = y + p
+            for lines, icon in reversed(wrapped_msgs):
+                char, col = self.ICONS.get(icon, self.ICONS["warn"])
+                
+                # Draw lines of the entry bottom-up
+                for line_idx, line in enumerate(reversed(lines)):
+                    # Draw the icon only on the top/first line of the message
+                    is_first_line = (line_idx == len(lines) - 1)
+                    if is_first_line:
+                        _text(char, x + p, cur_y + 3, 11, col)
+                    
+                    _text(line, x + p + 14, cur_y + 3, 11, self.COL_TEXT)
+                    cur_y += self.ROW_H
+
+            gpu.state.blend_set('NONE')
+        except Exception as e:  # noqa: BLE001
+            print(f"[WarningsOverlay Draw Error] {e}")
 
 
 class TP3D_OT_warnings_mouse(bpy.types.Operator):
