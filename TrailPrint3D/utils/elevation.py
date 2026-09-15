@@ -714,6 +714,81 @@ def get_elevation_openTopography(coords, lenv=0, pointsDone=0, progress_cb=None)
     return elevations
 
 
+def get_elevation_localDem(coords, lenv=0, pointsDone=0, progress_cb=None):
+    """Sample elevation from a user-selected local GeoTIFF DEM file, or a folder of
+    tiled GeoTIFFs covering a larger area (e.g. a national survey's per-km grid),
+    with no internet required."""
+    if not coords:
+        return []
+
+    demFilePath = bpy.context.scene.tp3d.demFilePath
+    if not demFilePath or not os.path.exists(demFilePath):
+        _progress.WarningsOverlay.add_warning(
+            "Local DEM: no file/folder selected or not found — set it under Advanced ▸ API", "error")
+        return [0.0] * len(coords)
+
+    if progress_cb:
+        progress_cb(10)
+
+    # deferred to avoid import cost when unused
+    from .geotiff import GeoTiffError, build_tile_index, dem_contains_point, read_geotiff, sample_geotiff, sample_tile_index
+
+    if os.path.isdir(demFilePath):
+        index = build_tile_index(demFilePath)
+        if not index:
+            _progress.WarningsOverlay.add_warning(
+                f"Local DEM: no readable GeoTIFF tiles found in {demFilePath}", "error")
+            return [0.0] * len(coords)
+
+        if progress_cb:
+            progress_cb(30)
+
+        cache = {}
+        elevations = []
+        missing = 0
+        for lat, lon in coords:
+            value = sample_tile_index(index, lat, lon, cache)
+            if value is None:
+                missing += 1
+                value = 0.0
+            elevations.append(value)
+
+        if missing:
+            _progress.WarningsOverlay.add_warning(
+                f"Local DEM: {missing} of {len(coords)} points fell outside every tile in the folder "
+                "(sampled as 0.0) — the tiles may not fully cover your selected area", "warn")
+
+        if progress_cb:
+            progress_cb(100)
+
+        print(f"Local DEM: sampled {len(elevations)} elevations using {len(cache)}/{len(index)} tiles "
+              f"from folder {os.path.basename(demFilePath.rstrip(os.sep))}")
+        return elevations
+
+    try:
+        dem = read_geotiff(demFilePath)
+    except (GeoTiffError, OSError, struct.error, zlib.error) as e:
+        _progress.WarningsOverlay.add_warning(f"Local DEM: {e}", "error")
+        return [0.0] * len(coords)
+
+    if progress_cb:
+        progress_cb(50)
+
+    missing = sum(1 for lat, lon in coords if not dem_contains_point(dem, lat, lon))
+    elevations = [sample_geotiff(dem, lat, lon) for lat, lon in coords]
+
+    if missing:
+        _progress.WarningsOverlay.add_warning(
+            f"Local DEM: {missing} of {len(coords)} points fell outside the DEM file's coverage "
+            "(edge-clamped) — you're generating outside this dataset", "warn")
+
+    if progress_cb:
+        progress_cb(100)
+
+    print(f"Local DEM: sampled {len(elevations)} elevations from {dem['width']}x{dem['height']} grid ({os.path.basename(demFilePath)})")
+    return elevations
+
+
 def get_elevation_path_openElevation(vertices):
     """Fetches real elevation for each vertex using OpenTopoData with request batching."""
     coords = [(v[0], v[1], v[2], v[3]) for v in vertices]
@@ -912,7 +987,7 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
     # Set chunk size based on API
     if api == "OPENTOPODATA" or api == "OPEN-ELEVATION":
         chunk_size = 100000
-    elif api == "TERRAIN-TILES" or api == "OPENTOPOGRAPHY":
+    elif api == "TERRAIN-TILES" or api == "OPENTOPOGRAPHY" or api == "LOCAL_DEM":
         chunk_size = 50000000   # single request for all verts
     else:
         chunk_size = 100000  # fallback
@@ -973,6 +1048,8 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
             chunk_elevations = get_elevation_Mapterhorn((minLat, maxLat, minLon, maxLon), coords, len(world_verts), i, progress_cb=progress_cb)
         elif api == "OPENTOPOGRAPHY":
             chunk_elevations = get_elevation_openTopography(coords, len(world_verts), i, progress_cb=progress_cb)
+        elif api == "LOCAL_DEM":
+            chunk_elevations = get_elevation_localDem(coords, len(world_verts), i, progress_cb=progress_cb)
         else:
             chunk_elevations = [0.0] * len(chunk)  # fallback
 

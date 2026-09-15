@@ -257,6 +257,7 @@ class _Handler(BaseHTTPRequestHandler):
     element_states_json: bytes = b'{}'
     settings_state_json: bytes = b'{}'
     advanced_settings_json: bytes = b'{}'
+    dem_bounds_json: bytes = b'null'
     obj_size: float = 100.0
     html_path: pathlib.Path = _HTML_PATH
     state_path: pathlib.Path = _STATE_PATH
@@ -331,6 +332,7 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__PORT__', str(cast(tuple[str, int], self.server.server_address)[1]))
             .replace('__OBJSIZE__', str(self.obj_size))
             .replace('__COMMON_CSS__', _COMMON_CSS_PATH.read_text(encoding='utf-8'))
+            .replace('__DEM_BOUNDS_JS__', 'var DEM_BOUNDS = ' + self.dem_bounds_json.decode('utf-8') + ';')
             .replace('__MAP_INIT_JS__', _MAP_INIT_JS_PATH.read_text(encoding='utf-8'))
             .replace('__LOCATION_PANEL_JS__', _LOCATION_PANEL_JS_PATH.read_text(encoding='utf-8'))
             .replace('__ELEMENT_ICONS_JS__', _element_icons_js())
@@ -470,7 +472,7 @@ class _Handler(BaseHTTPRequestHandler):
 def start_picker(result_path: str, existing_maps: list | None = None, existing_trails: list | None = None,
                   obj_size: float = 100.0, html_path: 'pathlib.Path | str | None' = None,
                   element_states: dict | None = None, settings_state: dict | None = None,
-                  advanced_settings: dict | None = None) -> HTTPServer:
+                  advanced_settings: dict | None = None, dem_bounds: dict | None = None) -> HTTPServer:
     """Start the HTTP server, open the page in the browser, and return the server.
 
     The server writes confirmed coordinate JSON to *result_path* on POST /confirm,
@@ -522,6 +524,15 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     agnostic, so other picker pages can reuse it as-is. State is persisted to
     a path keyed off the served HTML file's name so two different picker
     pages never clobber each other's saved view/selection.
+
+    *dem_bounds*, if given, is a {"footprint", "name"} dict for a single DEM file, or
+    {"tiles": [{"footprint", "name"}, ...], "name"} for a folder of tiles (see
+    operators._dem_coverage_overlay()) describing the lat/lon footprint(s) of the
+    currently selected Local DEM File/folder. Inlined into the page as DEM_BOUNDS and
+    drawn as dashed reference polygon(s) by assets/map_init.js, so the user can see
+    which area the file has data for while drawing their own selection. None (the
+    default) draws nothing -- either a different elevation API is active, or nothing
+    could be read.
     """
     global _active_server, _pending_toggles, _pending_settings, _pending_advanced_settings
     if _active_server is not None:
@@ -553,6 +564,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     _Handler.element_states_json = json.dumps(element_states or {}).encode('utf-8')
     _Handler.settings_state_json = json.dumps(settings_state or {}).encode('utf-8')
     _Handler.advanced_settings_json = json.dumps(advanced_settings or {}).encode('utf-8')
+    _Handler.dem_bounds_json = json.dumps(dem_bounds).encode('utf-8')
     _Handler.obj_size = obj_size or 100.0
     _Handler.html_path = html_path
     _Handler.state_path = state_path

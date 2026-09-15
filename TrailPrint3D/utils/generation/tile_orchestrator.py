@@ -126,9 +126,6 @@ def _rtg_apply_elevation(
         lowestZ = min(lowestZ, val)
         highestZ = max(highestZ, val)
 
-    if indipendendTiles:
-        additionalExtrusion = lowestZ
-
     # Apply elevation to vertices
     for i, vert in enumerate(mesh.vertices):
         _world_co = _obj_matrix @ vert.co
@@ -137,6 +134,34 @@ def _rtg_apply_elevation(
         vert.co.z = tileVerts[i] / 1000 * scaleElevation * autoScale * _merc
         lowestZ = min(lowestZ, vert.co.z)
         highestZ = max(highestZ, vert.co.z)
+
+    if gen.settings.smoothTerrainTop:
+        # Unlike _rg_displace_terrain_with_curve (terrain_gen.py), this tile-based
+        # flow (map picker / puzzle picker / Extend) assigns elevation through the
+        # plain per-vertex loop above rather than foreach_get/set -- smoothing was
+        # simply never wired in here, so Smooth Terrain had zero effect on tiles
+        # built this way, at any strength.
+        import numpy as np
+
+        from ..terrain import smooth_terrain_top_z
+
+        _n = len(mesh.vertices)
+        co_flat = np.empty(_n * 3, dtype=np.float64)
+        mesh.vertices.foreach_get("co", co_flat)
+        co = co_flat.reshape((_n, 3))
+        co[:, 2] = smooth_terrain_top_z(
+            co[:, 0], co[:, 1], co[:, 2], iterations=gen.settings.smoothTerrainStrength
+        )
+        mesh.vertices.foreach_set("co", co.ravel())
+        mesh.update()
+        lowestZ = float(co[:, 2].min())
+        highestZ = float(co[:, 2].max())
+
+    # additionalExtrusion is locked to lowestZ (this tile's own base) only once
+    # elevation is in its final, possibly-smoothed form -- computing this earlier
+    # (before smoothing) would leave it referencing the pre-smoothing low point.
+    if indipendendTiles:
+        additionalExtrusion = lowestZ
 
     # Extrude bottom face and set its z
     bpy.context.view_layer.objects.active = zobj
