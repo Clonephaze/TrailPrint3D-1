@@ -410,59 +410,6 @@ class TP3D_OT_clear_cache(bpy.types.Operator):
 
         return {"FINISHED"}
 
-    bl_idname = "tp3d.pin_coords"
-    bl_label = _("PinCoords")
-    bl_description = _("Place a Pin on a Coordinate")
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        tp3d = context.scene.tp3d
-
-        minThickness = tp3d.minThickness
-
-        centerlat = tp3d.pinLat
-        centerlon = tp3d.pinLon
-
-        # _zp underscored because it's unused
-        xp, yp, _zp = utils.convert_to_blender_coordinates(
-            float(centerlat), float(centerlon), 0, 0
-        )
-        name = "Pin_" + str(round(centerlat, 2)) + "." + str(round(centerlon, 2))
-
-        # Delete existing object with same name (optional)
-        if name in bpy.data.objects:
-            bpy.data.objects.remove(bpy.data.objects[name], do_unlink=True)
-
-        # Get map object for raycasting
-        map_obj = None
-        active = context.view_layer.objects.active
-        if active and "objSize" in active:
-            map_obj = active
-        elif context.scene.tp3d.currentMap:
-            map_obj = context.scene.tp3d.currentMap
-
-        # Determine Z: raycast onto map surface, fallback to minThickness
-        pin_z = minThickness + 2
-        if map_obj:
-            hit_z = utils.RaycastPointToMeshZ((xp, yp, 0), map_obj)
-            if hit_z is not None:
-                pin_z = hit_z + 1  # cone center 1mm below surface
-
-        # Creatin the Cone
-        bpy.ops.mesh.primitive_cone_add(
-            vertices=16, radius1=0.4, radius2=0.8, depth=4, location=(xp, yp, pin_z)
-        )
-        pin = bpy.context.active_object
-        pin.name = name
-        mat = bpy.data.materials.get("TRAIL")
-        if mat:
-            pin.data.materials.append(mat)
-
-        if tp3d.pinCutout:
-            apply_pin_cutout(context, pin, tp3d.pinCutoutClearance)
-
-        return {"FINISHED"}
-
 
 class TP3D_OT_magnet_holes(bpy.types.Operator):
     bl_idname = "tp3d.magnet_holes"
