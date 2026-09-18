@@ -245,6 +245,72 @@ def _bring_blender_to_foreground() -> None:
     except (OSError, ImportError, AttributeError) as e:
         print(f"[TP3D picker_server] _bring_blender_to_foreground failed: {e}")
 
+def _apply_picker_window_icon() -> None:
+    """Give the picker's browser window a crisp taskbar icon (Windows only).
+
+    In --app mode Chromium builds the window/taskbar icon from the page's
+    ~16-32px favicon, which Windows then upscales -- visibly pixelated. This
+    instead sends WM_SETICON with the multi-size assets/icon.ico. Chromium
+    can re-set its own icon when the page finishes loading, so the icon is
+    re-applied for a while after launch rather than once. Runs on its own
+    daemon thread (pure OS window API, no bpy).
+    """
+    if sys.platform != 'win32':
+        return
+    icon_path = _ASSETS_DIR / 'icon.ico'
+    if not icon_path.exists():
+        return
+    try:
+        import ctypes
+        import time
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        user32.LoadImageW.restype = wintypes.HANDLE
+        user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+
+        IMAGE_ICON, LR_LOADFROMFILE = 1, 0x0010
+        WM_SETICON, ICON_SMALL, ICON_BIG = 0x0080, 0, 1
+        SM_CXSMICON = 49
+
+        def _load(size):
+            return user32.LoadImageW(None, str(icon_path), IMAGE_ICON, size, size, LR_LOADFROMFILE)
+
+        small = _load(user32.GetSystemMetrics(SM_CXSMICON) or 16)
+        big = _load(256)
+        if not big:
+            return
+
+        def _find_windows():
+            found = []
+
+            @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+            def _enum_proc(hwnd, _lparam):
+                if not user32.IsWindowVisible(hwnd):
+                    return True
+                cls = ctypes.create_unicode_buffer(64)
+                user32.GetClassNameW(hwnd, cls, 64)
+                if cls.value != 'Chrome_WidgetWin_1':
+                    return True
+                title = ctypes.create_unicode_buffer(256)
+                user32.GetWindowTextW(hwnd, title, 256)
+                if title.value.startswith('TrailPrint3D'):
+                    found.append(hwnd)
+                return True
+
+            user32.EnumWindows(_enum_proc, 0)
+            return found
+
+        for _ in range(20):
+            for hwnd in _find_windows():
+                if small:
+                    user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, small)
+                user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, big)
+            time.sleep(1.0)
+    except (OSError, ImportError, AttributeError) as e:
+        print(f"[TP3D picker_server] _apply_picker_window_icon failed: {e}")
+
+
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
@@ -698,6 +764,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
                 time.sleep(2)
 
         threading.Thread(target=_cleanup_profile, daemon=True).start()
+        threading.Thread(target=_apply_picker_window_icon, daemon=True).start()
     else:
         import bpy  # type: ignore
         bpy.ops.wm.url_open(url=url)
