@@ -502,6 +502,50 @@ function placeSvgBoxInViewport(fraction) {
     bindMoveHandle();
 }
 
+// Auto-places a drawn shape of the current type centered on *b* (an
+// L.LatLngBounds, e.g. an imported GPX trail's) so that *b* takes up about
+// *fraction* of it -- e.g. 0.8 leaves a 10% margin on each side. The box is
+// always square, sized off *b*'s longer side (in meters), whatever the
+// current shape. Same equirectangular meters-per-degree
+// approximation as squareBoundsFromRect/svgInscribedBounds. Replaces
+// whatever was previously drawn; callers decide whether that's appropriate.
+function placeShapeAroundBounds(b, fraction) {
+    var midLat = (b.getNorth() + b.getSouth()) / 2;
+    var midLng = (b.getEast() + b.getWest()) / 2;
+    var metersPerDegLat = 111320;
+    var metersPerDegLng = 111320 * Math.cos(midLat * Math.PI / 180);
+    if (metersPerDegLng <= 0) return;
+    var wM = (b.getEast() - b.getWest()) * metersPerDegLng;
+    var hM = (b.getNorth() - b.getSouth()) * metersPerDegLat;
+    var longest = Math.max(wM, hM);
+    if (longest <= 0) return;
+    var boxW = longest / fraction, boxH = boxW;
+    var halfLat = (boxH / metersPerDegLat) / 2;
+    var halfLng = (boxW / metersPerDegLng) / 2;
+    editHandles.clearLayers();
+    moveHandleLayer.clearLayers();
+    syncCenterHandles = null;
+    coords = {
+        north: midLat + halfLat, south: midLat - halfLat,
+        east: midLng + halfLng, west: midLng - halfLng,
+        type: currentShape
+    };
+    var rect = previewDrawnRect(coords);
+    if (drawMode === 'center') {
+        shapeCenter = boundsCenter(coords);
+        bindCenterEdit();
+    } else {
+        shapeCenter = null;
+        bindLiveEdit(rect);
+    }
+    bindCornerDrag(rect);
+    bindMoveHandle();
+    tp3dOnShapeChanged();
+    updateSendState();
+    updateStatus();
+    saveState();
+}
+
 // Drops the imported SVG shape and its file, reverting to Rectangle if it
 // was the active shape (there's nothing meaningful left to show once the
 // file backing it is gone) -- shared 'Clear SVG Shape' button / per-item

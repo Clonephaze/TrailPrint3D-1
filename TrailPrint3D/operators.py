@@ -2934,6 +2934,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         'square':    'SQUARE',
         'circle':    'CIRCLE',
         'octagon':   'OCTAGON',
+        'hexagon':   'HEXAGON',
         'svg':       'SVG',
     }
 
@@ -3154,6 +3155,9 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             elif shape_name == 'octagon':
                 blank = utils.create_octagon(gen_diameter / 2, props.num_subdivisions)
                 blank["Shape"] = "OCTAGON"
+            elif shape_name == 'hexagon':
+                blank = utils.create_hexagon(gen_diameter / 2, props.num_subdivisions)
+                blank["Shape"] = "HEXAGON"
             elif shape_name == 'svg':
                 svg_path = data.get('svg_path')
                 if not svg_path:
@@ -3266,10 +3270,12 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
             from .utils import geometry2d as _g2d
             from .utils.mesh_ops import _clean_solid_mesh, _extrude_flat_polygon, boolean_operation
-            from .utils.primitives import octagon_polygon, polygon_from_svg, rectangle_polygon
+            from .utils.primitives import hexagon_polygon, octagon_polygon, polygon_from_svg, rectangle_polygon
 
             if shape_name == 'octagon':
                 true_poly = octagon_polygon(diameter / 2)
+            elif shape_name == 'hexagon':
+                true_poly = hexagon_polygon(diameter / 2)
             elif shape_name == 'svg':
                 true_poly = polygon_from_svg(data.get('svg_path'), diameter)
             elif shape_name == 'square':

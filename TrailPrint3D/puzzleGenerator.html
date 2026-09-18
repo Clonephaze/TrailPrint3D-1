@@ -377,7 +377,7 @@
             }
             listEl.style.display = 'block';
             clearBtn.style.display = 'block';
-            listEl.innerHTML = '<div>+ ' + gpxNames[0] + '</div>'
+            listEl.innerHTML = '<div class="gpx-name-clip" title="' + gpxNames[0].replace(/"/g, '&quot;') + '">+ ' + gpxNames[0] + '</div>'
                 + '<div style="color:#888; font-style:italic; margin-top:2px;">'
                 + 'Multiple trails can be imported in the Premium version.</div>';
         }

@@ -95,6 +95,14 @@ function tp3dRepaintElementToggle(key) {
     });
 }
 
+// Repaints every known element key -- for after a batch of freshly-built
+// (not yet in the DOM at build time) icons gets attached, e.g. the Settings
+// modal's Elements tab cards, whose own per-card repaint call runs before
+// they're appended anywhere and so finds nothing to paint.
+function tp3dRepaintAllElementToggles() {
+    Object.keys(TP3D_ELEMENT_STATE).forEach(tp3dRepaintElementToggle);
+}
+
 // Repaints a composite category's own sub-checkbox inputs (in the Settings
 // modal's Elements tab, if currently built) to match ADVANCED_SETTINGS_STATE
 // -- live + editable while the category is on, or showing its remembered

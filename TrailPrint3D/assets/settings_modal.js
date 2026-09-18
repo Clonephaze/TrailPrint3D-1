@@ -259,6 +259,7 @@ function tp3dShowPreview(url, caption) {
     var box = panel.closest('.settings-modal-box');
     if (box) box.classList.add('preview-active');
     panel.innerHTML = '';
+    panel.setAttribute('data-preview-url', url);
     var img = document.createElement('img');
     img.src = url;
     img.alt = 'Preview';
@@ -296,6 +297,7 @@ function tp3dHidePreview() {
     if (!panel) return;
     var box = panel.closest('.settings-modal-box');
     if (box) box.classList.remove('preview-active');
+    panel.removeAttribute('data-preview-url');
     panel.innerHTML = '';
     panel.textContent = 'Click a highlighted setting to preview it here';
 }
@@ -313,7 +315,13 @@ function tp3dMakePreviewButton(url, caption) {
     btn.addEventListener('click', function(e) {
         e.preventDefault();
         e.stopPropagation();
-        tp3dShowPreview(url, caption);
+        // Clicking the "?" of the preview that's already showing closes it.
+        var panel = document.getElementById('settingsPreviewPanel');
+        if (panel && panel.getAttribute('data-preview-url') === url) {
+            tp3dHidePreview();
+        } else {
+            tp3dShowPreview(url, caption);
+        }
     });
     return btn;
 }
@@ -856,9 +864,13 @@ function tp3dBuildPuzzleTab() {
         if (!panels.elements) return;
         panels.elements.innerHTML = '';
         panels.elements.appendChild(tp3dBuildElementsTab());
+        tp3dRepaintAllElementToggles();
     };
 
     document.body.appendChild(modal);
+    // The cards' own per-card repaint ran while they were still detached from
+    // the document, so it painted nothing -- do it again now they're attached.
+    tp3dRepaintAllElementToggles();
 
     function openModal() { modal.classList.add('open'); }
     function closeModal() { modal.classList.remove('open'); }
