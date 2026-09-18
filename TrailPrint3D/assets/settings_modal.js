@@ -573,6 +573,9 @@ function tp3dBuildFieldRow(field) {
 
     var input = document.createElement('input');
     input.type = field.type;
+    // Lets a picker page find this field's input to push a value into it
+    // (e.g. multitile's Dovetail toggle raising Extra Map Height).
+    input.dataset.settingKey = field.key;
     if (field.type === 'number') {
         if (field.step != null) input.step = field.step;
         if (field.min != null) input.min = field.min;

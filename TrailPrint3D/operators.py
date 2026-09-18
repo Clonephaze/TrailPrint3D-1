@@ -783,11 +783,137 @@ def apply_pin_cutout(context, pin, clearance=0.0):
 
     return cut_count
 
+def dovetail_cutout(zobj, sides=None, obj_size=None):
+    """Boolean-cut dovetail recesses into the bottom edges of *zobj*.
+
+    *sides* is an optional set of edge indices (SQUARE: 0-3, HEXAGON: 0-5, in
+    the order the cutters are laid out below -- see dovetail_side_angles) that
+    restricts which edges get a cutout; None cuts every edge. Returns True if
+    a cut was made. *obj_size* overrides the object's "objSize" property for
+    callers whose tiles carry a stale one (see the multitile picker, where
+    generation stamps the sidebar's objSize onto every tile).
+    """
+    if obj_size is None:
+        if "objSize" not in zobj:
+            return False
+        obj_size = zobj["objSize"]
+    dovetailSize = 15
+    dovetailHeight = 3
+
+    if obj_size <= 50:
+        dovetailSize = 5
+    elif obj_size <= 75:
+        dovetailSize = 10
+
+    zobj.select_set(True)
+    bpy.context.view_layer.objects.active = zobj
+
+    #Flip normals and Get bottom faces
+    utils.selectBottomFaces(zobj)
+
+    # Switch to Edit Mode
+    #bpy.ops.object.mode_set(mode='EDIT')
+    mesh = bmesh.from_edit_mesh(zobj.data)
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    #Set 3D cursor to object's origin
+    bpy.context.scene.cursor.location = zobj.location
+
+    #Create cylinders around the object
+    obj_shape = zobj.get("Shape", "HEXAGON")
+    angles = dovetail_side_angles(zobj)
+    if obj_shape == "SQUARE":
+        radius = obj_size/2 - dovetailSize/2
+    else:  # HEXAGON
+        radius = obj_size/2 * 0.866 - dovetailSize/2
+    created_cylinders = []
+
+    for i, angle in enumerate(angles):
+        if sides is not None and i not in sides:
+            continue
+        offset_x = math.cos(angle) * radius
+        offset_y = math.sin(angle) * radius
+        pos = zobj.location + Vector((offset_x, offset_y, 0 + dovetailHeight/2))
+        rotation = Euler((0, 0, angle - math.radians(90)), 'XYZ')
+
+        bpy.ops.mesh.primitive_cylinder_add(
+            vertices = 3,
+            radius=dovetailSize,
+            depth=dovetailHeight,
+            location=pos,
+            rotation = rotation
+        )
+        cyl = bpy.context.active_object
+        created_cylinders.append(cyl)
+
+    if not created_cylinders:
+        bpy.ops.object.select_all(action='DESELECT')
+        return False
+
+    #Merge cylinders into one object
+    bpy.ops.object.select_all(action='DESELECT')
+    for cyl in created_cylinders:
+        cyl.select_set(True)
+    bpy.context.view_layer.objects.active = created_cylinders[0]
+    bpy.ops.object.join()
+    merged_cylinders = bpy.context.active_object
+
+    #Select top faces of the Triangles to scale them up slightly
+    utils.selectTopFaces(merged_cylinders)
+
+    mesh = bmesh.from_edit_mesh(merged_cylinders.data)
+    # Scale factor
+    scale_factor = 1.05
+
+    # Scale each selected face from its own center
+    for face in mesh.faces:
+        if face.select:
+            center = face.calc_center_median()
+            for vert in face.verts:
+                direction = vert.co - center
+                vert.co = center + direction * scale_factor
+
+    # Update the mesh
+    bmesh.update_edit_mesh(merged_cylinders.data, loop_triangles=False)
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    #Perform boolean difference
+    bpy.ops.object.select_all(action='DESELECT')
+    zobj.select_set(True)
+    bpy.context.view_layer.objects.active = zobj
+
+    bool_mod = zobj.modifiers.new(name="DovetailCutout", type='BOOLEAN')
+    bool_mod.operation = 'DIFFERENCE'
+    bool_mod.object = merged_cylinders
+
+    zobj["Dovetail"] = True
+
+    bpy.ops.object.modifier_apply(modifier=bool_mod.name)
+
+    #Cleanup - delete the merged cutter object
+    bpy.data.objects.remove(merged_cylinders, do_unlink=True)
+
+    bpy.ops.object.select_all(action='DESELECT')
+    zobj.select_set(False)
+    return True
+
+
+def dovetail_side_angles(zobj):
+    """World-space outward angle (radians) of each edge of *zobj*'s shape, in
+    the order dovetail_cutout indexes them. SQUARE has 4 edges, HEXAGON 6."""
+    shape_rotation = math.radians(zobj.get("shapeRotation", 0))
+    if zobj.get("Shape", "HEXAGON") == "SQUARE":
+        return [shape_rotation + i * math.radians(90) for i in range(4)]
+    return [shape_rotation + math.radians(30) + i * math.radians(60) for i in range(6)]
+
+
 class TP3D_OT_dovetail(bpy.types.Operator):
     bl_idname = "tp3d.dovetail"
     bl_label = "Dovetail"
     bl_options = {'REGISTER', 'UNDO'}
-    
+
     def execute(self,context):
 
         selected_objects = context.selected_objects
@@ -795,11 +921,11 @@ class TP3D_OT_dovetail(bpy.types.Operator):
         if not selected_objects:
             utils.show_message_box("No objects selected")
             return{'FINISHED'}
-        
+
         bpy.ops.object.select_all(action='DESELECT')
         for zobj in selected_objects:
             zobj.select_set(False)
-        
+
         for zobj in selected_objects:
 
             if zobj.type != 'MESH':
@@ -811,117 +937,12 @@ class TP3D_OT_dovetail(bpy.types.Operator):
             if zobj["Dovetail"]:
                 continue
 
-            zobj.select_set(True)
-            bpy.context.view_layer.objects.active = zobj
-
-
             #Check for selection and custom property
-            if zobj and "objSize" not in zobj:
+            if "objSize" not in zobj:
                 break
-            
-            obj_size = zobj["objSize"]
-            shapeRotation = zobj["shapeRotation"]
-            dovetailSize = 15
-            dovetailHeight = 3
 
+            dovetail_cutout(zobj)
 
-            if obj_size <= 50:
-                dovetailSize = 5
-            elif obj_size <= 75:
-                dovetailSize = 10
-
-            #Flip normals and Get bottom faces
-            utils.selectBottomFaces(zobj)
-
-            # Switch to Edit Mode
-            #bpy.ops.object.mode_set(mode='EDIT')
-            mesh = bmesh.from_edit_mesh(zobj.data)
-
-            bpy.ops.object.mode_set(mode='OBJECT')
-
-            #Set 3D cursor to object's origin
-            bpy.context.scene.cursor.location = zobj.location
-
-            #Create cylinders around the object
-            obj_shape = zobj.get("Shape", "HEXAGON")
-            created_cylinders = []
-
-            if obj_shape == "SQUARE":
-                radius = obj_size/2 - dovetailSize/2
-                angle_step = math.radians(90)
-                steps = 4
-                angle_start = math.radians(shapeRotation)
-            else:  # HEXAGON
-                radius = obj_size/2 * 0.866 - dovetailSize/2
-                angle_step = math.radians(60)
-                steps = 6
-                angle_start = math.radians(shapeRotation) + math.radians(30)
-
-            for i in range(steps):
-                angle = i * angle_step + angle_start
-                offset_x = math.cos(angle) * radius
-                offset_y = math.sin(angle) * radius
-                pos = zobj.location + Vector((offset_x, offset_y, 0 + dovetailHeight/2))
-                rotation = Euler((0, 0, angle - math.radians(90)), 'XYZ')
-
-                bpy.ops.mesh.primitive_cylinder_add(
-                    vertices = 3,
-                    radius=dovetailSize,
-                    depth=dovetailHeight,
-                    location=pos,
-                    rotation = rotation
-                )
-                cyl = bpy.context.active_object
-                created_cylinders.append(cyl)
-        
-            #Merge cylinders into one object
-            bpy.ops.object.select_all(action='DESELECT')
-            for cyl in created_cylinders:
-                cyl.select_set(True)
-            bpy.context.view_layer.objects.active = created_cylinders[0]
-            bpy.ops.object.join()
-            merged_cylinders = bpy.context.active_object
-
-            #Select top faces of the Triangles to scale them up slightly
-            utils.selectTopFaces(merged_cylinders)
-
-            mesh = bmesh.from_edit_mesh(merged_cylinders.data)
-            # Scale factor
-            scale_factor = 1.05
-
-            # Scale each selected face from its own center
-            for face in mesh.faces:
-                if face.select:
-                    center = face.calc_center_median()
-                    for vert in face.verts:
-                        direction = vert.co - center
-                        vert.co = center + direction * scale_factor
-
-            # Update the mesh
-            bmesh.update_edit_mesh(merged_cylinders.data, loop_triangles=False)
-
-            bpy.ops.object.mode_set(mode='OBJECT')
-
-            #Perform boolean difference
-            bpy.ops.object.select_all(action='DESELECT')
-            zobj.select_set(True)
-            bpy.context.view_layer.objects.active = zobj
-
-            bool_mod = zobj.modifiers.new(name="DovetailCutout", type='BOOLEAN')
-            bool_mod.operation = 'DIFFERENCE'
-            bool_mod.object = merged_cylinders
-            
-
-            zobj["Dovetail"] = True
-
-            bpy.ops.object.modifier_apply(modifier=bool_mod.name)
-
-            #Cleanup - delete the merged cutter object
-            bpy.data.objects.remove(merged_cylinders, do_unlink=True)
-
-            bpy.ops.object.select_all(action='DESELECT')
-            zobj.select_set(False)
-        
         bpy.context.view_layer.objects.active = selected_objects[0]
         for zobj in selected_objects:
             zobj.select_set(True)
