@@ -106,16 +106,20 @@ var SETTINGS_MODAL_MAP_FIELDS = [
     { key: 'scaleElevation', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Elevation Scale', type: 'number', step: 0.1, min: 0,
       title: 'Multiplier to the Elevation',
-      preview: 'https://trailprint3d.com/images/howto/installation/ElevationScaleGif.webp' },
+      preview: 'https://trailprint3d.com/images/howto/ElevationScaleGif.webp' },
     { key: 'minThickness', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Extra Map Height', type: 'number', step: 0.5, min: 0.5,
-      title: 'Extra height added to the map, below the terrain' },
+      title: 'Extra height added to the map, below the terrain',
+      preview: 'https://trailprint3d.com/images/howto/ExtraMapHeight.webp' },
     { key: 'shapeRotation', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Shape Rotation', type: 'number', step: 1, min: -360, max: 360,
-      title: 'Rotate the shape around the trail/map center' },
+      title: 'Rotate the shape around the trail/map center',
+      preview: 'https://trailprint3d.com/images/howto/ShapeRotation.webp' },
     { key: 'smoothTerrainTop', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Smooth Terrain', type: 'checkbox',
       title: 'Smooth the terrain -- useful if it looks blocky or has grid lines',
+      preview: 'https://trailprint3d.com/images/howto/SmoothTerrain.webp',
+      previewCaption: 'If your Terrain looks blocky you probably reached the max detail the used Dataset is providing. You can try to smooth the blocky look using this function.',
       // Rendered as one field-and-strength unit on the same row (see
       // tp3dBuildFieldRow's `companion` handling) instead of its own
       // separate showWhen row, mirroring panels.py's own smoothRow, which
@@ -130,11 +134,11 @@ var SETTINGS_MODAL_MAP_FIELDS = [
     { key: 'pathThickness', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Trail Thickness', type: 'number', step: 0.01, min: 0.1, max: 5, decimals: 2,
       title: 'Thickness of the path in mm',
-      preview: 'https://trailprint3d.com/images/howto/installation/PathThicknessGif.webp' },
+      preview: 'https://trailprint3d.com/images/howto/PathThicknessGif.webp' },
     { key: 'overwritePathElevation', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Snap Trail to Terrain', type: 'checkbox',
       title: 'Cast each point of the trail onto the Terrain Mesh',
-      preview: 'https://trailprint3d.com/images/AddonHowto/SnapTrailToTerrain.jpg',
+      preview: 'https://trailprint3d.com/images/howto/SnapTrailToTerrain.jpg',
       previewCaption: [
           'GPX files usually have their own elevation data.. But sometimes they dont and sometimes they have their values from diffrent datasets.',
           'To make sure the Trail and Terrain match perfectly, enable this to Snap each point of the Trail to the Terrain'
@@ -142,10 +146,11 @@ var SETTINGS_MODAL_MAP_FIELDS = [
     { key: 'singleColorMode', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'SingleColorMode Trail', type: 'checkbox',
       title: 'Enable this if you don\'t have a Multicolor printer',
-      preview: 'https://trailprint3d.com/images/howto/installation/SingleColorTrail.webp' },
+      preview: 'https://trailprint3d.com/images/howto/SingleColorTrail.webp' },
     { key: 'singleColorModeHeight', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'SingleColorMode Trail Height', type: 'number', step: 0.05, min: 0, max: 10,
       title: 'How far the SCM trail strip rises above the terrain surface (mm)',
+      preview: 'https://trailprint3d.com/images/howto/SEM%20-%20Trail%20Height.webp',
       showWhen: { key: 'singleColorMode', equals: true } },
     { key: 'singleColorModeTolerance', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'SingleColorMode Tolerance', type: 'number', step: 0.05, min: 0,
@@ -604,6 +609,10 @@ function tp3dBuildFieldRow(field) {
         tp3dRefreshMapTabVisibility();
         if (companionInput) companionInput.hidden = !value;
         tp3dSendMapField(field, value);
+        // Optional per-page hook (e.g. premium/map_generator_pe.html's rotated
+        // shape-preview overlay) -- most pages don't define this, so it's a
+        // no-op for them.
+        if (window.tp3dOnMapFieldChanged) window.tp3dOnMapFieldChanged(field.key, value);
     });
 
     row.appendChild(tp3dWithPreview(label, field.preview, field.previewCaption));
