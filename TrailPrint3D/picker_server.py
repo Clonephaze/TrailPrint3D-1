@@ -204,6 +204,11 @@ def _bring_blender_to_foreground() -> None:
         if user32.IsIconic(hwnd):
             user32.ShowWindow(hwnd, SW_RESTORE)
 
+        try:
+            user32.AllowSetForegroundWindow(target_pid)
+        except AttributeError:
+            pass
+
         VK_MENU = 0x12
         KEYEVENTF_KEYUP = 0x0002
         user32.keybd_event(VK_MENU, 0, 0, 0)
