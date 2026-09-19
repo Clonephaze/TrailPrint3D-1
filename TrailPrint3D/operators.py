@@ -13,7 +13,7 @@ import time
 import bmesh  # type: ignore
 import bpy  # type: ignore
 from bpy.app.translations import pgettext as _
-from bpy.props import StringProperty  # type: ignore
+from bpy.props import CollectionProperty, StringProperty  # type: ignore
 from mathutils import Euler, Quaternion, Vector, noise  # type: ignore
 
 from . import addon_preferences, utils
@@ -1993,6 +1993,36 @@ class TP3D_OT_pick_svg_file(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
 
+class TP3D_OT_pick_dem_path(bpy.types.Operator):
+    bl_idname = "tp3d.pick_dem_path"
+    bl_label = _("Use DEM Path")
+    bl_description = _("Use the selected DEM GeoTIFF file or folder")
+
+    directory: StringProperty(subtype="DIR_PATH")  # type: ignore
+    files: CollectionProperty(type=bpy.types.OperatorFileListElement)  # type: ignore
+    filepath: StringProperty(subtype="FILE_PATH")  # type: ignore
+    filter_glob: StringProperty(
+        default="*.tif;*.tiff", options={"HIDDEN"}
+    )  # type: ignore
+
+    def execute(self, context):
+        # filepath can be stale when the user only selects a folder in the file browser.
+        context.scene.tp3d.demFilePath = (
+            self.filepath if os.path.isfile(self.filepath) else self.directory
+        )
+        return {"FINISHED"}
+
+    def invoke(self, context, event):
+        current = context.scene.tp3d.demFilePath
+        if current:
+            if os.path.isfile(current):
+                self.filepath = current
+            elif os.path.isdir(current):
+                self.directory = current
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+
 class TP3D_OT_pick_svg_shape_file(bpy.types.Operator):
     bl_idname = "tp3d.pick_svg_shape_file"
     bl_label = _("Use SVG File")
@@ -2187,6 +2217,41 @@ def _collect_existing_maps():
     return maps
 
 
+def _dem_coverage_overlay():
+    """Return Local DEM coverage polygons for picker overlay, or None."""
+    tp3d = bpy.context.scene.tp3d
+    if tp3d.api != "LOCAL_DEM" or not tp3d.demFilePath:
+        return None
+
+    import struct
+    import zlib
+
+    from .utils.geotiff import GeoTiffError, build_tile_index, get_geotiff_footprint
+
+    if os.path.isdir(tp3d.demFilePath):
+        index = build_tile_index(tp3d.demFilePath)
+        if not index:
+            print(
+                f"[TP3D] No readable DEM tiles found in {tp3d.demFilePath} for picker overlay"
+            )
+            return None
+        tiles = [
+            {"footprint": e["footprint"], "name": os.path.basename(e["path"])}
+            for e in index
+        ]
+        return {
+            "tiles": tiles,
+            "name": f"{len(tiles)} tiles in {os.path.basename(tp3d.demFilePath.rstrip(os.sep))}",
+        }
+
+    try:
+        footprint = get_geotiff_footprint(tp3d.demFilePath)
+    except (GeoTiffError, OSError, struct.error, zlib.error) as e:
+        print(f"[TP3D] Could not read DEM coverage bounds for picker overlay: {e}")
+        return None
+    return {"footprint": footprint, "name": os.path.basename(tp3d.demFilePath)}
+
+
 def _collect_existing_trails():
     """Gather geographic paths of trail curves already in the scene, so the
     map picker can show them for reference instead of re-sending/duplicating
@@ -2280,6 +2345,12 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             utils.apply_setting_update(context.scene.tp3d, key, value)
         for key, value in mp.drain_pending_advanced_settings():
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
+        mp.refresh_state_snapshots(
+            element_states=utils.build_element_toggle_states(context.scene.tp3d),
+            settings_state=utils.build_settings_row_state(context.scene.tp3d),
+            advanced_settings=utils.build_advanced_settings_state(context.scene.tp3d),
+            element_source=context.scene.tp3d.elementSource,
+        )
 
         rp = pathlib.Path(self._result_path)
         if not (rp.exists() and rp.stat().st_size > 0):
@@ -2345,6 +2416,8 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             element_states=utils.build_element_toggle_states(context.scene.tp3d),
             settings_state=utils.build_settings_row_state(context.scene.tp3d),
             advanced_settings=utils.build_advanced_settings_state(context.scene.tp3d),
+            dem_bounds=_dem_coverage_overlay(),
+            element_source=context.scene.tp3d.elementSource,
         )
 
         wm = context.window_manager
@@ -2849,6 +2922,12 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             utils.apply_setting_update(context.scene.tp3d, key, value)
         for key, value in mp.drain_pending_advanced_settings():
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
+        mp.refresh_state_snapshots(
+            element_states=utils.build_element_toggle_states(context.scene.tp3d),
+            settings_state=utils.build_settings_row_state(context.scene.tp3d),
+            advanced_settings=utils.build_advanced_settings_state(context.scene.tp3d),
+            element_source=context.scene.tp3d.elementSource,
+        )
 
         rp = pathlib.Path(self._result_path)
         if not (rp.exists() and rp.stat().st_size > 0):
@@ -2908,6 +2987,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             element_states=utils.build_element_toggle_states(context.scene.tp3d),
             settings_state=utils.build_settings_row_state(context.scene.tp3d),
             advanced_settings=utils.build_advanced_settings_state(context.scene.tp3d),
+            dem_bounds=_dem_coverage_overlay(),
+            element_source=context.scene.tp3d.elementSource,
         )
 
         wm = context.window_manager

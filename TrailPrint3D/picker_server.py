@@ -74,6 +74,25 @@ def drain_pending_advanced_settings() -> list:
     return updates
 
 
+def refresh_state_snapshots(
+    element_states: dict | None = None,
+    settings_state: dict | None = None,
+    advanced_settings: dict | None = None,
+    element_source: str | None = None,
+) -> None:
+    """Refresh in-memory picker state snapshots used by GET responses."""
+    if element_states is not None:
+        _Handler.element_states_json = json.dumps(element_states).encode("utf-8")
+    if settings_state is not None:
+        _Handler.settings_state_json = json.dumps(settings_state).encode("utf-8")
+    if advanced_settings is not None:
+        _Handler.advanced_settings_json = json.dumps(advanced_settings).encode(
+            "utf-8"
+        )
+    if element_source is not None:
+        _Handler.element_source = element_source
+
+
 _HTML_PATH = pathlib.Path(__file__).parent / "premium" / "multitile_generator.html"
 
 # Markup shared by every picker page (puzzleGenerator.html,
@@ -272,6 +291,8 @@ class _Handler(BaseHTTPRequestHandler):
     element_states_json: bytes = b"{}"
     settings_state_json: bytes = b"{}"
     advanced_settings_json: bytes = b"{}"
+    element_source: str = "OSM"
+    dem_bounds_json: bytes = b"null"
     obj_size: float = 100.0
     html_path: pathlib.Path = _HTML_PATH
     state_path: pathlib.Path = _STATE_PATH
@@ -280,6 +301,27 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        if self.path == "/get_source_state":
+            body = json.dumps(
+                {
+                    "elementSource": self.element_source,
+                    "elementStates": json.loads(
+                        self.element_states_json.decode("utf-8")
+                    ),
+                    "settingsState": json.loads(
+                        self.settings_state_json.decode("utf-8")
+                    ),
+                    "advancedSettings": json.loads(
+                        self.advanced_settings_json.decode("utf-8")
+                    ),
+                }
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == "/get_existing_maps":
             body = self.existing_maps_json
             self.send_response(200)
@@ -355,6 +397,10 @@ class _Handler(BaseHTTPRequestHandler):
             )
             .replace("__OBJSIZE__", str(self.obj_size))
             .replace("__COMMON_CSS__", _COMMON_CSS_PATH.read_text(encoding="utf-8"))
+            .replace(
+                "__DEM_BOUNDS_JS__",
+                "var DEM_BOUNDS = " + self.dem_bounds_json.decode("utf-8") + ";",
+            )
             .replace("__MAP_INIT_JS__", _MAP_INIT_JS_PATH.read_text(encoding="utf-8"))
             .replace(
                 "__LOCATION_PANEL_JS__",
@@ -366,6 +412,10 @@ class _Handler(BaseHTTPRequestHandler):
                 "var ELEMENT_STATES = "
                 + self.element_states_json.decode("utf-8")
                 + ";",
+            )
+            .replace(
+                "__ELEMENT_SOURCE_JS__",
+                "var ELEMENT_SOURCE = " + json.dumps(self.element_source) + ";",
             )
             .replace(
                 "__ELEMENT_STATUS_JS__",
@@ -533,6 +583,8 @@ def start_picker(
     element_states: dict | None = None,
     settings_state: dict | None = None,
     advanced_settings: dict | None = None,
+    dem_bounds: dict | None = None,
+    element_source: str | None = None,
 ) -> HTTPServer:
     """Start the HTTP server, open the page in the browser, and return the server.
 
@@ -626,6 +678,8 @@ def start_picker(
     _Handler.advanced_settings_json = json.dumps(advanced_settings or {}).encode(
         "utf-8"
     )
+    _Handler.element_source = element_source or "OSM"
+    _Handler.dem_bounds_json = json.dumps(dem_bounds).encode("utf-8")
     _Handler.obj_size = obj_size or 100.0
     _Handler.html_path = html_path
     _Handler.state_path = state_path
