@@ -76,6 +76,8 @@ importlib.reload(T.utils.geotiff)
 # scope) imports, so reloading TrailPrint3D.utils.osm alone (its empty
 # __init__.py) does NOT refresh them -- each must be imported and reloaded
 # explicitly, in dependency order.
+_imp("utils.osm.bbox_snap")
+_imp("utils.osm.exclusions")
 _imp("utils.osm.fetch_utils")
 _imp("utils.osm.fetch_solo")
 _imp("utils.osm.fetch_group")
@@ -83,6 +85,11 @@ _imp("utils.osm.gen")
 _imp("utils.osm.roads")
 _imp("utils.osm.buildings")
 _imp("utils.osm.water_polygons")
+_imp("utils.osm.prefetch")
+# bbox_snap/exclusions are leaves imported by fetch_solo/fetch_group at module
+# scope; prefetch imports bbox_snap at module scope (rest is deferred).
+importlib.reload(T.utils.osm.bbox_snap)
+importlib.reload(T.utils.osm.exclusions)
 importlib.reload(T.utils.osm.fetch_utils)
 importlib.reload(T.utils.osm.fetch_solo)
 importlib.reload(T.utils.osm.fetch_group)
@@ -90,6 +97,7 @@ importlib.reload(T.utils.osm.gen)
 importlib.reload(T.utils.osm.roads)
 importlib.reload(T.utils.osm.buildings)
 importlib.reload(T.utils.osm.water_polygons)
+importlib.reload(T.utils.osm.prefetch)
 importlib.reload(T.utils.osm)
 
 importlib.reload(T.utils.terrain)
