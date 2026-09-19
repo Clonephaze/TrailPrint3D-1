@@ -454,6 +454,189 @@ def bake_trail_into_texture(terrain_obj, trail_polygon, material=None):
     return True
 
 
+def _value_noise_field(xs, ys, scale, seed=0):
+    """Cheap fully-vectorised smooth noise: bilinear-interpolated hash
+    lattice, numpy-only (no scipy, no mathutils.noise -- that isn't
+    vectorised, so calling it per-pixel across a 2048x2048 grid is a
+    non-starter). xs/ys are arrays of local-space coordinates of any shape;
+    scale is the lattice frequency (smaller = broader, smoother features).
+    Returns values in roughly [-1, 1], same shape as xs/ys.
+    """
+    gx = xs.astype(np.float64) * scale
+    gy = ys.astype(np.float64) * scale
+    x0 = np.floor(gx).astype(np.int64)
+    y0 = np.floor(gy).astype(np.int64)
+    tx = gx - x0
+    ty = gy - y0
+
+    def _hash(ix, iy):
+        h = (ix * 374761393 + iy * 668265263 + seed * 2147483647) & 0xFFFFFFFF
+        h = (h ^ (h >> 13)) * 1274126177 & 0xFFFFFFFF
+        h = h ^ (h >> 16)
+        return (h & 0xFFFF).astype(np.float64) / 65535.0 * 2.0 - 1.0
+
+    def _smooth(t):
+        return t * t * (3.0 - 2.0 * t)
+
+    sx = _smooth(tx)
+    sy = _smooth(ty)
+
+    n00 = _hash(x0, y0)
+    n10 = _hash(x0 + 1, y0)
+    n01 = _hash(x0, y0 + 1)
+    n11 = _hash(x0 + 1, y0 + 1)
+
+    nx0 = n00 * (1.0 - sx) + n10 * sx
+    nx1 = n01 * (1.0 - sx) + n11 * sx
+    return nx0 * (1.0 - sy) + nx1 * sy
+
+
+def _rasterize_height_field(mesh, min_x, min_y, width, height, resolution):
+    """Rasterize the mesh's own top-facing triangles into a per-pixel
+    elevation grid via barycentric interpolation of vertex Z.
+
+    Deliberately reads whatever the mesh looks like *right now* rather than
+    any generation-time elevation data (gen.runtime.tileVerts) -- this
+    operator runs standalone, well after generation, with no GenerationContext
+    available, and build_mesh_from_polygon's lattice-clipped verts are never
+    a clean row-major grid for any shape anyway, so there's no cheap reshape
+    to fall back on. Working from the live mesh also means a single-color-mode
+    trail's boolean cutout is handled for free: pixels with no covering
+    top-facing triangle are simply left as NaN and never painted.
+
+    Returns a (resolution, resolution) float32 array of local-space Z,
+    NaN where no top-facing triangle covers that pixel.
+    """
+    mesh.calc_loop_triangles()
+    tris = mesh.loop_triangles
+    n_tris = len(tris)
+    elev = np.full((resolution, resolution), np.nan, dtype=np.float32)
+    if n_tris == 0:
+        return elev
+
+    co = np.empty(len(mesh.vertices) * 3, dtype=np.float64)
+    mesh.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+
+    tri_verts = np.empty(n_tris * 3, dtype=np.int64)
+    tris.foreach_get("vertices", tri_verts)
+    tri_verts = tri_verts.reshape(-1, 3)
+
+    tri_normals = np.empty(n_tris * 3, dtype=np.float32)
+    tris.foreach_get("normal", tri_normals)
+    tri_normals = tri_normals.reshape(-1, 3)
+
+    # Same nz > 0.1 convention already used elsewhere in this file to pick
+    # top-facing geometry out from structural side/bottom faces.
+    top_tri_idx = np.nonzero(tri_normals[:, 2] > 0.1)[0]
+
+    for ti in top_tri_idx:
+        i0, i1, i2 = tri_verts[ti]
+        p0, p1, p2 = co[i0], co[i1], co[i2]
+
+        px = (np.array([p0[0], p1[0], p2[0]]) - min_x) / width * resolution
+        py = (np.array([p0[1], p1[1], p2[1]]) - min_y) / height * resolution
+
+        col_min = max(0, int(np.floor(px.min())))
+        col_max = min(resolution, int(np.ceil(px.max())) + 1)
+        row_min = max(0, int(np.floor(py.min())))
+        row_max = min(resolution, int(np.ceil(py.max())) + 1)
+        if col_min >= col_max or row_min >= row_max:
+            continue
+
+        denom = (py[1] - py[2]) * (px[0] - px[2]) + (px[2] - px[1]) * (py[0] - py[2])
+        if abs(denom) < 1e-9:
+            continue
+
+        xs, ys = np.meshgrid(
+            np.arange(col_min, col_max) + 0.5,
+            np.arange(row_min, row_max) + 0.5,
+        )
+        w0 = ((py[1] - py[2]) * (xs - px[2]) + (px[2] - px[1]) * (ys - py[2])) / denom
+        w1 = ((py[2] - py[0]) * (xs - px[2]) + (px[0] - px[2]) * (ys - py[2])) / denom
+        w2 = 1.0 - w0 - w1
+
+        inside = (w0 >= -1e-6) & (w1 >= -1e-6) & (w2 >= -1e-6)
+        if not inside.any():
+            continue
+
+        z = w0 * p0[2] + w1 * p1[2] + w2 * p2[2]
+        sub_rows, sub_cols = np.nonzero(inside)
+        elev[row_min + sub_rows, col_min + sub_cols] = z[sub_rows, sub_cols]
+
+    return elev
+
+
+def bake_height_layer_into_texture(terrain_obj, z_threshold, material=None,
+                                    noise_amplitude=2.0, noise_scale=0.04):
+    """Paint a noised colour-by-height layer onto terrain_obj's EXISTING
+    MMU_Paint texture in place, on top of whatever element/land-cover
+    rasterization is already baked into it -- mirrors bake_trail_into_texture's
+    read/modify/write-back pattern, since this is also called long after
+    setup_paint_texture's original polygons_by_kind is gone.
+
+    z_threshold is in the same local-space Z units already used by the
+    vertex/material-index "Color Mountains" path (see operators.py) --
+    noise_amplitude/noise_scale perturb that flat threshold per-pixel via
+    _value_noise_field so the boundary isn't a razor-flat line.
+
+    material : the MOUNTAIN material by default, matching every other
+    export path's colour (see material_to_srgb's docstring for why that
+    conversion has to stay a plain 0-255 scale, not gamma decoding).
+
+    Returns False (no-op) if terrain_obj has no existing paint texture.
+    """
+    mesh = terrain_obj.data
+    img_name = f"{mesh.name}_MMU_Paint"
+    image = bpy.data.images.get(img_name)
+    if image is None:
+        return False
+
+    resolution = image.size[0]
+    min_x, min_y, width, height = _compute_local_bbox(terrain_obj)
+    if width <= 0 or height <= 0:
+        return False
+
+    elev = _rasterize_height_field(mesh, min_x, min_y, width, height, resolution)
+
+    ys, xs = np.mgrid[0:resolution, 0:resolution]
+    wx = min_x + (xs + 0.5) / resolution * width
+    wy = min_y + (ys + 0.5) / resolution * height
+    noise_field = _value_noise_field(wx, wy, noise_scale)
+    local_thresh = z_threshold + noise_field * noise_amplitude
+
+    mountain_mask = ~np.isnan(elev) & (elev > local_thresh)
+    if not mountain_mask.any():
+        return True  # nothing above threshold -- not an error, just no-op
+
+    arr = np.empty(resolution * resolution * 4, dtype=np.float32)
+    image.pixels.foreach_get(arr)
+    arr = arr.reshape((resolution, resolution, 4))
+
+    srgb = material_to_srgb(material) if material is not None else _named_material_srgb("MOUNTAIN")
+    color_f = (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
+    arr[mountain_mask] = color_f
+
+    image.pixels.foreach_set(arr.ravel())
+    image.pack()
+
+    # Register MOUNTAIN in the exported extruder-colour palette if this
+    # map's original bake predates height-colouring (same pattern as
+    # bake_trail_into_texture's TRAIL registration below).
+    import ast
+    try:
+        palette = ast.literal_eval(mesh.get("3mf_paint_extruder_colors", "{}"))
+    except (ValueError, SyntaxError):
+        palette = {}
+    mountain_hex = _srgb_to_hex(*srgb)
+    if mountain_hex not in palette.values():
+        next_idx = (max(palette.keys()) + 1) if palette else 1
+        palette[next_idx] = mountain_hex
+        mesh["3mf_paint_extruder_colors"] = str(palette)
+
+    return True
+
+
 def tag_solid_color_for_paint_export(obj, srgb, palette):
     """Give a companion mesh a 1×1 solid-colour paint texture.
 
