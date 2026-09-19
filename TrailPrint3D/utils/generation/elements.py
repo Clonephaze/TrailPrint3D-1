@@ -1201,7 +1201,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
     trail_thick_ribbons = []
 
     # Step 1: Process curve projections (only for SINGLECOLORMODE_REMESH with curves)
-    if gen.settings.elementMode == "SINGLECOLORMODE_REMESH" and gen.runtime.curveObjs:
+    if gen.settings.singleColorMode and gen.runtime.curveObjs:
         thickerCurves, trail_thick_ribbons = _process_curve_projections(gen, obj)
 
     # Step 2: In PAINT mode, clip trail curves to the map shape and collect
