@@ -12,11 +12,9 @@ import time
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
-from bpy.app.translations import (
-    pgettext as _,  # type: ignore #For Translation of Text Required
-)
+from bpy.app.translations import pgettext as _
 from bpy.props import StringProperty  # type: ignore
-from mathutils import Euler, Quaternion, Vector  # type: ignore
+from mathutils import Euler, Quaternion, Vector, noise  # type: ignore
 
 from . import addon_preferences, utils
 from . import constants as const
@@ -929,10 +927,34 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
     bl_description = _("Color Mountains above a certain Threshold")
     bl_options = {"REGISTER", "UNDO"}
 
+    def invoke(self, context, event):
+        tp3d = context.scene.tp3d
+        self.mountain_treshold = tp3d.mountain_treshold
+        self.mountain_noise = tp3d.mountain_noise
+        self.mountain_noise_amplitude = tp3d.mountain_noise_amplitude
+        self.mountain_noise_scale = tp3d.mountain_noise_scale
+        return self.execute(context)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "mountain_treshold")
+        layout.prop(self, "mountain_noise")
+        col = layout.column()
+        col.enabled = self.mountain_noise
+        col.prop(self, "mountain_noise_amplitude")
+        col.prop(self, "mountain_noise_scale")
+
     def execute(self, context):
 
-        selected_objects = bpy.context.selected_objects
-        min_treshold = context.scene.tp3d.mountain_treshold
+        tp3d = context.scene.tp3d
+        # Keep scene settings and redo settings in sync.
+        tp3d.mountain_treshold = self.mountain_treshold
+        tp3d.mountain_noise = self.mountain_noise
+        tp3d.mountain_noise_amplitude = self.mountain_noise_amplitude
+        tp3d.mountain_noise_scale = self.mountain_noise_scale
+
+        selected_objects = context.selected_objects
+        min_treshold = self.mountain_treshold
 
         # Collect min/max from custom properties
         min_z = None
@@ -963,12 +985,43 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
 
         # tres = (max_z-min_z)/100 * min_treshold + minThickness
         tres = (max_z + minThickness) / 100 * min_treshold + 0.2  # + minThickness
+        noise_amplitude = self.mountain_noise_amplitude if self.mountain_noise else 0.0
+        noise_scale = self.mountain_noise_scale
 
         # ---------------------------------------
         # Create or get green material
 
         # Create or get a gray material
         mat = bpy.data.materials.get("MOUNTAIN")
+
+        def color_mountains_noised(
+            obj, z_threshold, base_mat, mountain_mat, noise_amplitude, noise_scale
+        ):
+            # No cut_mesh_at_height bisect here on purpose: a flat bisect
+            # plane paired with a noised (non-flat) colour boundary would
+            # put the new edge loop and the colour line at different
+            # heights -- a straight geometric crease under a wavy colour
+            # edge, which is exactly the mismatch the original flat bisect
+            # was added to prevent (see color_mountain's history). Skipping
+            # it means the boundary follows whatever face resolution the
+            # terrain already has -- steppy on a coarse lattice, but
+            # geometrically honest. A noise-matched bisect band is a
+            # possible future enhancement if that steppiness matters.
+            mesh = obj.data
+            base_index = mesh.materials.find(base_mat)
+            mount_index = mesh.materials.find(mountain_mat)
+            for f in mesh.polygons:
+                if f.material_index not in (base_index, mount_index):
+                    continue  # leave non-BASE/MOUNTAIN faces untouched
+                avg_z = sum(mesh.vertices[v].co.z for v in f.vertices) / len(f.vertices)
+                cx, cy, _ = f.center
+                n = noise.noise((cx * noise_scale, cy * noise_scale, 0.0))
+                n = (n - 0.5) * 2.0  # mathutils.noise.noise returns [0, 1]
+                local_threshold = z_threshold + n * noise_amplitude
+                if avg_z > local_threshold:
+                    f.material_index = mount_index
+                else:
+                    f.material_index = base_index
 
         # Iterate objects and faces
         for obj in selected_objects:
@@ -981,46 +1034,24 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
 
             print("Apply Mountain Color")
 
-            # obj.data.materials.clear()
-            # obj.data.materials.append(matG)  # creates first slot and assigns
+            # Texture mode has no BASE/MOUNTAIN material_index faces to
+            # recolor at all -- it's a baked image -- so paint the height
+            # layer directly into the existing MMU_Paint texture instead.
+            mesh = obj.data
+            if mesh.get("3mf_is_paint_texture") and bpy.data.images.get(
+                f"{mesh.name}_MMU_Paint"
+            ):
+                from .utils import texture as _tp3d_texture
 
-            def cut_mesh_at_height(obj, z_height):
-                bpy.context.view_layer.objects.active = obj
-                bpy.ops.object.mode_set(mode="EDIT")
-                bm = bmesh.from_edit_mesh(obj.data)
-
-                plane_co = Vector((0, 0, z_height))
-                plane_no = Vector((0, 0, 1))
-
-                bmesh.ops.bisect_plane(
-                    bm,
-                    geom=bm.verts[:] + bm.edges[:] + bm.faces[:],
-                    plane_co=plane_co,
-                    plane_no=plane_no,
-                    clear_outer=False,
-                    clear_inner=False,
+                _tp3d_texture.bake_height_layer_into_texture(
+                    obj,
+                    tres,
+                    material=mat,
+                    noise_amplitude=noise_amplitude,
+                    noise_scale=noise_scale,
                 )
-
-                bmesh.update_edit_mesh(obj.data)
-                bpy.ops.object.mode_set(mode="OBJECT")
-
-            def color_mountains(obj, z_threshold, base_mat, mountain_mat):
-                mesh = obj.data
-                base_index = mesh.materials.find(base_mat)
-                mount_index = mesh.materials.find(mountain_mat)
-                print(f"t_treshold: {z_threshold}")
-                for f in mesh.polygons:
-                    if f.material_index not in (base_index, mount_index):
-                        continue  # leave non-BASE/MOUNTAIN faces untouched
-                    avg_z = sum(mesh.vertices[v].co.z for v in f.vertices) / len(
-                        f.vertices
-                    )
-                    if avg_z > z_threshold:
-                        f.material_index = mount_index
-                    else:
-                        f.material_index = base_index
-
-            obj = bpy.context.view_layer.objects.active
+                obj["lastMountianCut"] = tres
+                continue
 
             # Ensure MOUNTAIN material exists on the object before coloring
             mat_index = obj.data.materials.find("MOUNTAIN")
@@ -1028,8 +1059,9 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
                 obj.data.materials.append(mat)
                 mat_index = len(obj.data.materials) - 1
 
-            cut_mesh_at_height(obj, tres)
-            color_mountains(obj, tres, "BASE", "MOUNTAIN")
+            color_mountains_noised(
+                obj, tres, "BASE", "MOUNTAIN", noise_amplitude, noise_scale
+            )
             obj["lastMountianCut"] = tres
 
             # utils.merge_by_distance(obj, distance=0.001)
@@ -2268,7 +2300,10 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             import traceback
 
             traceback.print_exc()
-            self.report({"ERROR"}, f"Puzzle generator: {exc}")
+            _progress.WarningsOverlay.add_warning(
+                _("Generator encountered an error, see console for details."), "error"
+            )
+            print(f"Puzzle generator: {exc}")
         finally:
             try:
                 rp.unlink()
@@ -2317,7 +2352,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         wm.modal_handler_add(self)
         self.report(
             {"INFO"},
-            "Puzzle generator open — draw a rectangle then click Send to Blender",
+            _("Generator open in browser."),
         )
         return {"RUNNING_MODAL"}
 
@@ -2414,8 +2449,10 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         puzzle_name = (data.get("name") or "").strip() or default_name
 
         if not bbox or not pieces:
-            self.report({"WARNING"}, "Nothing to generate — draw a rectangle first")
-            return
+            _progress.WarningsOverlay.add_warning(
+                _("Nothing to generate — draw an area to generate first."), "warn"
+            )
+            raise GenerationError
 
         south, north = bbox["south"], bbox["north"]
         west, east = bbox["west"], bbox["east"]
@@ -2790,6 +2827,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
     _timer = None
     _result_path: str = ""
     _server = None
+    _processing = False
 
     _TYPE_MAP = {
         "rectangle": "SQUARE",
@@ -2800,7 +2838,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
     }
 
     def modal(self, context, event):
-        if event.type != "TIMER":
+        if self._processing or event.type != "TIMER":
             return {"PASS_THROUGH"}
 
         from . import picker_server as mp
@@ -2816,19 +2854,24 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         if not (rp.exists() and rp.stat().st_size > 0):
             return {"PASS_THROUGH"}
 
+        self._processing = True
         try:
             data = json.loads(rp.read_text(encoding="utf-8"))
+            try:
+                rp.unlink()
+            except OSError:
+                pass
             self._apply_result(context, data)
         except Exception as exc:  # noqa: BLE001 - Wide exception catch for map result application
             import traceback
 
             traceback.print_exc()
-            self.report({"ERROR"}, f"Map generator: {exc}")
+            _progress.WarningsOverlay.add_warning(
+                _("Generator encountered an error, see console for details."), "error"
+            )
+            print(f"Map generator: {exc}")
         finally:
-            try:
-                rp.unlink()
-            except OSError:
-                pass
+            self._processing = False
             self._cleanup(context)
 
         return {"FINISHED"}
@@ -2870,9 +2913,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
-        self.report(
-            {"INFO"}, "Map generator open — draw a shape then click Send to Blender"
-        )
+        self.report({"INFO"}, _("Generator open in browser."))
         return {"RUNNING_MODAL"}
 
     def _apply_result(self, context, data):
@@ -2907,8 +2948,10 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         geojson_paths = data.get("geojson_paths", [])
 
         if not bounds and not gpx_paths and not geojson_paths:
-            self.report({"WARNING"}, "Nothing to generate — draw a shape first")
-            return
+            _progress.WarningsOverlay.add_warning(
+                _("Nothing to generate — draw an area to generate first."), "warn"
+            )
+            raise GenerationError
 
         if not bounds and not geojson_paths and gpx_paths:
             # Trail-only: no area was drawn — just add the trail(s) using
@@ -2925,10 +2968,14 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 _progress.WarningsOverlay.add_warning(
                     _("Use 'Merge with Map' to apply it manually."), "warn"
                 )
-            bpy.context.scene.tp3d["o_time"] = (
-                f"Script ran for {time.time() - start_time:.0f} seconds"
+            _total_time = time.time() - start_time
+            bpy.context.scene.tp3d["o_time"] = _(
+                "Script ran for {total_time:.0f} seconds"
+            ).format(total_time=_total_time)
+            self.report(
+                {"INFO"},
+                _("Generated {num_trails} trail(s)").format(num_trails=len(gpx_paths)),
             )
-            self.report({"INFO"}, f"Generated {len(gpx_paths)} trail(s)")
             return
 
         if data.get("resolution") is not None:
@@ -2959,8 +3006,11 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             try:
                 polygon = io_geojson.read_geojson_files(geojson_paths)
             except Exception as exc:  # noqa: BLE001 - surfaced to the user, not a bug to narrow
-                self.report({"ERROR"}, f"Could not parse GeoJSON: {exc}")
-                return
+                print(f"Could not parse GeoJSON: {exc}")
+                _progress.WarningsOverlay.add_warning(
+                    _("Could not parse GeoJSON, see console for details."), "error"
+                )
+                raise GenerationError
 
             overlay.update(0.06, "Creating base tile…", "Building terrain…")
             blank = io_geojson.build_tile_from_polygon(
@@ -2971,10 +3021,11 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 simplify_tolerance=props.geojsonSimplifyTolerance,
             )
             if blank is None:
-                self.report(
-                    {"ERROR"}, "GeoJSON boundary produced an empty/degenerate shape."
+                print("GeoJSON boundary produced an empty/degenerate shape.")
+                _progress.WarningsOverlay.add_warning(
+                    _("GeoJSON boundary produced an empty/degenerate shape."), "error"
                 )
-                return
+                raise GenerationError
         else:
             shape_name = data.get("type", "rectangle")
             props.shape = self._TYPE_MAP.get(shape_name, "SQUARE")
@@ -3002,20 +3053,29 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             if shape_name == "circle":
                 blank = utils.create_circle(diameter / 2, props.num_subdivisions)
                 if blank is None:
-                    self.report({"ERROR"}, "Failed to create circle shape.")
-                    return
+                    print("Failed to create circle shape.")
+                    _progress.WarningsOverlay.add_warning(
+                        _("Failed to create circle shape."), "error"
+                    )
+                    raise GenerationError
                 blank["Shape"] = "CIRCLE"
             elif shape_name == "octagon":
                 blank = utils.create_octagon(diameter / 2, props.num_subdivisions)
                 if blank is None:
-                    self.report({"ERROR"}, "Failed to create octagon shape.")
-                    return
+                    print("Failed to create octagon shape.")
+                    _progress.WarningsOverlay.add_warning(
+                        _("Failed to create octagon shape."), "error"
+                    )
+                    raise GenerationError
                 blank["Shape"] = "OCTAGON"
             elif shape_name == "svg":
                 svg_path = data.get("svg_path")
                 if not svg_path:
-                    self.report({"ERROR"}, "No SVG file selected.")
-                    return
+                    print("No SVG file selected.")
+                    _progress.WarningsOverlay.add_warning(
+                        _("No SVG file selected."), "error"
+                    )
+                    raise GenerationError
                 # Same helper (and the same uniform, aspect-preserving
                 # target_size scaling) the sidebar's Shape="SVG" option uses
                 # -- see primitives.create_custom_svg/polygon_from_svg.
@@ -3023,10 +3083,11 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                     svg_path, diameter, props.num_subdivisions
                 )
                 if blank is None:
-                    self.report(
-                        {"ERROR"}, "SVG file produced an empty/degenerate shape."
+                    print("SVG file produced an empty/degenerate shape.")
+                    _progress.WarningsOverlay.add_warning(
+                        _("SVG file produced an empty/degenerate shape."), "error"
                     )
-                    return
+                    raise GenerationError
                 blank["Shape"] = "SVG"
                 # Keeps the sidebar's own Shape=SVG file field in sync, so
                 # reopening it later shows the file this tile actually used.
@@ -3040,14 +3101,20 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                     diameter, diameter, props.num_subdivisions
                 )
                 if blank is None:
-                    self.report({"ERROR"}, "Failed to create square shape.")
-                    return
+                    print("Failed to create square shape.")
+                    _progress.WarningsOverlay.add_warning(
+                        _("Failed to create square shape."), "error"
+                    )
+                    raise GenerationError
                 blank["Shape"] = "SQUARE"
             else:
                 blank = utils.create_rectangle(tile_w, tile_h, props.num_subdivisions)
                 if blank is None:
-                    self.report({"ERROR"}, "Failed to create rectangle shape.")
-                    return
+                    print("Failed to create rectangle shape.")
+                    _progress.WarningsOverlay.add_warning(
+                        _("Failed to create rectangle shape."), "error"
+                    )
+                    raise GenerationError
                 blank["Shape"] = "SQUARE"
             blank["objSize"] = diameter
             blank["objType"] = "MAP"
@@ -3143,7 +3210,6 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         bpy.context.scene.tp3d["o_time"] = (
             f"Script ran for {time.time() - start_time:.0f} seconds"
         )
-        self.report({"INFO"}, "Generated 1 tile")
 
     def _cleanup(self, context):
         wm = context.window_manager
@@ -3213,7 +3279,7 @@ class TP3D_OT_append_collection(bpy.types.Operator):
 
         gen = utils._rg_validate_inputs(flags)
         if gen is None:
-            self.report({"WARNING"}, "Invalid input properties")
+            self.report({"WARNING"}, _("Invalid input properties"))
             return {"CANCELLED"}
 
         utils._rg_load_coordinates(gen)
