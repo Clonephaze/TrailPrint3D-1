@@ -972,7 +972,7 @@ def coloring_main(
     # ────────────────────────────────────────────────────────────────────────
 
     def _apply_boolean(obj, solver):
-        mod = obj.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
+        mod = obj.modifiers.new(name=("Boolean"), type="BOOLEAN")
         mod.object = map
         mod.operation = "INTERSECT"
         mod.solver = solver
