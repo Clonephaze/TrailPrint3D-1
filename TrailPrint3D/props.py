@@ -1371,6 +1371,29 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         subtype="PERCENTAGE",
         description=_("Height Threshold to Color Mountains"),
     )  # type: ignore
+    mountain_noise: BoolProperty(
+        name=_("Threshold Variation Noise"),
+        default=False,
+        description=_("Makes a more natural looking boundary for the Color Mountains threshold."),
+    )  # type: ignore
+    mountain_noise_amplitude: FloatProperty(
+        name=_("Amplitude"),
+        default=1.0,
+        min=0.0,
+        soft_max=10.0,
+        description=_(
+            "How far the Color Mountains boundary is allowed to dip below or rise above the flat threshold height, in map units. 0 gives the old razor-flat line."
+        ),
+    )  # type: ignore
+    mountain_noise_scale: FloatProperty(
+        name=_("Scale"),
+        default=0.5,
+        min=0.005,
+        soft_max=2.0,
+        description=_(
+            "Frequency of the Color Mountains boundary noise. Lower values give broad, slow-rolling dips and rises; higher values give tight, speckled variation."
+        ),
+    )  # type: ignore
     cl_thickness: FloatProperty(
         name=_("Contour Line Thickness (mm)"),
         default=0.2,

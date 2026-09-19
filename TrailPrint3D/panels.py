@@ -962,6 +962,11 @@ class TP3D_PT_advanced(bpy.types.Panel):
             sub.label(text=_("Color Mountains"), icon="RNDCURVE")
             col = sub.column(align=True)
             col.prop(props, "mountain_treshold")
+            col.prop(props, "mountain_noise", icon="CHECKBOX_DEHLT" if not props.mountain_noise else "CHECKBOX_HLT")
+            if props.mountain_noise:
+                row = col.row(align=True)
+                row.prop(props, "mountain_noise_amplitude")
+                row.prop(props, "mountain_noise_scale")
             col.operator(
                 "tp3d.color_mountain", text=_("Color Mountains"), icon="RNDCURVE"
             )
