@@ -2970,6 +2970,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             utils.apply_setting_update(context.scene.tp3d, key, value)
         for key, value in mp.drain_pending_advanced_settings():
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
+        for request in mp.drain_pending_prefetch():
+            self._start_prefetch(context, request)
         # Keeps a later page reload (premium/map_generator_pe.html's OSM/ESA
         # WorldCover switch, settings_modal.js) in sync with whatever was
         # just applied above -- see refresh_state_snapshots' own docstring.
@@ -2999,6 +3001,26 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             self._cleanup(context)
 
         return {'FINISHED'}
+
+    def _start_prefetch(self, context, request):
+        """Plan a picker "Prefetch" click on the main thread (it reads scene
+        settings), then run the actual fetch on a worker thread so the
+        viewport stays responsive -- see utils/osm/prefetch.py."""
+        import threading
+
+        from . import picker_server as mp
+        from .utils.osm import prefetch
+
+        job = mp.prefetch_job()
+        plan = prefetch.plan_prefetch(context.scene.tp3d, request)
+        if 'error' in plan:
+            job.update(status='error', message=plan['error'], result=None)
+            return
+        job.update(status='running', message='Fetching elements…', result=None)
+        threading.Thread(
+            target=prefetch.run_prefetch, args=(plan, job),
+            daemon=True, name='tp3d-prefetch',
+        ).start()
 
     def invoke(self, context, event):
         import tempfile
@@ -3054,9 +3076,15 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # always closes, even if something below raises an exception type
         # this method doesn't explicitly handle (the modal's own outer
         # except/finally reports the error but never touches the overlay).
+        from .utils.osm import exclusions
+
+        # OSM elements the user switched off in the picker's prefetch preview
+        # -- dropped from every fetched tile for this one generation only.
+        exclusions.set_excluded(data.get('excluded_ids'))
         try:
             self._apply_result_body(context, data)
         finally:
+            exclusions.clear_excluded()
             overlay.finish()
             _progress.WarningsOverlay.get().show()
 

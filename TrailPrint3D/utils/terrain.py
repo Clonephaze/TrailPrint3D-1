@@ -256,6 +256,7 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
     dict[kind_str -> dict[bbox -> (data_dict, from_cache_bool)]]
     Kinds with no successful tiles are present as empty dicts.
     """
+    from .osm.exclusions import filter_excluded
     from .osm.fetch_group import fetch_osm_combined  # deferred to avoid circular import
 
     # Regroup: (kind, [bboxes]) → {bbox: [kinds]} → {bbox: [kinds]}
@@ -292,7 +293,9 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
         with lock:
             for kind, (data, from_cache) in tile_result.items():
                 if data:
-                    results[kind][bbox] = (data, from_cache)
+                    # Drops any elements the user switched off in the map
+                    # generator's prefetch preview (no-op otherwise).
+                    results[kind][bbox] = (filter_excluded(data), from_cache)
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {

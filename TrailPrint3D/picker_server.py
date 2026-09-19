@@ -39,6 +39,37 @@ _pending_settings: 'queue.Queue[tuple]' = queue.Queue()
 # independent on the applying side too.
 _pending_advanced_settings: 'queue.Queue[tuple]' = queue.Queue()
 
+# The map generator pages' "Prefetch" button (POST /prefetch, see
+# assets/prefetch_layer.js). Planning it needs scene settings (main thread
+# only, hence the queue drained via drain_pending_prefetch from the calling
+# operator's modal()), but the fetch itself runs on a worker thread that
+# reports into _prefetch_job -- polled by the page via GET /prefetch_status.
+# _prefetch_job is a plain dict whose values are only ever replaced key-wise
+# (job.update), so readers on the HTTP thread see a consistent-enough
+# snapshot without a lock.
+_pending_prefetch: 'queue.Queue[dict]' = queue.Queue()
+_prefetch_job: dict = {'status': 'idle', 'message': '', 'result': None}
+
+
+def drain_pending_prefetch() -> list:
+    """Pop every prefetch request payload queued since the last call."""
+    requests = []
+    while True:
+        try:
+            requests.append(_pending_prefetch.get_nowait())
+        except queue.Empty:
+            break
+    return requests
+
+
+def prefetch_job() -> dict:
+    """The live job dict (see _prefetch_job) -- for the worker to update."""
+    return _prefetch_job
+
+
+def prefetch_is_running() -> bool:
+    return _prefetch_job.get('status') in ('queued', 'running')
+
 
 def drain_pending_toggles() -> list:
     """Pop every element-toggle key queued since the last call, in order."""
@@ -121,6 +152,7 @@ _LOCATION_PANEL_JS_PATH = _ASSETS_DIR / 'location_panel.js'
 _ELEMENT_STATUS_JS_PATH = _ASSETS_DIR / 'element_status.js'
 _SETTINGS_MODAL_JS_PATH = _ASSETS_DIR / 'settings_modal.js'
 _RECT_EDITOR_JS_PATH = _ASSETS_DIR / 'rect_editor.js'
+_PREFETCH_JS_PATH = _ASSETS_DIR / 'prefetch_layer.js'
 
 _element_icons_js_cache: str | None = None
 
@@ -393,6 +425,14 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == '/prefetch_status':
+            body = json.dumps(_prefetch_job).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == '/get_existing_maps':
             body = self.existing_maps_json
             self.send_response(200)
@@ -470,6 +510,7 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__ADVANCED_SETTINGS_STATE_JS__', 'var ADVANCED_SETTINGS_STATE = ' + self.advanced_settings_json.decode('utf-8') + ';')
             .replace('__SETTINGS_MODAL_JS__', _SETTINGS_MODAL_JS_PATH.read_text(encoding='utf-8'))
             .replace('__RECT_EDITOR_JS__', _RECT_EDITOR_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__PREFETCH_JS__', _PREFETCH_JS_PATH.read_text(encoding='utf-8'))
             .encode('utf-8')
         )
         self.send_response(200)
@@ -495,6 +536,22 @@ class _Handler(BaseHTTPRequestHandler):
                 key = None
             if key:
                 _pending_toggles.put(key)
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', '2')
+            self.end_headers()
+            self.wfile.write(b'ok')
+            return
+        if self.path == '/prefetch':
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict) and not prefetch_is_running():
+                _prefetch_job.update(status='queued', message='Queued…', result=None)
+                _pending_prefetch.put(payload)
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
             self.send_header('Content-Length', '2')
@@ -672,7 +729,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     exactly as before, undisturbed by whatever elementSource the scene
     happens to have.
     """
-    global _active_server, _pending_toggles, _pending_settings, _pending_advanced_settings
+    global _active_server, _pending_toggles, _pending_settings, _pending_advanced_settings, _pending_prefetch
     if _active_server is not None:
         try:
             _active_server.shutdown()
@@ -682,6 +739,11 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     _pending_toggles = queue.Queue()
     _pending_settings = queue.Queue()
     _pending_advanced_settings = queue.Queue()
+    _pending_prefetch = queue.Queue()
+    # An in-flight worker from a previous session keeps a reference to the
+    # OLD job dict only if it was handed the dict itself -- it's handed the
+    # live one, so replace contents instead of rebinding (see prefetch_job()).
+    _prefetch_job.update(status='idle', message='', result=None)
 
     html_path = pathlib.Path(html_path) if html_path else _HTML_PATH
     # Keep the original state filename for multitile_generator.html itself (exact

@@ -47,6 +47,8 @@
         <div id="svgShapeList" style="display:none; font-size:11px; color:#aaa; line-height:1.8;"></div>
         <button id="clearSvgShape" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear SVG Shape</button>
         <hr class="sidebar-divider">
+        <div id="prefetchInfo"></div>
+        <button id="clearPrefetch" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear Prefetch</button>
         <div id="status">Draw a shape to begin.</div>
         <button id="send" class="btn-send" disabled>Send to Blender</button>
     </div>
@@ -274,7 +276,8 @@
                     shapeCenter: shapeCenter,
                     resolution: document.getElementById('resolutionSlider').value,
                     objSize: document.getElementById('objSizeInput').value,
-                    coords: coords
+                    coords: coords,
+                    prefetch: tp3dPrefetchState()
                 })
             }).catch(function() {});
         }
@@ -334,6 +337,7 @@
                     }
                     updateSendState();
                     updateStatus();
+                    tp3dRestorePrefetch(s.prefetch);
                     // Done LAST, after coords is already restored above --
                     // setView() fires 'moveend' (bound to saveState further
                     // down), and saveState() reads the live `coords`
@@ -490,8 +494,9 @@
         }
 
         // svgInscribedBounds/placeSvgBoxInViewport/clearSvgShapeImport live in
-        // __RECT_EDITOR_JS__ (assets/rect_editor.js), shared with
-        // premium/map_generator_pe.html.
+        // assets/rect_editor.js (inlined at the RECT_EDITOR token below), shared
+        // with premium/map_generator_pe.html. Don't write that token itself in
+        // a comment -- picker_server.py substitutes every occurrence.
 
         function updateSendState() {
             var ready = !!coords || geojsonPaths.length > 0;
@@ -903,6 +908,8 @@
             saveState();
         });
 
+        __PREFETCH_JS__
+
         document.getElementById('send').onclick = function() {
             if (!coords && geojsonPaths.length === 0) return;
 
@@ -910,6 +917,7 @@
                 gpx_paths: gpxPaths,
                 geojson_paths: geojsonPaths,
                 svg_path: svgShapePath,
+                excluded_ids: tp3dPrefetchExcludedIds(),
                 resolution: parseInt(document.getElementById('resolutionSlider').value) || 4,
                 objSize: parseFloat(document.getElementById('objSizeInput').value) || 100
             };
