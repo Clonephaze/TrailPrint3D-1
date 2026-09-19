@@ -23,7 +23,7 @@ OUTPUT_ODS = "./tp3d-translation-audit.ods"
 
 # Directories/files not part of the addon's own translatable UI surface.
 EXCLUDE_DIRS = {"tests", "__pycache__"}
-EXCLUDE_FILES = {"translation.py"} 
+EXCLUDE_FILES = {"translation.py","headless_ui.py", "picker_server.py", "puzzleGenerator.html", "map_generator.html", "map_generator_pe.html","multitile_generator.html","puzzleGenerator_pe.html","slidingPUzzleGenerator.html"} 
 
 TRANSLATE_KWARGS = {"text", "name", "description"}
 BL_CLASS_ATTRS = {"bl_label", "bl_description"}
@@ -109,6 +109,8 @@ class Extractor(ast.NodeVisitor):
     def visit_Assign(self, node):
         for target in node.targets:
             if isinstance(target, ast.Name) and target.id in BL_CLASS_ATTRS:
+                if const_str(node.value) == "TrailPrint3D":
+                    continue
                 s = const_str(node.value)
                 if s:
                     self.unwrapped.append((target.id, self.rel, node.lineno, s))
