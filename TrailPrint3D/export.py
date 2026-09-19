@@ -293,7 +293,7 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
         result = _3mf_api.export_3mf(**export_kwargs)
         if result.status != "FINISHED":
             print("Export Error:\n" + "\n".join(result.warnings))
-            raise Exception("3MF export failed")  # noqa: TRY002
+            raise Exception(_("3MF export failed"))  # noqa: TRY002
         if not manual:
             _progress.WarningsOverlay.add_warning(_("Exported as 3mf"), "ok")
     except Exception as e:
