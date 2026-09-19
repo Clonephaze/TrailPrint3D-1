@@ -118,7 +118,7 @@ def _reset_scene_defaults():
     tp3d.objSize = 100
     tp3d.num_subdivisions = 4
     tp3d.scaleElevation = 1.0
-    tp3d.fixedElevationScale = False
+    tp3d.elevationMode = "PROPORTIONAL"
     tp3d.singleColorMode = False
     tp3d.elementMode = "PAINT"
     tp3d.disableCache = False  # reuse the addon's real cache across runs

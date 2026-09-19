@@ -474,6 +474,13 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     api: bpy.props.EnumProperty(
         name=_("API"),
         items=[
+            (
+                "MAPTERHORN",
+                "Mapterhorn",
+                _(
+                    "Mapterhorn terrain tiles — 512px WebP, Terrarium encoding, free & open-source"
+                ),
+            ),
             ("OPENTOPODATA", "Opentopodata", _("Slower but more accurate elevation")),
             (
                 "OPEN-ELEVATION",
@@ -482,20 +489,28 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
             ),
             ("TERRAIN-TILES", "Terrain-Tiles", _("Currently Fastest available set")),
             (
-                "MAPTERHORN",
-                "Mapterhorn",
-                _(
-                    "Mapterhorn terrain tiles — 512px WebP, Terrarium encoding, free & open-source"
-                ),
-            ),
-            (
                 "OPENTOPOGRAPHY",
                 "OpenTopography",
                 _("OpenTopography Global DEM API — requires API key for most datasets"),
             ),
+            (
+                "LOCAL_DEM",
+                "Local DEM File",
+                _(
+                    "Sample elevation from a GeoTIFF DEM file you downloaded — no internet required"
+                ),
+            ),
         ],
         default="MAPTERHORN",
     )  # type: ignore
+
+    demFilePath: StringProperty(
+        name= _("DEM File"),
+        description= _("Path to a local GeoTIFF (.tif/.tiff) DEM file, or a folder of tiled GeoTIFFs "
+                        "covering a larger area, in WGS84 lat/lon or a WGS84/ETRS89/NAD83 UTM zone"),
+        default="",
+        maxlen=1024,
+    )# type: ignore
 
     openTopographyDataset: bpy.props.EnumProperty(
         name=_("Dataset"),

@@ -58,9 +58,9 @@ importlib.reload(T.utils.elevation)
 importlib.reload(T.utils.geometry2d)
 importlib.reload(T.utils.ui_state)
 
-# satellite.py, texture.py, and io_geojson.py are only pulled in via deferred
-# (function-scope) imports (io_geojson.py specifically only via the premium
-# add-on's operators_pe.py), so they may not be an attribute of
+# satellite.py, texture.py, io_geojson.py, and geotiff.py are only pulled in
+# via deferred (function-scope) imports (io_geojson.py specifically only via
+# the premium add-on's operators_pe.py), so they may not be an attribute of
 # TrailPrint3D.utils yet on a fresh session. Import them explicitly before
 # reloading, same as the osm sub-package below.
 _imp("utils.satellite")
@@ -69,6 +69,8 @@ _imp("utils.texture")
 importlib.reload(T.utils.texture)
 _imp("utils.io_geojson")
 importlib.reload(T.utils.io_geojson)
+_imp("utils.geotiff")
+importlib.reload(T.utils.geotiff)
 
 # osm sub-package: its submodules are only pulled in via deferred (function-
 # scope) imports, so reloading TrailPrint3D.utils.osm alone (its empty
