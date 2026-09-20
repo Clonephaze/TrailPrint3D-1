@@ -792,7 +792,8 @@ def save_height_bake_state(image, mesh):
     """
     history = _HEIGHT_BAKE_UNDO[image.name]
 
-    pixels = np.array(image.pixels[:], dtype=np.float32)
+    pixels = np.empty(len(image.pixels), dtype=np.float32)
+    image.pixels.foreach_get(pixels)
 
     history.append(
         {
@@ -820,17 +821,9 @@ def restore_last_height_bake(terrain_obj):
     history = _HEIGHT_BAKE_UNDO.get(image.name)
     if not history:
         return False
-    print(
-        "[TP3D undo] image:",
-        image.name,
-        "history type:",
-        type(history),
-        "history:",
-        history,
-    )
     backup = history[-1]
     image.pixels.foreach_set(backup["pixels"].ravel())
-    image.update()
+    image.pack()
     if backup["palette"] is not None:
         mesh["3mf_paint_extruder_colors"] = backup["palette"]
     elif "3mf_paint_extruder_colors" in mesh:

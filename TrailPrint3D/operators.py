@@ -1096,8 +1096,9 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
             obj["lastMountianNoiseAmp"] = noise_amplitude
             obj["lastMountianNoiseScale"] = noise_scale
 
-            # utils.merge_by_distance(obj, distance=0.001)
-
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
         return {"FINISHED"}
 
 
