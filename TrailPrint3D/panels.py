@@ -19,6 +19,7 @@ from .props import (
     estimate_map_km,
     get_effective_shape,
 )
+from .utils.texture import has_height_bake_undo
 
 # ESA WorldCover coloring panel rows: (tp3d BoolProperty, material name,
 # display label). Mirrors satellite.py's _LANDCOVER_TOGGLE_PROP -- kept as a
@@ -802,10 +803,7 @@ class TP3D_PT_generate(bpy.types.Panel):
             header.label(text=_("7. Appearance"), icon="COLOR")
             construct_popover(header, "TP3D_PT_help_appearance")
             if "PAINT" in props.elementMode:
-                tex_row = box.row()
-                tex_row.prop(props, "tex_use_texture")
-                if props.tex_use_texture == True:
-                    tex_row.prop(props, "tex_resolution")
+                box.prop(props, "tex_use_texture")
             if props.tex_use_texture == True:
                 trail_tex_row = box.row()
                 trail_tex_row.enabled = not _elem_scm and not props.singleColorMode
@@ -872,7 +870,13 @@ class TP3D_PT_advanced(bpy.types.Panel):
         )
         if props.show_ags:
             box = layout.box()
+            box.label(text=_("Advanced Trail Settings"), icon="IPO_LINEAR")
             box.prop(props, "overwritePathElevation")
+            layout.separator(factor=0.5)
+            if props.tex_use_texture == True:
+                box = layout.box()
+                box.label(text=_("Advanced Texture Settings"), icon="TEXTURE")
+                box.prop(props, "tex_resolution")
         # --- PIN ---
         layout.prop(
             props,
@@ -970,6 +974,12 @@ class TP3D_PT_advanced(bpy.types.Panel):
             col.operator(
                 "tp3d.color_mountain", text=_("Color Mountains"), icon="RNDCURVE"
             )
+            if has_height_bake_undo(context.object):
+                col.operator(
+                    "tp3d.undo_mountain_texture",
+                    text=_("Undo Texture Bake"),
+                    icon="LOOP_BACK",
+                )
 
             sub = box.box()
             sub.label(text=_("Contour Lines"), icon="ALIGN_JUSTIFY")

@@ -6,6 +6,7 @@
 import os
 import platform
 import sys
+from collections import defaultdict
 
 import bpy
 
@@ -17,6 +18,8 @@ ENABLE_UPDATE_CHECKER = True
 
 R = 6371.0  # Earth radius in kilometers
 
+# -- Element size limits --
+
 WATER_MAXSIZE = 500
 SMALL_RIVERS_MAXSIZE = 50  # small/minor waterways drop out above this; big (wikidata) rivers + ponds still apply up to WATER_MAXSIZE
 FOREST_MAXSIZE = 150
@@ -26,24 +29,52 @@ GREENSPACE_MAXSIZE = 50
 FARMLAND_MAXSIZE = 200
 GLACIER_MAXSIZE = 1000
 BUILDINGS_MAXSIZE = 30
-BUILDINGS_MIN_PRINT_MM = 0.15  # Buildings whose PRINTED footprint side is smaller than this are culled, scales with map size.
-ROADS_MAXSIZE = 500  # dense + sparse road tiers dropped entirely above this mapsize
+BUILDINGS_MIN_PRINT_MM = 0.15  # PRINTED footprint
+ROADS_MAXSIZE = 500
 COASTLINE_MAXSIZE = 350
-# Above COASTLINE_MAXSIZE, ocean is built from the prebuilt global OSMData
-# water-polygon dataset (STRtree query, no Overpass fetch) instead of being
-# skipped outright. The dataset itself is only meant for zoom 0-9 (i.e. large
-# / low-detail views), which is exactly the map-size regime this covers, so
-# there's no strong reason to cap it the way the Overpass path is capped --
-# leave generous headroom and tighten later if profiling on a real huge map
-# says otherwise.
 COASTLINE_WATERPOLY_MAXSIZE = 20000
 STREETS_PRIMARY_THRESHOLD = (
     40  # dense-tier roads (residential/service/footway/cycle_bridle/path)
 )
-# dropped above this mapsize to avoid width-scaled roads fusing
-# into solid blocks on zoomed-out maps; sparse tiers (highways/
-# major/minor/track) are unaffected until ROADS_MAXSIZE
 
+# -- Texture Constants --
+_KIND_MATERIAL_NAME = {
+    "WATER": "WATER",
+    "OCEAN": "WATER",
+    "FOREST": "FOREST",
+    "SCREE": "MOUNTAIN",
+    "CITY": "CITY",
+    "GREENSPACE": "GREENSPACE",
+    "FARMLAND": "FARMLAND",
+    "GLACIER": "GLACIER",
+    "ROADS": "BLACK",
+    "TRAIL": "TRAIL",
+}
+
+# Rasterization order: low-priority kinds first so high-priority kinds
+# overwrite them in overlap areas.  Mirrors the inverse of
+# TERRAIN_PRIORITY_ORDER in generation.py.
+_RASTER_ORDER = [
+    "GLACIER",
+    "FARMLAND",
+    "GREENSPACE",
+    "SCREE",
+    "CITY",
+    "FOREST",
+    "OCEAN",
+    "WATER",
+    "ROADS",
+    "TRAIL",
+]
+
+_UV_LAYER_NAME = "MMU_Paint"
+
+_HEIGHT_BAKE_BASELINE = {}
+_HEIGHT_BAKE_UNDO = defaultdict(list)
+_MAX_HEIGHT_BAKE_UNDO_MEMORY = 1024 * 1024 * 1024  # 1 GB
+
+
+# -- Internal caches and special collections --
 
 _elevation_cache = {}
 specialCollection = []

@@ -997,16 +997,34 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
         def color_mountains_noised(
             obj, z_threshold, base_mat, mountain_mat, noise_amplitude, noise_scale
         ):
-            # No cut_mesh_at_height bisect here on purpose: a flat bisect
-            # plane paired with a noised (non-flat) colour boundary would
-            # put the new edge loop and the colour line at different
-            # heights -- a straight geometric crease under a wavy colour
-            # edge, which is exactly the mismatch the original flat bisect
-            # was added to prevent (see color_mountain's history). Skipping
-            # it means the boundary follows whatever face resolution the
-            # terrain already has -- steppy on a coarse lattice, but
-            # geometrically honest. A noise-matched bisect band is a
-            # possible future enhancement if that steppiness matters.
+            def _noise_offset(x, y):
+                if noise_amplitude <= 0:
+                    return 0.0
+                n = noise.noise((x * noise_scale, y * noise_scale, 0.0))
+                return (n - 0.5) * 2.0 * noise_amplitude  # noise.noise() returns [0, 1]
+
+            bpy.context.view_layer.objects.active = obj
+            bpy.ops.object.mode_set(mode="EDIT")
+            bm = bmesh.from_edit_mesh(obj.data)
+
+            for v in bm.verts:
+                v.co.z -= _noise_offset(v.co.x, v.co.y)
+
+            bmesh.ops.bisect_plane(
+                bm,
+                geom=bm.verts[:] + bm.edges[:] + bm.faces[:],
+                plane_co=Vector((0, 0, z_threshold)),
+                plane_no=Vector((0, 0, 1)),
+                clear_outer=False,
+                clear_inner=False,
+            )
+
+            for v in bm.verts:
+                v.co.z += _noise_offset(v.co.x, v.co.y)
+
+            bmesh.update_edit_mesh(obj.data)
+            bpy.ops.object.mode_set(mode="OBJECT")
+
             mesh = obj.data
             base_index = mesh.materials.find(base_mat)
             mount_index = mesh.materials.find(mountain_mat)
@@ -1015,9 +1033,7 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
                     continue  # leave non-BASE/MOUNTAIN faces untouched
                 avg_z = sum(mesh.vertices[v].co.z for v in f.vertices) / len(f.vertices)
                 cx, cy, _ = f.center
-                n = noise.noise((cx * noise_scale, cy * noise_scale, 0.0))
-                n = (n - 0.5) * 2.0  # mathutils.noise.noise returns [0, 1]
-                local_threshold = z_threshold + n * noise_amplitude
+                local_threshold = z_threshold + _noise_offset(cx, cy)
                 if avg_z > local_threshold:
                     f.material_index = mount_index
                 else:
@@ -1028,19 +1044,31 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
             if obj.type != "MESH" or obj["Object type"] != "MAP" or max_z == 0:
                 print("Not Applied")
                 continue
-            if "lastMountianCut" in obj and obj["lastMountianCut"] == tres:
-                utils.show_message_box("Already Applied mountains at this height")
-                return {"FINISHED"}
+
+            mesh = obj.data
+            is_texture_mode = bool(mesh.get("3mf_is_paint_texture")) and bool(
+                bpy.data.images.get(f"{mesh.name}_MMU_Paint")
+            )
+
+            if not is_texture_mode:
+                already_applied = (
+                    "lastMountianCut" in obj
+                    and obj["lastMountianCut"] == tres
+                    and obj.get("lastMountianNoiseAmp") == noise_amplitude
+                    and obj.get("lastMountianNoiseScale") == noise_scale
+                )
+                if already_applied:
+                    utils.show_message_box(
+                        "Already Applied mountains at this height and noise settings"
+                    )
+                    return {"FINISHED"}
 
             print("Apply Mountain Color")
 
             # Texture mode has no BASE/MOUNTAIN material_index faces to
             # recolor at all -- it's a baked image -- so paint the height
             # layer directly into the existing MMU_Paint texture instead.
-            mesh = obj.data
-            if mesh.get("3mf_is_paint_texture") and bpy.data.images.get(
-                f"{mesh.name}_MMU_Paint"
-            ):
+            if is_texture_mode:
                 from .utils import texture as _tp3d_texture
 
                 _tp3d_texture.bake_height_layer_into_texture(
@@ -1051,6 +1079,8 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
                     noise_scale=noise_scale,
                 )
                 obj["lastMountianCut"] = tres
+                obj["lastMountianNoiseAmp"] = noise_amplitude
+                obj["lastMountianNoiseScale"] = noise_scale
                 continue
 
             # Ensure MOUNTAIN material exists on the object before coloring
@@ -1063,9 +1093,36 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
                 obj, tres, "BASE", "MOUNTAIN", noise_amplitude, noise_scale
             )
             obj["lastMountianCut"] = tres
+            obj["lastMountianNoiseAmp"] = noise_amplitude
+            obj["lastMountianNoiseScale"] = noise_scale
 
             # utils.merge_by_distance(obj, distance=0.001)
 
+        return {"FINISHED"}
+
+
+class TP3D_OT_undo_mountain_texture(bpy.types.Operator): 
+    """Restore the selected object's MMU_Paint texture to its state immediately before its most recent Color Mountains texture bake. Blender's native Ctrl+Z does not track raw Image.pixels writes made through Python, so texture-mode Color Mountains maintains its own in-session history instead. """ 
+    bl_idname = "tp3d.undo_mountain_texture" 
+    bl_label = _("Undo Texture Mountain Color") 
+    bl_description = _("Undo the most recent Color Mountains texture bake for the selected object")
+    bl_options = {"REGISTER"} 
+    
+    def execute(self, context): 
+        from .utils import texture as _tp3d_texture
+        restored = 0
+        for obj in context.selected_objects:
+            if obj.type != "MESH":
+                continue
+            if _tp3d_texture.restore_last_height_bake(obj):
+                restored += 1
+        if restored == 0:
+            utils.show_message_box(
+                _("Nothing to undo -- no Color Mountains texture bake to restore."),
+                "INFO",
+                "INFO",
+            )
+            return {"CANCELLED"}
         return {"FINISHED"}
 
 

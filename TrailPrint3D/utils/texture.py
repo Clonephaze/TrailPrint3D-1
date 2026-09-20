@@ -16,41 +16,23 @@ Coordinate conventions
   UV convention and the layout expected by the 3MF addon's segmentation reader.
 """
 
+from copy import deepcopy
+
 import bpy
 import numpy as np
 
+from ..constants import (
+    _HEIGHT_BAKE_BASELINE,
+    _HEIGHT_BAKE_UNDO,
+    _KIND_MATERIAL_NAME,
+    _MAX_HEIGHT_BAKE_UNDO_MEMORY,
+    _RASTER_ORDER,
+    _UV_LAYER_NAME,
+)
 from .dataclasses import GenerationContext
 
-# ── Palette definition ────────────────────────────────────────────────────────
-# Texture-mode colours are derived from the *same* Blender materials used by
-# every non-texture export path (see primitives.setupColors()) instead of a
-# second, independently-hardcoded palette -- one colour definition, not two.
-# OCEAN shares WATER's material; duplicates are merged in _build_palette().
-_KIND_MATERIAL_NAME = {
-    "WATER":      "WATER",
-    "OCEAN":      "WATER",
-    "FOREST":     "FOREST",
-    "SCREE":      "MOUNTAIN",
-    "CITY":       "CITY",
-    "GREENSPACE": "GREENSPACE",
-    "FARMLAND":   "FARMLAND",
-    "GLACIER":    "GLACIER",
-    "ROADS":      "BLACK",
-    "TRAIL":      "TRAIL",
-}
-
-# Rasterization order: low-priority kinds first so high-priority kinds
-# overwrite them in overlap areas.  Mirrors the inverse of
-# TERRAIN_PRIORITY_ORDER in generation.py.
-_RASTER_ORDER = [
-    "GLACIER", "FARMLAND", "GREENSPACE", "SCREE", "CITY",
-    "FOREST", "OCEAN", "WATER", "ROADS", "TRAIL",
-]
-
-UV_LAYER_NAME = "MMU_Paint"
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _srgb_to_hex(r8, g8, b8):
     return f"#{int(r8):02X}{int(g8):02X}{int(b8):02X}"
@@ -71,7 +53,9 @@ def material_to_srgb(material, fallback=(0, 0, 0)):
     """
     if material is None or not material.use_nodes:
         return fallback
-    bsdf = next((n for n in material.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    bsdf = next(
+        (n for n in material.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None
+    )
     if bsdf is None:
         return fallback
     lin = bsdf.inputs["Base Color"].default_value
@@ -164,8 +148,19 @@ def _rasterize_polygon_even_odd(rings_px, arr, color_float, resolution):
                 arr[row, col_s:col_e] = color_float
 
 
-def _rasterize_geometry(geom, arr, color_float, bg_float,
-                        cursor_x, cursor_y, min_x, min_y, width, height, resolution):
+def _rasterize_geometry(
+    geom,
+    arr,
+    color_float,
+    bg_float,
+    cursor_x,
+    cursor_y,
+    min_x,
+    min_y,
+    width,
+    height,
+    resolution,
+):
     """Rasterize a Shapely Polygon or MultiPolygon into arr."""
     if geom is None or geom.is_empty:
         return
@@ -184,12 +179,12 @@ def _rasterize_geometry(geom, arr, color_float, bg_float,
     def _to_px(ring):
         """Convert a Shapely ring's world-space coords to pixel floats."""
         coords = np.array(list(ring.coords), dtype=np.float64)
-        px = (coords[:, 0] - cursor_x - min_x) / width  * resolution
+        px = (coords[:, 0] - cursor_x - min_x) / width * resolution
         py = (coords[:, 1] - cursor_y - min_y) / height * resolution
         return px.astype(np.float32), py.astype(np.float32)
 
     for poly in polys:
-        if not hasattr(poly, 'exterior') or poly.is_empty:
+        if not hasattr(poly, "exterior") or poly.is_empty:
             continue
         # Combine exterior + all interior rings so the even-odd rule
         # naturally skips holes without overwriting earlier-painted layers.
@@ -200,6 +195,7 @@ def _rasterize_geometry(geom, arr, color_float, bg_float,
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
+
 
 def setup_paint_texture(gen: GenerationContext):
     """Rasterize OSM polygons into a texture and configure terrain_obj for 3MF paint export.
@@ -249,9 +245,19 @@ def setup_paint_texture(gen: GenerationContext):
     landcover_fill = {}
     if gen.settings.elementSource == "WORLDCOVER":
         from .satellite import landcover_effective_material, sample_landcover_classes
+
         landcover_classes = sample_landcover_classes(
-            resolution, cursor_x, cursor_y, min_x, min_y, width, height,
-            gen.runtime.tbMinLat, gen.runtime.tbMaxLat, gen.runtime.tbMinLon, gen.runtime.tbMaxLon,
+            resolution,
+            cursor_x,
+            cursor_y,
+            min_x,
+            min_y,
+            width,
+            height,
+            gen.runtime.tbMinLat,
+            gen.runtime.tbMaxLat,
+            gen.runtime.tbMinLon,
+            gen.runtime.tbMaxLon,
         )
         if landcover_classes is not None:
             tp3d = bpy.context.scene.tp3d
@@ -262,7 +268,12 @@ def setup_paint_texture(gen: GenerationContext):
                 _lc_srgb = _named_material_srgb(_mat_name)
                 landcover_fill[_class_id] = (
                     _srgb_to_hex(*_lc_srgb),
-                    (_lc_srgb[0] / 255.0, _lc_srgb[1] / 255.0, _lc_srgb[2] / 255.0, 1.0),
+                    (
+                        _lc_srgb[0] / 255.0,
+                        _lc_srgb[1] / 255.0,
+                        _lc_srgb[2] / 255.0,
+                        1.0,
+                    ),
                 )
     for _lc_hex, _ in landcover_fill.values():
         if _lc_hex not in palette.values():
@@ -276,9 +287,9 @@ def setup_paint_texture(gen: GenerationContext):
             palette[max(palette.keys()) + 1] = _chex
 
     # ── UV layer ──────────────────────────────────────────────────────────────
-    if UV_LAYER_NAME in mesh.uv_layers:
-        mesh.uv_layers.remove(mesh.uv_layers[UV_LAYER_NAME])
-    uv_layer = mesh.uv_layers.new(name=UV_LAYER_NAME)
+    if _UV_LAYER_NAME in mesh.uv_layers:
+        mesh.uv_layers.remove(mesh.uv_layers[_UV_LAYER_NAME])
+    uv_layer = mesh.uv_layers.new(name=_UV_LAYER_NAME)
     mesh.uv_layers.active = uv_layer
 
     # Vectorised planar projection: local X → U, local Y → V
@@ -289,7 +300,7 @@ def setup_paint_texture(gen: GenerationContext):
     v_idx = np.empty(len(mesh.loops), dtype=np.int32)
     mesh.loops.foreach_get("vertex_index", v_idx)
 
-    uv_u = np.clip((co[v_idx, 0] - min_x) / width,  0.0, 1.0)
+    uv_u = np.clip((co[v_idx, 0] - min_x) / width, 0.0, 1.0)
     uv_v = np.clip((co[v_idx, 1] - min_y) / height, 0.0, 1.0)
 
     # Pin side/bottom face loops to the base-colour anchor pixel so they
@@ -330,8 +341,19 @@ def setup_paint_texture(gen: GenerationContext):
             continue
         srgb = _named_material_srgb(_KIND_MATERIAL_NAME[kind])
         c_f = (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
-        _rasterize_geometry(geom, arr, c_f, None,
-                            cursor_x, cursor_y, min_x, min_y, width, height, resolution)
+        _rasterize_geometry(
+            geom,
+            arr,
+            c_f,
+            None,
+            cursor_x,
+            cursor_y,
+            min_x,
+            min_y,
+            width,
+            height,
+            resolution,
+        )
 
     # Re-paint anchor block after all element rasterization so no polygon
     # that happens to touch the corner can overwrite it with an element colour.
@@ -341,9 +363,18 @@ def setup_paint_texture(gen: GenerationContext):
     img_name = f"{mesh.name}_MMU_Paint"
     if img_name in bpy.data.images:
         bpy.data.images.remove(bpy.data.images[img_name])
-    image = bpy.data.images.new(img_name, width=resolution, height=resolution, alpha=True)
-    image.colorspace_settings.name = 'sRGB'
-    image.pixels.foreach_set(arr.ravel()) # type: ignore - Blender api accepts the numpy array
+    # A fresh generation invalidates any height-bake history from a prior
+    # run that happened to reuse this same mesh/image name -- otherwise
+    # bake_height_layer_into_texture's baseline (or the undo backup) could
+    # silently apply pixels from a completely different, already-deleted
+    # image onto this new one.
+    _HEIGHT_BAKE_BASELINE.pop(img_name, None)
+    _HEIGHT_BAKE_UNDO.pop(img_name, None)
+    image = bpy.data.images.new(
+        img_name, width=resolution, height=resolution, alpha=True
+    )
+    image.colorspace_settings.name = "sRGB"
+    image.pixels.foreach_set(arr.ravel())  # type: ignore - Blender api accepts the numpy array
     image.pack()
 
     # ── Material ──────────────────────────────────────────────────────────────
@@ -374,12 +405,14 @@ def setup_paint_texture(gen: GenerationContext):
     mesh.materials.append(mat)
 
     # ── 3MF paint metadata ────────────────────────────────────────────────────
-    mesh["3mf_is_paint_texture"]      = True
+    mesh["3mf_is_paint_texture"] = True
     mesh["3mf_paint_default_extruder"] = 1
-    mesh["3mf_paint_extruder_colors"]  = str(palette)
+    mesh["3mf_paint_extruder_colors"] = str(palette)
 
-    print(f"[TP3D texture] {resolution}x{resolution}px | {len(palette)} filaments | "
-          f"kinds: {sorted(present_kinds)}")
+    print(
+        f"[TP3D texture] {resolution}x{resolution}px | {len(palette)} filaments | "
+        f"kinds: {sorted(present_kinds)}"
+    )
     return palette
 
 
@@ -430,10 +463,25 @@ def bake_trail_into_texture(terrain_obj, trail_polygon, material=None):
     image.pixels.foreach_get(arr)
     arr = arr.reshape((resolution, resolution, 4))
 
-    srgb = material_to_srgb(material) if material is not None else _named_material_srgb("TRAIL")
+    srgb = (
+        material_to_srgb(material)
+        if material is not None
+        else _named_material_srgb("TRAIL")
+    )
     color_f = (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
-    _rasterize_geometry(trail_polygon, arr, color_f, None,
-                        cursor_x, cursor_y, min_x, min_y, width, height, resolution)
+    _rasterize_geometry(
+        trail_polygon,
+        arr,
+        color_f,
+        None,
+        cursor_x,
+        cursor_y,
+        min_x,
+        min_y,
+        width,
+        height,
+        resolution,
+    )
 
     image.pixels.foreach_set(arr.ravel())
     image.pack()
@@ -441,6 +489,7 @@ def bake_trail_into_texture(terrain_obj, trail_polygon, material=None):
     # Register TRAIL in the exported extruder-colour palette if this map's
     # original bake predates it (no trail existed yet at bake time).
     import ast
+
     try:
         palette = ast.literal_eval(mesh.get("3mf_paint_extruder_colors", "{}"))
     except (ValueError, SyntaxError):
@@ -504,6 +553,17 @@ def _rasterize_height_field(mesh, min_x, min_y, width, height, resolution):
     trail's boolean cutout is handled for free: pixels with no covering
     top-facing triangle are simply left as NaN and never painted.
 
+    A full pixels-x-triangles broadcast isn't an option (a 2048x2048 canvas
+    against tens of thousands of terrain triangles doesn't fit in memory),
+    and looping per-triangle at full resolution is slow. So the loop runs over
+    whichever of (top-facing triangle count, resolution) is smaller, fully
+    vectorised over the other axis: few triangles -> loop triangles, as
+    before, each one vectorised over its own pixel footprint; many
+    triangles (the usual case) -> loop image rows instead, and for each row
+    vectorise the barycentric test across every triangle whose Y-span
+    covers that row in a single broadcast, so the loop trip count is
+    bounded by min(n_top, resolution) rather than always paying for n_top.
+
     Returns a (resolution, resolution) float32 array of local-space Z,
     NaN where no top-facing triangle covers that pixel.
     """
@@ -528,47 +588,122 @@ def _rasterize_height_field(mesh, min_x, min_y, width, height, resolution):
 
     # Same nz > 0.1 convention already used elsewhere in this file to pick
     # top-facing geometry out from structural side/bottom faces.
-    top_tri_idx = np.nonzero(tri_normals[:, 2] > 0.1)[0]
+    top_mask = tri_normals[:, 2] > 0.1
+    tri_verts = tri_verts[top_mask]
+    n_top = len(tri_verts)
+    if n_top == 0:
+        return elev
 
-    for ti in top_tri_idx:
-        i0, i1, i2 = tri_verts[ti]
-        p0, p1, p2 = co[i0], co[i1], co[i2]
+    p = co[tri_verts]  # (n_top, 3, 3) -- 3 verts x (x, y, z) per triangle
+    px = (p[:, :, 0] - min_x) / width * resolution
+    py = (p[:, :, 1] - min_y) / height * resolution
+    pz = p[:, :, 2]
 
-        px = (np.array([p0[0], p1[0], p2[0]]) - min_x) / width * resolution
-        py = (np.array([p0[1], p1[1], p2[1]]) - min_y) / height * resolution
+    denom = (py[:, 1] - py[:, 2]) * (px[:, 0] - px[:, 2]) + (px[:, 2] - px[:, 1]) * (
+        py[:, 0] - py[:, 2]
+    )
+    valid = np.abs(denom) > 1e-9
 
-        col_min = max(0, int(np.floor(px.min())))
-        col_max = min(resolution, int(np.ceil(px.max())) + 1)
-        row_min = max(0, int(np.floor(py.min())))
-        row_max = min(resolution, int(np.ceil(py.max())) + 1)
-        if col_min >= col_max or row_min >= row_max:
+    # Few triangles
+    if n_top <= resolution:
+        for ti in range(n_top):
+            if not valid[ti]:
+                continue
+            tx, ty, tz, d = px[ti], py[ti], pz[ti], denom[ti]
+
+            col_min = max(0, int(np.floor(tx.min())))
+            col_max = min(resolution, int(np.ceil(tx.max())) + 1)
+            row_min = max(0, int(np.floor(ty.min())))
+            row_max = min(resolution, int(np.ceil(ty.max())) + 1)
+            if col_min >= col_max or row_min >= row_max:
+                continue
+
+            xs, ys = np.meshgrid(
+                np.arange(col_min, col_max) + 0.5,
+                np.arange(row_min, row_max) + 0.5,
+            )
+            w0 = ((ty[1] - ty[2]) * (xs - tx[2]) + (tx[2] - tx[1]) * (ys - ty[2])) / d
+            w1 = ((ty[2] - ty[0]) * (xs - tx[2]) + (tx[0] - tx[2]) * (ys - ty[2])) / d
+            w2 = 1.0 - w0 - w1
+
+            inside = (w0 >= -1e-6) & (w1 >= -1e-6) & (w2 >= -1e-6)
+            if not inside.any():
+                continue
+
+            z = w0 * tz[0] + w1 * tz[1] + w2 * tz[2]
+            sub_rows, sub_cols = np.nonzero(inside)
+            elev[row_min + sub_rows, col_min + sub_cols] = z[sub_rows, sub_cols]
+
+        return elev
+
+    # Many triangles
+    ex0 = np.stack([px[:, 0], px[:, 1], px[:, 2]], axis=1)
+    ex1 = np.stack([px[:, 1], px[:, 2], px[:, 0]], axis=1)
+    ey0 = np.stack([py[:, 0], py[:, 1], py[:, 2]], axis=1)
+    ey1 = np.stack([py[:, 1], py[:, 2], py[:, 0]], axis=1)
+    ez0 = np.stack([pz[:, 0], pz[:, 1], pz[:, 2]], axis=1)
+    ez1 = np.stack([pz[:, 1], pz[:, 2], pz[:, 0]], axis=1)
+
+    tri_ymin = py.min(axis=1)
+    tri_ymax = py.max(axis=1)
+
+    for row in range(resolution):
+        y = row + 0.5
+        cand = np.nonzero((tri_ymin <= y) & (tri_ymax >= y))[0]
+        if cand.size == 0:
             continue
 
-        denom = (py[1] - py[2]) * (px[0] - px[2]) + (px[2] - px[1]) * (py[0] - py[2])
-        if abs(denom) < 1e-9:
+        cy0, cy1 = ey0[cand], ey1[cand]
+        cx0, cx1 = ex0[cand], ex1[cand]
+        cz0, cz1 = ez0[cand], ez1[cand]
+
+        cross = ((cy0 < y) & (y <= cy1)) | ((cy1 < y) & (y <= cy0))
+        dy = cy1 - cy0
+        safe_dy = np.where(
+            dy == 0, 1.0, dy
+        )  # dodge /0 on non-crossing edges; masked out next
+        t = (y - cy0) / safe_dy
+        x_cross = np.where(cross, cx0 + t * (cx1 - cx0), np.nan)
+        z_cross = np.where(cross, cz0 + t * (cz1 - cz0), np.nan)
+
+        order = np.argsort(x_cross, axis=1)
+        x_sorted = np.take_along_axis(x_cross, order, axis=1)
+        z_sorted = np.take_along_axis(z_cross, order, axis=1)
+        xL, xR = x_sorted[:, 0], x_sorted[:, 1]
+        zL, zR = z_sorted[:, 0], z_sorted[:, 1]
+
+        ok = np.isfinite(xL) & np.isfinite(xR) & (xR > xL)
+        if not ok.any():
             continue
+        xL, xR, zL, zR = xL[ok], xR[ok], zL[ok], zR[ok]
 
-        xs, ys = np.meshgrid(
-            np.arange(col_min, col_max) + 0.5,
-            np.arange(row_min, row_max) + 0.5,
-        )
-        w0 = ((py[1] - py[2]) * (xs - px[2]) + (px[2] - px[1]) * (ys - py[2])) / denom
-        w1 = ((py[2] - py[0]) * (xs - px[2]) + (px[0] - px[2]) * (ys - py[2])) / denom
-        w2 = 1.0 - w0 - w1
-
-        inside = (w0 >= -1e-6) & (w1 >= -1e-6) & (w2 >= -1e-6)
-        if not inside.any():
+        col_start = np.clip(np.ceil(xL).astype(np.int64), 0, resolution)
+        col_end = np.clip(np.floor(xR).astype(np.int64) + 1, 0, resolution)
+        span = col_end - col_start
+        keep = span > 0
+        if not keep.any():
             continue
+        col_start, span = col_start[keep], span[keep]
+        xL, xR, zL, zR = xL[keep], xR[keep], zL[keep], zR[keep]
 
-        z = w0 * p0[2] + w1 * p1[2] + w2 * p2[2]
-        sub_rows, sub_cols = np.nonzero(inside)
-        elev[row_min + sub_rows, col_min + sub_cols] = z[sub_rows, sub_cols]
+        # Flatten all of this row's (triangle, column) pairs into one pass
+        # with a repeat/cumsum trick
+        total = int(span.sum())
+        seg_idx = np.repeat(np.arange(span.size), span)
+        offsets = np.arange(total) - np.repeat(np.cumsum(span) - span, span)
+        cols = col_start[seg_idx] + offsets
+        span_width = np.maximum(xR[seg_idx] - xL[seg_idx], 1e-9)
+        frac = (cols + 0.5 - xL[seg_idx]) / span_width
+        z_vals = zL[seg_idx] + frac * (zR[seg_idx] - zL[seg_idx])
+
+        elev[row, cols] = z_vals
 
     return elev
 
 
-def bake_height_layer_into_texture(terrain_obj, z_threshold, material=None,
-                                    noise_amplitude=2.0, noise_scale=0.04):
+def bake_height_layer_into_texture(
+    terrain_obj, z_threshold, material=None, noise_amplitude=2.0, noise_scale=0.04
+):
     """Paint a noised colour-by-height layer onto terrain_obj's EXISTING
     MMU_Paint texture in place, on top of whatever element/land-cover
     rasterization is already baked into it -- mirrors bake_trail_into_texture's
@@ -586,6 +721,8 @@ def bake_height_layer_into_texture(terrain_obj, z_threshold, material=None,
 
     Returns False (no-op) if terrain_obj has no existing paint texture.
     """
+    import ast
+
     mesh = terrain_obj.data
     img_name = f"{mesh.name}_MMU_Paint"
     image = bpy.data.images.get(img_name)
@@ -606,35 +743,110 @@ def bake_height_layer_into_texture(terrain_obj, z_threshold, material=None,
     local_thresh = z_threshold + noise_field * noise_amplitude
 
     mountain_mask = ~np.isnan(elev) & (elev > local_thresh)
-    if not mountain_mask.any():
-        return True  # nothing above threshold -- not an error, just no-op
 
-    arr = np.empty(resolution * resolution * 4, dtype=np.float32)
-    image.pixels.foreach_get(arr)
-    arr = arr.reshape((resolution, resolution, 4))
+    current = np.empty(resolution * resolution * 4, dtype=np.float32)
+    image.pixels.foreach_get(current)
+    current = current.reshape((resolution, resolution, 4))
 
-    srgb = material_to_srgb(material) if material is not None else _named_material_srgb("MOUNTAIN")
-    color_f = (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
-    arr[mountain_mask] = color_f
+    baseline = _HEIGHT_BAKE_BASELINE.get(img_name)
+    if baseline is None or baseline.shape != current.shape:
+        baseline = current.copy()
+        _HEIGHT_BAKE_BASELINE[img_name] = baseline
+
+    # Snapshot pre-edit state for undo functionality
+    save_height_bake_state(image, mesh)
+
+    arr = baseline.copy()
+    srgb = (
+        material_to_srgb(material)
+        if material is not None
+        else _named_material_srgb("MOUNTAIN")
+    )
+    if mountain_mask.any():
+        color_f = (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
+        arr[mountain_mask] = color_f
 
     image.pixels.foreach_set(arr.ravel())
     image.pack()
 
-    # Register MOUNTAIN in the exported extruder-colour palette if this
-    # map's original bake predates height-colouring (same pattern as
-    # bake_trail_into_texture's TRAIL registration below).
-    import ast
     try:
         palette = ast.literal_eval(mesh.get("3mf_paint_extruder_colors", "{}"))
     except (ValueError, SyntaxError):
         palette = {}
-    mountain_hex = _srgb_to_hex(*srgb)
-    if mountain_hex not in palette.values():
-        next_idx = (max(palette.keys()) + 1) if palette else 1
-        palette[next_idx] = mountain_hex
-        mesh["3mf_paint_extruder_colors"] = str(palette)
+    if mountain_mask.any():
+        mountain_hex = _srgb_to_hex(*srgb)
+        if mountain_hex not in palette.values():
+            next_idx = (max(palette.keys()) + 1) if palette else 1
+            palette[next_idx] = mountain_hex
+            mesh["3mf_paint_extruder_colors"] = str(palette)
 
     return True
+
+
+def save_height_bake_state(image, mesh):
+    """Save the current MMU_Paint state before applying a height bake.
+
+    Keeps a bounded history based on total pixel memory so repeated mountain
+    bakes can be undone individually without allowing the image snapshots to
+    consume unbounded memory.
+    """
+    history = _HEIGHT_BAKE_UNDO[image.name]
+
+    pixels = np.array(image.pixels[:], dtype=np.float32)
+
+    history.append(
+        {
+            "pixels": pixels,
+            "palette": deepcopy(mesh.get("3mf_paint_extruder_colors")),
+        }
+    )
+
+    total_memory = sum(state["pixels"].nbytes for state in history)
+
+    while total_memory > _MAX_HEIGHT_BAKE_UNDO_MEMORY and len(history) > 1:
+        removed = history.pop(0)
+        total_memory -= removed["pixels"].nbytes
+
+
+def restore_last_height_bake(terrain_obj):
+    """Restore the MMU_Paint texture to its state immediately before the most recent height bake.
+    Returns False if there is no previous state or the texture no longer exists.
+    """
+    mesh = terrain_obj.data
+    img_name = f"{mesh.name}_MMU_Paint"
+    image = bpy.data.images.get(img_name)
+    if image is None:
+        return False
+    history = _HEIGHT_BAKE_UNDO.get(image.name)
+    if not history:
+        return False
+    print(
+        "[TP3D undo] image:",
+        image.name,
+        "history type:",
+        type(history),
+        "history:",
+        history,
+    )
+    backup = history[-1]
+    image.pixels.foreach_set(backup["pixels"].ravel())
+    image.update()
+    if backup["palette"] is not None:
+        mesh["3mf_paint_extruder_colors"] = backup["palette"]
+    elif "3mf_paint_extruder_colors" in mesh:
+        del mesh["3mf_paint_extruder_colors"]
+    history.pop()
+    if not history:
+        del _HEIGHT_BAKE_UNDO[image.name]
+    return True
+
+
+def has_height_bake_undo(terrain_obj):
+    """Return whether the object has a saved Color Mountains texture state."""
+    mesh = terrain_obj.data
+    img_name = f"{mesh.name}_MMU_Paint"
+    history = _HEIGHT_BAKE_UNDO.get(img_name)
+    return isinstance(history, list) and bool(history)
 
 
 def tag_solid_color_for_paint_export(obj, srgb, palette):
@@ -649,25 +861,27 @@ def tag_solid_color_for_paint_export(obj, srgb, palette):
     so the stored default_extruder must be palette_key + 1, not the raw key,
     or every colour renders as whatever occupies the *next* palette slot.
     """
-    if obj is None or not hasattr(obj, 'type') or obj.type != 'MESH':
+    if obj is None or not hasattr(obj, "type") or obj.type != "MESH":
         return
     mesh = obj.data
 
     target_hex = _srgb_to_hex(*srgb)
-    palette_key = next((idx for idx, hexcol in palette.items() if hexcol == target_hex), 0)
+    palette_key = next(
+        (idx for idx, hexcol in palette.items() if hexcol == target_hex), 0
+    )
     default_extruder = palette_key + 1
 
     img_name = str(mesh.name) + "_MMU_Solid"
     if img_name in bpy.data.images:
         bpy.data.images.remove(bpy.data.images[img_name])
     image = bpy.data.images.new(img_name, width=1, height=1, alpha=True)
-    image.colorspace_settings.name = 'sRGB'
+    image.colorspace_settings.name = "sRGB"
     image.pixels.foreach_set([srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0])
     image.pack()
 
-    if UV_LAYER_NAME in mesh.uv_layers:
-        mesh.uv_layers.remove(mesh.uv_layers[UV_LAYER_NAME])
-    uv_layer = mesh.uv_layers.new(name=UV_LAYER_NAME)
+    if _UV_LAYER_NAME in mesh.uv_layers:
+        mesh.uv_layers.remove(mesh.uv_layers[_UV_LAYER_NAME])
+    uv_layer = mesh.uv_layers.new(name=_UV_LAYER_NAME)
     mesh.uv_layers.active = uv_layer
     uv_flat = np.full(len(mesh.loops) * 2, 0.5, dtype=np.float32)
     uv_layer.data.foreach_set("uv", uv_flat)
@@ -692,10 +906,9 @@ def tag_solid_color_for_paint_export(obj, srgb, palette):
     mesh.materials.clear()
     mesh.materials.append(mat)
 
-    mesh["3mf_is_paint_texture"]       = True
+    mesh["3mf_is_paint_texture"] = True
     mesh["3mf_paint_default_extruder"] = default_extruder
-    mesh["3mf_paint_extruder_colors"]  = str(palette)
-
+    mesh["3mf_paint_extruder_colors"] = str(palette)
 
 
 def crop_paint_texture_to_piece(piece_obj, source_image):
@@ -705,7 +918,7 @@ def crop_paint_texture_to_piece(piece_obj, source_image):
     cutting per-piece segmentation work by ~36×.
     """
     mesh = piece_obj.data
-    uv_layer = mesh.uv_layers.get(UV_LAYER_NAME)
+    uv_layer = mesh.uv_layers.get(_UV_LAYER_NAME)
     if uv_layer is None:
         return
 
@@ -750,7 +963,7 @@ def crop_paint_texture_to_piece(piece_obj, source_image):
     src_px = np.empty(W * H * 4, dtype=np.float32)
     source_image.pixels.foreach_get(src_px)
     crop_arr = np.ascontiguousarray(
-        src_px.reshape(H, W, 4)[py_y0:py_y0 + crop_h, px_x0:px_x0 + crop_w]
+        src_px.reshape(H, W, 4)[py_y0 : py_y0 + crop_h, px_x0 : px_x0 + crop_w]
     )
 
     # Re-paint the base-colour anchor block at (0,0)–(4,4) in the crop.
@@ -762,8 +975,8 @@ def crop_paint_texture_to_piece(piece_obj, source_image):
     if img_name in bpy.data.images:
         bpy.data.images.remove(bpy.data.images[img_name])
     new_img = bpy.data.images.new(img_name, width=crop_w, height=crop_h, alpha=True)
-    new_img.colorspace_settings.name = 'sRGB'
-    new_img.pixels.foreach_set(crop_arr.ravel()) # type: ignore - Blender api accepts the numpy array
+    new_img.colorspace_settings.name = "sRGB"
+    new_img.pixels.foreach_set(crop_arr.ravel())  # type: ignore - Blender api accepts the numpy array
     new_img.pack()
 
     # Remap top-face UVs into the new [0, 1] crop space.
@@ -803,4 +1016,3 @@ def crop_paint_texture_to_piece(piece_obj, source_image):
     links.new(bsdf.outputs["BSDF"], out_node.inputs["Surface"])
     mesh.materials.clear()
     mesh.materials.append(mat)
-

@@ -54,6 +54,7 @@ classes = [
     operators.TP3D_OT_dovetail,
     operators.TP3D_OT_bottom_mark,
     operators.TP3D_OT_color_mountain,
+    operators.TP3D_OT_undo_mountain_texture,
     operators.TP3D_OT_contour_lines,
     operators.TP3D_OT_save_preset,
     operators.TP3D_OT_load_preset,
