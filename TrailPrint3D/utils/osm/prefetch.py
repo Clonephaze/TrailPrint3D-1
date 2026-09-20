@@ -1,4 +1,4 @@
-"""Prefetch of the currently enabled OSM elements for the map generator picker.
+"""Prefetch of the currently enabled OSM elements for the picker pages (map, puzzle, multi-tile).
 
 Split in two halves so the picker's HTTP server thread never touches bpy:
 
@@ -68,7 +68,11 @@ def tile_bbox(bounds, shape, rotation_deg=0):
     center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
     diameter = max(tile_w, tile_h)
 
-    if rotation_deg != 0 and shape != "circle":
+    # "geojson": the tile is the imported polygon's own bbox -- shapeRotation
+    # never applies to it (see TP3D_OT_map_picker's GeoJSON branch).
+    # "exact": the puzzle/multi-tile pickers send the precise area they will
+    # generate, which is never rotated or reshaped.
+    if rotation_deg != 0 and shape not in ("circle", "geojson", "exact"):
         rot = math.radians(rotation_deg)
         cos_r, sin_r = abs(math.cos(rot)), abs(math.sin(rot))
         gen_diameter = diameter * (cos_r + sin_r)
@@ -173,7 +177,11 @@ def plan_prefetch(tp3d, payload):
     )
 
     if not kinds:
-        return {"error": "No enabled elements fit this area size.", "skipped": skipped}
+        return {
+            "error": "The area is too big to generate these elements"
+            if skipped else "No elements are enabled.",
+            "skipped": skipped,
+        }
 
     return {
         "kind_tasks": [(kind, tile_tasks) for kind in kinds],
@@ -187,6 +195,23 @@ def plan_prefetch(tp3d, payload):
 # --------------------------------------------------------------------------
 # Worker thread
 # --------------------------------------------------------------------------
+
+
+def start_prefetch_job(tp3d, request, job):
+    """MAIN THREAD ONLY. Plan a picker "Prefetch" click (it reads scene
+    settings), then run the fetch on a worker thread so the viewport stays
+    responsive. Shared by every picker operator that serves a page with the
+    Prefetch button; *job* is picker_server.prefetch_job().
+    """
+    plan = plan_prefetch(tp3d, request)
+    if 'error' in plan:
+        job.update(status='error', message=plan['error'], result=None)
+        return
+    job.update(status='running', message='Fetching elements…', result=None)
+    threading.Thread(
+        target=run_prefetch, args=(plan, job),
+        daemon=True, name='tp3d-prefetch',
+    ).start()
 
 
 def run_prefetch(plan, job):

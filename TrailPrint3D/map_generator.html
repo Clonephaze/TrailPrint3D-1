@@ -768,7 +768,7 @@
                     svgShapePath = res.path;
                     svgShapeName = file.name;
                     svgAspect = aspect;
-                    svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgText);
+                    svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgPreviewMarkup(svgText));
                     currentShape = 'svg';
                     document.querySelectorAll('.shape-btn[data-shape]').forEach(function(b) {
                         b.classList.toggle('active', b.getAttribute('data-shape') === 'svg');
@@ -837,13 +837,58 @@
         // inscribed shape drawn on top instead, the same way the drawn
         // rectangle handle itself stays visible (dashed, unfilled) underneath
         // it for dragging/resizing.
+        // Preview-only restyle of the imported SVG (the file sent to Blender is
+        // untouched): the outline keeps the shape's current colour, the inside
+        // becomes a lighter, more transparent version of it. A filled shape
+        // with no stroke of its own gets one in its fill colour so it still
+        // has a border. Falls back to the raw markup if anything goes wrong.
+        function svgPreviewMarkup(svgText) {
+            var host = null;
+            try {
+                host = document.createElement('div');
+                host.style.cssText = 'position:absolute;left:-99999px;top:0;width:400px;height:400px;visibility:hidden;pointer-events:none';
+                host.innerHTML = svgText;
+                var svg = host.querySelector('svg');
+                if (!svg) return svgText;
+                document.body.appendChild(host);
+
+                var vb = svg.viewBox && svg.viewBox.baseVal;
+                var size = (vb && vb.width && vb.height) ? Math.max(vb.width, vb.height) : 0;
+                if (!size) { var bb = svg.getBBox(); size = Math.max(bb.width, bb.height) || 100; }
+                var borderWidth = size * 0.006;
+
+                function parseRgb(str) {
+                    var m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(str || '');
+                    return m ? [+m[1], +m[2], +m[3]] : null;
+                }
+                svg.querySelectorAll('path,rect,circle,ellipse,polygon,polyline').forEach(function(el) {
+                    var cs = getComputedStyle(el);
+                    var fill = parseRgb(cs.fill);
+                    if (!fill) return;   // fill:none (or a gradient/pattern) -- leave as is
+                    var stroke = parseRgb(cs.stroke);
+                    if (!stroke) {
+                        el.style.stroke = 'rgb(' + fill.join(',') + ')';
+                        el.style.strokeWidth = borderWidth;
+                    }
+                    var light = fill.map(function(c) { return Math.round(c + (255 - c) * 0.35); });
+                    el.style.fill = 'rgb(' + light.join(',') + ')';
+                    el.style.fillOpacity = (parseFloat(cs.fillOpacity) || 1) * 0.35;
+                });
+                return new XMLSerializer().serializeToString(svg);
+            } catch (e) {
+                return svgText;
+            } finally {
+                if (host && host.parentNode) host.parentNode.removeChild(host);
+            }
+        }
+
         function renderShapePreview() {
             shapePreview.clearLayers();
             if (!coords || currentShape === 'rectangle') return;
             if (currentShape === 'svg') {
                 if (!svgDataUrl) return;
                 var ib = svgInscribedBounds(effectiveBounds(coords), svgAspect);
-                L.imageOverlay(svgDataUrl, [[ib.south, ib.west], [ib.north, ib.east]], { opacity: 0.85 })
+                L.imageOverlay(svgDataUrl, [[ib.south, ib.west], [ib.north, ib.east]], { opacity: 1 })
                     .addTo(shapePreview);
                 return;
             }

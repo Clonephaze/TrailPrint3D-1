@@ -291,6 +291,15 @@ def test_tile_bbox_circle_ignores_rotation():
     assert all(abs(x - y) < 1e-9 for x, y in zip(a, b))
 
 
+def test_tile_bbox_exact_and_geojson_ignore_rotation():
+    for shape in ("exact", "geojson"):
+        a = prefetch.tile_bbox(_DRAWN, shape, 0)
+        b = prefetch.tile_bbox(_DRAWN, shape, 45)
+        assert all(abs(x - y) < 1e-9 for x, y in zip(a, b))
+        assert abs(a[0] - 47.0) < 1e-9 and abs(a[2] - 47.1) < 1e-9
+        assert abs(a[1] - 8.0) < 1e-9 and abs(a[3] - 8.2) < 1e-9
+
+
 def test_tile_bbox_square_shape_is_centered_on_drawn_center():
     min_lat, min_lon, max_lat, max_lon = prefetch.tile_bbox(_DRAWN, "octagon", 0)
     assert abs((min_lon + max_lon) / 2 - 8.1) < 1e-9
@@ -393,6 +402,7 @@ if __name__ == "__main__":
     _run("tile_bbox: rectangle == drawn bounds", test_tile_bbox_rectangle_matches_drawn_bounds)
     _run("tile_bbox: rotation grows area", test_tile_bbox_rotation_grows_area)
     _run("tile_bbox: circle ignores rotation", test_tile_bbox_circle_ignores_rotation)
+    _run("tile_bbox: exact/geojson ignore rotation", test_tile_bbox_exact_and_geojson_ignore_rotation)
     _run("tile_bbox: octagon centered on drawn center", test_tile_bbox_square_shape_is_centered_on_drawn_center)
 
     _run("snap: within tolerance / outside", test_snap_within_tolerance_and_outside)

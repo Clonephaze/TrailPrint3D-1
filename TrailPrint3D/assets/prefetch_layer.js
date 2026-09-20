@@ -1,5 +1,6 @@
-// "Prefetch Elements" for the map generator pages (map_generator.html and
-// premium/map_generator_pe.html), inlined via __PREFETCH_JS__ in picker_server.py.
+// "Prefetch Elements" for the picker pages (map_generator.html, puzzleGenerator.html and
+// premium/{map_generator_pe,puzzleGenerator_pe,slidingPuzzleGenerator,multitile_generator}.html),
+// inlined via __PREFETCH_JS__ in picker_server.py.
 //
 // Clicking #prefetchBtn asks Blender (POST /prefetch) to fetch -- and disk-cache,
 // exactly like a real generation would -- every currently enabled OSM element for
@@ -8,8 +9,11 @@
 // (e.g. "way/123") is sent with /confirm as excluded_ids, so the generator leaves
 // it out (see utils/osm/exclusions.py). The on-disk cache is never touched.
 //
-// Requires (all defined earlier on the page): PORT, map, coords, currentShape, effectiveBounds,
-// and the #prefetchBtn / #prefetchInfo / #clearPrefetch sidebar elements.
+// Requires (all defined earlier on the page): PORT, map, coords, currentShape,
+// and the #prefetchInfo / #clearPrefetch sidebar elements. effectiveBounds is optional.
+// A page whose fetch area isn't simply its drawn shape defines
+// tp3dPrefetchArea() -> { bounds: {north,south,east,west}, type } | null, which
+// takes precedence (type 'exact' = use the bounds as-is, no shape/rotation padding).
 var PREFETCH_KIND_STYLE = {
     WATER:      { label: 'Water',      color: '#2f7fd1' },
     FOREST:     { label: 'Forest',     color: '#2e8b3d' },
@@ -19,7 +23,7 @@ var PREFETCH_KIND_STYLE = {
     FARMLAND:   { label: 'Farmland',   color: '#d8b84a' },
     GLACIER:    { label: 'Glacier',    color: '#7fd6e8' },
     BUILDINGS:  { label: 'Buildings',  color: '#e07b39' },
-    STREETS:    { label: 'Roads',      color: '#ff2d95' },
+    STREETS:    { label: 'Roads',      color: '#d81b3c' },
     COASTLINE:  { label: 'Coastline',  color: '#1e5aa8' }
 };
 var PREFETCH_DISABLED_COLOR = '#e04040';
@@ -43,7 +47,7 @@ prefetchTip.id = 'prefetchTip';
 map.getContainer().appendChild(prefetchTip);
 
 // The Prefetch/Reset buttons live at the right end of the element status bar.
-// tp3dRenderElementStatus only removes .element-chip nodes, so they survive a
+// tp3dRenderElementStatus only removes .element-chip-wrap nodes, so they survive a
 // re-render (same reason the Settings gear does).
 (function buildPrefetchBar() {
     var bar = document.createElement('div');
@@ -54,27 +58,57 @@ map.getContainer().appendChild(prefetchTip);
     document.getElementById('elementStatus').appendChild(bar);
 })();
 
+// Prefetch only understands OSM data: grey the button out under ESA WorldCover.
+// Called from tp3dRenderElementStatus, i.e. on load and after every source switch.
+var PREFETCH_BTN_TITLE = document.getElementById('prefetchBtn').title;   // (assigned here, so only valid after the bar exists)
+function prefetchSyncSource() {
+    var btn = document.getElementById('prefetchBtn');
+    if (!btn) return;   // hoisted: element_status.js can call this before the bar is built
+    var wc = typeof tp3dIsWorldCover === 'function' && tp3dIsWorldCover();
+    btn.disabled = wc;
+    btn.classList.toggle('source-disabled', wc);
+    btn.title = wc ? 'Prefetch only works with OpenStreetMap selected as the element source.' : PREFETCH_BTN_TITLE;
+}
+prefetchSyncSource();
+
 function tp3dPrefetchExcludedIds() {
     return Object.keys(prefetchExcluded);
 }
 
+// An imported GeoJSON boundary replaces the drawn area (coords is null then), and
+// the generator builds its tile from the polygon's own bounding box -- so that
+// box is what gets prefetched, sent as type 'geojson' (no shape/rotation padding).
 function prefetchBounds() {
-    if (!coords) return null;
-    var eb = effectiveBounds(coords);
+    var eb, type = currentShape;
+    if (typeof tp3dPrefetchArea === 'function') {
+        var area = tp3dPrefetchArea();
+        if (!area) return null;
+        eb = area.bounds;
+        type = area.type;
+    } else if (typeof geojsonPaths !== 'undefined' && geojsonPaths.length && geojsonLayer.getBounds().isValid()) {
+        var gb = geojsonLayer.getBounds();
+        eb = { north: gb.getNorth(), south: gb.getSouth(), east: gb.getEast(), west: gb.getWest() };
+        type = 'geojson';
+    } else if (coords) {
+        eb = typeof effectiveBounds === 'function' ? effectiveBounds(coords) : coords;
+    } else {
+        return null;
+    }
     var centerLngRaw = (eb.east + eb.west) / 2;
     var shift = (((centerLngRaw + 180) % 360 + 360) % 360 - 180) - centerLngRaw; // wrap into -180..180
     return {
         bounds: { north: eb.north, south: eb.south, east: eb.east + shift, west: eb.west + shift },
-        shift: shift
+        shift: shift,
+        type: type
     };
 }
 
-// Sub-categories stay in their kind's colour family (Roads = pinks/corals/purples)
+// Sub-categories stay in their kind's colour family (Roads = reds/crimsons/corals)
 // so they still read as "the same element", but each one is distinguishable.
 var PREFETCH_SUB_COLORS = {
     STREETS: {
-        highways: '#ff3b5c', major: '#ff2d95', minor: '#ff6ec0', residential: '#e63fd0',
-        service: '#c65ae6', footway: '#ffa3d9', cycle_bridle: '#ff7a5c', track: '#b8489c', path: '#ff8fa3'
+        highways: '#ff2a2a', major: '#d81b3c', minor: '#ff6b6b', residential: '#c62828',
+        service: '#a11d33', footway: '#ff9e9e', cycle_bridle: '#ff7a5c', track: '#8f2a2a', path: '#ff8a80'
     }
 };
 
@@ -303,6 +337,8 @@ function drawPrefetchResult(result) {
     Object.keys(skipped).forEach(function(k) {
         notes.push((PREFETCH_KIND_STYLE[k] ? PREFETCH_KIND_STYLE[k].label : k) + ' skipped (' + skipped[k] + ')');
     });
+    var skippedLabels = Object.keys(skipped).map(function(k) { return PREFETCH_KIND_STYLE[k] ? PREFETCH_KIND_STYLE[k].label : k; });
+    if (skippedLabels.length) prefetchShowToast('The area is too big to generate these elements: ' + skippedLabels.join(', '));
     if (result.truncated) notes.push('too many elements — only the first ' + features.length + ' are clickable');
     document.getElementById('status').textContent = features.length
         ? 'Prefetched ' + features.length + ' elements — click one to disable it.' + (notes.length ? ' ' + notes.join('; ') + '.' : '')
@@ -311,7 +347,7 @@ function drawPrefetchResult(result) {
 
 function setPrefetchBusy(busy, label) {
     var btn = document.getElementById('prefetchBtn');
-    btn.disabled = busy;
+    btn.disabled = busy || btn.classList.contains('source-disabled');
     btn.textContent = label || 'Prefetch Elements';
     if (busy) {
         var spinner = document.createElement('span');
@@ -330,6 +366,7 @@ function pollPrefetch(startedAt) {
             } else if (job.status === 'error') {
                 setPrefetchBusy(false);
                 document.getElementById('status').textContent = job.message || 'Prefetch failed.';
+                prefetchShowToast(job.message || 'Prefetch failed.');
             } else if (Date.now() - startedAt > 15 * 60 * 1000) {
                 setPrefetchBusy(false);
                 document.getElementById('status').textContent = 'Prefetch timed out.';
@@ -347,7 +384,7 @@ function pollPrefetch(startedAt) {
 function startPrefetch() {
     var pb = prefetchBounds();
     if (!pb) {
-        document.getElementById('status').textContent = 'Draw an area first, then prefetch its elements.';
+        document.getElementById('status').textContent = 'Draw an area or import a GeoJSON boundary first, then prefetch its elements.';
         return;
     }
     prefetchWanted = true;
@@ -357,7 +394,7 @@ function startPrefetch() {
         method: 'POST',
         mode: 'cors',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bounds: pb.bounds, type: currentShape })
+        body: JSON.stringify({ bounds: pb.bounds, type: pb.type })
     })
     .then(function() { pollPrefetch(Date.now()); })
     .catch(function() {
@@ -366,7 +403,28 @@ function startPrefetch() {
     });
 }
 
-document.getElementById('prefetchBtn').addEventListener('click', startPrefetch);
+// Small self-dismissing popup over the map (bottom centre, like #prefetchTip).
+var prefetchToast = document.createElement('div');
+prefetchToast.id = 'prefetchToast';
+map.getContainer().appendChild(prefetchToast);
+var prefetchToastTimer = null;
+
+function prefetchShowToast(text) {
+    prefetchToast.textContent = text;
+    prefetchToast.classList.add('show');
+    clearTimeout(prefetchToastTimer);
+    prefetchToastTimer = setTimeout(function() { prefetchToast.classList.remove('show'); }, 3500);
+}
+
+document.getElementById('prefetchBtn').addEventListener('click', function() {
+    var anyEnabled = typeof TP3D_ELEMENT_STATE === 'undefined'
+        || Object.keys(TP3D_ELEMENT_STATE).some(function(k) { return TP3D_ELEMENT_STATE[k]; });
+    if (!anyEnabled) {
+        prefetchShowToast('No elements are enabled — enable at least one element to prefetch.');
+        return;
+    }
+    startPrefetch();
+});
 document.getElementById('clearPrefetch').addEventListener('click', function() {
     prefetchExcluded = {};   // an explicit Clear also forgets what was disabled
     prefetchWanted = false;
@@ -405,5 +463,5 @@ function tp3dRestorePrefetch(saved) {
     if (!saved) return;
     (saved.excluded || []).forEach(function(id) { prefetchExcluded[id] = true; });
     renderPrefetchInfo();
-    if (saved.active && coords) startPrefetch();
+    if (saved.active && prefetchBounds()) startPrefetch();
 }

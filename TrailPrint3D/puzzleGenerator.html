@@ -142,6 +142,8 @@
             </div>
             <button type="button" id="plateSettingsBtn" class="btn-plate-settings" style="display:none;">Plate Settings…</button>
         </div>
+        <div id="prefetchInfo"></div>
+        <button id="clearPrefetch" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear Prefetch</button>
         <div id="status">Draw a rectangle to begin.</div>
         <div class="info-note" tabindex="0">
             <span class="info-icon">i</span>
@@ -409,6 +411,7 @@
                     puzzleSeed: document.getElementById('puzzleSeedInput').value,
                     puzzleCornerRadius: document.getElementById('puzzleCornerRadiusInput').value,
                     coords: coords,
+                    prefetch: tp3dPrefetchState(),
                     drawMode: drawMode,
                     shapeCenter: shapeCenter,
                     gpxPaths: gpxPaths,
@@ -503,6 +506,7 @@
                         bindMoveHandle();
                         regeneratePuzzle();
                     }
+                    tp3dRestorePrefetch(s.prefetch);
                     updateStatus();
                     updateSendState();
                     // Done LAST, after coords is already restored above --
@@ -1199,6 +1203,7 @@
             // rectangle -- see the comment on isoToPuzzleSpace for why.
             var sendGeo = coords ? computePuzzleGeometry(coords) : null;
             var payload = {
+                excluded_ids: tp3dPrefetchExcludedIds(),
                 bbox: coords ? puzzleGeoBbox(coords, sendGeo.frac) : null,
                 pieces: pieces.map(function(p) { return { row: p.row, col: p.col, points: p.puzzlePoints }; }),
                 length: parseFloat(document.getElementById('lengthInput').value) || 0,
@@ -1235,6 +1240,14 @@
                 updateStatus();
             });
         };
+
+        // Prefetch area: the puzzle's own true footprint (what actually gets generated).
+        function tp3dPrefetchArea() {
+            if (!coords) return null;
+            return { bounds: puzzleGeoBbox(coords, computePuzzleGeometry(coords).frac), type: 'exact' };
+        }
+
+        __PREFETCH_JS__
 
         updateTextAvailability();
         updateHolderTextPreview();
