@@ -86,7 +86,8 @@ def make_help_panel(
             "bl_idname": panel_id,
             "bl_label": _("%s") % label,
             "bl_space_type": "VIEW_3D",
-            "bl_region_type": "UI",
+            "bl_region_type": "HEADER", # Stops the n-panel "misc" from showing these panels
+            "bl_options": {"INSTANCED"}, # Ensures blender knows these are meant to be called only as instances.
             "bl_ui_units_x": 14,
             "draw": draw,
         },
