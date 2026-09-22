@@ -30,6 +30,23 @@ class TP3D_OT_run_generation(bpy.types.Operator):
     bl_label = _("Generate")
     bl_description = _("Generate the Path and the Map with current Settings")
 
+    @classmethod
+    def poll(cls, context):
+        export_path_set = bool(getattr(context.scene.tp3d, "export_path", None))
+        file_path_set = bool(getattr(context.scene.tp3d, "file_path", None))
+        _message = (
+            "Choose a GPX file, and set an export path"
+            if not export_path_set and not file_path_set
+            else (
+                "Set an export path"
+                if not export_path_set
+                else ("Choose a GPX file" if not file_path_set else "")
+            )
+        )
+        if not export_path_set or not file_path_set:
+            cls.poll_message_set(_(_message))
+        return export_path_set and file_path_set
+
     def execute(self, context):
 
         self._handler = getattr(self, "_handler", None)
@@ -707,6 +724,27 @@ class TP3D_OT_dovetail(bpy.types.Operator):
     bl_idname = "tp3d.dovetail"
     bl_label = _("Dovetail")
     bl_options = {"REGISTER", "UNDO"}
+    bl_description = _("Add dovetail cutouts to the selected object")
+
+    @classmethod
+    def poll(cls, context):
+
+        has_map_obj = any(
+            o.get("Object type") == "MAP" for o in context.selected_objects
+        )
+        has_shell_obj = any(
+            o.get("Object type") == "SHELL" for o in context.selected_objects
+        )
+        has_plate_obj = any(
+            o.get("Object type") == "PLATE" for o in context.selected_objects
+        )
+
+        has_valid_obj = has_map_obj or has_shell_obj or has_plate_obj
+
+        if not has_valid_obj:
+            cls.poll_message_set(_("Select at least one Map, Shell, or Plate object"))
+
+        return has_valid_obj
 
     def execute(self, context):
 
@@ -853,6 +891,27 @@ class TP3D_OT_bottom_mark(bpy.types.Operator):
     bl_idname = "tp3d.bottom_mark"
     bl_label = _("Bottom Mark")
     bl_options = {"REGISTER", "UNDO"}
+    bl_description = _("Add the current title to the bottom of the selected object")
+
+    @classmethod
+    def poll(cls, context):
+
+        has_map_obj = any(
+            o.get("Object type") == "MAP" for o in context.selected_objects
+        )
+        has_shell_obj = any(
+            o.get("Object type") == "SHELL" for o in context.selected_objects
+        )
+        has_plate_obj = any(
+            o.get("Object type") == "PLATE" for o in context.selected_objects
+        )
+
+        has_valid_obj = has_map_obj or has_shell_obj or has_plate_obj
+
+        if not has_valid_obj:
+            cls.poll_message_set(_("Select at least one Map, Shell, or Plate object"))
+
+        return has_valid_obj
 
     def execute(self, context):
 
@@ -926,6 +985,17 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
     bl_label = _("Color Mountains")
     bl_description = _("Color Mountains above a certain Threshold")
     bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        has_map_obj = any(
+            o.get("Object type") == "MAP" for o in context.selected_objects
+        )
+
+        if not has_map_obj:
+            cls.poll_message_set(_("Select at least one Map object"))
+
+        return has_map_obj
 
     def invoke(self, context, event):
         tp3d = context.scene.tp3d
@@ -1102,14 +1172,28 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class TP3D_OT_undo_mountain_texture(bpy.types.Operator): 
-    """Restore the selected object's MMU_Paint texture to its state immediately before its most recent Color Mountains texture bake. Blender's native Ctrl+Z does not track raw Image.pixels writes made through Python, so texture-mode Color Mountains maintains its own in-session history instead. """ 
-    bl_idname = "tp3d.undo_mountain_texture" 
-    bl_label = _("Undo Texture Mountain Color") 
-    bl_description = _("Undo the most recent Color Mountains texture bake for the selected object")
-    bl_options = {"REGISTER"} 
-    
-    def execute(self, context): 
+class TP3D_OT_undo_mountain_texture(bpy.types.Operator):
+    """Restore the selected object's MMU_Paint texture to its state immediately before its most recent Color Mountains texture bake. Blender's native Ctrl+Z does not track raw Image.pixels writes made through Python, so texture-mode Color Mountains maintains its own in-session history instead."""
+
+    bl_idname = "tp3d.undo_mountain_texture"
+    bl_label = _("Undo Texture Mountain Color")
+    bl_description = _(
+        "Undo the most recent Color Mountains texture bake for the selected object"
+    )
+    bl_options = {"REGISTER"}
+
+    @classmethod
+    def poll(cls, context):
+        has_map_obj = any(
+            o.get("Object type") == "MAP" for o in context.selected_objects
+        )
+
+        if not has_map_obj:
+            cls.poll_message_set(_("Select at least one Map object"))
+
+        return has_map_obj
+
+    def execute(self, context):
         from .utils import texture as _tp3d_texture
         restored = 0
         for obj in context.selected_objects:
@@ -1132,6 +1216,23 @@ class TP3D_OT_contour_lines(bpy.types.Operator):
     bl_label = _("Contour Lines")
     bl_description = _("Generate contour lines on the map")
     bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        has_map_obj = any(
+            o.get("Object type") == "MAP" for o in context.selected_objects
+        )
+
+        if not has_map_obj:
+            cls.poll_message_set(_("Select at least one Map object"))
+
+        return has_map_obj
+
+    def execute(self, context):
+        selected_objects = context.selected_objects
+        result = utils.contourLines(selected_objects)
+        return result if result else {"FINISHED"}
+
 
     def execute(self, context):
 
@@ -1267,6 +1368,26 @@ class TP3D_OT_import_text(bpy.types.Operator):
     bl_label = _("Import Text")
     bl_description = _("Import Text to place it on your Map")
     bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        # Ensure that at least one Map OR Shell OR Plate object is selected before enabling the operator.
+        has_map_obj = any(
+            o.get("Object type") == "MAP" for o in context.selected_objects
+        )
+        has_shell_obj = any(
+            o.get("Object type") == "SHELL" for o in context.selected_objects
+        )
+        has_plate_obj = any(
+            o.get("Object type") == "PLATE" for o in context.selected_objects
+        )
+
+        has_valid_obj = has_map_obj or has_shell_obj or has_plate_obj
+
+        if not has_valid_obj:
+            cls.poll_message_set(_("Select at least one Map, Shell, or Plate object"))
+
+        return has_valid_obj
 
     def execute(self, context):
 
@@ -1538,6 +1659,26 @@ class TP3D_OT_import_svg(bpy.types.Operator):
     bl_label = _("Import SVG")
     bl_description = _("Import an SVG file onto the map")
     bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+
+        has_map_obj = any(
+            o.get("Object type") == "MAP" for o in context.selected_objects
+        )
+        has_shell_obj = any(
+            o.get("Object type") == "SHELL" for o in context.selected_objects
+        )
+        has_plate_obj = any(
+            o.get("Object type") == "PLATE" for o in context.selected_objects
+        )
+
+        has_valid_obj = has_map_obj or has_shell_obj or has_plate_obj
+
+        if not has_valid_obj:
+            cls.poll_message_set(_("Select at least one Map, Shell, or Plate object"))
+
+        return has_valid_obj
 
     def execute(self, context):
 
