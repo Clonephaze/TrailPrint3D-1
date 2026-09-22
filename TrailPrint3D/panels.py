@@ -984,33 +984,43 @@ class TP3D_PT_advanced(bpy.types.Panel):
             sub = box.box()
             sub.label(text=_("Contour Lines"), icon="ALIGN_JUSTIFY")
             col = sub.column(align=True)
+
+            col.prop(props, "cl_useRealMeters")
+            col.separator()
             col.prop(props, "cl_thickness")
             col.prop(
                 props,
                 "cl_distance",
-                text=_("Distance (m)")
-                if props.cl_useRealMeters
-                else _("Distance (mm)"),
+                text=_("Distance (m)") if props.cl_useRealMeters else _("Distance (mm)"),
             )
             col.prop(
                 props,
                 "cl_offset",
                 text=_("Offset (m)") if props.cl_useRealMeters else _("Offset (mm)"),
             )
-            col.prop(props, "cl_useRealMeters")
-            col.operator("tp3d.contour_lines", icon="ALIGN_JUSTIFY")
+            map_obj = next(
+                (o for o in context.selected_objects
+                if "Object type" in o and o["Object type"] == "MAP"),
+                None,
+            )
+            if map_obj is not None:
+                _unused, _unused, is_valid = get_effective_cl_values(
+                    map_obj, props.cl_distance, props.cl_offset,
+                    props.cl_thickness, props.cl_useRealMeters,
+                )
+                if not is_valid:
+                    col.label(text=_("Distance must exceed thickness"), icon="ERROR")
+                else:
+                    z_extent = get_map_z_extent(map_obj)
+                    dist_eff, _unused, _unused = get_effective_cl_values(
+                        map_obj, props.cl_distance, props.cl_offset,
+                        props.cl_thickness, props.cl_useRealMeters,
+                    )
+                    est_count = ceil(z_extent / dist_eff) - 1 if dist_eff else 0
+                    col.label(text=f"~{est_count} slices", icon="INFO")
 
-            # sub = box.box()
-            # sub.label(text=_("Rescale Elevation"), icon='DRIVER_DISTANCE')
-            # row = sub.row(align=True)
-            # row.prop(props, "rescaleMultiplier")
-            # row.operator("wm.rescale", text=_("Rescale"))
-
-            # sub = box.box()
-            # sub.label(text=_("Extrude Terrain"), icon='EMPTY_SINGLE_ARROW')
-            # col = sub.column(align=True)
-            # col.prop(props, "thickenValue")
-            # col.operator("wm.thicken", text=_("Extrude Terrain"), icon="EMPTY_SINGLE_ARROW")
+            col.separator()
+            col.operator("tp3d.contour_lines", icon="MOD_ARRAY")
 
             sub = box.box()
             sub.label(text=_("Magnet Holes"), icon="SNAP_OFF")
