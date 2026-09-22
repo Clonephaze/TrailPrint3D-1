@@ -17,6 +17,7 @@ Coordinate conventions
 """
 
 from copy import deepcopy
+import zlib
 
 import bpy
 import numpy as np
@@ -783,30 +784,128 @@ def bake_height_layer_into_texture(
     return True
 
 
+def _pack_rgba_u32(u8_rgba):
+    """Pack an (..., 4) uint8 RGBA array into one uint32 key per pixel."""
+    u32 = u8_rgba.astype(np.uint32)
+    return (u32[..., 0] << 24) | (u32[..., 1] << 16) | (u32[..., 2] << 8) | u32[..., 3]
+
+
+def _unpack_rgba_u32(keys_u32):
+    """Inverse of _pack_rgba_u32 -- returns (K, 4) uint8."""
+    r = (keys_u32 >> 24) & 0xFF
+    g = (keys_u32 >> 16) & 0xFF
+    b = (keys_u32 >> 8) & 0xFF
+    a = keys_u32 & 0xFF
+    return np.stack([r, g, b, a], axis=-1).astype(np.uint8)
+
+
+def _encode_indexed(arr):
+    """Compress an (H, W, 4) float32 [0,1] pixel array into a small colour
+    palette + zlib-compressed uint8 index array.
+
+    MMU_Paint textures only ever contain at most 11 (as of writing) colors.
+    Materials are never blended, making a raw float32 copy (H*W*4*4 bytes) 
+    extremely wasteful.
+
+    np.unique on the raw (H*W, 4) float rows is a genuinely slow row-wise
+    sort (measured ~6s at 2048x2048) -- quantising to uint8 (exact for
+    these colours) and packing each pixel's RGBA into a single uint32 key
+    first turns that into a plain scalar sort instead, ~15-20x faster.
+
+    Returns (palette_u8 (K,4) uint8, compressed_index bytes, (H, W) shape),
+    or None if more than 255 distinct colours were found (would overflow a
+    uint8 index -- not expected given this addon's palette sizes, but
+    falling back to a raw copy beats silently losing colours).
+    """
+    h, w = arr.shape[:2]
+    u8 = np.clip(np.round(arr * 255.0), 0, 255).astype(np.uint8)
+    keys = _pack_rgba_u32(u8).ravel()
+
+    uniq_keys, inv = np.unique(keys, return_inverse=True)
+    if len(uniq_keys) > 255:
+        return None
+
+    palette_u8 = _unpack_rgba_u32(uniq_keys)
+    index_u8 = inv.astype(np.uint8)
+    compressed = zlib.compress(index_u8.tobytes(), level=6)
+    return palette_u8, compressed, (h, w)
+
+
+def _decode_indexed(palette_u8, compressed_index, shape):
+    h, w = shape
+    index_u8 = np.frombuffer(zlib.decompress(compressed_index), dtype=np.uint8)
+    palette_f = palette_u8.astype(np.float32) / 255.0
+    return palette_f[index_u8].reshape(h, w, 4)
+
+
 def save_height_bake_state(image, mesh):
     """Save the current MMU_Paint state before applying a height bake.
 
-    Keeps a bounded history based on total pixel memory so repeated mountain
-    bakes can be undone individually without allowing the image snapshots to
-    consume unbounded memory.
+    Stored as a palette-indexed, zlib-compressed representation rather than
+    a raw pixel copy -- see _encode_indexed -- which cuts each snapshot to
+    roughly 1/16th its raw size before compression even helps, and often
+    several hundred times smaller after (large flat regions, which is most
+    of a typical map, compress extremely well). That means the same
+    _MAX_HEIGHT_BAKE_UNDO_MEMORY budget holds far more undo steps than raw
+    copies ever could. Falls back to a raw copy only if _encode_indexed
+    bails (more than 255 distinct colours -- not expected in practice).
+
+    Keeps a bounded history based on total memory so repeated mountain
+    bakes can be undone individually without allowing the image snapshots
+    to consume unbounded memory.
     """
     history = _HEIGHT_BAKE_UNDO[image.name]
 
     pixels = np.empty(len(image.pixels), dtype=np.float32)
     image.pixels.foreach_get(pixels)
+    resolution = image.size[0]
+    arr = pixels.reshape((resolution, image.size[1], 4))
 
-    history.append(
-        {
-            "pixels": pixels,
-            "palette": deepcopy(mesh.get("3mf_paint_extruder_colors")),
+    encoded = _encode_indexed(arr)
+    if encoded is not None:
+        palette_u8, compressed_index, shape = encoded
+        state = {
+            "kind": "indexed",
+            "palette": palette_u8,
+            "index": compressed_index,
+            "shape": shape,
+            "meta_palette": deepcopy(mesh.get("3mf_paint_extruder_colors")),
         }
-    )
+    else:
+        state = {
+            "kind": "raw",
+            "pixels": pixels,
+            "meta_palette": deepcopy(mesh.get("3mf_paint_extruder_colors")),
+        }
 
-    total_memory = sum(state["pixels"].nbytes for state in history)
+    history.append(state)
 
+    def _state_bytes(s):
+        if s["kind"] == "indexed":
+            return s["palette"].nbytes + len(s["index"])
+        return s["pixels"].nbytes
+
+    raw_bytes = pixels.nbytes
+    if state["kind"] == "indexed":
+        h, w = state["shape"]
+        pre_compression_bytes = state["palette"].nbytes + (h * w)
+        post_compression_bytes = _state_bytes(state)
+        print(
+            f"[TP3D] Saved height-bake undo snapshot: kind=indexed, "
+            f"raw={raw_bytes} bytes ({raw_bytes / (1024 * 1024):.2f} MiB), "
+            f"pre-compression={pre_compression_bytes} bytes ({pre_compression_bytes / (1024 * 1024):.2f} MiB), "
+            f"post-compression={post_compression_bytes} bytes ({post_compression_bytes / (1024 * 1024):.2f} MiB)"
+        )
+    else:
+        print(
+            f"[TP3D] Saved height-bake undo snapshot: kind=raw, "
+            f"size={raw_bytes} bytes ({raw_bytes / (1024 * 1024):.2f} MiB)"
+        )
+
+    total_memory = sum(_state_bytes(s) for s in history)
     while total_memory > _MAX_HEIGHT_BAKE_UNDO_MEMORY and len(history) > 1:
         removed = history.pop(0)
-        total_memory -= removed["pixels"].nbytes
+        total_memory -= _state_bytes(removed)
 
 
 def restore_last_height_bake(terrain_obj):
@@ -822,10 +921,16 @@ def restore_last_height_bake(terrain_obj):
     if not history:
         return False
     backup = history[-1]
-    image.pixels.foreach_set(backup["pixels"].ravel())
+
+    if backup["kind"] == "indexed":
+        restored = _decode_indexed(backup["palette"], backup["index"], backup["shape"])
+        image.pixels.foreach_set(restored.ravel())
+    else:
+        image.pixels.foreach_set(backup["pixels"].ravel())
     image.pack()
-    if backup["palette"] is not None:
-        mesh["3mf_paint_extruder_colors"] = backup["palette"]
+
+    if backup["meta_palette"] is not None:
+        mesh["3mf_paint_extruder_colors"] = backup["meta_palette"]
     elif "3mf_paint_extruder_colors" in mesh:
         del mesh["3mf_paint_extruder_colors"]
     history.pop()
@@ -836,6 +941,9 @@ def restore_last_height_bake(terrain_obj):
 
 def has_height_bake_undo(terrain_obj):
     """Return whether the object has a saved Color Mountains texture state."""
+    # check if an object is even selected
+    if terrain_obj is None or not hasattr(terrain_obj, "type") or terrain_obj.type != "MESH":
+        return False
     mesh = terrain_obj.data
     img_name = f"{mesh.name}_MMU_Paint"
     history = _HEIGHT_BAKE_UNDO.get(img_name)
