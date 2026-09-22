@@ -7,6 +7,7 @@ import bpy  # type: ignore
 
 from ... import constants as const
 from ... import progress as _progress
+from .bbox_snap import snap as snap_bbox
 from .fetch_utils import _overpass_request, requested_highway_tags, resolve_road_tiers
 
 
@@ -17,7 +18,7 @@ def _make_cache_path(bbox, kind, settings=None):
     fetch_osm_combined writes to exactly the same files that fetch_osm_data
     would later read, giving a warm-cache hit.
     """
-    south, west, north, east = bbox
+    south, west, north, east = snap_bbox(bbox)
     if settings is not None:
         mapsize = settings.mapsize
         water_ponds = settings.water_ponds

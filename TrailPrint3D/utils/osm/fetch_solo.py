@@ -10,6 +10,8 @@ from bpy.app.translations import pgettext as _
 from ... import constants as const
 from ... import progress as _progress
 from ..geo import convert_to_blender_coordinates_batch
+from .bbox_snap import snap as snap_bbox
+from .exclusions import filter_excluded
 from .fetch_utils import _overpass_request, requested_highway_tags, resolve_road_tiers
 
 
@@ -61,7 +63,7 @@ def fetch_osm_data(
         return path
 
     def make_cache_key(bbox, kind):
-        south, west, north, east = bbox
+        south, west, north, east = snap_bbox(bbox)
         payload = {
             "bbox": [round(south, 7), round(west, 7), round(north, 7), round(east, 7)],
             "kind": kind,
@@ -91,7 +93,7 @@ def fetch_osm_data(
         if age_hours < max_cache_age_hours:
             print("Cached Data found")
             with open(cache_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                data = filter_excluded(json.load(f))
                 return (data, True) if return_cache_status else data
 
     south, west, north, east = bbox
@@ -335,6 +337,7 @@ def fetch_osm_data(
     with open(cache_path, "w", encoding="utf-8") as f:
         json.dump(data, f)
 
+    data = filter_excluded(data)
     return (data, False) if return_cache_status else data
 
 

@@ -2549,6 +2549,8 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             utils.apply_setting_update(context.scene.tp3d, key, value)
         for key, value in mp.drain_pending_advanced_settings():
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
+        for request in mp.drain_pending_prefetch():
+            self._start_prefetch(context, request)
         mp.refresh_state_snapshots(
             element_states=utils.build_element_toggle_states(context.scene.tp3d),
             settings_state=utils.build_settings_row_state(context.scene.tp3d),
@@ -2560,8 +2562,12 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         if not (rp.exists() and rp.stat().st_size > 0):
             return {"PASS_THROUGH"}
 
+        from .utils.osm import exclusions
         try:
             data = json.loads(rp.read_text(encoding="utf-8"))
+            # OSM elements switched off in the picker's prefetch preview --
+            # dropped from every fetched tile for this one generation only.
+            exclusions.set_excluded(data.get("excluded_ids"))
             # Jigsaw pieces use whatever minThickness the user already has
             # set in the sidebar, same as every other generator -- no longer
             # forced to 0 (or, with "Terrain on Frame" on, to a small
@@ -2580,6 +2586,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             )
             print(f"Puzzle generator: {exc}")
         finally:
+            exclusions.clear_excluded()
             try:
                 rp.unlink()
             except OSError:
@@ -2587,6 +2594,12 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             self._cleanup(context)
 
         return {"FINISHED"}
+
+    def _start_prefetch(self, context, request):
+        from . import picker_server as mp
+        from .utils.osm import prefetch
+
+        prefetch.start_prefetch_job(context.scene.tp3d, request, mp.prefetch_job())
 
     def invoke(self, context, event):
         import tempfile
@@ -3126,6 +3139,11 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             utils.apply_setting_update(context.scene.tp3d, key, value)
         for key, value in mp.drain_pending_advanced_settings():
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
+        for request in mp.drain_pending_prefetch():
+            self._start_prefetch(context, request)
+        # Keeps a later page reload (premium/map_generator_pe.html's OSM/ESA
+        # WorldCover switch, settings_modal.js) in sync with whatever was
+        # just applied above -- see refresh_state_snapshots' own docstring.
         mp.refresh_state_snapshots(
             element_states=utils.build_element_toggle_states(context.scene.tp3d),
             settings_state=utils.build_settings_row_state(context.scene.tp3d),
@@ -3158,6 +3176,12 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             self._cleanup(context)
 
         return {"FINISHED"}
+
+    def _start_prefetch(self, context, request):
+        from . import picker_server as mp
+        from .utils.osm import prefetch
+
+        prefetch.start_prefetch_job(context.scene.tp3d, request, mp.prefetch_job())
 
     def invoke(self, context, event):
         import tempfile
@@ -3217,9 +3241,15 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # always closes, even if something below raises an exception type
         # this method doesn't explicitly handle (the modal's own outer
         # except/finally reports the error but never touches the overlay).
+        from .utils.osm import exclusions
+
+        # OSM elements the user switched off in the picker's prefetch preview
+        # -- dropped from every fetched tile for this one generation only.
+        exclusions.set_excluded(data.get('excluded_ids'))
         try:
             self._apply_result_body(context, data)
         finally:
+            exclusions.clear_excluded()
             overlay.finish()
             _progress.WarningsOverlay.get().show()
 

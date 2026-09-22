@@ -186,6 +186,15 @@ body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #eee; ma
 .element-card input[type=checkbox]:disabled { cursor: not-allowed; }
 #elementStatus { flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 10px 16px;
     background: #202020; border-bottom: 1px solid #444; overflow-x: auto; }
+.element-chip-wrap { flex-shrink: 0; }
+/* Hover flyout with a Water/Roads chip's sub-categories (element_status.js). Fixed so the
+   strip's overflow-x can't clip it; no gap to the chip so the hover isn't lost on the way down. */
+.element-flyout { position: fixed; z-index: 2000; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+    background: #2a2a2a; border: 1px solid #555; border-radius: 0 0 6px 6px; box-shadow: 0 6px 16px rgba(0,0,0,0.5); }
+.element-flyout label { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #ddd; white-space: nowrap; cursor: pointer; }
+.element-flyout label.locked { color: #777; cursor: not-allowed; }
+.element-flyout input[type=checkbox] { width: 13px; height: 13px; accent-color: #007bff; cursor: pointer; flex-shrink: 0; }
+.element-flyout input[type=checkbox]:disabled { cursor: not-allowed; }
 .element-chip { display: flex; align-items: center; gap: 7px; flex-shrink: 0;
     background: none; border: none; padding: 5px 8px; border-radius: 4px; font: inherit; color: inherit; }
 /* Same reasoning and look as .card-icon above -- a persistent, raised
@@ -285,3 +294,37 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
     justify-content: center; background: rgba(255,255,255,0.06); border: 1px solid #555; border-radius: 50%;
     color: #ccc; font-size: 11px; font-weight: bold; line-height: 1; padding: 0; cursor: pointer; transition: all 0.15s; }
 #gpxList .gpx-remove-btn:hover, #geojsonList .gpx-remove-btn:hover, #svgShapeList .gpx-remove-btn:hover { background: #e74c3c; border-color: #e74c3c; color: #fff; }
+
+/* "Prefetch Elements" (assets/prefetch_layer.js) -- map generator pages only. */
+#prefetchInfo { display: none; font-size: 11px; color: #ccc; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; }
+#prefetchInfo .prefetch-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; line-height: 1.9; }
+#prefetchInfo .prefetch-kind { cursor: pointer; display: flex; align-items: center; min-width: 0; }
+#prefetchInfo .prefetch-kind:hover { color: #4da3ff; }
+#prefetchInfo .prefetch-swatch { width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.4); }
+#prefetchInfo .prefetch-count { cursor: pointer; color: #aaa; font-variant-numeric: tabular-nums; }
+#prefetchInfo .prefetch-count:hover { color: #fff; text-decoration: underline; }
+#elementStatus .prefetch-bar { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+/* Same understated look as the Settings gear next to the element chips. */
+.prefetch-bar-btn { flex-shrink: 0; background: none; border: 1px solid #444; border-radius: 4px; padding: 5px 12px;
+    color: #aaa; font-size: 13px; font-family: inherit; cursor: pointer; white-space: nowrap; }
+.prefetch-bar-btn:hover:not(:disabled) { background: rgba(255,255,255,0.08); border-color: #007bff; color: #eee; }
+.prefetch-bar-btn:disabled { opacity: 0.5; cursor: progress; }
+.prefetch-bar-btn.source-disabled:disabled { opacity: 0.35; cursor: not-allowed; }
+/* Fixed hover info for prefetched elements: bottom centre of the map. */
+#prefetchTip { display: none; position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 1000;
+    max-width: 70%; padding: 6px 12px; background: rgba(32,32,32,0.92); border: 1px solid #555; border-radius: 4px;
+    color: #eee; font-size: 12px; text-align: center; pointer-events: none; }
+#prefetchTip small { color: #aaa; }
+/* Self-dismissing notice (e.g. Prefetch clicked with no element enabled). */
+#prefetchToast { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 1100;
+    max-width: 70%; padding: 8px 14px; background: rgba(32,32,32,0.95); border: 1px solid #cc8a2e; border-radius: 4px;
+    color: #eee; font-size: 12px; text-align: center; pointer-events: none;
+    opacity: 0; transition: opacity 0.25s; }
+#prefetchToast.show { opacity: 1; }
+/* Spinner shown inside the Prefetch button while elements are fetching/loading. */
+.prefetch-spinner { display: inline-block; width: 11px; height: 11px; margin-right: 7px; vertical-align: -1px;
+    border: 2px solid rgba(255,255,255,0.25); border-top-color: #4da3ff; border-radius: 50%;
+    animation: prefetch-spin 0.8s linear infinite; }
+@keyframes prefetch-spin { to { transform: rotate(360deg); } }
+#prefetchInfo .prefetch-subrow { padding-left: 16px; font-size: 10.5px; line-height: 1.7; }
+#prefetchInfo .prefetch-subrow .prefetch-swatch { width: 7px; height: 7px; }

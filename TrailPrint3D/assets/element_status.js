@@ -171,7 +171,7 @@ function tp3dRenderElementStatus() {
     // Clears only the previously-rendered chips -- not the Settings gear
     // button, which settings_modal.js prepends into this same container --
     // so a re-render after switching source doesn't disturb it.
-    container.querySelectorAll('.element-chip').forEach(function(el) { el.remove(); });
+    container.querySelectorAll('.element-chip-wrap').forEach(function(el) { el.remove(); });
 
     ELEMENT_STATUS_ORDER.forEach(function(entry) {
         var key = entry[0], label = entry[1];
@@ -192,8 +192,73 @@ function tp3dRenderElementStatus() {
         chip.title = label + ' (click to toggle)';
 
         chip.addEventListener('click', function() { tp3dToggleElement(key); });
-        container.appendChild(chip);
+        var wrap = document.createElement('div');
+        wrap.className = 'element-chip-wrap';
+        wrap.appendChild(chip);
+        tp3dAttachSubFlyout(wrap, chip, key);
+        // Before the Prefetch bar (which is right-aligned via margin-left:auto)
+        // so a re-render after switching source keeps the chips on the left.
+        container.insertBefore(wrap, container.querySelector('.prefetch-bar'));
         tp3dRepaintElementToggle(key);
     });
+    if (typeof prefetchSyncSource === 'function') prefetchSyncSource();
+}
+
+// Hover flyout under the Water / Roads chips with one checkbox per
+// sub-category (COMPOSITE_ELEMENTS in settings_modal.js -- same fields and
+// same /update_advanced_setting route as the Settings modal's Elements tab).
+// position:fixed so the strip's overflow-x scrolling can't clip it. The
+// checkboxes carry data-advanced-checkbox, so tp3dRepaintCompositeCheckboxes
+// keeps them in sync with chip toggles and the modal.
+function tp3dAttachSubFlyout(wrap, chip, key) {
+    if (tp3dIsWorldCover() || !TP3D_COMPOSITE_FLAGS[key]) return;
+    var flyout = null, hideTimer = null;
+
+    function build() {
+        var def = typeof COMPOSITE_ELEMENTS !== 'undefined' ? COMPOSITE_ELEMENTS[key] : null;
+        if (!def || typeof ADVANCED_SETTINGS_STATE === 'undefined') return null;
+        var el = document.createElement('div');
+        el.className = 'element-flyout';
+        var remembered = (ADVANCED_SETTINGS_STATE._compositeRemembered || {})[key] || {};
+        var active = tp3dCompositeIsActive(key);
+        def.checkboxes.forEach(function(field) {
+            var label = document.createElement('label');
+            var input = document.createElement('input');
+            input.type = 'checkbox';
+            input.setAttribute('data-advanced-checkbox', field.key);
+            input.checked = active ? !!ADVANCED_SETTINGS_STATE[field.key] : !!remembered[field.key];
+            input.disabled = !active;
+            if (!active) label.classList.add('locked');
+            input.addEventListener('change', function() {
+                ADVANCED_SETTINGS_STATE[field.key] = input.checked;
+                // Unticking the last sub-category turns the whole element off
+                // (and ticking one back on turns it on), mirroring the chip.
+                TP3D_ELEMENT_STATE[key] = tp3dCompositeIsActive(key);
+                tp3dRepaintElementToggle(key);
+                if (typeof tp3dSendAdvancedUpdate === 'function') tp3dSendAdvancedUpdate(field.key, input.checked);
+            });
+            label.appendChild(input);
+            label.appendChild(document.createTextNode(field.label));
+            el.appendChild(label);
+        });
+        wrap.appendChild(el);
+        return el;
+    }
+
+    function show() {
+        clearTimeout(hideTimer);
+        if (flyout) flyout.remove();
+        flyout = build();
+        if (!flyout) return;
+        var r = chip.getBoundingClientRect();
+        flyout.style.left = r.left + 'px';
+        flyout.style.top = r.bottom + 'px';
+    }
+    function hide() {
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(function() { if (flyout) { flyout.remove(); flyout = null; } }, 150);
+    }
+    wrap.addEventListener('mouseenter', show);
+    wrap.addEventListener('mouseleave', hide);
 }
 tp3dRenderElementStatus();
