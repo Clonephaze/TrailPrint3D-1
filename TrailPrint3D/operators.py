@@ -1997,8 +1997,10 @@ class TP3D_OT_pick_gpx_file(bpy.types.Operator):
     def execute(self, context):
         tp3d = context.scene.tp3d
         tp3d.file_path = self.filepath
-        bounds = utils.compute_gpx_bounds(self.filepath)
-        if bounds is not None:
+
+        details = utils.compute_gpx_details(self.filepath)
+        if details is not None:
+            bounds, trail_name = details
             (
                 tp3d.cachedTrailMinLat,
                 tp3d.cachedTrailMaxLat,
@@ -2006,8 +2008,11 @@ class TP3D_OT_pick_gpx_file(bpy.types.Operator):
                 tp3d.cachedTrailMaxLon,
             ) = bounds
             tp3d.cachedTrailBoundsValid = True
+
+            tp3d.trailName = trail_name
         else:
             tp3d.cachedTrailBoundsValid = False
+
         return {"FINISHED"}
 
     def invoke(self, context, event):

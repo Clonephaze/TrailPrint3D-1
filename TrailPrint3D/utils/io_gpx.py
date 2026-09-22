@@ -187,21 +187,51 @@ def read_igc(filepath):
     return segmentlist
 
 
-def compute_gpx_bounds(filepath):
-    """Return (min_lat, max_lat, min_lon, max_lon) for a GPX file, or None on
-    failure. Used to cache a trail's geographic bounding box at file-pick
+def compute_gpx_details(filepath):
+    """Return ((min_lat, max_lat, min_lon, max_lon), trail_name) for a GPX file,
+    or None on failure. Used to cache a trail's geographic bounding box at file-pick
     time -- cheap (no network, just XML parsing), so the panel can estimate
     the generated map's real-world size without needing a full generation
-    run. See TP3D_OT_pick_gpx_file."""
+    run. See TP3D_OT_pick_gpx_file.
+    Also returns the embedded trail name if available.
+    """
     try:
         segments = read_gpx(filepath)
     except (RuntimeError, OSError):
         return None
+
     lats = [pt[0] for seg in segments for pt in seg]
     lons = [pt[1] for seg in segments for pt in seg]
     if not lats or not lons:
         return None
-    return (min(lats), max(lats), min(lons), max(lons))
+
+    bbox = (min(lats), max(lats), min(lons), max(lons))
+
+    # Extract trail name from GPX XML (<trk><name> or <gpx><name>), fallback to filename
+    trail_name = None
+    try:
+        tree = ET.parse(filepath)
+        root = tree.getroot()
+        # Handle GPX namespace if present
+        ns = {"gpx": root.tag.split("}")[0].strip("{")} if "}" in root.tag else {}
+
+        # Look for <name> inside <trk> or root <gpx>
+        name_elem = (
+            root.find(".//gpx:trk/gpx:name", ns) if ns else root.find(".//trk/name")
+        )
+        if name_elem is None or not name_elem.text:
+            name_elem = root.find("./gpx:name", ns) if ns else root.find("./name")
+
+        if name_elem is not None and name_elem.text:
+            trail_name = name_elem.text.strip()
+    except Exception:
+        trail_name = ""
+
+    if not trail_name:
+        filename = os.path.basename(filepath)
+        trail_name = os.path.splitext(filename)[0]
+
+    return bbox, trail_name
 
 
 def read_gpx_directory(directory_path):
