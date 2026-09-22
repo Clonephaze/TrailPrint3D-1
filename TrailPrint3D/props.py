@@ -96,7 +96,11 @@ SHAPE_TEXT_STYLES = {
     "HEXAGON": [
         ("NONE", _("None"), _("Plain hexagonal map, no text overlay")),
         ("INNER TEXT", _("Text on Map Object"), _("Hexagonal map with inserted text")),
-        ("OUTER TEXT", _("Plate With Text on Top"), _("Hexagonal map with backplate and text")),
+        (
+            "OUTER TEXT",
+            _("Plate With Text on Top"),
+            _("Hexagonal map with backplate and text"),
+        ),
         (
             "FRONT TEXT",
             _("Plate With Text on Front"),
@@ -106,7 +110,11 @@ SHAPE_TEXT_STYLES = {
     ],
     "OCTAGON": [
         ("NONE", _("None"), _("Plain octagon map, no text overlay")),
-        ("OUTER TEXT", _("Plate With Text on Front"), _("Octagon map with backplate and text")),
+        (
+            "OUTER TEXT",
+            _("Plate With Text on Front"),
+            _("Octagon map with backplate and text"),
+        ),
         _SHELL_ITEM,
     ],
     "CIRCLE": [
@@ -163,9 +171,11 @@ ROAD_TYPE_DEFS = [
     (
         "footway",
         _("Footways/Sidewalks"),
-        ("highway=footway -- pedestrian sidewalks and paths, OSM's own separate non-vehicle category "
-        "(see Key:highway on the OSM wiki). Kept separate by default since footways trace almost every "
-        "street and are usually the biggest single source of visual clutter."),
+        (
+            "highway=footway -- pedestrian sidewalks and paths, OSM's own separate non-vehicle category "
+            "(see Key:highway on the OSM wiki). Kept separate by default since footways trace almost every "
+            "street and are usually the biggest single source of visual clutter."
+        ),
     ),
     (
         "cycle_bridle",
@@ -175,9 +185,11 @@ ROAD_TYPE_DEFS = [
     (
         "track",
         _("Tracks"),
-        ("highway=track -- unpaved access tracks/fire roads. Often the one long rural trail a user "
-        "actually wants, so this tier is exempt from the dense-road mapsize cutoff that drops "
-        "Residential/Service/Footway/Cycle-Bridle roads on larger maps (see STREETS_PRIMARY_THRESHOLD)."),
+        (
+            "highway=track -- unpaved access tracks/fire roads. Often the one long rural trail a user "
+            "actually wants, so this tier is exempt from the dense-road mapsize cutoff that drops "
+            "Residential/Service/Footway/Cycle-Bridle roads on larger maps (see STREETS_PRIMARY_THRESHOLD)."
+        ),
     ),
     (
         "path",
@@ -505,12 +517,14 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
 
     demFilePath: StringProperty(
-        name= _("DEM File"),
-        description= _("Path to a local GeoTIFF (.tif/.tiff) DEM file, or a folder of tiled GeoTIFFs "
-                        "covering a larger area, in WGS84 lat/lon or a WGS84/ETRS89/NAD83 UTM zone"),
+        name=_("DEM File"),
+        description=_(
+            "Path to a local GeoTIFF (.tif/.tiff) DEM file, or a folder of tiled GeoTIFFs "
+            "covering a larger area, in WGS84 lat/lon or a WGS84/ETRS89/NAD83 UTM zone"
+        ),
         default="",
         maxlen=1024,
-    )# type: ignore
+    )  # type: ignore
 
     openTopographyDataset: bpy.props.EnumProperty(
         name=_("Dataset"),
@@ -572,7 +586,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default="FACTOR",
     )  # type: ignore
     pathScale: FloatProperty(
-        name=_("Path Scale"),
+        name=_("Path Scale (%)"),
         default=0.8,
         min=0.01,
         soft_max=1.0,
@@ -582,16 +596,22 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         subtype="FACTOR",
     )  # type: ignore
     scaleLon1: FloatProperty(
-        name=_("Lon1"), default=0, description=_("The Longitude of the first coordinate")
+        name=_("Lon1"),
+        default=0,
+        description=_("The Longitude of the first coordinate"),
     )  # type: ignore
     scaleLat1: FloatProperty(
         name=_("Lat1"), default=0, description=_("The Latitude of the first coordinate")
     )  # type: ignore
     scaleLon2: FloatProperty(
-        name=_("Lon2"), default=0, description=_("The Longitude of the second coordinate")
+        name=_("Lon2"),
+        default=0,
+        description=_("The Longitude of the second coordinate"),
     )  # type: ignore
     scaleLat2: FloatProperty(
-        name=_("Lat2"), default=0, description=_("The Latitude of the second coordinate")
+        name=_("Lat2"),
+        default=0,
+        description=_("The Latitude of the second coordinate"),
     )  # type: ignore
 
     selfHosted: StringProperty(
@@ -606,8 +626,10 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_("Object Size (mm)"),
         default=100,
         min=5,
+        soft_max=400,
         max=10000,
-        description=_("Size of the map in mm"),
+        step=20,
+        description=_("Size of the map in mm. Soft max is 400mm, but larger values can still be typed in directly."),
     )  # type: ignore
     num_subdivisions: IntProperty(
         name=_("Resolution"),
@@ -629,7 +651,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )  # type: ignore
     pathThickness: FloatProperty(
-        name=_("Trail Width"),
+        name=_("Trail Width (mm)"),
         default=1.2,
         min=0.1,
         max=5,
@@ -666,14 +688,33 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
 
     magnetHeight: FloatProperty(
-        name=_("Magnet Height"),
+        name=_("Depth"),
         default=2.5,
-        description=_("Height of the Holes for Magnets"),
+        min=0.1,
+        soft_max=10.0,
+        description=_("Depth of the Holes for Magnets"),
     )  # type: ignore
     magnetDiameter: FloatProperty(
-        name=_("Magnet Diameter"),
+        name=_("Diameter"),
         default=6.3,
+        min=0.1,
+        soft_max=10.0,
         description=_("Diameter of the Holes for Magnets"),
+    )  # type: ignore
+
+    magnetCount: bpy.props.IntProperty(
+        name=_("Count"),
+        description=_("Number of magnet holes placed around the object"),
+        default=4,
+        min=2,
+        max=8,
+    )
+    magnetMargin: FloatProperty(
+        name=_("Margin"),
+        default=3.0,
+        min=0.2,
+        soft_max=30.0,
+        description=_("The margin from the edge of the object"),
     )  # type: ignore
 
     bottomMarkCutout: BoolProperty(
@@ -702,12 +743,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default="",
         maxlen=1024,
     )  # type: ignore
-    textSize: IntProperty(
-        name=_("Text Size"), 
-        default=5, 
-        min=0, 
-        max=1000
-    )  # type: ignore
+    textSize: IntProperty(name=_("Text Size"), default=5, min=0, max=1000)  # type: ignore
     textSizeTitle: IntProperty(
         name=_("Title Text Size"),
         default=0,
@@ -850,7 +886,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     outerBorderSize: IntProperty(
         name=_("Border Thickness (%)"),
         default=20,
-        subtype='PERCENTAGE',
+        subtype="PERCENTAGE",
         min=0,
         soft_max=100,
         max=1000,
@@ -920,12 +956,16 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     xTerrainOffset: FloatProperty(
         name=_("Map X Offset"),
         default=0,
-        description=_("Gives the map an Offset in X-Direction from the path, positive values move it to the right"),
+        description=_(
+            "Gives the map an Offset in X-Direction from the path, positive values move it to the right"
+        ),
     )  # type: ignore
     yTerrainOffset: FloatProperty(
         name=_("Map Y Offset"),
         default=0,
-        description=_("Gives the map an Offset in Y-Direction from the path, positive values move it up"),
+        description=_(
+            "Gives the map an Offset in Y-Direction from the path, positive values move it up"
+        ),
     )  # type: ignore
 
     rescaleMultiplier: FloatProperty(name=_("scale"), default=1, min=0, max=10000)  # type: ignore
@@ -1161,7 +1201,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_fActive: BoolProperty(
         name=_("Include Forests"),
         default=False,
-        description=_("Skipped automatically above %skm map size") % const.FOREST_MAXSIZE,
+        description=_("Skipped automatically above %skm map size")
+        % const.FOREST_MAXSIZE,
     )  # type: ignore
     col_fArea: FloatProperty(
         name=_("Threshold"),
@@ -1172,7 +1213,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_scrActive: BoolProperty(
         name=_("Include Scree"),
         default=False,
-        description=_("Rocky/stony terrain. Skipped automatically above %skm map size") % const.SCREE_MAXSIZE,
+        description=_("Rocky/stony terrain. Skipped automatically above %skm map size")
+        % const.SCREE_MAXSIZE,
     )  # type: ignore
     col_scrArea: FloatProperty(
         name=_("Threshold"),
@@ -1194,7 +1236,10 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_grActive: BoolProperty(
         name=_("Include Greenspaces"),
         default=False,
-        description=_("Parks, gardens, grass and other urban green areas. Skipped automatically above %skm map size") % const.GREENSPACE_MAXSIZE,
+        description=_(
+            "Parks, gardens, grass and other urban green areas. Skipped automatically above %skm map size"
+        )
+        % const.GREENSPACE_MAXSIZE,
     )  # type: ignore
     col_grArea: FloatProperty(
         name=_("Threshold"),
@@ -1205,7 +1250,10 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_faActive: BoolProperty(
         name=_("Include Farmland"),
         default=False,
-        description=_("Fetches landuse=farmland and landuse=farmyard. Skipped automatically above %skm map size") % const.FARMLAND_MAXSIZE,
+        description=_(
+            "Fetches landuse=farmland and landuse=farmyard. Skipped automatically above %skm map size"
+        )
+        % const.FARMLAND_MAXSIZE,
     )  # type: ignore
     col_faArea: FloatProperty(
         name=_("Threshold"),
@@ -1216,7 +1264,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_glActive: BoolProperty(
         name=_("Include Glaciers"),
         default=False,
-        description=_("Skipped automatically above %skm map size") % const.GLACIER_MAXSIZE,
+        description=_("Skipped automatically above %skm map size")
+        % const.GLACIER_MAXSIZE,
     )  # type: ignore
     col_glArea: FloatProperty(
         name=_("Threshold"),
@@ -1290,8 +1339,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     el_bActive: BoolProperty(
         name=_("Include Buildings"),
         default=False,
-        description=_(
-            "Skipped automatically above %skm map size") % const.BUILDINGS_MAXSIZE,
+        description=_("Skipped automatically above %skm map size")
+        % const.BUILDINGS_MAXSIZE,
     )  # type: ignore
     el_bHeightMultiplier: FloatProperty(
         name=_("Height Multiplier"),
@@ -1389,7 +1438,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     mountain_noise: BoolProperty(
         name=_("Threshold Variation Noise"),
         default=False,
-        description=_("Makes a more natural looking boundary for the Color Mountains threshold."),
+        description=_(
+            "Makes a more natural looking boundary for the Color Mountains threshold."
+        ),
     )  # type: ignore
     mountain_noise_amplitude: FloatProperty(
         name=_("Amplitude"),
@@ -1591,7 +1642,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
 
     # OTHER VARIABLES
     sRunDuration: IntProperty(
-        name=_("Run Duration"), default=0, description=_("how long the script was running")
+        name=_("Run Duration"),
+        default=0,
+        description=_("how long the script was running"),
     )  # type: ignore
     sAdditionalExtrusion: FloatProperty(name=_("Additional Extrusion"), default=0)  # type: ignore
     sAutoScale: FloatProperty(name=_("Auto Scale"), default=1)  # type: ignore
