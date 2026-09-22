@@ -564,6 +564,8 @@ class TP3D_PT_generate(bpy.types.Panel):
             elementSource.prop(
                 props,
                 "elementSource",
+                expand=True,
+                emboss=True
             )
             if props.elementSource == "WORLDCOVER":
                 box.prop(props, "el_wcMinFeatureArea")
@@ -581,10 +583,9 @@ class TP3D_PT_generate(bpy.types.Panel):
                         icon="CHECKBOX_HLT" if is_active else "CHECKBOX_DEHLT",
                     )
             elif props.elementSource == "OSM":
-                box.label(text=_("Paint or Single Extruder Mode:"))
+                box.label(text=_("Multi-Color Mode:"))
                 elementMode = box.row(align=True)
-                elementMode.label(icon="BLANK1")
-                elementMode.prop(props, "elementMode")
+                elementMode.prop(props, "elementMode", expand=True, emboss=True)
                 elementSettings = box.column(align=True)
                 if props.elementMode == "SINGLECOLORMODE_REMESH":
                     elementSettings.prop(props, "toleranceElements")

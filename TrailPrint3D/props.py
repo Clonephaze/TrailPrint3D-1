@@ -1031,13 +1031,13 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
 
     elementMode: EnumProperty(
-        name="",
+        name=_("Element Mode"),
         items=[
             ("PAINT", _("Paint on Map"), _("Paint the Elements onto the map")),
             (
                 "SINGLECOLORMODE_REMESH",
                 _("Single Extruder Mode"),
-                _("Use this if you are using a single extruder printer for printing"),
+                _("Use this if you don't have a multi-color printer. Each element will be made an individually printable object.\nTo mimic old SEPARATE mode, set tolerance to 0 and enable 'Keep Positions' in the export box."),
             ),
         ],
         default="PAINT",
@@ -1091,7 +1091,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         description=_("Enable this if you want to generate a map with elements."),
     )  # type: ignore
     elementSource: EnumProperty(
-        name=_(""),
+        name=_("Element Source"),
         items=[
             (
                 "OSM",
