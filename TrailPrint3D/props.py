@@ -1431,6 +1431,13 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
             "Interpret the Contour Line distance/offset as real-world elevation meters instead of mm on the printed model"
         ),
     )  # type: ignore
+    cl_max_slices: IntProperty(
+        name=_("Max Slices"),
+        description=_("Safety cap on the number of contour line slices generated"),
+        default=200,
+        min=1,
+        max=2000,
+    )
 
     generation_mode: EnumProperty(
         name=_("Generation Mode"),
