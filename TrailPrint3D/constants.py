@@ -71,7 +71,7 @@ _UV_LAYER_NAME = "MMU_Paint"
 
 _HEIGHT_BAKE_BASELINE = {}
 _HEIGHT_BAKE_UNDO = defaultdict(list)
-_MAX_HEIGHT_BAKE_UNDO_MEMORY = 1024 * 1024 * 1024  # 1 GB
+_MAX_HEIGHT_BAKE_UNDO_MEMORY = 64 * 1024 * 1024  # 64 MB
 
 
 # -- Internal caches and special collections --
