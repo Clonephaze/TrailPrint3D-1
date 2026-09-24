@@ -2136,6 +2136,7 @@ class TP3D_OT_pick_gpx_file(bpy.types.Operator):
     filter_glob: StringProperty(default="*.gpx;*.igc", options={"HIDDEN"})  # type: ignore
 
     def execute(self, context):
+        from .props import update_map_estimate
         tp3d = context.scene.tp3d
         tp3d.file_path = self.filepath
 
@@ -2153,6 +2154,9 @@ class TP3D_OT_pick_gpx_file(bpy.types.Operator):
             tp3d.trailName = trail_name
         else:
             tp3d.cachedTrailBoundsValid = False
+
+        # Recalculate estimated_km once after picking/clearing the file
+        update_map_estimate(tp3d, context)
 
         return {"FINISHED"}
 

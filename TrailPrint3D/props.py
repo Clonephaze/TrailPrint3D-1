@@ -400,6 +400,38 @@ def estimate_map_km(tp3d):
     return tp3d.objSize / scale  # mm -> real-world km
 
 
+def update_map_estimate(self, context=None):
+    tp3d = getattr(context, "scene", None)
+    tp3d = tp3d.tp3d if tp3d else self
+
+    if not tp3d.cachedTrailBoundsValid or tp3d.scalemode == "COORDINATES":
+        tp3d.estimated_trail_km = 0.0
+        tp3d.estimated_map_km = 0.0
+        return
+
+    # 1. Trail Bounds (GPX Extent)
+    trail_coords = [
+        (tp3d.cachedTrailMinLat, tp3d.cachedTrailMinLon),
+        (tp3d.cachedTrailMaxLat, tp3d.cachedTrailMaxLon),
+    ]
+
+    # gen_type=2 fits the raw GPX bounds without applying pathScale, so the
+    # trail footprint remains stable when the fetched map coverage changes.
+    trail_scale = utils.calculate_scale(tp3d.objSize, trail_coords, gen_type=2)
+    if trail_scale and trail_scale > 0:
+        tp3d.estimated_trail_km = tp3d.objSize / trail_scale
+    else:
+        tp3d.estimated_trail_km = 0.0
+
+    # The normal factor-mode calculation applies pathScale and therefore
+    # estimates the larger terrain area that generation will fetch.
+    map_scale = utils.calculate_scale(tp3d.objSize, trail_coords, gen_type=1)
+    if map_scale and map_scale > 0:
+        tp3d.estimated_map_km = tp3d.objSize / map_scale
+    else:
+        tp3d.estimated_map_km = 0.0
+
+
 def repair_invalid_shape(scene):
     """Files/sessions saved before the "... TEXT" shape variants were split
     out into shapeTextStyle may still have `shape` stored as one of those
@@ -584,6 +616,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
             ),
         ],
         default="FACTOR",
+        update=update_map_estimate,
     )  # type: ignore
     pathScale: FloatProperty(
         name=_("Path Scale (%)"),
@@ -594,6 +627,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
             "How much of the map area the trail should occupy, as a percentage"
         ),
         subtype="FACTOR",
+        update=update_map_estimate,
     )  # type: ignore
     scaleLon1: FloatProperty(
         name=_("Lon1"),
@@ -629,7 +663,10 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         soft_max=400,
         max=10000,
         step=20,
-        description=_("Size of the map in mm. Soft max is 400mm, but larger values can still be typed in directly."),
+        description=_(
+            "Size of the map in mm. Soft max is 400mm, but larger values can still be typed in directly."
+        ),
+        update=update_map_estimate,
     )  # type: ignore
     num_subdivisions: IntProperty(
         name=_("Resolution"),

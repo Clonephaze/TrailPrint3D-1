@@ -359,14 +359,10 @@ class TP3D_PT_generate(bpy.types.Panel):
                 row.label(icon="BLANK1")
                 row.prop(props, "file_path")
                 row.operator("tp3d.pick_gpx_file", text="", icon="FILEBROWSER")
-                if props.cachedTrailBoundsValid:
-                    est_km = estimate_map_km(props)
-                    if est_km is not None:
-                        col.label(
-                            text=_("Trail area: ~%dkm")
-                            % round(est_km * props.pathScale),
-                            icon="INFO",
-                        )
+                if props.cachedTrailBoundsValid and props.scalemode != "COORDINATES":
+                    col.label(
+                        text=_("Estimated Trail Size: %.1f km") % props.estimated_trail_km
+                    )
             elif temp.PREMIUMVERSION:
                 col.label(text=_("GPX Folder Selection:"))
                 row = col.row(align=True)
@@ -506,8 +502,10 @@ class TP3D_PT_generate(bpy.types.Panel):
             row = col.row(align=True)
             row.prop(props, "scaleLat2")
             row.prop(props, "scaleLon2")
-        if props.cachedTrailBoundsValid and est_km is not None:  # pyright: ignore[reportPossiblyUnboundVariable]
-            col.label(text=_("Estimated Map Size: %.1f km") % est_km)  # pyright: ignore[reportPossiblyUnboundVariable]
+        if props.cachedTrailBoundsValid and props.scalemode != "COORDINATES":
+            col.label(
+                text=_("Estimated Map Size: %.1f km") % props.estimated_map_km
+            )
         # 4. Trail -- structural properties of the printed trail line
         box = layout.box()
         header = box.row()
