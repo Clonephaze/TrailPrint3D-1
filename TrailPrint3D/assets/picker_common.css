@@ -194,6 +194,14 @@ body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #eee; ma
    stays on screen even while disabled under ESA WorldCover and shouldn't
    dominate the tab. */
 .element-mode-row { margin: 2px 0 8px; }
+/* Paint/Single Extruder switch and the source's own top-level option
+   (Element Smoothing under OSM, Min Feature Area under ESA WorldCover) side
+   by side, one per column (tp3dBuildElementsTab). Each row packs left
+   (label, then its control right after it) so neither control drifts toward
+   the other column -- and so Element Smoothing's On/Off button stays put
+   while its slider shows/hides. */
+.element-options-row { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center; }
+.element-options-row > .adv-field-row { justify-content: flex-start; }
 .element-mode-switch { display: flex; gap: 4px; flex-shrink: 0; }
 .element-mode-btn { padding: 3px 8px; font-size: 10px; font-weight: bold; letter-spacing: 0.2px;
     background: #333; color: #ccc; border: 1px solid #444; border-radius: 4px; cursor: pointer; }

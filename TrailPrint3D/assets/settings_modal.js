@@ -723,16 +723,19 @@ function tp3dBuildElementModeSwitch() {
     return row;
 }
 
-// Simple on/off toggle for OSM element smoothing (props.col_osmSmoothing,
-// panels.py's "Element Smoothing" -- a 0-1 FACTOR slider that
-// _taubin_smooth_ocean_polys in utils/terrain.py turns into 0-20 smoothing
-// rounds). Exposed here as a plain toggle rather than the underlying
-// slider -- most people just want "rounded" vs. "sharp" element edges, not
-// to dial in an exact amount. ON always writes TP3D_OSM_SMOOTHING_ON (a
-// moderate 10 rounds); OFF always writes back to exactly 0. OSM-only, same
-// as panels.py's own placement inside its `elif props.elementSource ==
-// "OSM":` branch -- ESA WorldCover has no equivalent option.
+// On/off toggle plus strength slider for OSM element smoothing
+// (props.col_osmSmoothing, panels.py's "Element Smoothing" -- a 0-1 FACTOR
+// slider that utils/terrain.py turns into int(value * 20) Taubin smoothing
+// rounds). The toggle sits left of a range+number pair (same
+// .range-with-number look as tp3dBuildRangeField) that's shown only while ON:
+// the slider snaps to 0.1 steps for quick picks, the number box takes any
+// exact value. Min is 0.05 because anything lower rounds down to 0 rounds,
+// i.e. silently off. OFF writes exactly 0; turning it back ON restores the
+// last strength used this session (TP3D_OSM_SMOOTHING_ON the first time).
+// OSM-only, same as panels.py's own placement inside its `elif
+// props.elementSource == "OSM":` branch -- ESA WorldCover has no equivalent.
 var TP3D_OSM_SMOOTHING_ON = 0.5;
+var TP3D_OSM_SMOOTHING_MIN = 0.05;
 function tp3dBuildOsmSmoothingToggle() {
     var row = document.createElement('div');
     row.className = 'adv-field-row element-mode-row';
@@ -742,20 +745,81 @@ function tp3dBuildOsmSmoothingToggle() {
     label.textContent = 'Element Smoothing';
     row.appendChild(label);
 
-    var isOn = (ADVANCED_SETTINGS_STATE.colOsmSmoothing || 0) > 0;
+    var current = ADVANCED_SETTINGS_STATE.colOsmSmoothing || 0;
+    var isOn = current > 0;
+    var lastOnValue = isOn ? tp3dRoundForDisplay(current, 2) : TP3D_OSM_SMOOTHING_ON;
+
+    var controls = document.createElement('div');
+    controls.className = 'adv-field-controls';
+
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'element-mode-btn' + (isOn ? ' active' : '');
     btn.textContent = isOn ? 'On' : 'Off';
+
+    // Hidden via style.display, not the `hidden` attribute --
+    // .range-with-number's own `display: flex` would override that.
+    var strengthWrap = document.createElement('div');
+    strengthWrap.className = 'range-with-number';
+    strengthWrap.title = 'Smoothing strength (0-1) -- higher rounds edges more but loses detail';
+    strengthWrap.style.display = isOn ? '' : 'none';
+    // Explicit width: inside the content-sized .adv-field-controls, the
+    // class's own flex:1 + min-width:0 would otherwise let the range collapse.
+    strengthWrap.style.width = '180px';
+
+    var range = document.createElement('input');
+    range.type = 'range';
+    range.min = 0.1;
+    range.max = 1;
+    range.step = 0.1;
+    range.value = lastOnValue;
+
+    var number = document.createElement('input');
+    number.type = 'number';
+    number.min = TP3D_OSM_SMOOTHING_MIN;
+    number.max = 1;
+    number.step = 0.01;
+    number.value = lastOnValue;
+
+    function commit(value) {
+        value = parseFloat(Math.min(Math.max(value, TP3D_OSM_SMOOTHING_MIN), 1).toFixed(2));
+        number.value = value;
+        range.value = value;
+        lastOnValue = value;
+        ADVANCED_SETTINGS_STATE.colOsmSmoothing = value;
+        tp3dSendAdvancedUpdate('colOsmSmoothing', value);
+    }
+
+    // Live-mirror into the number box while dragging, but only send once on
+    // release rather than on every intermediate step.
+    range.addEventListener('input', function() {
+        number.value = parseFloat(parseFloat(range.value).toFixed(2));
+    });
+    range.addEventListener('change', function() { commit(parseFloat(range.value)); });
+    number.addEventListener('change', function() {
+        var value = parseFloat(number.value);
+        if (isNaN(value)) {
+            number.value = lastOnValue;
+            return;
+        }
+        commit(value);
+    });
+
     btn.addEventListener('click', function() {
         isOn = !isOn;
-        var value = isOn ? TP3D_OSM_SMOOTHING_ON : 0.0;
+        var value = isOn ? lastOnValue : 0.0;
         ADVANCED_SETTINGS_STATE.colOsmSmoothing = value;
         btn.classList.toggle('active', isOn);
         btn.textContent = isOn ? 'On' : 'Off';
+        strengthWrap.style.display = isOn ? '' : 'none';
         tp3dSendAdvancedUpdate('colOsmSmoothing', value);
     });
-    row.appendChild(btn);
+
+    strengthWrap.appendChild(range);
+    strengthWrap.appendChild(number);
+    controls.appendChild(btn);
+    controls.appendChild(strengthWrap);
+    row.appendChild(controls);
     return row;
 }
 
@@ -763,26 +827,32 @@ function tp3dBuildElementsTab() {
     var wrap = document.createElement('div');
     wrap.className = 'elements-grid';
 
+    // Paint/Single Extruder switch shares one two-column row with the
+    // source's own top-level option -- Element Smoothing under OSM, Min
+    // Feature Area under ESA WorldCover. See .element-options-row in
+    // picker_common.css.
+    var optionsRow = document.createElement('div');
+    optionsRow.className = 'element-options-row';
     if (typeof ELEMENT_SOURCE !== 'undefined') {
         wrap.appendChild(tp3dBuildElementSourceSwitch());
-        wrap.appendChild(tp3dBuildElementModeSwitch());
+        optionsRow.appendChild(tp3dBuildElementModeSwitch());
     }
+    optionsRow.appendChild(tp3dIsWorldCover()
+        ? tp3dBuildFieldRow(WORLDCOVER_MIN_AREA_FIELD)
+        : tp3dBuildOsmSmoothingToggle());
+    wrap.appendChild(optionsRow);
 
     // ESA WorldCover has none of OSM's per-category thresholds or
-    // Water/Roads composites -- one shared Min Feature Area field plus a
-    // row of plain toggle cards, mirroring panels.py's "6. Map Elements"
-    // WORLDCOVER branch structure.
+    // Water/Roads composites -- one shared Min Feature Area field (in the
+    // options row above) plus a row of plain toggle cards, mirroring
+    // panels.py's "6. Map Elements" WORLDCOVER branch structure.
     if (tp3dIsWorldCover()) {
-        wrap.appendChild(tp3dBuildFieldRow(WORLDCOVER_MIN_AREA_FIELD));
-
         var landcoverRow = document.createElement('div');
         landcoverRow.className = 'elements-row';
         LANDCOVER_ELEMENT_ORDER.forEach(function(key) { landcoverRow.appendChild(tp3dBuildSimpleElementCard(key)); });
         wrap.appendChild(landcoverRow);
         return wrap;
     }
-
-    wrap.appendChild(tp3dBuildOsmSmoothingToggle());
 
     var simpleRow = document.createElement('div');
     simpleRow.className = 'elements-row';
