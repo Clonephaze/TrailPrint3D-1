@@ -1177,6 +1177,9 @@ class TP3D_PT_advanced(bpy.types.Panel):
         )
         if props.show_attribution:
             box = layout.box()
+            # Grouped as elevation sources, then map-element sources, then the
+            # generator pages' own base maps and place search (map_init.js /
+            # location_panel.js) -- separated by spacing rather than headings.
             col = box.column(align=True)
             col.operator(
                 "wm.url_open",
@@ -1190,11 +1193,6 @@ class TP3D_PT_advanced(bpy.types.Panel):
             ).url = "https://open-elevation.com/"
             col.operator(
                 "wm.url_open",
-                text=_("OpenStreetMap contributors — water, forests, city data"),
-                icon="URL",
-            ).url = "https://www.openstreetmap.org/copyright"
-            col.operator(
-                "wm.url_open",
                 text=_("Mapzen Terrain Tiles — terrain (OSM, NASA SRTM, USGS)"),
                 icon="URL",
             ).url = "https://registry.opendata.aws/terrain-tiles/"
@@ -1203,11 +1201,71 @@ class TP3D_PT_advanced(bpy.types.Panel):
                 text=_("OpenTopography — elevation (Global DEM)"),
                 icon="URL",
             ).url = "https://opentopography.org/"
+            # Copernicus DEM is one of OpenTopography's selectable datasets
+            # (props.openTopographyDataset COP30/COP90); its license requires
+            # crediting DLR/Airbus and the EU/ESA Copernicus programme.
+            col.operator(
+                "wm.url_open",
+                text=_("Copernicus DEM — © DLR e.V., © Airbus, provided by EU & ESA"),
+                icon="URL",
+            ).url = "https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM"
             col.operator(
                 "wm.url_open",
                 text=_("Mapterhorn — terrain tiles (open-data sources)"),
                 icon="URL",
             ).url = "https://github.com/mapterhorn/mapterhorn"
+
+            col.separator(factor=0.8)
+            col.operator(
+                "wm.url_open",
+                text=_("OpenStreetMap contributors — water, forests, city data"),
+                icon="URL",
+            ).url = "https://www.openstreetmap.org/copyright"
+            col.operator(
+                "wm.url_open",
+                text=_("Overpass API — OpenStreetMap data queries"),
+                icon="URL",
+            ).url = "https://overpass-api.de/"
+            col.operator(
+                "wm.url_open",
+                text=_("OSM Water Polygons (FOSSGIS) — oceans & coastlines"),
+                icon="URL",
+            ).url = "https://osmdata.openstreetmap.de/data/water-polygons.html"
+            col.operator(
+                "wm.url_open",
+                text=_("ESA WorldCover (CC BY 4.0) — land cover"),
+                icon="URL",
+            ).url = "https://esa-worldcover.org/"
+            col.operator(
+                "wm.url_open",
+                text=_("Microsoft Planetary Computer — WorldCover data access"),
+                icon="URL",
+            ).url = "https://planetarycomputer.microsoft.com/dataset/esa-worldcover"
+
+            col.separator(factor=0.8)
+            col.operator(
+                "wm.url_open",
+                text=_("OpenStreetMap Foundation — generator map tiles & place search"),
+                icon="URL",
+            ).url = "https://operations.osmfoundation.org/policies/"
+            col.operator(
+                "wm.url_open",
+                text=_("OpenTopoMap (CC-BY-SA) — generator topographic map"),
+                icon="URL",
+            ).url = "https://opentopomap.org/about"
+            col.operator(
+                "wm.url_open",
+                text=_("Esri — generator satellite & topo maps"),
+                icon="URL",
+            ).url = "https://www.esri.com/en-us/legal/terms/data-attributions"
+
+            col.separator(factor=0.8)
+            col.label(text=_("Special Thanks"), icon="FUND")
+            col.operator(
+                "wm.url_open",
+                text=_("Clonephaze — for his great help with development"),
+                icon="URL",
+            ).url = "https://clonecore.net/"
             col.separator(factor=0.8)
             disclaimer = box.column(align=True)
             disclaimer.scale_y = 0.75
