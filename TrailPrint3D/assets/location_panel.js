@@ -41,16 +41,26 @@ document.getElementById('coordSearchBtn').addEventListener('click', goToCoords);
 
 // City lookup uses OpenStreetMap's Nominatim geocoder -- free, no
 // API key, CORS-enabled for browser fetches. Only fires on explicit
-// user action (button/Enter), never as-you-type, to stay well
-// within its usage policy.
+// user action (button/Enter), never as-you-type, and never while a
+// previous lookup is still in flight (the button stays disabled), to stay
+// within its 1-request-per-second usage policy. Nominatim identifies
+// browser apps by their Referer (a page can't set its own User-Agent), so
+// the referrer policy is pinned here the same way map_init.js pins it for
+// tiles. A non-OK response (e.g. 403/429 if we ever get blocked or rate-
+// limited) is treated as a failed lookup rather than parsed as results.
 function searchCity() {
     var input = document.getElementById('citySearchInput');
     var btn = document.getElementById('citySearchBtn');
     var q = input.value.trim();
-    if (!q) return;
+    if (!q || btn.disabled) return;
     btn.disabled = true;
-    fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q))
-        .then(function(r) { return r.json(); })
+    fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), {
+        referrerPolicy: 'strict-origin-when-cross-origin'
+    })
+        .then(function(r) {
+            if (!r.ok) throw new Error('Nominatim HTTP ' + r.status);
+            return r.json();
+        })
         .then(function(results) {
             btn.disabled = false;
             if (!results || !results.length) {
