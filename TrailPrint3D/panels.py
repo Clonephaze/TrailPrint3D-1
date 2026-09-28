@@ -345,7 +345,26 @@ class TP3D_PT_generate(bpy.types.Panel):
             col.operator(
                 "tp3d.map_generator", text=_("Map Generator"), icon="MESH_CIRCLE"
             )
-        else:
+
+        # --- General Settings (sections 1-6, collapsible as one group) ---
+        layout.prop(
+            props,
+            "show_create_settings",
+            icon="TRIA_DOWN" if props.show_create_settings else "TRIA_RIGHT",
+            emboss=False,
+        )
+        if props.show_create_settings:
+            self._draw_general_settings(layout, props)
+
+        # --- Status ---
+        layout.separator(factor=0.5)
+        layout.label(text=props.o_time, icon="TIME")
+
+    def _draw_general_settings(self, layout, props):
+        """Numbered sections 1-6 (plus 7. Appearance, which hangs off 6's
+        box), drawn only while the General Settings toggle is expanded."""
+        est_km = None
+        if props.generation_mode != "TERRAIN":
             # 1. Source
             box = layout.box()
             header = box.row()
@@ -505,8 +524,8 @@ class TP3D_PT_generate(bpy.types.Panel):
             row = col.row(align=True)
             row.prop(props, "scaleLat2")
             row.prop(props, "scaleLon2")
-        if props.cachedTrailBoundsValid and est_km is not None:  # pyright: ignore[reportPossiblyUnboundVariable]
-            col.label(text=_("Estimated Map Size: %.1f km") % est_km)  # pyright: ignore[reportPossiblyUnboundVariable]
+        if props.cachedTrailBoundsValid and est_km is not None:
+            col.label(text=_("Estimated Map Size: %.1f km") % est_km)
         # 4. Trail -- structural properties of the printed trail line
         box = layout.box()
         header = box.row()
@@ -820,10 +839,6 @@ class TP3D_PT_generate(bpy.types.Panel):
                         props,
                         "tex_include_roads",
                     )
-
-        # --- Status ---
-        layout.separator(factor=0.5)
-        layout.label(text=props.o_time, icon="TIME")
 
 
 class TP3D_PT_advanced(bpy.types.Panel):
