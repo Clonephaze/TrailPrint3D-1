@@ -462,12 +462,3 @@ def is_3mf_extension_installed():
     temp.has3mf = is_en
     return is_en
 
-
-#Install 3mf Addon
-def install_3mf_extension():
-    try:
-        bpy.ops.extensions.package_install(pkg_id="ThreeMF_io")
-        return True
-    except RuntimeError as e:
-        print(f"Installation failed: {e}")
-        return False

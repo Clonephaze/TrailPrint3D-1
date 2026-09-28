@@ -56,6 +56,11 @@ def _srgb_to_hex(r8, g8, b8):
     return f"#{int(r8):02X}{int(g8):02X}{int(b8):02X}"
 
 
+def _srgb_to_rgba(srgb):
+    """Convert an sRGB uint8 (R, G, B) tuple to an opaque float (R, G, B, A) pixel."""
+    return (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
+
+
 def material_to_srgb(material, fallback=(0, 0, 0)):
     """Convert a material's Principled BSDF Base Colour to an sRGB uint8
     (R, G, B) tuple, so texture-mode colours -- and the fake solid-colour
@@ -122,6 +127,47 @@ def _compute_local_bbox(terrain_obj):
     min_y = float(co[:, 1].min())
     max_y = float(co[:, 1].max())
     return min_x, min_y, max_x - min_x, max_y - min_y
+
+
+def _new_paint_image(name, width, height, pixels):
+    """Create (or replace) a packed sRGB Blender Image from a flat RGBA float buffer."""
+    if name in bpy.data.images:
+        bpy.data.images.remove(bpy.data.images[name])
+    image = bpy.data.images.new(name, width=width, height=height, alpha=True)
+    image.colorspace_settings.name = 'sRGB'
+    image.pixels.foreach_set(pixels) # type: ignore - Blender api accepts the numpy array
+    image.pack()
+    return image
+
+
+def _assign_texture_material(mesh, name, image):
+    """Create (or replace) an Image Texture -> Principled BSDF material named
+    *name* and make it the mesh's only material."""
+    if name in bpy.data.materials:
+        bpy.data.materials.remove(bpy.data.materials[name])
+    mat = bpy.data.materials.new(name=name)
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
+
+    tex_node = nodes.new(type="ShaderNodeTexImage")
+    tex_node.image = image
+    tex_node.interpolation = "Closest"
+    tex_node.location = (-300, 0)
+
+    bsdf = nodes.new(type="ShaderNodeBsdfPrincipled")
+    bsdf.location = (0, 0)
+
+    out_node = nodes.new(type="ShaderNodeOutputMaterial")
+    out_node.location = (300, 0)
+
+    links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
+    links.new(bsdf.outputs["BSDF"], out_node.inputs["Surface"])
+
+    mesh.materials.clear()
+    mesh.materials.append(mat)
+    return mat
 
 
 def _rasterize_polygon_even_odd(rings_px, arr, color_float, resolution):
@@ -262,7 +308,7 @@ def setup_paint_texture(gen: GenerationContext):
                 _lc_srgb = _named_material_srgb(_mat_name)
                 landcover_fill[_class_id] = (
                     _srgb_to_hex(*_lc_srgb),
-                    (_lc_srgb[0] / 255.0, _lc_srgb[1] / 255.0, _lc_srgb[2] / 255.0, 1.0),
+                    _srgb_to_rgba(_lc_srgb),
                 )
     for _lc_hex, _ in landcover_fill.values():
         if _lc_hex not in palette.values():
@@ -316,8 +362,7 @@ def setup_paint_texture(gen: GenerationContext):
     mesh.update()
 
     # ── Rasterize ─────────────────────────────────────────────────────────────
-    _base_srgb = _named_material_srgb("BASE")
-    base_f = (_base_srgb[0] / 255.0, _base_srgb[1] / 255.0, _base_srgb[2] / 255.0, 1.0)
+    base_f = _srgb_to_rgba(_named_material_srgb("BASE"))
     arr = np.full((resolution, resolution, 4), base_f, dtype=np.float32)
 
     if landcover_classes is not None:
@@ -328,8 +373,7 @@ def setup_paint_texture(gen: GenerationContext):
         geom = polygons_by_kind.get(kind) or polygons_by_kind.get(kind.lower())
         if geom is None:
             continue
-        srgb = _named_material_srgb(_KIND_MATERIAL_NAME[kind])
-        c_f = (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
+        c_f = _srgb_to_rgba(_named_material_srgb(_KIND_MATERIAL_NAME[kind]))
         _rasterize_geometry(geom, arr, c_f, None,
                             cursor_x, cursor_y, min_x, min_y, width, height, resolution)
 
@@ -339,39 +383,10 @@ def setup_paint_texture(gen: GenerationContext):
 
     # ── Blender Image ─────────────────────────────────────────────────────────
     img_name = f"{mesh.name}_MMU_Paint"
-    if img_name in bpy.data.images:
-        bpy.data.images.remove(bpy.data.images[img_name])
-    image = bpy.data.images.new(img_name, width=resolution, height=resolution, alpha=True)
-    image.colorspace_settings.name = 'sRGB'
-    image.pixels.foreach_set(arr.ravel()) # type: ignore - Blender api accepts the numpy array
-    image.pack()
+    image = _new_paint_image(img_name, resolution, resolution, arr.ravel())
 
     # ── Material ──────────────────────────────────────────────────────────────
-    mat_name = img_name
-    if mat_name in bpy.data.materials:
-        bpy.data.materials.remove(bpy.data.materials[mat_name])
-    mat = bpy.data.materials.new(name=mat_name)
-    mat.use_nodes = True
-    nodes = mat.node_tree.nodes
-    links = mat.node_tree.links
-    nodes.clear()
-
-    tex_node = nodes.new(type="ShaderNodeTexImage")
-    tex_node.image = image
-    tex_node.interpolation = "Closest"
-    tex_node.location = (-300, 0)
-
-    bsdf = nodes.new(type="ShaderNodeBsdfPrincipled")
-    bsdf.location = (0, 0)
-
-    out_node = nodes.new(type="ShaderNodeOutputMaterial")
-    out_node.location = (300, 0)
-
-    links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
-    links.new(bsdf.outputs["BSDF"], out_node.inputs["Surface"])
-
-    mesh.materials.clear()
-    mesh.materials.append(mat)
+    _assign_texture_material(mesh, img_name, image)
 
     # ── 3MF paint metadata ────────────────────────────────────────────────────
     mesh["3mf_is_paint_texture"]      = True
@@ -431,7 +446,7 @@ def bake_trail_into_texture(terrain_obj, trail_polygon, material=None):
     arr = arr.reshape((resolution, resolution, 4))
 
     srgb = material_to_srgb(material) if material is not None else _named_material_srgb("TRAIL")
-    color_f = (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
+    color_f = _srgb_to_rgba(srgb)
     _rasterize_geometry(trail_polygon, arr, color_f, None,
                         cursor_x, cursor_y, min_x, min_y, width, height, resolution)
 
@@ -545,7 +560,7 @@ def paint_part_before_join(target_obj, part_obj, srgb):
             texel = (W - 1, H - 1)
 
         tx, ty = texel
-        arr[ty, tx] = (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
+        arr[ty, tx] = _srgb_to_rgba(srgb)
         image.pixels.foreach_set(arr.ravel())
         image.pack()
 
@@ -593,12 +608,7 @@ def tag_solid_color_for_paint_export(obj, srgb, palette):
     default_extruder = palette_key + 1
 
     img_name = str(mesh.name) + "_MMU_Solid"
-    if img_name in bpy.data.images:
-        bpy.data.images.remove(bpy.data.images[img_name])
-    image = bpy.data.images.new(img_name, width=1, height=1, alpha=True)
-    image.colorspace_settings.name = 'sRGB'
-    image.pixels.foreach_set([srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0])
-    image.pack()
+    image = _new_paint_image(img_name, 1, 1, _srgb_to_rgba(srgb))
 
     if UV_LAYER_NAME in mesh.uv_layers:
         mesh.uv_layers.remove(mesh.uv_layers[UV_LAYER_NAME])
@@ -607,25 +617,7 @@ def tag_solid_color_for_paint_export(obj, srgb, palette):
     uv_flat = np.full(len(mesh.loops) * 2, 0.5, dtype=np.float32)
     uv_layer.data.foreach_set("uv", uv_flat)
 
-    mat_name = img_name
-    if mat_name in bpy.data.materials:
-        bpy.data.materials.remove(bpy.data.materials[mat_name])
-    mat = bpy.data.materials.new(name=mat_name)
-    mat.use_nodes = True
-    _nodes = mat.node_tree.nodes
-    _links = mat.node_tree.links
-    _nodes.clear()
-    _tex = _nodes.new(type="ShaderNodeTexImage")
-    _tex.image = image
-    _tex.location = (-300, 0)
-    _bsdf = _nodes.new(type="ShaderNodeBsdfPrincipled")
-    _bsdf.location = (0, 0)
-    _out = _nodes.new(type="ShaderNodeOutputMaterial")
-    _out.location = (300, 0)
-    _links.new(_tex.outputs["Color"], _bsdf.inputs["Base Color"])
-    _links.new(_bsdf.outputs["BSDF"], _out.inputs["Surface"])
-    mesh.materials.clear()
-    mesh.materials.append(mat)
+    _assign_texture_material(mesh, img_name, image)
 
     mesh["3mf_is_paint_texture"]       = True
     mesh["3mf_paint_default_extruder"] = default_extruder
@@ -689,17 +681,10 @@ def crop_paint_texture_to_piece(piece_obj, source_image):
     )
 
     # Re-paint the base-colour anchor block at (0,0)–(4,4) in the crop.
-    _base_srgb = _named_material_srgb("BASE")
-    base_f = (_base_srgb[0] / 255.0, _base_srgb[1] / 255.0, _base_srgb[2] / 255.0, 1.0)
-    crop_arr[0:4, 0:4] = base_f
+    crop_arr[0:4, 0:4] = _srgb_to_rgba(_named_material_srgb("BASE"))
 
     img_name = str(mesh.name) + "_MMU_Paint"
-    if img_name in bpy.data.images:
-        bpy.data.images.remove(bpy.data.images[img_name])
-    new_img = bpy.data.images.new(img_name, width=crop_w, height=crop_h, alpha=True)
-    new_img.colorspace_settings.name = 'sRGB'
-    new_img.pixels.foreach_set(crop_arr.ravel()) # type: ignore - Blender api accepts the numpy array
-    new_img.pack()
+    new_img = _new_paint_image(img_name, crop_w, crop_h, crop_arr.ravel())
 
     # Remap top-face UVs into the new [0, 1] crop space.
     u_range = (u_max - u_min) or 1.0
@@ -719,23 +704,5 @@ def crop_paint_texture_to_piece(piece_obj, source_image):
     uv_layer.data.foreach_set("uv", new_uv_flat)
     mesh.update()
 
-    mat_name = img_name
-    if mat_name in bpy.data.materials:
-        bpy.data.materials.remove(bpy.data.materials[mat_name])
-    mat = bpy.data.materials.new(name=mat_name)
-    mat.use_nodes = True
-    nodes = mat.node_tree.nodes
-    links = mat.node_tree.links
-    nodes.clear()
-    tex_node = nodes.new(type="ShaderNodeTexImage")
-    tex_node.image = new_img
-    tex_node.location = (-300, 0)
-    bsdf = nodes.new(type="ShaderNodeBsdfPrincipled")
-    bsdf.location = (0, 0)
-    out_node = nodes.new(type="ShaderNodeOutputMaterial")
-    out_node.location = (300, 0)
-    links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
-    links.new(bsdf.outputs["BSDF"], out_node.inputs["Surface"])
-    mesh.materials.clear()
-    mesh.materials.append(mat)
+    _assign_texture_material(mesh, img_name, new_img)
 

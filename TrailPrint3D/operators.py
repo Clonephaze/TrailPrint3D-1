@@ -1336,7 +1336,7 @@ class TP3D_OT_popup_merge(bpy.types.Operator):
         self.orig_distance = rv3d.view_distance
         self.orig_perspective = rv3d.view_perspective
 
-        utils.zoom_camera_to_selected(context.scene.tp3d.currentMap)
+        utils.zoom_camera_to_objects([context.scene.tp3d.currentMap])
         bpy.ops.object.select_all(action='DESELECT')
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
@@ -1598,7 +1598,7 @@ class TP3D_OT_popup_text(bpy.types.Operator):
         self.orig_distance = self.rv3d.view_distance
         self.orig_perspective = self.rv3d.view_perspective
 
-        utils.zoom_camera_to_selected(map)
+        utils.zoom_camera_to_objects([map])
         bpy.ops.object.select_all(action='DESELECT')
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
@@ -1835,7 +1835,7 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
         self.orig_distance = self.rv3d.view_distance
         self.orig_perspective = self.rv3d.view_perspective
 
-        utils.zoom_camera_to_selected(map)
+        utils.zoom_camera_to_objects([map])
         bpy.ops.object.select_all(action='DESELECT')
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
@@ -2008,7 +2008,7 @@ class TP3D_OT_popup_pin(bpy.types.Operator):
         self.orig_distance = self.rv3d.view_distance
         self.orig_perspective = self.rv3d.view_perspective
 
-        utils.zoom_camera_to_selected(map)
+        utils.zoom_camera_to_objects([map])
         bpy.ops.object.select_all(action='DESELECT')
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
@@ -3466,7 +3466,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # rather than before it (a zoom done before the thumbnail render
         # could otherwise get clobbered by that restore).
         try:
-            utils.zoom_camera_to_selected(blank)
+            utils.zoom_camera_to_objects([blank])
         except (ReferenceError, AttributeError):
             pass
         self.report({'INFO'}, "Generated 1 tile")

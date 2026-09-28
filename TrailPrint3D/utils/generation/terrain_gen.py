@@ -64,7 +64,7 @@ def _rg_create_map_object(gen: GenerationContext):
     )
     from ..scene import (
         transform_MapObject,  # deferred to avoid circular import at load time
-        zoom_camera_to_selected,
+        zoom_camera_to_objects,
     )
 
     MapObject = None
@@ -146,7 +146,7 @@ def _rg_create_map_object(gen: GenerationContext):
         gen.runtime.mapObject = MapObject
         bpy.context.scene.tp3d.currentMap = MapObject
 
-    zoom_camera_to_selected(MapObject)
+    zoom_camera_to_objects([MapObject])
     compute_and_store_tile_bounds(gen)
     return MapObject
 

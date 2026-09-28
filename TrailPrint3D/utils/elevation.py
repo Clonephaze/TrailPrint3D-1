@@ -125,17 +125,6 @@ def cache_elevation(lat, lon, elevation, api_type="opentopodata"):
     key = f"{lat:.5f}_{lon:.5f}_{api_type}"
     const._elevation_cache[key] = elevation
 
-# Get real elevation for a point
-def get_elevation_single(lat, lon):
-    """Fetches real elevation for a single latitude and longitude using OpenTopoData."""
-
-    dataset = bpy.context.scene.tp3d.dataset
-
-    url = f"https://api.opentopodata.org/v1/{dataset}?locations={lat},{lon}"
-    response = requests.get(url).json()
-    elevation = response['results'][0]['elevation'] if 'results' in response else 0
-    return elevation
-
 def get_elevation_openTopoData(coords, lenv = 0, pointsDone = 0, progress_cb=None):
     """Fetches real elevation for each vertex using OpenTopoData with request batching."""
 
@@ -787,72 +776,6 @@ def get_elevation_localDem(coords, lenv=0, pointsDone=0, progress_cb=None):
 
     print(f"Local DEM: sampled {len(elevations)} elevations from {dem['width']}x{dem['height']} grid ({os.path.basename(demFilePath)})")
     return elevations
-
-
-def get_elevation_path_openElevation(vertices):
-    """Fetches real elevation for each vertex using OpenTopoData with request batching."""
-    coords = [(v[0], v[1], v[2], v[3]) for v in vertices]
-    elevations = []
-    batch_size = 1000
-    for i in range(0, len(coords), batch_size):
-        batch = coords[i:i + batch_size]
-        # Open-Elevation expects a POST request with JSON body
-        payload = {"locations": [{"latitude": c[0], "longitude": c[1]} for c in batch]}
-        url = "https://api.open-elevation.com/api/v1/lookup"
-        last_request_time = time.monotonic()
-
-        headers = {'Content-Type': 'application/json'}
-
-        addition = f"(overwrite path) {i + len(batch)}/{len(coords)}"
-        send_api_request(addition)
-
-        response = requests.post(url, json=payload, headers=headers)
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        elevations.extend([r['elevation'] for r in data['results']])
-        now = time.monotonic()
-        elapsed_time = now - last_request_time
-        if i + batch_size < len(coords) and elapsed_time < 1.4:
-            time.sleep(1.4 - elapsed_time)  # Pause to prevent request throttling
-
-    for i in range(len(vertices)):
-        coords[i] =  (coords[i][0], coords[i][1], elevations[i], coords[i][3])
-
-    return coords
-
-def get_elevation_path_openTopoData(vertices):
-
-    opentopoAdress = bpy.context.scene.tp3d.opentopoAdress
-    dataset = bpy.context.scene.tp3d.dataset
-
-    print("Getting elevation")
-    """Fetches real elevation for each vertex using OpenTopoData with request batching."""
-    coords = [(v[0], v[1], v[2], v[3]) for v in vertices]
-    elevations = []
-    batch_size = 100
-    for i in range(0, len(coords), batch_size):
-        batch = coords[i:i + batch_size]
-        query = "|".join([f"{c[0]},{c[1]}" for c in batch])
-        url = f"{opentopoAdress}{dataset}?locations={query}"
-        last_request_time = time.monotonic()
-        response = requests.get(url).json()
-        addition = f"(overwrite path) {i + len(batch)}/{len(coords)}"
-        send_api_request(addition)
-
-        elevations.extend([r.get('elevation') or 0 for r in response['results']])
-
-        now = time.monotonic()
-        elapsed_time = now - last_request_time
-        if i + batch_size < len(coords) and elapsed_time < 1.4:
-            time.sleep(1.4 - elapsed_time)  # Pause to prevent request throttling
-
-    for i in range(len(vertices)):
-        coords[i] =  (coords[i][0], coords[i][1], elevations[i], coords[i][3])
-
-    return coords
 
 
 def _elevation_results_key(minLat, maxLat, minLon, maxLon, api, num_subdivisions):
