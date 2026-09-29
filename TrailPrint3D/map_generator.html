@@ -16,10 +16,18 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     <style>__COMMON_CSS__</style>
     <style>
-        #shapeToggle { position: absolute; top: 170px; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 6px;
-            background: rgba(26,26,26,0.85); border: 1px solid #444; border-radius: 4px; padding: 6px; }
-        #shapeToggle .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
-        #drawModeToggle { top: 376px; }
+        /* Sidebar row (~160px wide) -- the 5 buttons share it equally
+           instead of each keeping the 32px map-overlay size. */
+        #shapeToggle { display: flex; gap: 4px; }
+        #shapeToggle .shape-btn.icon-btn { flex: 1 1 0; min-width: 0; height: 30px; padding: 0; border-width: 1px;
+            display: flex; align-items: center; justify-content: center; }
+        /* Import GeoJSON / Import SVG Shape, sized like the shape row right
+           above (negative margin undoes most of the sidebar's 15px gap so
+           the two rows read as one group) but keeping their own colors. */
+        #shapeImportRow { display: flex; gap: 4px; margin-top: -11px; }
+        #shapeImportRow .shape-btn { flex: 1 1 0; min-width: 0; height: 30px; padding: 0 4px; border-width: 1px;
+            color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 4px; }
+        #drawModeToggle { top: 170px; }
     </style>
 </head>
 <body>
@@ -38,15 +46,36 @@
         <button id="importGpx" style="padding: 12px 20px; background: #2a8a2a; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Import GPX</button>
         <div id="gpxList" style="display:none; font-size:11px; color:#aaa; line-height:1.8;"></div>
         <button id="clearGpx" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear GPX</button>
+        <hr class="sidebar-divider">
+        <div style="font-size:12px; color:#aaa; margin-bottom:-7px;">Shape</div>
+        <div id="shapeToggle">
+            <button class="shape-btn icon-btn active" data-shape="rectangle" title="Rectangle">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="16" height="10"/></svg>
+            </button>
+            <button class="shape-btn icon-btn" data-shape="hexagon" title="Hexagon (keeps aspect ratio 1:1)">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="17,10 13.5,16.06 6.5,16.06 3,10 6.5,3.94 13.5,3.94"/></svg>
+            </button>
+            <button class="shape-btn icon-btn" data-shape="square" title="Square (keeps aspect ratio 1:1)">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="10" height="10"/></svg>
+            </button>
+            <button class="shape-btn icon-btn" data-shape="circle" title="Circle (keeps aspect ratio 1:1)">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="7"/></svg>
+            </button>
+            <button class="shape-btn icon-btn" data-shape="octagon" title="Octagon (keeps aspect ratio 1:1)">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="17,12.9 12.9,17 7.1,17 3,12.9 3,7.1 7.1,3 12.9,3 17,7.1"/></svg>
+            </button>
+        </div>
+        <div id="shapeImportRow">
+            <button id="importGeojson" class="shape-btn" style="background: #2a5a8a;" title="Import a GeoJSON boundary as the map shape"><svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13V3M6 7l4-4 4 4M3 13v3h14v-3"/></svg> GeoJSON</button>
+            <button id="importSvgShape" class="shape-btn" style="background: #8a5a2a;" title="Import an SVG outline as the map shape"><svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13V3M6 7l4-4 4 4M3 13v3h14v-3"/></svg> SVG</button>
+        </div>
         <input type="file" id="geojsonInput" accept=".geojson,.json" style="display: none;">
-        <button id="importGeojson" style="padding: 12px 20px; background: #2a5a8a; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Import GeoJSON</button>
         <div id="geojsonList" style="display:none; font-size:11px; color:#aaa; line-height:1.8;"></div>
         <button id="clearGeojson" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear GeoJSON</button>
         <input type="file" id="svgShapeInput" accept=".svg" style="display: none;">
-        <button id="importSvgShape" style="padding: 12px 20px; background: #8a5a2a; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Import SVG Shape</button>
         <div id="svgShapeList" style="display:none; font-size:11px; color:#aaa; line-height:1.8;"></div>
         <button id="clearSvgShape" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear SVG Shape</button>
-        <hr class="sidebar-divider">
+        <div id="shapeExtrasSection" style="display:none;"></div>
         <div id="prefetchInfo"></div>
         <button id="clearPrefetch" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear Prefetch</button>
         <div id="status">Draw a shape to begin.</div>
@@ -78,26 +107,6 @@
             </button>
             <button id="deleteBtn" class="shape-btn icon-btn" title="Delete">
                 <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M6 2a1 1 0 00-1 1v1H2v2h1v11a2 2 0 002 2h10a2 2 0 002-2V6h1V4h-3V3a1 1 0 00-1-1H6zM5 6h10v11H5V6zm3 2v7h2V8H8zm4 0v7h2V8h-2z"/></svg>
-            </button>
-        </div>
-        <div id="shapeToggle">
-            <button class="shape-btn icon-btn active" data-shape="rectangle" title="Rectangle">
-                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="16" height="10"/></svg>
-            </button>
-            <button class="shape-btn icon-btn" data-shape="hexagon" title="Hexagon (keeps aspect ratio 1:1)">
-                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="17,10 13.5,16.06 6.5,16.06 3,10 6.5,3.94 13.5,3.94"/></svg>
-            </button>
-            <button class="shape-btn icon-btn" data-shape="square" title="Square (keeps aspect ratio 1:1)">
-                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="10" height="10"/></svg>
-            </button>
-            <button class="shape-btn icon-btn" data-shape="circle" title="Circle (keeps aspect ratio 1:1)">
-                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="7"/></svg>
-            </button>
-            <button class="shape-btn icon-btn" data-shape="octagon" title="Octagon (keeps aspect ratio 1:1)">
-                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="17,12.9 12.9,17 7.1,17 3,12.9 3,7.1 7.1,3 12.9,3 17,7.1"/></svg>
-            </button>
-            <button class="shape-btn icon-btn" data-shape="svg" title="SVG shape (click to import, keeps its own proportions)">
-                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="3.5" width="15" height="13" rx="1"/><circle cx="7" cy="8" r="1.6" fill="currentColor" stroke="none"/><path d="M3 14 L8 9.5 L11.5 12.5 L14 10 L17 13.5"/></svg>
             </button>
         </div>
         <div id="drawModeToggle">
@@ -164,6 +173,10 @@
         var svgDataUrl = null; // data: URI of the raw SVG, used as the L.imageOverlay preview source
 
         __LOCATION_PANEL_JS__
+
+        // Shell, text icons and medal handles are Premium-only here.
+        var TP3D_SHAPE_EXTRAS_PREMIUM = false;
+        __SHAPE_EXTRAS_JS__
 
         function updateGpxList() {
             // The free map generator only ever holds one trail at a time
@@ -297,6 +310,7 @@
                 baseLayer: activeBaseLayerName,
                 settingsTab: TP3D_SETTINGS_TAB,
                 shape: currentShape,
+                shapeExtra: shapeExtra,
                 drawMode: drawMode,
                 shapeCenter: shapeCenter,
                 resolution: document.getElementById('resolutionSlider').value,
@@ -380,6 +394,9 @@
                             b.classList.toggle('active', b.getAttribute('data-shape') === s.shape);
                         });
                     }
+                    // Re-validated against the restored shape by
+                    // tp3dRefreshShapeExtras (via updateStatus below).
+                    if (s.shapeExtra) shapeExtra = s.shapeExtra;
                     if (s.drawMode) {
                         drawMode = s.drawMode;
                         document.querySelectorAll('.draw-mode-btn').forEach(function(b) {
@@ -608,6 +625,9 @@
         }
 
         function updateStatus() {
+            // Runs after every shape/GeoJSON/SVG change, so the Shape Extras
+            // dropdown piggybacks on it to follow the current shape.
+            tp3dRefreshShapeExtras();
             var nGpx = gpxPaths.length;
             var nGeojson = geojsonPaths.length;
             var extraSuffix = nGpx ? (' + ' + nGpx + ' trail(s)') : '';
@@ -878,6 +898,9 @@
                     // Auto-places a fresh box centered in the current view (~40%
                     // of it) so the shape is immediately visible instead of
                     // requiring the user to draw/find an area for it first.
+                    // Only one shape is selected at a time -- an SVG import replaces
+                    // a loaded GeoJSON boundary, which would otherwise win at Send.
+                    if (geojsonPaths.length) document.getElementById('clearGeojson').click();
                     placeSvgBoxInViewport(0.4);
                     updateSvgShapeList();
                     renderShapePreview();
@@ -1062,6 +1085,9 @@
 
             var payload = {
                 gpx_paths: gpxPaths,
+                // Original file names (gpxPaths are temp copies) -- the model
+                // name for the Shape Extras' {name} text code.
+                gpx_names: gpxNames,
                 geojson_paths: geojsonPaths,
                 svg_path: svgShapePath,
                 excluded_ids: tp3dPrefetchExcludedIds(),
@@ -1086,6 +1112,8 @@
                 payload.center = boundsCenter(payload.bounds);
                 payload.type = currentShape;
             }
+            // Also for a GeoJSON boundary (no drawn area) -- it takes extras too.
+            payload.shape_extra = shapeExtra;
 
             document.getElementById('send').disabled = true;
             document.getElementById('status').textContent = 'Sending to Blender...';

@@ -311,6 +311,28 @@ _SETTINGS_ROW_FIELDS = {
     "singleColorMode": ("singleColorMode", bool),
     "singleColorModeHeight": ("singleColorModeHeight", float),
     "singleColorModeTolerance": ("tolerance", float),
+    # Map generator pages' Shape Extras "Text Settings" popup
+    # (assets/shape_extras.js) -- mirrors panels.py's Shape Extras box.
+    "textFont": ("textFont", str),
+    "textSize": ("textSize", int),
+    "textSizeTitle": ("textSizeTitle", int),
+    "titlefield": ("titlefield", str),
+    "textfield1": ("textfield1", str),
+    "textfield2": ("textfield2", str),
+    "textfield3": ("textfield3", str),
+    "textfield4": ("textfield4", str),
+    "textfield5": ("textfield5", str),
+    "titleIcon": ("titleIcon", str),
+    "iconText1": ("iconText1", str),
+    "iconText2": ("iconText2", str),
+    "iconText3": ("iconText3", str),
+    "iconText4": ("iconText4", str),
+    "iconText5": ("iconText5", str),
+    "plateThickness": ("plateThickness", float),
+    "outerBorderSize": ("outerBorderSize", int),
+    "plateInsertValue": ("plateInsertValue", float),
+    "plateBevel": ("plateBevel", float),
+    "handleStyle": ("handleStyle", str),
 }
 
 

@@ -3185,6 +3185,69 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             overlay.finish()
             _progress.WarningsOverlay.get().show()
 
+    @staticmethod
+    def _apply_shape_extra(props, data):
+        """The picker's Shape Extras dropdown (assets/shape_extras.js) --
+        called after props.shape is set, since shapeTextStyle's item list
+        depends on it. Anything the shape doesn't offer (or Shell on a free
+        build) falls back to None, same as props.shape_update."""
+        from . import temp
+        from .props import SHAPE_TEXT_STYLES
+
+        shape_extra = data.get('shape_extra') or 'NONE'
+        valid_extras = {ident for ident, _label, _desc in SHAPE_TEXT_STYLES.get(props.shape, [])}
+        if shape_extra not in valid_extras or (shape_extra == 'SHELL' and not temp.PREMIUMVERSION):
+            shape_extra = 'NONE'
+        if valid_extras:
+            props.shapeTextStyle = shape_extra
+
+    @staticmethod
+    def _apply_trail_stats(props, gpx_paths, gpx_names):
+        """Fill in what the Shape Extras text codes read ({name}, {length},
+        {elevation}, {duration}, {date}, {speed} -- see
+        text_objects.replaceShapeText). runGeneration gets these from its
+        own GPX load (input._rg_compute_trail_stats + the file-name default
+        for modelname), which this picker's tile flow never runs -- without
+        this they'd show the last sidebar-generated trail's values and
+        "Terrain". Several GPX files are summed, like one long trail."""
+        import os
+
+        from .utils.geo import (
+            calculate_date,
+            calculate_total_elevation,
+            calculate_total_length,
+            calculate_total_time,
+        )
+        from .utils.io_gpx import read_gpx_file
+
+        if not props.trailName and gpx_names:
+            props.modelname = os.path.splitext(os.path.basename(gpx_names[0]))[0]
+
+        per_file = []
+        saved_path = props.file_path
+        try:
+            for path in gpx_paths:
+                props.file_path = path
+                try:
+                    per_file.append([pt for seg in read_gpx_file() for pt in seg])
+                except Exception:  # noqa: BLE001 - GPX parsing can raise many types; stats are best-effort
+                    continue
+        finally:
+            props.file_path = saved_path
+        per_file = [pts for pts in per_file if len(pts) >= 2]
+        if not per_file:
+            return
+
+        length = sum(calculate_total_length(pts) for pts in per_file)
+        elevation = sum(calculate_total_elevation(pts) for pts in per_file)
+        hours = sum(calculate_total_time(pts) or 0 for pts in per_file)
+        props.total_length = length
+        props.total_elevation = elevation
+        props.total_time = hours
+        props.sTime_str = f"{int(hours)}h {int((hours - int(hours)) * 60)}m"
+        props.average_speed = length / hours if hours > 0 else 0
+        props.trail_date = calculate_date(per_file[0])
+
     def _apply_result_body(self, context, data):
         props = context.scene.tp3d
         overlay = _progress.ProgressOverlay.get()
@@ -3254,9 +3317,15 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             if blank is None:
                 self.report({'ERROR'}, "GeoJSON boundary produced an empty/degenerate shape.")
                 return
+            # Keeps the sidebar's own Shape field in sync with what this tile
+            # actually is, same as the SVG branch below does.
+            props.shape = 'GEOJSON'
+            props.customFilePath = geojson_paths[0]
+            self._apply_shape_extra(props, data)
         else:
             shape_name = data.get('type', 'rectangle')
             props.shape = self._TYPE_MAP.get(shape_name, 'SQUARE')
+            self._apply_shape_extra(props, data)
 
             south, north = bounds['south'], bounds['north']
             west, east = bounds['west'], bounds['east']
@@ -3381,6 +3450,10 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         bpy.ops.object.select_all(action='DESELECT')
         blank.select_set(True)
         bpy.context.view_layer.objects.active = blank
+        # Everything generated from here on (element meshes, trail pieces)
+        # sits on this tile -- the Shape Extras step below lifts it together
+        # with the map when a plate raises the map.
+        objs_before = set(bpy.data.objects)
         # skip_bottom_recess: this blank is always a fresh single tile with
         # additionalExtrusion locked to its OWN lowest point (set just
         # above, either from the elevation-preview loop or, for a GeoJSON
@@ -3443,6 +3516,23 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 cutter_obj.location = (center_x, center_y, 0)
                 boolean_operation(blank, cutter_obj, "INTERSECT")
                 bpy.data.objects.remove(cutter_obj, do_unlink=True)
+
+        # Shape Extras (text/plate/shell) -- only now, once the tile has its
+        # final outline (see _rtg_add_shape_extras for why this can't run
+        # inside runTileGeneration the way runGeneration does it).
+        if tile_gen is not None:
+            overlay.update(0.99, "Shape Overlays", "Adding text and plate elements…")
+            riders = [o for o in bpy.data.objects if o not in objs_before and o is not blank]
+            try:
+                if tile_gen.settings.shape.endswith(" TEXT") and gpx_paths:
+                    self._apply_trail_stats(props, gpx_paths, data.get('gpx_names') or [])
+                utils._rtg_add_shape_extras(tile_gen, blank, riders)
+            except Exception:  # noqa: BLE001 - the tile itself is done; still export it
+                import traceback
+                traceback.print_exc()
+                _progress.WarningsOverlay.add_warning(
+                    "Shape Extras failed, check console for details", "error"
+                )
 
         # The map picker always produces a single, finished map tile (never
         # a multi-tile result awaiting manual arrangement/export like the

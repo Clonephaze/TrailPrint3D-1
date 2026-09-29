@@ -378,6 +378,37 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
     color: #ccc; font-size: 11px; font-weight: bold; line-height: 1; padding: 0; cursor: pointer; transition: all 0.15s; }
 #gpxList .gpx-remove-btn:hover, #geojsonList .gpx-remove-btn:hover, #svgShapeList .gpx-remove-btn:hover { background: #e74c3c; border-color: #e74c3c; color: #fff; }
 
+/* Shape Extras dropdown + Text Settings popup (assets/shape_extras.js) --
+   map generator pages only. */
+#shapeExtrasSection { display: flex; flex-direction: column; gap: 8px; }
+/* Import GeoJSON / Import SVG Shape while that import is the selected shape
+   -- same blue as .shape-btn.active. !important: those buttons set their
+   own background inline. */
+.import-shape-active { background: #007bff !important; box-shadow: 0 0 0 2px #007bff; }
+#shapeExtrasSection select, #shapeExtrasModal select, #shapeExtrasModal input[type=text] {
+    background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px 6px;
+    font-size: 12px; font-family: inherit; min-width: 0; }
+#shapeExtrasSection select { width: 100%; }
+.btn-shape-extras { padding: 10px 20px; background: #333; color: #eee; border: 1px solid #444;
+    border-radius: 4px; cursor: pointer; font-weight: bold; }
+.btn-shape-extras:hover { background: #444; border-color: #007bff; }
+#shapeExtrasModal .tp3d-modal-box { width: 340px; }
+#shapeExtrasModal .field-row input[type=number] { width: 70px; }
+#shapeExtrasModal .field-row input[type=text] { flex: 1; }
+#shapeExtrasModal .se-font-controls { flex: 1; min-width: 0; display: flex; gap: 4px; }
+#shapeExtrasModal .se-font-controls select { flex: 1; min-width: 0; }
+#shapeExtrasModal .se-font-btn { flex-shrink: 0; width: 28px; display: flex; align-items: center; justify-content: center;
+    background: #333; color: #ccc; border: 1px solid #444; border-radius: 4px; padding: 0; cursor: pointer; }
+#shapeExtrasModal .se-font-btn:hover { background: #444; border-color: #007bff; color: #fff; }
+#shapeExtrasModal .se-section-label { font-size: 12px; font-weight: bold; color: #ccc; margin-top: 4px; }
+#shapeExtrasModal .se-hint { font-size: 11px; color: #888; line-height: 1.4; }
+#shapeExtrasModal .se-text-row { display: flex; gap: 6px; }
+#shapeExtrasModal .se-text-row select, #shapeExtrasModal .se-icon-locked { width: 40%; flex-shrink: 0; }
+#shapeExtrasModal .se-text-row input[type=text] { flex: 1; }
+#shapeExtrasModal .se-icon-locked { background: #2a2a2a; color: #666; border: 1px solid #333; border-radius: 4px;
+    font-size: 11px; cursor: not-allowed; }
+#shapeExtrasModal .se-handle-switch { display: flex; gap: 4px; }
+
 /* "Prefetch Elements" (assets/prefetch_layer.js) -- map generator pages only. */
 #prefetchInfo { display: none; font-size: 11px; color: #ccc; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; }
 #prefetchInfo .prefetch-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; line-height: 1.9; }

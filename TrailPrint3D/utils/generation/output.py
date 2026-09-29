@@ -96,10 +96,6 @@ def _rg_assign_materials(gen: GenerationContext):
 
     obj = gen.runtime.mapObject
     curveObjs = gen.runtime.curveObjs
-    textobj = gen.runtime.textObj
-    plateobj = gen.runtime.plateObj
-    shellobj = gen.runtime.shellObj
-    shape = gen.settings.shape
 
     bpy.ops.object.select_all(action="DESELECT")
 
@@ -123,6 +119,23 @@ def _rg_assign_materials(gen: GenerationContext):
                     mats = "YELLOW" if mats == "TRAIL" else "TRAIL"
             except ReferenceError:
                 pass
+
+    _rg_assign_extra_materials(gen)
+
+
+def _rg_assign_extra_materials(gen: GenerationContext):
+    """Metadata + materials for the shape-extra objects (text, plate, shell).
+    Split out of _rg_assign_materials so the map generator, which only adds
+    its extras once the tile itself is finished (see
+    tile_orchestrator._rtg_add_shape_extras), can run just this part."""
+    from ..metadata import (
+        writeMetadata,  # deferred to avoid circular import at load time
+    )
+
+    textobj = gen.runtime.textObj
+    plateobj = gen.runtime.plateObj
+    shellobj = gen.runtime.shellObj
+    shape = gen.settings.shape
 
     if (
         shape

@@ -158,6 +158,11 @@ _ELEMENT_STATUS_JS_PATH = _ASSETS_DIR / 'element_status.js'
 _SETTINGS_MODAL_JS_PATH = _ASSETS_DIR / 'settings_modal.js'
 _RECT_EDITOR_JS_PATH = _ASSETS_DIR / 'rect_editor.js'
 _PREFETCH_JS_PATH = _ASSETS_DIR / 'prefetch_layer.js'
+_SHAPE_EXTRAS_JS_PATH = _ASSETS_DIR / 'shape_extras.js'
+
+# /upload_font: formats Blender's text objects can load.
+_FONT_EXTENSIONS = {'.ttf', '.otf', '.ttc', '.pfb', '.woff'}
+_FONT_MAX_BYTES = 50 * 1024 * 1024
 _HISTORY_PANEL_JS_PATH = _ASSETS_DIR / 'history_panel.js'
 
 _element_icons_js_cache: str | None = None
@@ -516,6 +521,19 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == '/list_fonts':
+            # Text Settings popup's font dropdown (assets/shape_extras.js) --
+            # installed system fonts plus ones picked via /upload_font. The
+            # page can't browse the Windows Fonts folder itself: it's a shell
+            # virtual folder that shows up empty in a browser file dialog.
+            from .utils import font_list
+            body = json.dumps(font_list.list_fonts(extra_dirs=[const.fonts_dir])).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == '/prefetch_status':
             body = json.dumps(_prefetch_job).encode('utf-8')
             self.send_response(200)
@@ -631,6 +649,7 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__HISTORY_PANEL_JS__', _HISTORY_PANEL_JS_PATH.read_text(encoding='utf-8'))
             .replace('__RECT_EDITOR_JS__', _RECT_EDITOR_JS_PATH.read_text(encoding='utf-8'))
             .replace('__PREFETCH_JS__', _PREFETCH_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__SHAPE_EXTRAS_JS__', _SHAPE_EXTRAS_JS_PATH.read_text(encoding='utf-8'))
             .encode('utf-8')
         )
         self.send_response(200)
@@ -837,6 +856,46 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(resp)))
+            self.end_headers()
+            self.wfile.write(resp)
+            return
+        if self.path == '/upload_font':
+            # Text Settings popup's font picker (assets/shape_extras.js). Unlike
+            # the temp-file uploads below, the copy lands in const.fonts_dir
+            # and keeps its own file name: textFont keeps pointing at it after
+            # this session (and the OS temp dir getting cleared), and a
+            # re-picked font just overwrites its own earlier copy.
+            from urllib.parse import unquote
+            length = int(self.headers.get('Content-Length', 0))
+            # Percent-encoded by the page -- header values must be ASCII.
+            raw_name = pathlib.Path(unquote(self.headers.get('X-Filename', 'font.ttf'))).name
+            safe = ''.join(c if c.isalnum() or c in '-_. ' else '_' for c in raw_name).strip(' .')
+            if (pathlib.Path(safe).suffix.lower() not in _FONT_EXTENSIONS
+                    or not pathlib.Path(safe).stem or not 0 < length <= _FONT_MAX_BYTES):
+                self.rfile.read(length)
+                self.send_response(400)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                return
+            body = self.rfile.read(length)
+            out_path = pathlib.Path(const.fonts_dir) / safe
+            try:
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_bytes(body)
+            except OSError as e:
+                print(f"[TP3D picker] /upload_font FAILED to write {out_path}: {e}")
+                self.send_response(500)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                return
+            from .utils import font_list
+            name = font_list.read_font_name(str(out_path)) or out_path.stem
+            font_list.invalidate()  # next /list_fonts picks the new copy up
+            resp = json.dumps({'path': str(out_path), 'name': name}).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp)))
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(resp)
             return
