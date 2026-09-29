@@ -335,8 +335,8 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
 #drawActions .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
 .shape-btn.active { background: #007bff; border-color: #007bff; }
 /* left/z-index/look shared by every page; each page's own <style> adds just
-   a `top` offset (170px on rectangle-only puzzle pages, 338px on pages with
-   an extra #shapeToggle row above it). */
+   a `top` offset (170px -- right below #drawActions -- on every page now that
+   #shapeToggle lives in the sidebar). */
 #drawModeToggle { position: absolute; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 6px;
     background: rgba(26,26,26,0.85); border: 1px solid #444; border-radius: 4px; padding: 6px; }
 #drawModeToggle .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
@@ -382,8 +382,7 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
    map generator pages only. */
 #shapeExtrasSection { display: flex; flex-direction: column; gap: 8px; }
 /* Import GeoJSON / Import SVG Shape while that import is the selected shape
-   -- same blue as .shape-btn.active. !important: those buttons set their
-   own background inline. */
+   -- same blue as .shape-btn.active. */
 .import-shape-active { background: #007bff !important; box-shadow: 0 0 0 2px #007bff; }
 #shapeExtrasSection select, #shapeExtrasModal select, #shapeExtrasModal input[type=text] {
     background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px 6px;
@@ -395,11 +394,7 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
 #shapeExtrasModal .tp3d-modal-box { width: 340px; }
 #shapeExtrasModal .field-row input[type=number] { width: 70px; }
 #shapeExtrasModal .field-row input[type=text] { flex: 1; }
-#shapeExtrasModal .se-font-controls { flex: 1; min-width: 0; display: flex; gap: 4px; }
-#shapeExtrasModal .se-font-controls select { flex: 1; min-width: 0; }
-#shapeExtrasModal .se-font-btn { flex-shrink: 0; width: 28px; display: flex; align-items: center; justify-content: center;
-    background: #333; color: #ccc; border: 1px solid #444; border-radius: 4px; padding: 0; cursor: pointer; }
-#shapeExtrasModal .se-font-btn:hover { background: #444; border-color: #007bff; color: #fff; }
+#shapeExtrasModal .se-font-select { flex: 1; min-width: 0; }
 #shapeExtrasModal .se-section-label { font-size: 12px; font-weight: bold; color: #ccc; margin-top: 4px; }
 #shapeExtrasModal .se-hint { font-size: 11px; color: #888; line-height: 1.4; }
 #shapeExtrasModal .se-text-row { display: flex; gap: 6px; }

@@ -102,8 +102,7 @@ function tp3dPushShapeSetting(key, value) {
 }
 
 // Installed fonts ([{name, path}]) from /list_fonts, fetched once per page
-// (the first scan of the system font folders takes a moment) and reset
-// after an upload so a re-opened popup lists the new copy too.
+// (the first scan of the system font folders takes a moment).
 var _tp3dFontList = null;
 function tp3dLoadFontList() {
     if (!_tp3dFontList) {
@@ -214,18 +213,13 @@ function tp3dRenderShapeExtrasModal() {
 
     // Font -- a dropdown of the installed fonts (picker_server.py's
     // /list_fonts; a browser file dialog can't browse the Windows Fonts
-    // folder -- it's a shell virtual folder that shows up empty there), plus
-    // a folder button for a font file that isn't installed. The browser
-    // can't hand over that file's path either, so it's uploaded instead
-    // (/upload_font keeps a copy in the addon's fonts folder) and textFont
-    // gets that copy's path.
+    // folder -- it's a shell virtual folder that shows up empty there).
     var fontRow = document.createElement('div');
     fontRow.className = 'field-row';
     var fontLabel = document.createElement('label');
     fontLabel.textContent = 'Font';
-    var fontControls = document.createElement('div');
-    fontControls.className = 'se-font-controls';
     var fontSelect = document.createElement('select');
+    fontSelect.className = 'se-font-select';
     function fontOption(name, path) {
         var opt = document.createElement('option');
         opt.value = path;
@@ -235,12 +229,12 @@ function tp3dRenderShapeExtrasModal() {
     }
     // Keeps the current font selectable even before/without the list (or
     // when it isn't an installed one), under its file name.
-    function ensureFontOption(path, name) {
+    function ensureFontOption(path) {
         if (!path) return;
         for (var i = 0; i < fontSelect.options.length; i++) {
             if (fontSelect.options[i].value === path) return;
         }
-        var label = name || path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+        var label = path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
         fontSelect.insertBefore(fontOption(label, path), fontSelect.options[1] || null);
     }
     function syncFontSelect() {
@@ -263,43 +257,8 @@ function tp3dRenderShapeExtrasModal() {
         tp3dPushShapeSetting('textFont', this.value);
         this.title = this.value || 'Default font';
     });
-
-    var fontFile = document.createElement('input');
-    fontFile.type = 'file';
-    fontFile.accept = '.ttf,.otf,.ttc,.pfb,.woff';
-    fontFile.style.display = 'none';
-    var fontBtn = document.createElement('button');
-    fontBtn.type = 'button';
-    fontBtn.className = 'se-font-btn';
-    fontBtn.title = 'Use a font file that is not installed';
-    fontBtn.innerHTML = '<svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor">'
-        + '<path d="M2 5a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V5z"/></svg>';
-    fontBtn.addEventListener('click', function() { fontFile.click(); });
-    fontFile.addEventListener('change', function() {
-        var file = this.files && this.files[0];
-        this.value = '';
-        if (!file) return;
-        fetch('http://127.0.0.1:' + PORT + '/upload_font', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name) },
-            body: file
-        })
-        .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-        .then(function(res) {
-            _tp3dFontList = null;  // the server's list now includes this copy
-            tp3dPushShapeSetting('textFont', res.path);
-            ensureFontOption(res.path, res.name);
-            syncFontSelect();
-        })
-        .catch(function() {
-            tp3dAlert('Could not use ' + file.name + ' -- pick a .ttf, .otf, .ttc, .pfb or .woff font file.', 'Font Error');
-        });
-    });
-    fontControls.appendChild(fontSelect);
-    fontControls.appendChild(fontBtn);
-    fontControls.appendChild(fontFile);
     fontRow.appendChild(fontLabel);
-    fontRow.appendChild(fontControls);
+    fontRow.appendChild(fontSelect);
     body.appendChild(fontRow);
 
     tp3dShapeExtraNumberRow(body, 'textSizeTitle', 'Title Text Size',

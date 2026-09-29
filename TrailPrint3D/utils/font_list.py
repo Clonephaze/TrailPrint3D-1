@@ -20,8 +20,8 @@ FONT_EXTENSIONS = (".ttf", ".otf", ".ttc", ".woff", ".pfb")
 _cache = None
 
 
-def _font_dirs(extra_dirs=()):
-    dirs = list(extra_dirs)
+def _font_dirs():
+    dirs = []
     system = platform.system()
     if system == "Windows":
         windir = os.environ.get("WINDIR", r"C:\Windows")
@@ -102,23 +102,15 @@ def read_font_name(path):
     return None
 
 
-def invalidate():
-    """Drop the cached list (e.g. after a new font was added)."""
-    global _cache
-    _cache = None
-
-
-def list_fonts(extra_dirs=(), refresh=False):
+def list_fonts(refresh=False):
     """[{'name': display name, 'path': file path}], sorted by name, one entry
-    per name. *extra_dirs* (e.g. the addon's own uploaded-fonts folder) are
-    scanned first, so their copy wins a name clash. Cached after the first
-    call -- scanning a full system font folder takes a moment -- unless
-    *refresh*."""
+    per name. Cached after the first call -- scanning a full system font
+    folder takes a moment -- unless *refresh*."""
     global _cache
     if _cache is not None and not refresh:
         return _cache
     seen = {}
-    for root_dir in _font_dirs(extra_dirs):
+    for root_dir in _font_dirs():
         if not os.path.isdir(root_dir):
             continue
         for dirpath, _dirnames, filenames in os.walk(root_dir):

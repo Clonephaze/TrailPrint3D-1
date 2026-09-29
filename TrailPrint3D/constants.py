@@ -86,12 +86,6 @@ generation_history_dir = os.path.join(bpy.utils.user_resource('CONFIG'), "TP3D-h
 # already shut down.
 generation_history_thumbnails_dir = os.path.join(generation_history_dir, "thumbnails")
 
-# Fonts picked from a picker page's Text Settings popup (the browser can't
-# hand over a local file path, so picker_server.py's /upload_font stores a
-# copy here and textFont points at it). Kept out of cache_dir on purpose --
-# "Clear Cache" would otherwise break every scene/preset using that font.
-fonts_dir = os.path.join(bpy.utils.user_resource('CONFIG'), "TP3D-fonts")
-
 
 def _ensure_dirs():
     """Create addon cache/preset directories. Call from register() only."""
@@ -104,7 +98,6 @@ def _ensure_dirs():
     os.makedirs(preset_dir, exist_ok=True)
     os.makedirs(generation_history_dir, exist_ok=True)
     os.makedirs(generation_history_thumbnails_dir, exist_ok=True)
-    os.makedirs(fonts_dir, exist_ok=True)
 
 
 

@@ -23,10 +23,10 @@
             display: flex; align-items: center; justify-content: center; }
         /* Import GeoJSON / Import SVG Shape, sized like the shape row right
            above (negative margin undoes most of the sidebar's 15px gap so
-           the two rows read as one group) but keeping their own colors. */
+           the two rows read as one group). */
         #shapeImportRow { display: flex; gap: 4px; margin-top: -11px; }
         #shapeImportRow .shape-btn { flex: 1 1 0; min-width: 0; height: 30px; padding: 0 4px; border-width: 1px;
-            color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 4px; }
+            font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 4px; }
         #drawModeToggle { top: 170px; }
     </style>
 </head>
@@ -66,8 +66,8 @@
             </button>
         </div>
         <div id="shapeImportRow">
-            <button id="importGeojson" class="shape-btn" style="background: #2a5a8a;" title="Import a GeoJSON boundary as the map shape"><svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13V3M6 7l4-4 4 4M3 13v3h14v-3"/></svg> GeoJSON</button>
-            <button id="importSvgShape" class="shape-btn" style="background: #8a5a2a;" title="Import an SVG outline as the map shape"><svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13V3M6 7l4-4 4 4M3 13v3h14v-3"/></svg> SVG</button>
+            <button id="importGeojson" class="shape-btn" title="Import a GeoJSON boundary as the map shape">GeoJSON</button>
+            <button id="importSvgShape" class="shape-btn" title="Import an SVG outline as the map shape">SVG</button>
         </div>
         <input type="file" id="geojsonInput" accept=".geojson,.json" style="display: none;">
         <div id="geojsonList" style="display:none; font-size:11px; color:#aaa; line-height:1.8;"></div>
@@ -78,6 +78,7 @@
         <div id="shapeExtrasSection" style="display:none;"></div>
         <div id="prefetchInfo"></div>
         <button id="clearPrefetch" style="display:none; padding:5px 10px; background:#2a1e1e; color:#cc6666; border:1px solid #553333; border-radius:4px; cursor:pointer; font-size:11px;">Clear Prefetch</button>
+        <hr class="sidebar-divider">
         <div id="status">Draw a shape to begin.</div>
         <button id="send" class="btn-send" disabled>Send to Blender</button>
     </div>
