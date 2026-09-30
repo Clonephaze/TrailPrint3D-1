@@ -1395,6 +1395,15 @@ def _rdp_simplify(points, epsilon):
     return [points[0], points[-1]]
 
 
+def _close_chain_with_bbox(chain, bbox_bl):
+    """Keep the legacy single-chain coastline helper for callers and tests."""
+    polys = _polygonize_ocean_faces([chain], [], bbox_bl)
+    if not polys:
+        return None
+    biggest = max(polys, key=lambda polygon: polygon.area)
+    return list(biggest.exterior.coords)
+
+
 def _polygonize_ocean_faces(open_chains, closed_loops, bbox_bl, rdp_eps=0.0):
     """Build the ocean region(s) for one tile directly from coastline chains.
 

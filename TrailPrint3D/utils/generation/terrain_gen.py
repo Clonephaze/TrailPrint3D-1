@@ -258,40 +258,38 @@ def _rg_osm_fetch_settings(tp3d):
         water_big_rivers=bool(tp3d.show_water and tp3d.col_wMajorActive),
         exclude_alleys=True,
     )
+def _rg_start_osm_prefetch(gen: GenerationContext):
+    """Start a background fetch for the active OSM element kinds."""
+    from ..terrain import _fetch_all_kinds_parallel
+
+    tp3d = bpy.context.scene.tp3d
     map_km = gen.runtime.mapKm if gen.runtime.mapKm is not None else tp3d.sMapInKm
-    _active_kind_tasks = (
-        [
-            (key.upper(), _tile_tasks)
-            for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS
-            if (
-                flag_attr(tp3d)
-                if callable(flag_attr)
-                else getattr(tp3d, flag_attr) == 1
-            )
-            and map_km <= max_size
-        ]
-        if gen.settings.elementSource == "OSM"
-        else []
+    active_kind_tasks = _rg_build_osm_kind_tasks(
+        gen.runtime.tbMinLat,
+        gen.runtime.tbMaxLat,
+        gen.runtime.tbMinLon,
+        gen.runtime.tbMaxLon,
+        map_km,
+        gen.settings.elementSource,
+        tp3d,
     )
-    if not _active_kind_tasks:
+    if not active_kind_tasks:
         return None, {}
 
-    _semaphore = threading.Semaphore(
-        1
-    )  # max 1 concurrent live Overpass request (avoid 429s on the public instance)
-    _fetch_settings = _rg_osm_fetch_settings(tp3d)
-
+    fetch_settings = _rg_osm_fetch_settings(tp3d)
     result = {}
 
     def _run():
         fetched = _fetch_all_kinds_parallel(
-            _active_kind_tasks, _semaphore, settings=_fetch_settings
+            active_kind_tasks,
+            threading.Semaphore(1),
+            settings=fetch_settings,
         )
         result.update(fetched)
 
-    t = threading.Thread(target=_run, daemon=True, name=_("osm-prefetch"))
-    t.start()
-    gen.fetch.fetchThread = t
+    thread = threading.Thread(target=_run, daemon=True, name="osm-prefetch")
+    thread.start()
+    gen.fetch.fetchThread = thread
     gen.fetch.fetchResult = result
 
 
