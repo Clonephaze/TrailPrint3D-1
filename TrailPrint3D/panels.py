@@ -908,20 +908,6 @@ def _draw_appearance_box(layout, props):
     )
 
 
-def draw_wrapped_label(layout, context, text, icon='NONE'):
-    """Draw *text* as several layout.label() lines, wrapped to the current
-    sidebar width instead of being cut off. ~6.5px/character is a rough
-    estimate for Blender's default UI font at 100% zoom -- good enough for
-    wrapping since a slightly-off estimate just wraps one word early/late,
-    unlike truncation which loses text outright.
-    """
-    width = getattr(context.region, "width", 300)
-    chars_per_line = max(20, int(width / 6.5))
-    lines = textwrap.wrap(text, width=chars_per_line) or [text]
-    for i, line in enumerate(lines):
-        layout.label(text=line, icon=icon if i == 0 else 'NONE')
-
-
 class TP3D_PT_generate(bpy.types.Panel):
     bl_label = _("Create")
     bl_idname = "TP3D_PT_generate"
@@ -1104,9 +1090,7 @@ def _draw_special_box(layout, props, temp):
         box.operator(
             "tp3d.append_collection", text=_("Import + Generate"), icon="IMPORT"
         )
-    box.operator(
-        "tp3d.append_collection_blank", text=_("Import Blank"), icon="IMPORT"
-    )
+    box.operator("tp3d.append_collection_blank", text=_("Import Blank"), icon="IMPORT")
 
 
 def _draw_post_process_box(layout, props, temp, context):
@@ -1331,9 +1315,7 @@ def _draw_stats_box(layout, props):
     box = _create_collapsible_section(layout, props, "show_stats")
     if box is None:
         return
-    box.label(
-        text=_("Get Input Settings of Selected Generate Map"), icon="QUESTION"
-    )
+    box.label(text=_("Get Input Settings of Selected Generate Map"), icon="QUESTION")
     box.operator("tp3d.show_custom_props_popup", icon="QUESTION")
     box.separator(factor=0.5)
     box.label(text=_("Last Generation"), icon="TIME")
