@@ -543,15 +543,12 @@ def _draw_trail_box(layout, props):
         if not props.singleColorMode and not _elem_scm
         else "CHECKBOX_HLT",
     )
-    # if props.singleColorMode or _elem_scm:
+    if _elem_scm:
+        scm_row.label(text=_("SEM Enabled"), icon="LOCKED")
     scm_settings = col.row(align=True)
     scm_settings.enabled = props.singleColorMode or _elem_scm
     scm_settings.prop(props, "singleColorModeHeight")
     scm_settings.prop(props, "tolerance")
-
-    if _elem_scm:
-        col.label(text=_("Auto-enabled with SEM Elements"), icon="INFO")
-
 
 def _draw_terrain_box(layout, props):
     box = _create_box_with_header(
@@ -601,9 +598,10 @@ def _draw_element_box(layout, props):
             elementMode.scale_y = 1.2
             elementMode.prop(props, "elementMode", expand=True, emboss=True)
             elementSettings = box.row(align=True)
-            if props.elementMode == "SINGLECOLORMODE_REMESH":
-                elementSettings.prop(props, "toleranceElements", text=_("Tolerance"))
             elementSettings.prop(props, "col_osmSmoothing", text=_("Smoothing"))
+            semSetting = elementSettings.column(align=True)
+            semSetting.enabled = _elem_scm
+            semSetting.prop(props, "toleranceElements", text=_("Tolerance"))
 
         def _draw_water_category(box, props):
             _any_water_not_ocean = (
@@ -620,16 +618,16 @@ def _draw_element_box(layout, props):
             )
             if props.show_water:
                 col = sub.column(align=True)
-                row = col.row(align=True)
-                row.prop(
+                col.prop(
                     props,
                     "col_wBodiesActive",
                     icon="CHECKBOX_HLT"
                     if props.col_wBodiesActive
                     else "CHECKBOX_DEHLT",
                 )
-                if props.col_wBodiesActive:
-                    row.prop(props, "col_wArea")
+                bodyThresh = col.row(align=True)
+                bodyThresh.enabled = props.col_wBodiesActive
+                bodyThresh.prop(props, "col_wArea", text=_("Area Threshold"))
                 row = col.row(align=True)
                 row.prop(
                     props,
@@ -641,7 +639,9 @@ def _draw_element_box(layout, props):
                     "col_wMinorActive",
                     icon="CHECKBOX_HLT" if props.col_wMinorActive else "CHECKBOX_DEHLT",
                 )
-                col.prop(props, "col_wStreamWidth")
+                streamWidth = col.row(align=True)
+                streamWidth.enabled = props.col_wMajorActive or props.col_wMinorActive
+                streamWidth.prop(props, "col_wStreamWidth")
                 if _any_water_not_ocean:
                     est_km = estimate_map_km(props)
                     if est_km is not None and est_km > const.WATER_MAXSIZE:
@@ -665,10 +665,11 @@ def _draw_element_box(layout, props):
                     "el_oActive",
                     icon="CHECKBOX_HLT" if props.el_oActive else "CHECKBOX_DEHLT",
                 )
+                oceanCol = col.column(align=True)
+                oceanCol.enabled = props.el_oActive
+                oceanCol.prop(props, "el_oMinIslandArea")
+                oceanCol.prop(props, "el_oRdpEpsilon")
 
-                if props.el_oActive:
-                    col.prop(props, "el_oMinIslandArea")
-                    col.prop(props, "el_oRdpEpsilon")
                 if _elem_scm:
                     flatten_row = col.row(align=True)
                     flatten_row.prop(
@@ -698,10 +699,8 @@ def _draw_element_box(layout, props):
             if not is_active:
                 return sub
             settings = sub.column(align=True)
-            settings.use_property_split = True
-            settings.use_property_decorate = False
             if area_prop:
-                settings.prop(props, area_prop)
+                settings.prop(props, area_prop, text=_("Area Threshold"))
             est_km = estimate_map_km(props)
             if est_km is not None and est_km > max_size_const:
                 warning = settings.column(align=True)

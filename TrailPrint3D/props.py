@@ -1195,6 +1195,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_(""),
         default=1,
         description=_("Water bodies smaller than the threshold won't be included"),
+        min=0.0,
     )  # type: ignore
     col_wStreamWidth: FloatProperty(
         name=_("Waterway Width Multiplier"),
