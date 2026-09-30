@@ -167,8 +167,8 @@ _TERRAIN_GENERATORS = {
 }
 
 
-def _draw_generate_button(layout, props, temp):
-    def _draw_multi_generate(col, temp):
+def _draw_generate_button(layout, props):
+    def _draw_multi_generate(col):
         if temp.PREMIUMVERSION:
             col.operator("tp3d.chain_generation", icon="OUTLINER_DATA_CURVES")
         else:
@@ -176,7 +176,7 @@ def _draw_generate_button(layout, props, temp):
                 "tp3d.terrain_dummy", text=_("Multi Generation"), icon="LOCKED"
             )
 
-    def _draw_terrain_generate(col, props, temp):
+    def _draw_terrain_generate(col, props):
         premium = temp.PREMIUMVERSION and props.sScaleHor is not None
         entry = _TERRAIN_GENERATORS.get(props.mapmode) if premium else None
 
@@ -195,9 +195,9 @@ def _draw_generate_button(layout, props, temp):
     if mode == "GENERATION":
         col.operator("tp3d.run_generation", icon="DISC")
     elif mode == "MULTI":
-        _draw_multi_generate(col, temp)
+        _draw_multi_generate(col)
     else:
-        _draw_terrain_generate(col, props, temp)
+        _draw_terrain_generate(col, props)
 
 
 def _draw_shapely_warnings(layout):
@@ -222,7 +222,7 @@ def _draw_shapely_warnings(layout):
         )
 
 
-def _draw_terrain_settings(layout, props, temp):
+def _draw_terrain_settings(layout, props):
     box = layout.box()
     box.label(text=_("Custom Map Generation"), icon="MOD_BUILD")
     col = box.column(align=True)
@@ -312,7 +312,7 @@ def _draw_terrain_settings(layout, props, temp):
     col.operator("tp3d.map_generator", text=_("Map Generator"), icon="MESH_CIRCLE")
 
 
-def _draw_source_box(layout, props, temp):
+def _draw_source_box(layout, props):
     box = _create_box_with_header(
         layout,
         props,
@@ -349,7 +349,7 @@ def _draw_source_box(layout, props, temp):
     row.prop(props, "trailName", placeholder=_("Enter trail name"))
 
 
-def _draw_shape_box(layout, props, temp):
+def _draw_shape_box(layout, props):
     box = _create_box_with_header(
         layout,
         props,
@@ -391,10 +391,10 @@ def _draw_shape_box(layout, props, temp):
     col.prop(props, "num_subdivisions", slider=True)
 
     # --- Shape Extras: plate/shell + text layout ----------------------
-    _draw_shape_extras(box, props, temp)
+    _draw_shape_extras(box, props)
 
 
-def _draw_shape_extras(box, props, temp):
+def _draw_shape_extras(box, props):
     from .utils.shape_capabilities import PLATE_MODES_BY_SHAPE, TEXT_LAYOUTS_BY_SHAPE
 
     se_active = props.shapeExtrasActive
@@ -423,7 +423,7 @@ def _draw_shape_extras(box, props, temp):
             body.prop(props, "shellWallThickness")
             body.prop(props, "plateBevel")
 
-    def _draw_text_group(extras, props, temp):
+    def _draw_text_group(extras, props):
         box = _create_box_with_header(extras, props, _("Text Layout"), icon="FONT_DATA")
 
         valid_layouts = TEXT_LAYOUTS_BY_SHAPE.get(props.shape, ("NONE",))
@@ -465,7 +465,7 @@ def _draw_shape_extras(box, props, temp):
                 split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
             split.prop(props, text_prop, text="")
 
-    def _draw_handle_group(extras, props, temp):
+    def _draw_handle_group(extras, props):
         box = _create_box_with_header(
             extras, props, _("Medal Handle"), icon="MOD_CURVE"
         )
@@ -490,12 +490,12 @@ def _draw_shape_extras(box, props, temp):
         if has_plate_option:
             _draw_plate_group(extras, props)
         if has_text_option:
-            _draw_text_group(extras, props, temp)
+            _draw_text_group(extras, props)
         if props.plateMode != "NONE":
-            _draw_handle_group(extras, props, temp)
+            _draw_handle_group(extras, props)
 
 
-def _draw_scale_box(layout, props, temp):
+def _draw_scale_box(layout, props):
     box = _create_box_with_header(
         layout,
         props,
@@ -522,7 +522,7 @@ def _draw_scale_box(layout, props, temp):
         col.label(text=_("Estimated Map Size: %.1f km") % props.estimated_map_km)
 
 
-def _draw_trail_box(layout, props, temp):
+def _draw_trail_box(layout, props):
     box = _create_box_with_header(
         layout,
         props,
@@ -553,7 +553,7 @@ def _draw_trail_box(layout, props, temp):
         col.label(text=_("Auto-enabled with SEM Elements"), icon="INFO")
 
 
-def _draw_terrain_box(layout, props, temp):
+def _draw_terrain_box(layout, props):
     box = _create_box_with_header(
         layout,
         props,
@@ -585,133 +585,215 @@ def _draw_terrain_box(layout, props, temp):
     col.prop(props, "smoothTerrainStrength")
 
 
-def _draw_element_box(layout, props, temp):
+def _draw_element_box(layout, props):
     _elem_scm = props.elementMode == "SINGLECOLORMODE_REMESH"
 
-    def _draw_water_category(box, props, _any_water_not_ocean):
-        col = box.column(align=True)
-        row = col.row(align=True)
-        row.prop(
-            props,
-            "col_wBodiesActive",
-            icon="CHECKBOX_HLT" if props.col_wBodiesActive else "CHECKBOX_DEHLT",
-        )
-        if props.col_wBodiesActive:
-            row.prop(props, "col_wArea")
-        row = col.row(align=True)
-        row.prop(
-            props,
-            "col_wMajorActive",
-            icon="CHECKBOX_HLT" if props.col_wMajorActive else "CHECKBOX_DEHLT",
-        )
-        row.prop(
-            props,
-            "col_wMinorActive",
-            icon="CHECKBOX_HLT" if props.col_wMinorActive else "CHECKBOX_DEHLT",
-        )
-        col.prop(props, "col_wStreamWidth")
-        if _any_water_not_ocean:
-            est_km = estimate_map_km(props)
-            if est_km is not None and est_km > const.WATER_MAXSIZE:
-                warn_rows = col.column(align=True)
-                warn_rows.alert = True
-                warn_row = warn_rows.row()
-                warn_row.label(
-                    text=_("~%dkm map exceeds %dkm limit")
-                    % (round(est_km), const.WATER_MAXSIZE),
-                    icon="ERROR",
-                )
-                warn_row2 = warn_rows.row()
-                warn_row2.label(
-                    text=_("Bodies and Waterways will be skipped"),
-                    icon="BLANK1",
-                )
-        row = col.row(align=True)
-
-        row.prop(
-            props,
-            "el_oActive",
-            icon="CHECKBOX_HLT" if props.el_oActive else "CHECKBOX_DEHLT",
-        )
-
-        if props.el_oActive:
-            col.prop(props, "el_oMinIslandArea")
-            col.prop(props, "el_oRdpEpsilon")
-        if _elem_scm:
-            flatten_row = col.row(align=True)
-            flatten_row.prop(
-                props,
-                "col_wFlattenTop",
-                icon="CHECKBOX_HLT" if props.col_wFlattenTop else "CHECKBOX_DEHLT",
-            )
-            if props.col_wFlattenTop:
-                flatten_row.enabled = _elem_scm
-                flatten_row.prop(props, "col_wInsert")
-
-    def _draw_element_category(
-        box,
-        props,
-        active_prop,
-        label,
-        icon,
-        max_size_const,
-        area_prop=None,
-    ):
-        is_active = getattr(props, active_prop)
-        sub = _create_box_with_header(
-            box, props, label, icon=icon, prop_toggle=active_prop
-        )
-
-        if not is_active:
-            return sub
-
-        settings = sub.column(align=True)
-        settings.use_property_split = True
-        settings.use_property_decorate = False
-
-        if area_prop:
-            settings.prop(props, area_prop)
-
-        est_km = estimate_map_km(props)
-        if est_km is not None and est_km > max_size_const:
-            warning = settings.column(align=True)
-            warning.alert = True
-            warning.label(
-                text=_("~%dkm map exceeds %dkm limit")
-                % (round(est_km), max_size_const),
-                icon="ERROR",
-            )
-            warning.label(
-                text=_("This element will be skipped"),
-                icon="BLANK1",
-            )
-
-        return sub
+    def _draw_element_source(box, props):
+        box.label(text=_("Element Source:"))
+        elementSource = box.row(align=True)
+        elementSource.scale_y = 1.2
+        elementSource.prop(props, "elementSource", expand=True, emboss=True)
 
     def _draw_osm_elements(box, props):
-        box.label(text=_("Multi-Color Mode:"))
-        elementMode = box.row(align=True)
-        elementMode.scale_y = 1.2
-        elementMode.prop(props, "elementMode", expand=True, emboss=True)
-        elementSettings = box.row(align=True)
-        if props.elementMode == "SINGLECOLORMODE_REMESH":
-            elementSettings.prop(props, "toleranceElements", text=_("Tolerance"))
-        elementSettings.prop(props, "col_osmSmoothing", text=_("Smoothing"))
+        def _osm_processing_box(box, props):
+            box.label(text=_("Multi-Color Mode:"))
+            elementMode = box.row(align=True)
+            elementMode.scale_y = 1.2
+            elementMode.prop(props, "elementMode", expand=True, emboss=True)
+            elementSettings = box.row(align=True)
+            if props.elementMode == "SINGLECOLORMODE_REMESH":
+                elementSettings.prop(props, "toleranceElements", text=_("Tolerance"))
+            elementSettings.prop(props, "col_osmSmoothing", text=_("Smoothing"))
 
-        _any_water_not_ocean = (
-            props.col_wBodiesActive or props.col_wMinorActive or props.col_wMajorActive
-        )
-        sub = _create_box_with_header(
+        def _draw_water_category(box, props):
+            _any_water_not_ocean = (
+                props.col_wBodiesActive
+                or props.col_wMinorActive
+                or props.col_wMajorActive
+            )
+            sub = _create_box_with_header(
+                box,
+                props,
+                _("Water & Ocean"),
+                icon="MATFLUID",
+                prop_toggle="show_water",
+            )
+            if props.show_water:
+                col = sub.column(align=True)
+                row = col.row(align=True)
+                row.prop(
+                    props,
+                    "col_wBodiesActive",
+                    icon="CHECKBOX_HLT"
+                    if props.col_wBodiesActive
+                    else "CHECKBOX_DEHLT",
+                )
+                if props.col_wBodiesActive:
+                    row.prop(props, "col_wArea")
+                row = col.row(align=True)
+                row.prop(
+                    props,
+                    "col_wMajorActive",
+                    icon="CHECKBOX_HLT" if props.col_wMajorActive else "CHECKBOX_DEHLT",
+                )
+                row.prop(
+                    props,
+                    "col_wMinorActive",
+                    icon="CHECKBOX_HLT" if props.col_wMinorActive else "CHECKBOX_DEHLT",
+                )
+                col.prop(props, "col_wStreamWidth")
+                if _any_water_not_ocean:
+                    est_km = estimate_map_km(props)
+                    if est_km is not None and est_km > const.WATER_MAXSIZE:
+                        warn_rows = col.column(align=True)
+                        warn_rows.alert = True
+                        warn_row = warn_rows.row()
+                        warn_row.label(
+                            text=_("~%dkm map exceeds %dkm limit")
+                            % (round(est_km), const.WATER_MAXSIZE),
+                            icon="ERROR",
+                        )
+                        warn_row2 = warn_rows.row()
+                        warn_row2.label(
+                            text=_("Bodies and Waterways will be skipped"),
+                            icon="BLANK1",
+                        )
+                row = col.row(align=True)
+
+                row.prop(
+                    props,
+                    "el_oActive",
+                    icon="CHECKBOX_HLT" if props.el_oActive else "CHECKBOX_DEHLT",
+                )
+
+                if props.el_oActive:
+                    col.prop(props, "el_oMinIslandArea")
+                    col.prop(props, "el_oRdpEpsilon")
+                if _elem_scm:
+                    flatten_row = col.row(align=True)
+                    flatten_row.prop(
+                        props,
+                        "col_wFlattenTop",
+                        icon="CHECKBOX_HLT"
+                        if props.col_wFlattenTop
+                        else "CHECKBOX_DEHLT",
+                    )
+                    if props.col_wFlattenTop:
+                        flatten_row.enabled = _elem_scm
+                        flatten_row.prop(props, "col_wInsert")
+
+        def _create_element_category(
             box,
             props,
-            _("Water & Ocean"),
-            icon="MATFLUID",
-            prop_toggle="show_water",
-        )
-        if props.show_water:
-            _draw_water_category(sub, props, _any_water_not_ocean)
+            active_prop,
+            label,
+            icon,
+            max_size_const,
+            area_prop=None,
+        ):
+            is_active = getattr(props, active_prop)
+            sub = _create_box_with_header(
+                box, props, label, icon=icon, prop_toggle=active_prop
+            )
+            if not is_active:
+                return sub
+            settings = sub.column(align=True)
+            settings.use_property_split = True
+            settings.use_property_decorate = False
+            if area_prop:
+                settings.prop(props, area_prop)
+            est_km = estimate_map_km(props)
+            if est_km is not None and est_km > max_size_const:
+                warning = settings.column(align=True)
+                warning.alert = True
+                warning.label(
+                    text=_("~%dkm map exceeds %dkm limit")
+                    % (round(est_km), max_size_const),
+                    icon="ERROR",
+                )
+                warning.label(
+                    text=_("This element will be skipped"),
+                    icon="BLANK1",
+                )
+            return sub
+
+        def _draw_3d_element_category(box, props):
+            sub3d = box.box()
+            sub3d.label(text=_("3D Elements"), icon="MESH_CUBE")
+            bsub = _create_element_category(
+                sub3d,
+                props,
+                "el_bActive",
+                _("Buildings"),
+                "OUTLINER_OB_MESH",
+                const.BUILDINGS_MAXSIZE,
+            )
+            if props.el_bActive:
+                if props.elementMode == "SINGLECOLORMODE_REMESH":
+                    bsub.label(
+                        text=_("Not compatible with Single Extruder Mode"),
+                        icon="ERROR",
+                    )
+                bsub.prop(props, "el_bHeightMultiplier")
+                bsub.prop(props, "el_bMinPrintMM")
+
+            sub = sub3d.box()
+            ensure_road_types(props)
+            _any_road = any_road_active(props)
+            row = sub.row(align=True)
+            row.label(text=_("Roads"), icon="AUTO")
+            row.prop(
+                props,
+                "show_roads",
+                text="",
+                icon="CHECKBOX_HLT" if props.show_roads else "CHECKBOX_DEHLT",
+            )
+            if props.show_roads:
+                col = sub.column(align=True)
+                col.template_list(
+                    "TP3D_UL_road_types",
+                    "",
+                    props,
+                    "road_types",
+                    props,
+                    "road_types_index",
+                    rows=5,
+                )
+                if (
+                    props.elementMode == "PAINT"
+                    and _any_road
+                    and props.el_sHeight == 0
+                    and props.tex_include_roads == False
+                ):
+                    row = sub.row()
+                    row.alert = True
+                    row.label(
+                        text=_("Road Height must be > 0 in Paint mode"),
+                        icon="ERROR",
+                    )
+                row = sub.row(align=True)
+                row.prop(props, "el_sMultiplier")
+                row.prop(props, "el_sHeight")
+                if props.elementMode != "PAINT":
+                    row2 = sub.row(align=True)
+                    row2.prop(props, "el_sCutTolerance")
+                    row2.prop(props, "el_sCutDepth")
+            if _any_road:
+                est_km = estimate_map_km(props)
+                if est_km is not None and est_km > const.ROADS_MAXSIZE:
+                    warn_row = sub.row()
+                    warn_row.alert = True
+                    warn_row.label(
+                        text=_("~%dkm map exceeds %dkm — roads will be skipped")
+                        % (round(est_km), const.ROADS_MAXSIZE),
+                        icon="ERROR",
+                    )
+
+        _osm_processing_box(box, props)
+
+        _draw_water_category(box, props)
         # Forests
-        _draw_element_category(
+        _create_element_category(
             box,
             props,
             "col_fActive",
@@ -721,7 +803,7 @@ def _draw_element_box(layout, props, temp):
             area_prop="col_fArea",
         )
         # Scree
-        _draw_element_category(
+        _create_element_category(
             box,
             props,
             "col_scrActive",
@@ -731,7 +813,7 @@ def _draw_element_box(layout, props, temp):
             area_prop="col_scrArea",
         )
         # City Boundaries
-        _draw_element_category(
+        _create_element_category(
             box,
             props,
             "col_cActive",
@@ -741,7 +823,7 @@ def _draw_element_box(layout, props, temp):
             area_prop="col_cArea",
         )
         # Greenspaces
-        _draw_element_category(
+        _create_element_category(
             box,
             props,
             "col_grActive",
@@ -751,7 +833,7 @@ def _draw_element_box(layout, props, temp):
             area_prop="col_grArea",
         )
         # Farmland
-        _draw_element_category(
+        _create_element_category(
             box,
             props,
             "col_faActive",
@@ -761,7 +843,7 @@ def _draw_element_box(layout, props, temp):
             area_prop="col_faArea",
         )
         # Glaciers
-        _draw_element_category(
+        _create_element_category(
             box,
             props,
             "col_glActive",
@@ -770,79 +852,22 @@ def _draw_element_box(layout, props, temp):
             const.GLACIER_MAXSIZE,
             area_prop="col_glArea",
         )
+        # Roads and Buildings
         _draw_3d_element_category(box, props)
 
-    def _draw_3d_element_category(box, props):
-        sub3d = box.box()
-        sub3d.label(text=_("3D Elements"), icon="MESH_CUBE")
-        bsub = _draw_element_category(
-            sub3d,
-            props,
-            "el_bActive",
-            _("Buildings"),
-            "OUTLINER_OB_MESH",
-            const.BUILDINGS_MAXSIZE,
-        )
-        if props.el_bActive:
-            if props.elementMode == "SINGLECOLORMODE_REMESH":
-                bsub.label(
-                    text=_("Not compatible with Single Extruder Mode"),
-                    icon="ERROR",
-                )
-            bsub.prop(props, "el_bHeightMultiplier")
-            bsub.prop(props, "el_bMinPrintMM")
-
-        sub = sub3d.box()
-        ensure_road_types(props)
-        _any_road = any_road_active(props)
-        row = sub.row(align=True)
-        row.label(text=_("Roads"), icon="AUTO")
-        row.prop(
-            props,
-            "show_roads",
-            text="",
-            icon="CHECKBOX_HLT" if props.show_roads else "CHECKBOX_DEHLT",
-        )
-        if props.show_roads:
-            col = sub.column(align=True)
-            col.template_list(
-                "TP3D_UL_road_types",
-                "",
+    def _draw_worldcover_elements(box, props):
+        box.prop(props, "el_wcMinFeatureArea")
+        lc_box = box.box()
+        for prop_name, mat_name, label in _LANDCOVER_COLOR_ROWS:
+            row = lc_box.row(align=True)
+            row.template_icon(icon_value=_material_preview_icon_id(mat_name), scale=1.0)
+            is_active = getattr(props, prop_name)
+            row.prop(
                 props,
-                "road_types",
-                props,
-                "road_types_index",
-                rows=5,
+                prop_name,
+                text=label,
+                icon="CHECKBOX_HLT" if is_active else "CHECKBOX_DEHLT",
             )
-            if (
-                props.elementMode == "PAINT"
-                and _any_road
-                and props.el_sHeight == 0
-                and props.tex_include_roads == False
-            ):
-                row = sub.row()
-                row.alert = True
-                row.label(
-                    text=_("Road Height must be > 0 in Paint mode"),
-                    icon="ERROR",
-                )
-            row = sub.row(align=True)
-            row.prop(props, "el_sMultiplier")
-            row.prop(props, "el_sHeight")
-            if props.elementMode != "PAINT":
-                row2 = sub.row(align=True)
-                row2.prop(props, "el_sCutTolerance")
-                row2.prop(props, "el_sCutDepth")
-        if _any_road:
-            est_km = estimate_map_km(props)
-            if est_km is not None and est_km > const.ROADS_MAXSIZE:
-                warn_row = sub.row()
-                warn_row.alert = True
-                warn_row.label(
-                    text=_("~%dkm map exceeds %dkm — roads will be skipped")
-                    % (round(est_km), const.ROADS_MAXSIZE),
-                    icon="ERROR",
-                )
 
     box = _create_box_with_header(
         layout,
@@ -852,28 +877,13 @@ def _draw_element_box(layout, props, temp):
         prop_toggle="elementChoice",
         help_key="TP3D_PT_help_elements",
     )
-    if props.elementChoice:
-        box.label(text=_("Element Source:"))
-        elementSource = box.row(align=True)
-        elementSource.scale_y = 1.2
-        elementSource.prop(props, "elementSource", expand=True, emboss=True)
-        if props.elementSource == "WORLDCOVER":
-            box.prop(props, "el_wcMinFeatureArea")
-            lc_box = box.box()
-            for prop_name, mat_name, label in _LANDCOVER_COLOR_ROWS:
-                row = lc_box.row(align=True)
-                row.template_icon(
-                    icon_value=_material_preview_icon_id(mat_name), scale=1.0
-                )
-                is_active = getattr(props, prop_name)
-                row.prop(
-                    props,
-                    prop_name,
-                    text=label,
-                    icon="CHECKBOX_HLT" if is_active else "CHECKBOX_DEHLT",
-                )
-        elif props.elementSource == "OSM":
-            _draw_osm_elements(box, props)
+    if not props.elementChoice:
+        return
+    _draw_element_source(box, props)
+    if props.elementSource == "WORLDCOVER":
+        _draw_worldcover_elements(box, props)
+    elif props.elementSource == "OSM":
+        _draw_osm_elements(box, props)
 
 
 def _draw_appearance_box(layout, props):
@@ -932,7 +942,7 @@ class TP3D_PT_generate(bpy.types.Panel):
         _draw_shapely_warnings(layout)
 
         # --- Generate button ---
-        _draw_generate_button(layout, props, temp)
+        _draw_generate_button(layout, props)
 
         # General Settings Collapse Toggle
         row = layout.row(align=True)
@@ -946,26 +956,26 @@ class TP3D_PT_generate(bpy.types.Panel):
         if props.general_settings_expanded:
             # --- Settings ---
             if props.generation_mode == "TERRAIN":
-                _draw_terrain_settings(layout, props, temp)
+                _draw_terrain_settings(layout, props)
             else:
                 # 1. Source
-                _draw_source_box(layout, props, temp)
+                _draw_source_box(layout, props)
 
             # 2. Shape
-            _draw_shape_box(layout, props, temp)
+            _draw_shape_box(layout, props)
 
             # 3. Scale -- after Shape, not before: calculate_scale() needs
             # objSize (Shape's own field) as an input for FACTOR mode
-            _draw_scale_box(layout, props, temp)
+            _draw_scale_box(layout, props)
 
             # 4. Trail -- structural properties of the printed trail line
-            _draw_trail_box(layout, props, temp)
+            _draw_trail_box(layout, props)
 
             # 5. Terrain -- the surrounding ground's height and smoothing.
-            _draw_terrain_box(layout, props, temp)
+            _draw_terrain_box(layout, props)
 
             # 6. Map Elements -- what geographic data gets included.
-            _draw_element_box(layout, props, temp)
+            _draw_element_box(layout, props)
 
             if props.elementChoice and temp.has3mf and props.elementMode == "PAINT":
                 # 7. Appearance -- how included elements render
@@ -987,7 +997,7 @@ def _create_collapsible_section(layout, props, collapse_prop):
     return layout.box() if expanded else None
 
 
-def _draw_export_box(layout, props, temp):
+def _draw_export_box(layout, props):
     box = _create_collapsible_section(layout, props, "show_export")
     if box is None:
         return
@@ -1034,10 +1044,9 @@ def _draw_advanced_generation_box(layout, props):
         row = box.row(align=True)
         row.label(icon="BLANK1")
         row.prop(props, "tex_resolution")
-    
 
 
-def _draw_pin_box(layout, props, temp, context):
+def _draw_pin_box(layout, props, context):
     box = _create_collapsible_section(layout, props, "show_pin")
     if box is None:
         return
@@ -1066,7 +1075,7 @@ def _draw_pin_box(layout, props, temp, context):
         )
 
 
-def _draw_special_box(layout, props, temp):
+def _draw_special_box(layout, props):
     box = _create_collapsible_section(layout, props, "show_special")
     if box is None:
         return
@@ -1099,7 +1108,7 @@ def _draw_special_box(layout, props, temp):
     box.operator("tp3d.append_collection_blank", text=_("Import Blank"), icon="IMPORT")
 
 
-def _draw_post_process_box(layout, props, temp, context):
+def _draw_post_process_box(layout, props, context):
     def _draw_color_mountains_box(layout, props, context):
         sub = layout.box()
         sub.label(text=_("Color Mountains"), icon="RNDCURVE")
@@ -1420,19 +1429,19 @@ class TP3D_PT_advanced(bpy.types.Panel):
         props = context.scene.tp3d
 
         # --- Export ---
-        _draw_export_box(layout, props, temp)
+        _draw_export_box(layout, props)
 
         # --- Advanced Generation Settings
         _draw_advanced_generation_box(layout, props)
 
         # --- PIN ---
-        _draw_pin_box(layout, props, temp, context)
+        _draw_pin_box(layout, props, context)
 
         # --- SPECIAL ---
-        _draw_special_box(layout, props, temp)
+        _draw_special_box(layout, props)
 
         # --- POST PROCESS ---
-        _draw_post_process_box(layout, props, temp, context)
+        _draw_post_process_box(layout, props, context)
 
         # --- PRESET ---
         _draw_preset_box(layout, props, context)
