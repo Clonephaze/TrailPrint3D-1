@@ -678,18 +678,16 @@ class TP3D_PT_generate(bpy.types.Panel):
                     if props.el_oActive:
                         col.prop(props, "el_oMinIslandArea")
                         col.prop(props, "el_oRdpEpsilon")
-                    if _elem_scm:
-                        flatten_row = col.row(align=True)
-                        flatten_row.prop(
-                            props,
-                            "col_wFlattenTop",
-                            icon="CHECKBOX_HLT"
-                            if props.col_wFlattenTop
-                            else "CHECKBOX_DEHLT",
-                        )
-                        if props.col_wFlattenTop:
-                            flatten_row.enabled = _elem_scm
-                            flatten_row.prop(props, "col_wInsert")
+                    flatten_row = col.row(align=True)
+                    flatten_row.prop(
+                        props,
+                        "col_wFlattenTop",
+                        icon="CHECKBOX_HLT"
+                        if props.col_wFlattenTop
+                        else "CHECKBOX_DEHLT",
+                    )
+                    if props.col_wFlattenTop:
+                        flatten_row.prop(props, "col_wInsert")
 
                 _draw_element_category(
                     box,

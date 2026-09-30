@@ -952,7 +952,20 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                         message=f"Single-color: remeshing {key.capitalize()} ({_scm_done + 1}/{_n_scm})…",
                     )
 
-                thicker = single_color_mode_mesh_remesh(elem_obj, obj, map_outline=gen.runtime.mapOutline, shared_bottom_z=_scm_bottom_z)
+                # Water-only "Insert": sink the water piece rigidly (thickness
+                # unchanged) and lower its recess floor by the same amount.
+                # Applied after _scm_bottom_z is computed so the other elements'
+                # shared recess depth is not dragged down with it.
+                _bottom_z = _scm_bottom_z
+                if key == "water":
+                    _wInsert = bpy.context.scene.tp3d.col_wInsert
+                    if _wInsert > 0:
+                        elem_obj.location.z -= _wInsert
+                        # matrix_world is read immediately by the cutter builder
+                        bpy.context.view_layer.update()
+                        _bottom_z = _scm_bottom_z - _wInsert
+
+                thicker = single_color_mode_mesh_remesh(elem_obj, obj, map_outline=gen.runtime.mapOutline, shared_bottom_z=_bottom_z)
                 thicker_by_key[key] = thicker
 
                 if _ov.active:
