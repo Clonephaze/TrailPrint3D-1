@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from bpy.types import Object
+from bpy.types import Mesh, Object
 from shapely.geometry import MultiPolygon, Polygon
 
 
@@ -25,6 +25,10 @@ class RunSettings:
     gpx_chain_path: str
     exportFormat: str
     shape: str
+    shapeExtrasActive: bool
+    textLayout: str
+    textPlacement: bool
+    plateMode: str
     modelname: str
     size: int
     autoExport: bool
@@ -48,9 +52,12 @@ class RunSettings:
     disableCache: bool
     num_subdivisions: int
     plateThickness: float
+    outerBorderSize: int = 20
+    plateBevel: float = 0.0   
     rectangleHeight: int = 100
     ellipseRatio: float = 0.75
     customFilePath: str = ""
+    geojsonFilePath: str = ""
     tolerance: float = 0.2
     shellWallThickness: float = 2.0
     plateInsertValue: float = 0.0
@@ -108,7 +115,7 @@ class FetchState:
 class RuntimeState:
     """Working data populated/mutated by pipeline phases as generation proceeds."""
 
-    mapObject: Object | None = None
+    mapObject: Mesh | None = None
     mapOutline: Polygon | MultiPolygon | None = None
     tbMinLat: float = 0
     tbMaxLat: float = 0

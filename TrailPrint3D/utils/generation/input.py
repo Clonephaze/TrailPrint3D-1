@@ -29,7 +29,6 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
 
     from ...props import (
         any_road_active,  # deferred to avoid circular import at load time
-        get_effective_shape,
     )
 
     start_time = time.time()
@@ -45,7 +44,12 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         gpx_file_path: str = tp3d.file_path
         gpx_chain_path: str = tp3d.chain_path
         exportPath: str = tp3d.export_path
-        shape: str = get_effective_shape(tp3d)
+        shape: str = tp3d.shape
+        shapeExtrasActive: bool = tp3d.shapeExtrasActive
+        textLayout: str = tp3d.textLayout
+        textPlacement: bool = tp3d.textPlacement
+        plateMode: str = tp3d.plateMode
+        name: str = tp3d.trailName
         name: str = tp3d.trailName
         size: int = tp3d.objSize
         autoExport: bool = tp3d.disable_auto_export
@@ -72,12 +76,15 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         num_subdivisions: int = tp3d.num_subdivisions
         textFont: str = tp3d.textFont
         plateThickness: float = tp3d.plateThickness
+        outerBorderSize: int = tp3d.outerBorderSize
+        plateBevel: float = tp3d.plateBevel
         el_Smoothing: float = tp3d.col_osmSmoothing
         el_sActive: bool = any_road_active(tp3d)
         el_sHeight: float = tp3d.el_sHeight
         rectangleHeight: int = tp3d.rectangleHeight
         ellipseRatio: float = tp3d.ellipseRatio
         customFilePath: str = bpy.path.abspath(tp3d.customFilePath)
+        geojsonFilePath: str = bpy.path.abspath(tp3d.geojson_path)
         tolerance: float = tp3d.tolerance
         shellWallThickness: float = tp3d.shellWallThickness
         plateInsertValue: float = tp3d.plateInsertValue
@@ -186,6 +193,10 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
             gpx_chain_path=gpx_chain_path,
             exportFormat=exportFormat,
             shape=shape,
+            shapeExtrasActive=shapeExtrasActive,
+            textLayout=textLayout,
+            textPlacement=textPlacement,
+            plateMode=plateMode,
             modelname=modelname,
             size=size,
             autoExport=autoExport,
@@ -209,9 +220,12 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
             disableCache=disableCache,
             num_subdivisions=num_subdivisions,
             plateThickness=plateThickness,
+            outerBorderSize=outerBorderSize,
+            plateBevel=plateBevel,
             rectangleHeight=rectangleHeight,
             ellipseRatio=ellipseRatio,
             customFilePath=customFilePath,
+            geojsonFilePath=geojsonFilePath,
             tolerance=tolerance,
             shellWallThickness=shellWallThickness,
             plateInsertValue=plateInsertValue,

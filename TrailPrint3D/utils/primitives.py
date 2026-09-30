@@ -512,7 +512,7 @@ def create_heart(size, num_subdivisions=1, name="Heart"):
     return build_mesh_from_polygon(heart_polygon(size), cell_size, name)
 
 
-def create_circle(radius, num_subdivisions=1, name="Circle", num_segments=64):
+def create_circle(radius, num_subdivisions=1, name="Circle", num_segments=192):
     """Creates a circle centered at (0,0,0). num_segments controls boundary
     smoothness independently of num_subdivisions (interior density) -- same
     two-knob split as before, just no more center-fan wedge triangles that

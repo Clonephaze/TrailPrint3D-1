@@ -176,7 +176,7 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
                 # different trail curves can carry different materials (e.g. a
                 # red vs. a yellow trail), so that one must be read from each
                 # object's own material rather than assumed to be constant.
-                _fixed_companion_material = {"TEXT": "WHITE", "PLATE": "BLACK", "SHELL": "BLACK"}
+                _fixed_companion_material = {"TEXT": "WHITE", "PLATE": "BLACK", "SHELL": "BLACK", "BUILDING": "WHITE"}
                 _palette_dirty = False
                 for dup in duplicates:
                     obj_type = dup.get("Object type")
@@ -185,6 +185,9 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
                     elif obj_type == "TRAIL" and not tp3d.tex_include_trail:
                         _own_mat = dup.data.materials[0] if dup.data and dup.data.materials else None
                         _ccol = material_to_srgb(_own_mat or bpy.data.materials.get("TRAIL"))
+                    elif obj_type == "BUILDINGS":
+                        _own_mat = dup.data.materials[0] if dup.data and dup.data.materials else None
+                        _ccol = material_to_srgb(_own_mat or bpy.data.materials.get("BUILDINGS"))
                     else:
                         continue
                     _chex = _srgb_to_hex(*_ccol)
@@ -269,8 +272,9 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
         _on_progress = None
         if is_auto:
             _overlay = _progress.ProgressOverlay.get()
-            def _on_progress(percent: int, message: str) -> None:
+            def _on_progress_cb(percent: int, message: str) -> None:
                 _overlay.update(0.97 + (percent / 100.0) * 0.03, "3MF Export", message)
+            _on_progress = _on_progress_cb
 
         export_kwargs = {
             'filepath': full_path,

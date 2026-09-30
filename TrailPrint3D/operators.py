@@ -1167,7 +1167,7 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
             obj["lastMountianNoiseScale"] = noise_scale
 
         for area in context.screen.areas:
-            if area.type == 'VIEW_3D':
+            if area.type == "VIEW_3D":
                 area.tag_redraw()
         return {"FINISHED"}
 
@@ -1195,6 +1195,7 @@ class TP3D_OT_undo_mountain_texture(bpy.types.Operator):
 
     def execute(self, context):
         from .utils import texture as _tp3d_texture
+
         restored = 0
         for obj in context.selected_objects:
             if obj.type != "MESH":
@@ -1232,16 +1233,6 @@ class TP3D_OT_contour_lines(bpy.types.Operator):
         selected_objects = context.selected_objects
         result = utils.contourLines(selected_objects)
         return result if result else {"FINISHED"}
-
-
-    def execute(self, context):
-
-        selected_objects = bpy.context.selected_objects
-
-        utils.contourLines(selected_objects)
-        # utils.exaggeratedLayers(selected_objects)
-
-        return {"FINISHED"}
 
 
 class TP3D_OT_popup_merge(bpy.types.Operator):
@@ -2209,9 +2200,7 @@ class TP3D_OT_pick_dem_path(bpy.types.Operator):
     directory: StringProperty(subtype="DIR_PATH")  # type: ignore
     files: CollectionProperty(type=bpy.types.OperatorFileListElement)  # type: ignore
     filepath: StringProperty(subtype="FILE_PATH")  # type: ignore
-    filter_glob: StringProperty(
-        default="*.tif;*.tiff", options={"HIDDEN"}
-    )  # type: ignore
+    filter_glob: StringProperty(default="*.tif;*.tiff", options={"HIDDEN"})  # type: ignore
 
     def execute(self, context):
         # filepath can be stale when the user only selects a folder in the file browser.
@@ -2257,7 +2246,7 @@ class TP3D_OT_pick_geojson_shape_file(bpy.types.Operator):
     filter_glob: StringProperty(default="*.geojson;*.json", options={"HIDDEN"})  # type: ignore
 
     def execute(self, context):
-        context.scene.tp3d.customFilePath = self.filepath
+        context.scene.tp3d.geojson_path = self.filepath
         return {"FINISHED"}
 
     def invoke(self, context, event):
@@ -2567,6 +2556,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             return {"PASS_THROUGH"}
 
         from .utils.osm import exclusions
+
         try:
             data = json.loads(rp.read_text(encoding="utf-8"))
             # OSM elements switched off in the picker's prefetch preview --
@@ -2581,7 +2571,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             # forcing 0 used to risk either -- that only happens at exactly
             # minThickness=0.
             self._apply_puzzle_result(context, data)
-        except Exception as exc:  # noqa: BLE001 - Wide exception catch for puzzle result application
+        except Exception as exc:
             import traceback
 
             traceback.print_exc()
@@ -3167,7 +3157,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             except OSError:
                 pass
             self._apply_result(context, data)
-        except Exception as exc:  # noqa: BLE001 - Wide exception catch for map result application
+        except Exception as exc:
             import traceback
 
             traceback.print_exc()
@@ -3249,7 +3239,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
         # OSM elements the user switched off in the picker's prefetch preview
         # -- dropped from every fetched tile for this one generation only.
-        exclusions.set_excluded(data.get('excluded_ids'))
+        exclusions.set_excluded(data.get("excluded_ids"))
         try:
             self._apply_result_body(context, data)
         finally:
@@ -3324,7 +3314,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             )
             try:
                 polygon = io_geojson.read_geojson_files(geojson_paths)
-            except Exception as exc:  # noqa: BLE001 - surfaced to the user, not a bug to narrow
+            except Exception as exc:
                 print(f"Could not parse GeoJSON: {exc}")
                 _progress.WarningsOverlay.add_warning(
                     _("Could not parse GeoJSON, see console for details."), "error"

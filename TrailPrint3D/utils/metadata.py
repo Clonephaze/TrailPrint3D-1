@@ -12,7 +12,6 @@ def writeMetadata(obj, type = "MAP"):
 
     from ..props import (
         any_road_active,  # deferred to avoid circular import at load time
-        get_effective_shape,
         get_road_active,
     )
     from .osm.roads import TIER_TAGS  # deferred to avoid circular import at load time
@@ -41,7 +40,7 @@ def writeMetadata(obj, type = "MAP"):
             if bpy.context.scene.tp3d.mapmode == "GEOJSON":
                 obj["Shape"] = "CUSTOM"
             else:
-                obj["Shape"] = get_effective_shape(bpy.context.scene.tp3d)
+                obj["Shape"] = bpy.context.scene.tp3d.shape
         obj["Resolution"] = bpy.context.scene.tp3d.num_subdivisions
         obj["Elevation Scale"] = bpy.context.scene.tp3d.scaleElevation
         obj["objSize"] = bpy.context.scene.tp3d.objSize
@@ -218,7 +217,7 @@ def writeMetadata(obj, type = "MAP"):
         obj["Object type"] = type
         obj["Addon"] = const.ADDON_NAME
         obj["Version"] = const.ADDON_VERSION
-        obj["Shape"] = get_effective_shape(bpy.context.scene.tp3d)
+        obj["Shape"] = bpy.context.scene.tp3d.shape
         obj["textFont"] = bpy.context.scene.tp3d.textFont
         obj["textSize"] = bpy.context.scene.tp3d.textSize
         obj["text1"] = bpy.context.scene.tp3d.textfield1
@@ -242,7 +241,7 @@ def writeMetadata(obj, type = "MAP"):
         obj["Object type"] = type
         obj["Addon"] = const.ADDON_NAME
         obj["Version"] = const.ADDON_VERSION
-        obj["Shape"] = get_effective_shape(bpy.context.scene.tp3d)
+        obj["Shape"] = bpy.context.scene.tp3d.shape
         obj["textFont"] = bpy.context.scene.tp3d.textFont
         obj["textSize"] = bpy.context.scene.tp3d.textSize
         obj["text1"] = bpy.context.scene.tp3d.textfield1
@@ -266,7 +265,7 @@ def writeMetadata(obj, type = "MAP"):
         obj["Object type"] = type
         obj["Addon"] = const.ADDON_NAME
         obj["Version"] = const.ADDON_VERSION
-        obj["Shape"] = get_effective_shape(bpy.context.scene.tp3d)
+        obj["Shape"] = bpy.context.scene.tp3d.shape
         obj["tolerance"] = bpy.context.scene.tp3d.tolerance
         obj["wallThickness"] = bpy.context.scene.tp3d.shellWallThickness
         obj["xTerrainOffset"] = bpy.context.scene.tp3d.xTerrainOffset

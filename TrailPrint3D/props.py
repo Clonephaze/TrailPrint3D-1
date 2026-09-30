@@ -17,6 +17,13 @@ from bpy.props import (
 
 from . import constants as const
 from . import temp, utils
+from .utils.shape_capabilities import (
+    LAYOUTS_REQUIRING_PLATE,
+    PLATE_MODES_BY_SHAPE,
+    TEXT_LAYOUTS_BY_SHAPE,
+    plate_mode_items,
+    text_layout_items,
+)
 
 
 def _slicer_profile_items(self, context) -> list[tuple[str, str, str]]:
@@ -25,7 +32,7 @@ def _slicer_profile_items(self, context) -> list[tuple[str, str, str]]:
         "Use the built-in Bambu A1 template. "
         "Add your own profiles in Preferences → Add-ons → 3MF Format → Advanced"
     )
-    items = [("NONE", "Built-in defaults", desc)]
+    items = [("NONE", "Built-in default (Bambu A1)", desc)]
 
     import importlib
 
@@ -81,60 +88,14 @@ def generation_mode_update(self, context):
     self.use_multi_generation = self.generation_mode == "MULTI"
 
 
-# Which text/plate/shell extras each base shape supports. "NONE" (plain shape,
-# no overlay) must come first in every list -- see the shapeTextStyle
-# comment for why. HEART has no entry here -- it has no extras to offer.
-_SHELL_ITEM = (
-    "SHELL",
-    _("Shell"),
-    _(
-        "Snug protective shell around the map's sides and bottom, offset by the tolerance gap with a printable wall"
-    ),
-)
+def _get_tex_use_texture(self):
+    # Runs each time the value is read; falls back to temp.has3mf
+    # only if the user hasn't explicitly set it.
+    return self.get("tex_use_texture", bool(temp.has3mf))
 
-SHAPE_TEXT_STYLES = {
-    "HEXAGON": [
-        ("NONE", _("None"), _("Plain hexagonal map, no text overlay")),
-        ("INNER TEXT", _("Text on Map Object"), _("Hexagonal map with inserted text")),
-        (
-            "OUTER TEXT",
-            _("Plate With Text on Top"),
-            _("Hexagonal map with backplate and text"),
-        ),
-        (
-            "FRONT TEXT",
-            _("Plate With Text on Front"),
-            _("Hexagonal map with backplate and text on the front"),
-        ),
-        _SHELL_ITEM,
-    ],
-    "OCTAGON": [
-        ("NONE", _("None"), _("Plain octagon map, no text overlay")),
-        (
-            "OUTER TEXT",
-            _("Plate With Text on Front"),
-            _("Octagon map with backplate and text"),
-        ),
-        _SHELL_ITEM,
-    ],
-    "CIRCLE": [
-        ("NONE", _("None"), _("Plain circular map, no text overlay")),
-        (
-            "OUTER TEXT",
-            _("Plate With Text on Front"),
-            _("Circular map with backplate and curved text"),
-        ),
-        _SHELL_ITEM,
-    ],
-    "SQUARE": [
-        ("NONE", _("None"), _("Plain rectangular map, no extras")),
-        _SHELL_ITEM,
-    ],
-    "ELLIPSE": [
-        ("NONE", _("None"), _("Plain ellipse map, no extras")),
-        _SHELL_ITEM,
-    ],
-}
+
+def _set_tex_use_texture(self, value):
+    self["tex_use_texture"] = value
 
 
 # Road type tiers shown in the Roads UIList. `road_id` is the stable lookup
@@ -194,8 +155,10 @@ ROAD_TYPE_DEFS = [
     (
         "path",
         _("Trails/Paths"),
-        "highway=path -- generic multi-use/hiking trail, ambiguous length so kept in the normal "
-        "dense-road mapsize cutoff rather than being exempted like Tracks.",
+        (
+            "highway=path -- generic multi-use/hiking trail, ambiguous length so kept in the normal "
+            "dense-road mapsize cutoff rather than being exempted like Tracks."
+        ),
     ),
 ]
 
@@ -259,61 +222,54 @@ def any_road_active(tp3d) -> bool:
     return tp3d.show_roads and any(item.active for item in tp3d.road_types)
 
 
-def get_shape_text_style_items(self, context):
-    # Items must be a callback (not a static list) since the available
-    # styles depend on which base shape is currently selected.
-    items = SHAPE_TEXT_STYLES.get(
-        self.shape, [("NONE", _("None"), _("No text overlay available for this shape"))]
-    )
-    if not temp.PREMIUMVERSION:
-        # Shell is Premium-exclusive -- stays visible in the dropdown (so free
-        # users know it exists) but gets a lock icon and a "(Premium)" label.
-        # Blender's Enum dropdown can't disable a single item outright, so
-        # actually picking it is caught by shape_text_style_update below,
-        # which snaps the selection back to NONE.
-        items = [
-            (ident, _("%s (Premium)") % label, desc, "LOCKED", i)
-            if ident == "SHELL"
-            else (ident, label, desc, "NONE", i)
-            for i, (ident, label, desc) in enumerate(items)
-        ]
-    return items
+def shape_update(self, context):
+    """Re-validate the dependent dropdowns against the new shape's matrix.
+
+    Both textLayout and plateMode are dynamic-items EnumProperties whose
+    valid set depends on self.shape. Because Blender stores them as a bare
+    index, we must re-resolve against the cache string (captured by the
+    dedicated update callbacks) rather than re-reading the index, which
+    would silently re-interpret it against the new items list.
+    """
+    valid_layouts = TEXT_LAYOUTS_BY_SHAPE.get(self.shape, ("NONE",))
+    valid_plates = PLATE_MODES_BY_SHAPE.get(self.shape, ("NONE",))
+
+    if self.textLayoutCache in valid_layouts:
+        self.textLayout = self.textLayoutCache
+    else:
+        self.textLayout = "NONE"
+
+    if self.plateModeCache in valid_plates:
+        self.plateMode = self.plateModeCache
+    else:
+        self.plateMode = "NONE"
 
 
-def shape_text_style_update(self, context):
-    if self.shapeTextStyle == "SHELL" and not temp.PREMIUMVERSION:
-        self.shapeTextStyle = "NONE"
+def plate_mode_update(self, context):
+    self.plateModeCache = self.plateMode
+
+    if self.plateMode == "SHELL" and not temp.PREMIUMVERSION:
+        self.plateMode = "NONE"
         utils.show_message_box(
-            _("Shell is a Patreon-exclusive feature."), "INFO", _("Premium Feature")
+            _("Shell is a Patreon-exclusive feature."),
+            "INFO",
+            _("Premium Feature"),
         )
         return
-    # shapeTextStyle is a dynamic-items EnumProperty (see get_shape_text_style_items),
-    # so Blender stores it as a bare index -- the identifier it resolves to depends
-    # on whichever items list is current when read. shape_update (below) needs the
-    # identifier the user actually *picked*, independent of that reinterpretation,
-    # so mirror it into a plain string every time it's set while self.shape hasn't
-    # changed yet (i.e. here, where the items list still matches the selection).
-    self.shapeTextStyleCache = self.shapeTextStyle
+
+    if self.plateMode == "NONE" and self.textLayout in LAYOUTS_REQUIRING_PLATE:
+        # Layout needs a plate to sit on — drop back to no text.
+        self.textLayout = "NONE"
+        self.textLayoutCache = "NONE"
 
 
-def shape_update(self, context):
-    # Switching self.shape changes shapeTextStyle's item list. Because that
-    # property is stored as an index, re-reading self.shapeTextStyle here would
-    # silently reinterpret the old index against the new list (e.g. index 2 means
-    # "Outer text" under Hexagon but "Shell" under Octagon) instead of reflecting
-    # what the user actually had selected. Use the cached identifier string
-    # instead: keep it if the new shape still offers that option, else fall back
-    # to None.
-    valid_styles = {
-        ident for ident, _label, _desc in SHAPE_TEXT_STYLES.get(self.shape, [])
-    }
-    cached = self.shapeTextStyleCache
-    if cached == "SHELL" and not temp.PREMIUMVERSION:
-        self.shapeTextStyle = "NONE"
-    elif cached in valid_styles:
-        self.shapeTextStyle = cached
-    else:
-        self.shapeTextStyle = "NONE"
+def text_layout_update(self, context):
+    self.textLayoutCache = self.textLayout
+
+    if self.textLayout in LAYOUTS_REQUIRING_PLATE and self.plateMode == "NONE":
+        # Auto-upgrade to a solid plate so the layout has something to sit on.
+        self.plateMode = "SOLID_PLATE"
+        self.plateModeCache = "SOLID_PLATE"
 
 
 def element_source_update(self, context):
@@ -326,48 +282,14 @@ def element_source_update(self, context):
         self.elementMode = "PAINT"
 
 
-def get_effective_shape(tp3d) -> str:
-    """The full shape identifier generation.py/metadata.py operate on
-    (e.g. "HEXAGON OUTER TEXT"), composed from the base shape dropdown and
-    the text-style dropdown. Falls back to the bare base shape if no style
-    is selected, or if the stored style isn't valid for the current base
-    shape (e.g. left over from a different shape)."""
-    base = "HEXAGON"
-    if tp3d.shape != "":
-        base = tp3d.shape
-    style = tp3d.shapeTextStyle
-    if style == "SHELL" and not temp.PREMIUMVERSION:
-        # Guards against a SHELL value left over from a Premium session/preset
-        # -- Shell is Premium-exclusive, so free builds always fall back to
-        # the bare base shape instead of acting on a stale selection.
-        return base
-    valid_styles = {ident for ident, _label, _desc in SHAPE_TEXT_STYLES.get(base, [])}
-    if style and style != "NONE" and style in valid_styles:
-        return f"{base} {style}"
-    return base
-
-
-# Effective shapes that add a backplate with an outer border around the map
-# (see the "outersize = size * (1 + outerBorderSize/100)" calc duplicated in
-# HexagonOuterText/HexagonFrontText/OctagonOuterText/MedalText in
-# text_objects.py, and the same set gating plateBevel/handleStyle in
-# panels.py's TP3D_PT_shapes). "... INNER TEXT" has no border, so it's not here.
-PLATE_SHAPES = {
-    "HEXAGON OUTER TEXT",
-    "HEXAGON FRONT TEXT",
-    "OCTAGON OUTER TEXT",
-    "CIRCLE OUTER TEXT",
-}
-
-
-def get_effective_footprint_size(tp3d):
-    """The actual outer footprint size (mm) of the generated model. Shapes
-    with a plate (see PLATE_SHAPES) are larger than objSize by the outer
-    border, so anything scaled to fit the map (e.g. an imported holder) needs
-    this instead of the bare objSize."""
-    if get_effective_shape(tp3d) in PLATE_SHAPES:
-        return tp3d.objSize * (1 + tp3d.outerBorderSize / 100)
-    return tp3d.objSize
+# def get_effective_footprint_size(tp3d):
+#     """The actual outer footprint size (mm) of the generated model. Shapes
+#     with a plate (see PLATE_SHAPES) are larger than objSize by the outer
+#     border, so anything scaled to fit the map (e.g. an imported holder) needs
+#     this instead of the bare objSize."""
+#     if get_effective_shape(tp3d) in PLATE_SHAPES:
+#         return tp3d.objSize * (1 + tp3d.outerBorderSize / 100)
+#     return tp3d.objSize
 
 
 def estimate_map_km(tp3d):
@@ -404,7 +326,7 @@ def update_map_estimate(self, context=None):
     tp3d = getattr(context, "scene", None)
     tp3d = tp3d.tp3d if tp3d else self
 
-    if not tp3d.cachedTrailBoundsValid or tp3d.scalemode == "COORDINATES":
+    if not tp3d.cachedTrailBoundsValid:
         tp3d.estimated_trail_km = 0.0
         tp3d.estimated_map_km = 0.0
         return
@@ -447,6 +369,9 @@ def repair_invalid_shape(scene):
 
 # Define a Property Group to store variables
 class TP3D_PG_properties(bpy.types.PropertyGroup):
+    general_settings_expanded: BoolProperty(
+        default=True, description=_("Expand/Collapse General Settings")
+    )  # type: ignore
     file_path: StringProperty(
         name=_(""),
         description=_("Select a GPX file"),
@@ -481,7 +406,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     cachedTrailMaxLat: FloatProperty(default=0.0, options={"SKIP_SAVE"})  # type: ignore
     cachedTrailMinLon: FloatProperty(default=0.0, options={"SKIP_SAVE"})  # type: ignore
     cachedTrailMaxLon: FloatProperty(default=0.0, options={"SKIP_SAVE"})  # type: ignore
-
+    estimated_trail_km: FloatProperty(name="Estimated Trail Footprint", default=0.0)
+    estimated_map_km: FloatProperty(name="Estimated Map Footprint", default=0.0)
     shape: EnumProperty(
         name="",
         items=[
@@ -497,22 +423,48 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default="HEXAGON",
         update=shape_update,
     )  # type: ignore
-    shapeTextStyle: EnumProperty(
-        name="",
-        description=_(
-            "Add an extra (text/plate overlay or shell) to the selected shape"
-        ),
-        items=get_shape_text_style_items,
-        update=shape_text_style_update,
-        # Dynamic-items EnumProperty can't take an explicit `default=` -- see
-        # get_special_blend_items above for why. "NONE" is first in every
-        # per-shape list in SHAPE_TEXT_STYLES, so it's the default.
+    shapeExtrasActive: BoolProperty(
+        name=_("Shape Extras Active"),
+        description=_("Toggle the visibility of shape extras"),
+        default=False,
     )  # type: ignore
-    shapeTextStyleCache: StringProperty(default="NONE", options={"HIDDEN"})  # type: ignore
+    shapeExtrasExpanded: BoolProperty(
+        name=_("Shape Extras Expanded"),
+        description=_("Toggle the expansion state of shape extras"),
+        default=True,
+    )  # type: ignore
+    plateMode: EnumProperty(
+        name=_("Plate"),
+        description=_("Physical backplate or protective shell under the map"),
+        items=plate_mode_items,
+        update=plate_mode_update,
+    )  # type: ignore
+
+    plateModeCache: StringProperty(default="NONE", options={"HIDDEN"})  # type: ignore
+
+    textLayout: EnumProperty(
+        name=_("Text Layout"),
+        description=_("Where text and icons are placed"),
+        items=text_layout_items,
+        update=text_layout_update,
+    )  # type: ignore
+
+    textLayoutCache: StringProperty(default="NONE", options={"HIDDEN"})  # type: ignore
     customFilePath: bpy.props.StringProperty(
-        name=_("File Path"),
+        name=_(""),
         description=_("Path to the GeoJSON or SVG file"),
         default="",
+    )
+    geojson_path: bpy.props.StringProperty(
+        name=_(""),
+        description=_("Path to the GeoJSON or SVG file"),
+        default="",
+        maxlen=1024,
+    )  # type: ignore
+    textPlacement: BoolProperty(
+        name=_("Inset Text"),
+        description=_("Carve text into the plate surface instead of raising it"),
+        default=False,
     )
 
     api: bpy.props.EnumProperty(
@@ -617,6 +569,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ],
         default="FACTOR",
         update=update_map_estimate,
+        description=_("Choose how the map scale should be determined."),
     )  # type: ignore
     pathScale: FloatProperty(
         name=_("Path Scale (%)"),
@@ -659,12 +612,13 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     objSize: IntProperty(
         name=_("Object Size (mm)"),
         default=100,
-        min=5,
-        soft_max=400,
+        min=1,
+        soft_min=10,
+        soft_max=300,
         max=10000,
         step=20,
         description=_(
-            "Size of the map in mm. Soft max is 400mm, but larger values can still be typed in directly."
+            "Size of the map in mm. Soft max is 300mm, but larger values can still be typed in directly."
         ),
         update=update_map_estimate,
     )  # type: ignore
@@ -769,20 +723,24 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         subtype="FACTOR",
     )  # type: ignore
     rectangleHeight: IntProperty(
-        name=_("Rectangle Height (mm)"),
+        name=_("Height (mm)"),
+        min=1,
+        soft_min=10,
+        soft_max=300,
+        max=10000,
         default=100,
         description=_("Height of the Rectangle in mm"),
     )  # type: ignore
 
     textFont: StringProperty(
-        name=_("Font"),
+        name=_(""),
         description=_("Select a file"),
         default="",
         maxlen=1024,
     )  # type: ignore
-    textSize: IntProperty(name=_("Text Size"), default=5, min=0, max=1000)  # type: ignore
+    textSize: IntProperty(name=_("Font Size"), default=5, min=0, max=1000)  # type: ignore
     textSizeTitle: IntProperty(
-        name=_("Title Text Size"),
+        name=_("Title Font Size"),
         default=0,
         min=0,
         max=1000,
@@ -825,6 +783,20 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
     textfield5: StringProperty(
         name=_("text5"),
+        default="",
+        description=_(
+            "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
+        ),
+    )  # type: ignore
+    textfield6: StringProperty(
+        name=_("text6"),
+        default="",
+        description=_(
+            "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
+        ),
+    )  # type: ignore
+    textfield7: StringProperty(
+        name=_("text7"),
         default="",
         description=_(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
@@ -908,9 +880,32 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ],
         default="no",
     )  # type: ignore
-
+    iconText6: EnumProperty(
+        name=_("Text 6 Icon"),
+        items=[
+            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
+            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
+            ("time", _("Time Icon"), _("Time icon before the Text")),
+            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
+            ("date", _("Date Icon"), _("Date icon before the Text")),
+            ("no", _("No Icon"), _("No icon before the Text")),
+        ],
+        default="no",
+    )  # type: ignore
+    iconText7: EnumProperty(
+        name=_("Text 7 Icon"),
+        items=[
+            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
+            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
+            ("time", _("Time Icon"), _("Time icon before the Text")),
+            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
+            ("date", _("Date Icon"), _("Date icon before the Text")),
+            ("no", _("No Icon"), _("No icon before the Text")),
+        ],
+        default="no",
+    )  # type: ignore
     svg_path: StringProperty(
-        name=_("SVG Path"),
+        name=_(""),
         description=_("Select a .SVG file"),
         default="",
         maxlen=1024,
@@ -1016,29 +1011,26 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
                 "PROPORTIONAL",
                 _("Proportional"),
                 _(
-                    "Terrain height stays true to the model's horizontal scale, exaggerated by Elevation Exaggeration"
+                    "Terrain height stays true to real-world scale, multiplied by Elevation Scale slider below."
                 ),
             ),
             (
                 "FIXED",
                 _("Fixed Height"),
                 _(
-                    "Terrain height is normalized so the highest and lowest points span a fixed target height, independent of horizontal scale"
+                    "Terrain height is scaled so that the highest point is set to a specific height above the lowest point. Lets you set a fixed terrain height in mm."
                 ),
             ),
         ],
         default="PROPORTIONAL",
-        description=_(
-            "How the real-world elevation data is converted into terrain height on the model"
-        ),
     )  # type: ignore
     fixedHeightMM: FloatProperty(
-        name=_("Target Peak-to-Valley Height"),
+        name=_("Target Height (mm)"),
         default=10,
         min=0.1,
         max=1000,
         description=_(
-            "Peak-to-valley terrain height in mm when Elevation Mode is Fixed Height. Elevation Exaggeration still multiplies on top of this"
+            "Set a fixed target height for the terrain, in millimeters. The highest point of the terrain will be scaled to be this high above the lowest point."
         ),
     )  # type: ignore
     smoothTerrainTop: BoolProperty(
@@ -1064,16 +1056,16 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         description=_("Enable this if you don't have a Multicolor printer"),
     )  # type: ignore
     singleColorModeHeight: FloatProperty(
-        name=_("Trail Height"),
+        name=_("Height"),
         default=0.4,
         min=0.0,
         max=10.0,
         description=_(
-            "How far the SCM trail strip rises above the terrain surface (mm). 0 = flush with terrain. Works the same as Road Height."
+            "How far the Single Extruder Mode trail strip rises above the terrain surface (mm). 0 = flush with terrain."
         ),
     )  # type: ignore
     tolerance: FloatProperty(
-        name=_("Trail Tolerance"),
+        name=_("Tolerance"),
         default=0.2,
         description=_(
             "Controls the clearance around the Trail for the Single Extruder Mode"
@@ -1114,15 +1106,18 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
             (
                 "SINGLECOLORMODE_REMESH",
                 _("Single Extruder Mode"),
-                _("Use this if you don't have a multi-color printer. Each element will be made an individually printable object.\nTo mimic old SEPARATE mode, set tolerance to 0 and enable 'Keep Positions' in the export box."),
+                _(
+                    "Use this if you don't have a multi-color printer. Each element will be made an individually printable object.\nTo mimic old SEPARATE mode, set tolerance to 0 and enable 'Keep Positions' in the export box."
+                ),
             ),
         ],
         default="PAINT",
     )
     tex_use_texture: BoolProperty(
         name=_("Create a texture"),
-        default=bool(temp.has3mf),
         description=_("Create a texture instead of painting individual faces."),
+        get=_get_tex_use_texture,
+        set=_set_tex_use_texture,
     )
     tex_include_roads: BoolProperty(  # type: ignore
         name=_("Roads in texture"),
@@ -1163,7 +1158,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )  # type: ignore
     elementChoice: BoolProperty(
-        name=_("Use Elements"),
+        name=_(""),
         default=False,
         description=_("Enable this if you want to generate a map with elements."),
     )  # type: ignore
@@ -1190,7 +1185,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
 
     col_wArea: FloatProperty(
-        name=_("Threshold"),
+        name=_(""),
         default=1,
         description=_("Water bodies smaller than the threshold won't be included"),
     )  # type: ignore
@@ -1242,7 +1237,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         % const.FOREST_MAXSIZE,
     )  # type: ignore
     col_fArea: FloatProperty(
-        name=_("Threshold"),
+        name=_(""),
         default=10,
         description=_("Forests smaller than the threshold won't be included"),
         min=0,
@@ -1254,7 +1249,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         % const.SCREE_MAXSIZE,
     )  # type: ignore
     col_scrArea: FloatProperty(
-        name=_("Threshold"),
+        name=_(""),
         default=1,
         description=_("Scree patches smaller than the threshold won't be included"),
         min=0,
@@ -1265,7 +1260,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         description=_("Skipped automatically above %skm map size") % const.CITY_MAXSIZE,
     )  # type: ignore
     col_cArea: FloatProperty(
-        name=_("Threshold"),
+        name=_(""),
         default=1,
         description=_("Cities smaller than the threshold won't be included"),
         min=0,
@@ -1279,7 +1274,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         % const.GREENSPACE_MAXSIZE,
     )  # type: ignore
     col_grArea: FloatProperty(
-        name=_("Threshold"),
+        name=_(""),
         default=1,
         description=_("Greenspaces smaller than the threshold won't be included"),
         min=0,
@@ -1293,7 +1288,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         % const.FARMLAND_MAXSIZE,
     )  # type: ignore
     col_faArea: FloatProperty(
-        name=_("Threshold"),
+        name=_(""),
         default=1,
         description=_("Farmland patches smaller than the threshold won't be included"),
         min=0,
@@ -1305,7 +1300,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         % const.GLACIER_MAXSIZE,
     )  # type: ignore
     col_glArea: FloatProperty(
-        name=_("Threshold"),
+        name=_(""),
         default=1,
         description=_("Glaciers smaller than the threshold won't be included"),
         min=0,
@@ -1559,7 +1554,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )
     slicer_profile_name: EnumProperty(  # type: ignore
-        name=_("Slicer Profile"),
+        name=_(""),
         items=_slicer_profile_items,
         description=_(
             "Printer/filament profile embedded in the 3MF export. Add profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced"

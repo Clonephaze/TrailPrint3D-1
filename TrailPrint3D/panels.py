@@ -13,49 +13,17 @@ from bpy.app.translations import (  # type: ignore
 
 from . import addon_preferences, temp, updater
 from . import constants as const
+from .constants import _LANDCOVER_COLOR_ROWS
 from .props import (
-    SHAPE_TEXT_STYLES,
     any_road_active,
     ensure_road_types,
     estimate_map_km,
-    get_effective_shape,
 )
 from .utils import get_effective_cl_values, get_map_z_extent
+from .utils.text_layouts import _PROP_TO_ICON, fields_for_layout
 from .utils.texture import has_height_bake_undo
 
-# ESA WorldCover coloring panel rows: (tp3d BoolProperty, material name,
-# display label). Mirrors satellite.py's _LANDCOVER_TOGGLE_PROP -- kept as a
-# separate list (rather than iterating that dict) so display order/labels
-# are a UI concern, not tied to the addon's internal material-mapping order.
-# Ordered to match the OSM element sections below (Water & Ocean / Forests /
-# Scree / City Boundaries / Greenspaces / Farmland / Glaciers), with Scree's
-# MOUNTAIN material taking its place in that order.
-_LANDCOVER_COLOR_ROWS = (
-    ("col_lcWaterActive", "WATER", _("Water")),
-    ("col_lcForestActive", "FOREST", _("Forest")),
-    ("col_lcMountainActive", "MOUNTAIN", _("Mountain")),
-    ("col_lcCityActive", "CITY", _("City")),
-    ("col_lcGreenspaceActive", "GREENSPACE", _("Greenspace")),
-    ("col_lcFarmlandActive", "FARMLAND", _("Farmland")),
-    ("col_lcGlacierActive", "GLACIER", _("Glacier")),
-)
-
-
-def _material_preview_icon_id(mat_name):
-    """Icon id for a small render-preview swatch of material mat_name's
-    actual color, for use as `icon_value` in an icon/template_icon call --
-    read-only, unlike binding a row directly to the material's editable
-    diffuse_color, which wouldn't even reflect the node-based Base Color
-    these materials are actually defined by (see primitives.py)."""
-    mat = bpy.data.materials.get(mat_name)
-    if mat is None:
-        return 0
-    mat.preview_ensure()
-    return mat.preview.icon_id if mat.preview else 0
-
-
-def construct_popover(layout, panel, text="", icon="QUESTION", direction="HORIZONTAL"):
-    layout.popover(panel=panel, text=text, icon=icon, direction=direction)
+_preview_icon_cache = {}  # mat_name -> icon_id
 
 
 class TP3D_UL_road_types(bpy.types.UIList):
@@ -76,6 +44,23 @@ class TP3D_UL_road_types(bpy.types.UIList):
         )
 
 
+def _material_preview_icon_id(mat_name):
+    mat = bpy.data.materials.get(mat_name)
+    if mat is None:
+        return 0
+    cached = _preview_icon_cache.get(mat_name)
+    if cached is not None and mat.preview and mat.preview.icon_id == cached:
+        return cached
+    mat.preview_ensure()
+    icon_id = mat.preview.icon_id if mat.preview else 0
+    _preview_icon_cache[mat_name] = icon_id
+    return icon_id
+
+
+def construct_popover(layout, panel, text="", icon="QUESTION", direction="HORIZONTAL"):
+    layout.popover(panel=panel, text=text, icon=icon, direction=direction)
+
+
 def draw_wrapped_label(layout, context, text, icon="NONE"):
     """Draw *text* as several layout.label() lines, wrapped to the current
     sidebar width instead of being cut off. ~6.5px/character is a rough
@@ -90,35 +75,837 @@ def draw_wrapped_label(layout, context, text, icon="NONE"):
         layout.label(text=line, icon=icon if i == 0 else "NONE")
 
 
-def _draw_element_category(
-    box, props, active_prop, label, icon, max_size_const, area_prop=None
+def _create_box_with_header(
+    parent: bpy.types.UILayout,
+    props: bpy.types.PropertyGroup,
+    text: str,
+    icon: str = "NONE",
+    prop_expanded: str | None = None,
+    prop_toggle: str | None = None,
+    help_key: str | None = None,
 ):
-    """One land-cover/element category row: checkbox (+ optional area-
-    simplification threshold), plus a live size warning when the cached
-    trail estimate exceeds this category's real cutoff from constants.py"""
-    sub = box.box()
-    is_active = getattr(props, active_prop)
-    row = sub.row(align=True)
-    row.label(text=label, icon=icon)
-    row.prop(
+    box = parent.box()
+    row = box.row(align=True)
+    if prop_expanded:
+        row.prop(
+            props,
+            prop_expanded,
+            text="",
+            emboss=False,
+            icon="TRIA_DOWN" if getattr(props, prop_expanded) else "TRIA_RIGHT",
+        )
+    row.label(text=text, icon=icon)
+    if prop_toggle:
+        row.prop(
+            props,
+            prop_toggle,
+            text="",
+            icon="CHECKBOX_HLT" if getattr(props, prop_toggle) else "CHECKBOX_DEHLT",
+        )
+    if help_key:
+        construct_popover(row, help_key)
+    return box
+
+
+def _draw_header_and_update_banner(layout, props):
+    # --- Update banner ---
+    if temp.PREMIUMVERSION:
+        latest_version = updater.premium_latest_version
+        update_available = updater.premium_status == "update_available"
+    else:
+        latest_version = updater.latest_version
+        update_available = updater.status == "update_available"
+
+    latest_str = ".".join(str(x) for x in latest_version) if update_available else ""
+    if (
+        update_available
+        and addon_preferences.get_prefs().dismissed_update_version != latest_str
+    ):
+        box = layout.box()
+        header = box.row()
+        header.label(text=_("Update available: v%s") % latest_str, icon="FUND")
+        header.operator(
+            "tp3d.dismiss_update", text="", icon="X", emboss=False
+        ).version = latest_str
+        col = box.column(align=True)
+        col.scale_y = 1.3
+        if temp.PREMIUMVERSION:
+            col.operator(
+                "tp3d.open_premium_update",
+                text=_("Get Update on Patreon"),
+                icon="URL",
+            )
+        else:
+            col.operator(
+                "tp3d.install_update", text=_("Download & Install"), icon="IMPORT"
+            )
+
+    # --- Header ---
+    row = layout.row(align=True)
+    if not temp.PREMIUMVERSION:
+        row.operator("tp3d.open_website", text=_("Patreon"), icon="FUND")
+    row.operator("tp3d.join_discord", text=_("Discord"), icon="URL")
+    version_str = ".".join(str(x) for x in const.ADDON_VERSION)
+    if temp.PREMIUMVERSION:
+        layout.label(
+            text=_("Created by: EmGi  |  Premium v") + version_str, icon="INFO"
+        )
+    else:
+        layout.label(text=_("Created by: EmGi  |  v") + version_str, icon="INFO")
+    layout.separator()
+
+
+_TERRAIN_GENERATORS = {
+    "FROMCENTER": (
+        "tp3d.from_center_generation",
+        _("Generate (Center + Radius)"),
+        "DISC",
+    ),
+    "FROMPLANE": ("tp3d.terrain", _("Generate from Blank"), "OBJECT_DATA"),
+    "2POINTS": ("tp3d.2point_generation", _("Generate (2 Corner Points)"), "DISC"),
+    "GEOJSON": ("tp3d.geojson_generation", _("Generate (GeoJSON Boundary)"), "DISC"),
+}
+
+
+def _draw_generate_button(layout, props, temp):
+    def _draw_multi_generate(col, temp):
+        if temp.PREMIUMVERSION:
+            col.operator("tp3d.chain_generation", icon="OUTLINER_DATA_CURVES")
+        else:
+            col.operator(
+                "tp3d.terrain_dummy", text=_("Multi Generation"), icon="LOCKED"
+            )
+
+    def _draw_terrain_generate(col, props, temp):
+        premium = temp.PREMIUMVERSION and props.sScaleHor is not None
+        entry = _TERRAIN_GENERATORS.get(props.mapmode) if premium else None
+
+        if entry:
+            op_id, label, icon = entry
+            col.operator(op_id, text=label, icon=icon)
+        else:
+            col.operator(
+                "tp3d.terrain_dummy", text=_("Generate Terrain"), icon="LOCKED"
+            )
+
+    col = layout.column()
+    col.scale_y = 1.4
+
+    mode = props.generation_mode
+    if mode == "GENERATION":
+        col.operator("tp3d.run_generation", icon="DISC")
+    elif mode == "MULTI":
+        _draw_multi_generate(col, temp)
+    else:
+        _draw_terrain_generate(col, props, temp)
+
+
+def _draw_shapely_warnings(layout):
+    from .utils import geometry2d as _g2d
+
+    if not _g2d._HAS_SHAPELY:
+        row = layout.row()
+        row.alert = True
+        row.operator(
+            "tp3d.shapely_status", text=_("Shapely failed to load"), icon="ERROR"
+        )
+
+    # --- Linux + Python 3.14 mismatch warning ---
+    # (repackaged Blender builds like Flatpak, not blender.org's own)
+    if const.LINUX_PYTHON314_MISMATCH:
+        row = layout.row()
+        row.alert = True
+        row.operator(
+            "tp3d.python_mismatch_status",
+            text=_("Unsupported Blender build detected"),
+            icon="ERROR",
+        )
+
+
+def _draw_terrain_settings(layout, props, temp):
+    box = layout.box()
+    box.label(text=_("Custom Map Generation"), icon="MOD_BUILD")
+    col = box.column(align=True)
+    col.label(text=_("Export Path:"))
+    row = col.row(align=True)
+    row.label(icon="BLANK1")
+    row.prop(props, "export_path", placeholder=_("Select export path"))
+    col.label(text=_("Trail Name:"))
+    row = col.row(align=True)
+    row.label(icon="BLANK1")
+    row.prop(props, "trailName", placeholder=_("Enter trail name"))
+    if props.sScaleHor is not None and temp.PREMIUMVERSION:
+        box.prop(props, "mapmode", text=_("Mode"))
+        boxer = box.box()
+        if props.mapmode == "FROMPLANE":
+            boxer.operator(
+                "tp3d.create_blank",
+                text=_("Create Blank"),
+                icon="SNAP_FACE",
+            )
+            boxer.operator(
+                "tp3d.extend_tile",
+                text=_("Extend Selected Tile"),
+                icon="SELECT_EXTEND",
+            )
+            boxer.prop(props, "tileSpacing")
+            boxer.prop(props, "indipendendTiles")
+        elif props.mapmode == "FROMCENTER":
+            row = boxer.row(align=True)
+            row.prop(props, "jMapLat")
+            row.prop(props, "jMapLon")
+            boxer.prop(props, "jMapRadius")
+        elif props.mapmode == "2POINTS":
+            row = boxer.row(align=True)
+            row.prop(props, "jMapLat1")
+            row.prop(props, "jMapLon1")
+            row = boxer.row(align=True)
+            row.prop(props, "jMapLat2")
+            row.prop(props, "jMapLon2")
+        elif props.mapmode == "GEOJSON":
+            boxer.operator(
+                "tp3d.pick_geojson_file",
+                text=_("Import GeoJSON…"),
+                icon="IMPORT",
+            )
+            if props.geojsonFilePath:
+                for _path in props.geojsonFilePath.split("|"):
+                    boxer.label(
+                        text=_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
+                        icon="FILE",
+                    )
+                boxer.label(
+                    text=f"{props.geojsonPointCount} {_('points')}  —  ~{props.geojsonAreaKm:.0f} km"
+                )
+            boxer.prop(props, "geojsonSimplifyTolerance")
+        box.separator(factor=0.5)
+        col = box.column(align=True)
+        col.operator(
+            "tp3d.merge_with_map",
+            text=_("Merge with Map"),
+            icon="AUTOMERGE_OFF",
+        )
+        col.operator(
+            "tp3d.generate_just_trail",
+            text=_("Generate Just Trail"),
+            icon="DECORATE_DRIVER",
+        )
+    else:
+        col = box.column(align=True)
+        col.operator(
+            "tp3d.terrain_dummy",
+            text=_("Create Map from selected"),
+            icon="LOCKED",
+        )
+        col.operator("tp3d.terrain_dummy", text=_("Merge with Map"), icon="LOCKED")
+        col.operator("tp3d.terrain_dummy", text=_("Create Blank"), icon="LOCKED")
+    col.separator(factor=1.0)
+    if temp.PREMIUMVERSION:
+        # pass
+        col.operator("tp3d.map_picker", text=_("Multi Tile Generator"), icon="WORLD")
+    else:
+        col.operator(
+            "tp3d.terrain_dummy",
+            text=_("Multi Tile Generator"),
+            icon="WORLD",
+        )
+    col.operator("tp3d.map_generator", text=_("Map Generator"), icon="MESH_CIRCLE")
+
+
+def _draw_source_box(layout, props, temp):
+    box = _create_box_with_header(
+        layout,
+        props,
+        _("1. Source"),
+        icon="FILE_FOLDER",
+        help_key="TP3D_PT_help_source",
+    )
+    col = box.column(align=True)
+    if props.generation_mode == "GENERATION":
+        col.label(text=_("GPX File Selection:"))
+        row = col.row(align=True)
+        row.label(icon="BLANK1")
+        row.prop(props, "file_path", placeholder=_("Select GPX file"))
+        row.operator("tp3d.pick_gpx_file", text="", icon="FILEBROWSER")
+        if props.cachedTrailBoundsValid:
+            col.label(
+                text=_("Estimated Trail Size: %.1f km") % props.estimated_trail_km
+            )
+    elif temp.PREMIUMVERSION:
+        col.label(text=_("GPX Folder Selection:"))
+        row = col.row(align=True)
+        row.label(icon="BLANK1")
+        row.prop(props, "chain_path", placeholder=_("Select GPX folder"))
+    else:
+        col.label(text=_("Exclusive for Patreon Supporters"), icon="FUND")
+        col.label(text=_("- Chain together multiple Trails"))
+    col.label(text=_("Export Path:"))
+    row = col.row(align=True)
+    row.label(icon="BLANK1")
+    row.prop(props, "export_path", placeholder=_("Select export path"))
+    col.label(text=_("Trail Name:"))
+    row = col.row(align=True)
+    row.label(icon="BLANK1")
+    row.prop(props, "trailName", placeholder=_("Enter trail name"))
+
+
+def _draw_shape_box(layout, props, temp):
+    box = _create_box_with_header(
+        layout,
+        props,
+        _("2. Shape"),
+        icon="MESH_DATA",
+        help_key="TP3D_PT_help_shape",
+    )
+    col = box.column(align=True)
+    col.label(text=_("Shape:"))
+    row = col.row(align=True)
+    row.label(icon="BLANK1")
+    row.prop(props, "shape")
+
+    col = box.column(align=True)
+    if props.shape == "SQUARE":
+        col.prop(props, "objSize", text=_("Width (mm)"))
+        col.prop(props, "rectangleHeight")
+    elif props.shape == "ELLIPSE":
+        col.prop(props, "objSize")
+        col.prop(props, "ellipseRatio", text=_("Ellipse Height Ratio"))
+    elif props.shape in {"GEOJSON", "SVG"}:
+        row = col.row(align=True)
+        row.prop(
+            props,
+            "customFilePath" if props.shape == "SVG" else "geojson_path",
+            placeholder=_("Choose a file"),
+        )
+        row.operator(
+            "tp3d.pick_svg_shape_file"
+            if props.shape == "SVG"
+            else "tp3d.pick_geojson_shape_file",
+            text="",
+            icon="FILEBROWSER",
+        )
+        col.separator(factor=0.5)
+        col.prop(props, "objSize")
+    else:
+        col.prop(props, "objSize")
+    col.prop(props, "num_subdivisions", slider=True)
+
+    # --- Shape Extras: plate/shell + text layout ----------------------
+    _draw_shape_extras(box, props, temp)
+
+
+def _draw_shape_extras(box, props, temp):
+    from .utils.shape_capabilities import PLATE_MODES_BY_SHAPE, TEXT_LAYOUTS_BY_SHAPE
+
+    se_active = props.shapeExtrasActive
+    se_expanded = props.shapeExtrasExpanded
+    valid_plates = PLATE_MODES_BY_SHAPE.get(props.shape, ("NONE",))
+    valid_layouts = TEXT_LAYOUTS_BY_SHAPE.get(props.shape, ("NONE",))
+    has_plate_option = len(valid_plates) > 1
+    has_text_option = len(valid_layouts) > 1
+    if not (has_plate_option or has_text_option):
+        return
+
+    def _draw_plate_group(extras, props):
+        box = _create_box_with_header(
+            extras, props, _("Plate / Shell"), icon="MOD_SOLIDIFY"
+        )
+        box.row(align=True).prop(props, "plateMode", expand=True)
+
+        body = box.column(align=True)
+        if props.plateMode == "SOLID_PLATE":
+            body.prop(props, "plateThickness")
+            body.prop(props, "outerBorderSize")
+            body.prop(props, "plateBevel")
+            body.prop(props, "plateInsertValue")
+        elif props.plateMode == "SHELL":
+            body.prop(props, "plateThickness")
+            body.prop(props, "shellWallThickness")
+            body.prop(props, "plateBevel")
+
+    def _draw_text_group(extras, props, temp):
+        box = _create_box_with_header(extras, props, _("Text Layout"), icon="FONT_DATA")
+
+        valid_layouts = TEXT_LAYOUTS_BY_SHAPE.get(props.shape, ("NONE",))
+
+        if len(valid_layouts) == 4:
+            holder = box.grid_flow(
+                row_major=True, columns=2, even_columns=True, align=True
+            )
+        else:
+            holder = box.row(align=True)
+
+        for layout_id in valid_layouts:
+            holder.prop_enum(props, "textLayout", layout_id)
+
+        if props.textLayout in {"OUTER_EDGE", "CURVED"}:
+            box.prop(props, "textPlacement")
+
+        if props.textLayout == "NONE":
+            return
+
+        row = box.row(align=True)
+        row.prop(props, "textFont", placeholder=_("Select a font"))
+        row.operator("tp3d.pick_font_file", text="", icon="FILEBROWSER")
+
+        row = box.row(align=True)
+        row.prop(props, "textSizeTitle")
+        row.prop(props, "textSize")
+
+        premium = temp.PREMIUMVERSION
+        row = box.row(align=True)
+        row.label(text=_("Text Fields (Counter-Clockwise)"))
+        row.label(text="", icon="RECOVER_LAST")
+        col = box.column(align=True)
+        for text_prop in fields_for_layout(props.textLayout, props.shape):
+            split = col.split(factor=0.4, align=True)
+            if premium:
+                split.prop(props, _PROP_TO_ICON[text_prop], text="")
+            else:
+                split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
+            split.prop(props, text_prop, text="")
+
+        if props.textLayout in {"OUTER_EDGE", "FRONT_FACE", "CURVED"}:
+            box.prop(props, "shapeRotation")
+
+    def _draw_handle_group(extras, props, temp):
+        box = _create_box_with_header(
+            extras, props, _("Medal Handle"), icon="MOD_CURVE"
+        )
+        row = box.row(align=True)
+        if temp.PREMIUMVERSION:
+            row.prop(props, "handleStyle", expand=True)
+        else:
+            row.prop_enum(props, "handleStyle", "NONE")
+            row.operator("tp3d.terrain_dummy", text=_("Round"), icon="LOCKED")
+            row.operator("tp3d.terrain_dummy", text=_("Flat"), icon="LOCKED")
+
+    extras = _create_box_with_header(
+        box,
+        props,
+        _("Shape Extras"),
+        icon="OUTLINER_OB_FONT",
+        prop_expanded="shapeExtrasExpanded" if se_active else None,
+        prop_toggle="shapeExtrasActive",
+        help_key="TP3D_PT_help_shape_extras",
+    )
+    if se_active and se_expanded:
+        if has_plate_option:
+            _draw_plate_group(extras, props)
+        if has_text_option:
+            _draw_text_group(extras, props, temp)
+        if props.plateMode != "NONE":
+            _draw_handle_group(extras, props, temp)
+
+
+def _draw_scale_box(layout, props, temp):
+    box = _create_box_with_header(
+        layout,
+        props,
+        _("3. Scale"),
+        icon="DRIVER_DISTANCE",
+        help_key="TP3D_PT_help_scale",
+    )
+    col = box.column()
+    col.label(text=_("Scale Mode:"))
+    row = col.row(align=True)
+    row.scale_y = 1.2
+    row.prop(props, "scalemode", expand=True, emboss=True)
+    col = box.column(align=True)
+    if props.scalemode == "FACTOR":
+        col.prop(props, "pathScale")
+    elif props.scalemode == "COORDINATES":
+        row = col.row(align=True)
+        row.prop(props, "scaleLat1")
+        row.prop(props, "scaleLon1")
+        row = col.row(align=True)
+        row.prop(props, "scaleLat2")
+        row.prop(props, "scaleLon2")
+    if props.cachedTrailBoundsValid and props.scalemode != "COORDINATES":
+        col.label(text=_("Estimated Map Size: %.1f km") % props.estimated_map_km)
+
+
+def _draw_trail_box(layout, props, temp):
+    box = _create_box_with_header(
+        layout,
+        props,
+        _("4. Trail"),
+        icon="IPO_LINEAR",
+        help_key="TP3D_PT_help_trail",
+    )
+
+    col = box.column(align=True)
+    col.prop(props, "pathThickness")
+    _elem_scm = props.elementMode == "SINGLECOLORMODE_REMESH"
+    scm_row = col.row(align=True)
+    scm_row.enabled = not _elem_scm
+    scm_row.prop(
+        props,
+        "singleColorMode",
+        icon="CHECKBOX_DEHLT"
+        if not props.singleColorMode and not _elem_scm
+        else "CHECKBOX_HLT",
+    )
+    # if props.singleColorMode or _elem_scm:
+    scm_settings = col.row(align=True)
+    scm_settings.enabled = props.singleColorMode or _elem_scm
+    scm_settings.prop(props, "singleColorModeHeight")
+    scm_settings.prop(props, "tolerance")
+
+    if _elem_scm:
+        col.label(text=_("Auto-enabled with SEM Elements"), icon="INFO")
+
+
+def _draw_terrain_box(layout, props, temp):
+    box = _create_box_with_header(
+        layout,
+        props,
+        _("5. Terrain"),
+        icon="RNDCURVE",
+        help_key="TP3D_PT_help_terrain",
+    )
+    row = box.row(align=True)
+    row.scale_y = 1.2
+    row.prop(props, "elevationMode", expand=True, emboss=True)
+    col = box.column(align=True)
+    col.prop(
+        props,
+        "scaleElevation" if props.elevationMode == "PROPORTIONAL" else "fixedHeightMM",
+    )
+    col.prop(props, "minThickness")
+    col.prop(props, "shapeRotation")
+    row = col.row(align=True)
+    row.prop(props, "xTerrainOffset", text=_("X-Offset"))
+    row.prop(props, "yTerrainOffset", text=_("Y-Offset"))
+    smoothRow = col.row(align=True)
+    smoothRow.prop(
+        props,
+        "smoothTerrainTop",
+        icon="CHECKBOX_DEHLT" if not props.smoothTerrainTop else "CHECKBOX_HLT",
+    )
+    col = smoothRow.column(align=True)
+    col.enabled = props.smoothTerrainTop
+    col.prop(props, "smoothTerrainStrength")
+
+
+def _draw_element_box(layout, props, temp):
+    _elem_scm = props.elementMode == "SINGLECOLORMODE_REMESH"
+
+    def _draw_water_category(box, props, _any_water_not_ocean):
+        col = box.column(align=True)
+        row = col.row(align=True)
+        row.prop(
+            props,
+            "col_wBodiesActive",
+            icon="CHECKBOX_HLT" if props.col_wBodiesActive else "CHECKBOX_DEHLT",
+        )
+        if props.col_wBodiesActive:
+            row.prop(props, "col_wArea")
+        row = col.row(align=True)
+        row.prop(
+            props,
+            "col_wMajorActive",
+            icon="CHECKBOX_HLT" if props.col_wMajorActive else "CHECKBOX_DEHLT",
+        )
+        row.prop(
+            props,
+            "col_wMinorActive",
+            icon="CHECKBOX_HLT" if props.col_wMinorActive else "CHECKBOX_DEHLT",
+        )
+        col.prop(props, "col_wStreamWidth")
+        if _any_water_not_ocean:
+            est_km = estimate_map_km(props)
+            if est_km is not None and est_km > const.WATER_MAXSIZE:
+                warn_rows = col.column(align=True)
+                warn_rows.alert = True
+                warn_row = warn_rows.row()
+                warn_row.label(
+                    text=_("~%dkm map exceeds %dkm limit")
+                    % (round(est_km), const.WATER_MAXSIZE),
+                    icon="ERROR",
+                )
+                warn_row2 = warn_rows.row()
+                warn_row2.label(
+                    text=_("Bodies and Waterways will be skipped"),
+                    icon="BLANK1",
+                )
+        row = col.row(align=True)
+
+        row.prop(
+            props,
+            "el_oActive",
+            icon="CHECKBOX_HLT" if props.el_oActive else "CHECKBOX_DEHLT",
+        )
+
+        if props.el_oActive:
+            col.prop(props, "el_oMinIslandArea")
+            col.prop(props, "el_oRdpEpsilon")
+        if _elem_scm:
+            flatten_row = col.row(align=True)
+            flatten_row.prop(
+                props,
+                "col_wFlattenTop",
+                icon="CHECKBOX_HLT" if props.col_wFlattenTop else "CHECKBOX_DEHLT",
+            )
+            if props.col_wFlattenTop:
+                flatten_row.enabled = _elem_scm
+                flatten_row.prop(props, "col_wInsert")
+
+    def _draw_element_category(
+        box,
         props,
         active_prop,
-        text="",
-        icon="CHECKBOX_HLT" if is_active else "CHECKBOX_DEHLT",
-    )
-    if area_prop and is_active:
-        sub.prop(props, area_prop)
-    if is_active:
+        label,
+        icon,
+        max_size_const,
+        area_prop=None,
+    ):
+        is_active = getattr(props, active_prop)
+        sub = _create_box_with_header(
+            box, props, label, icon=icon, prop_toggle=active_prop
+        )
+
+        if not is_active:
+            return sub
+
+        settings = sub.column(align=True)
+        settings.use_property_split = True
+        settings.use_property_decorate = False
+
+        if area_prop:
+            settings.prop(props, area_prop)
+
         est_km = estimate_map_km(props)
         if est_km is not None and est_km > max_size_const:
-            warn_row = sub.row()
-            warn_row.alert = True
-            warn_row.label(
-                text=_("~%dkm map exceeds %dkm limit — will be skipped")
+            warning = settings.column(align=True)
+            warning.alert = True
+            warning.label(
+                text=_("~%dkm map exceeds %dkm limit")
                 % (round(est_km), max_size_const),
                 icon="ERROR",
             )
-    return sub
+            warning.label(
+                text=_("This element will be skipped"),
+                icon="BLANK1",
+            )
+
+        return sub
+
+    def _draw_osm_elements(box, props):
+        box.label(text=_("Multi-Color Mode:"))
+        elementMode = box.row(align=True)
+        elementMode.scale_y = 1.2
+        elementMode.prop(props, "elementMode", expand=True, emboss=True)
+        elementSettings = box.row(align=True)
+        if props.elementMode == "SINGLECOLORMODE_REMESH":
+            elementSettings.prop(props, "toleranceElements", text=_("Tolerance"))
+        elementSettings.prop(props, "col_osmSmoothing", text=_("Smoothing"))
+
+        _any_water_not_ocean = (
+            props.col_wBodiesActive or props.col_wMinorActive or props.col_wMajorActive
+        )
+        sub = _create_box_with_header(
+            box,
+            props,
+            _("Water & Ocean"),
+            icon="MATFLUID",
+            prop_toggle="show_water",
+        )
+        if props.show_water:
+            _draw_water_category(sub, props, _any_water_not_ocean)
+        # Forests
+        _draw_element_category(
+            box,
+            props,
+            "col_fActive",
+            _("Forests"),
+            "FORCE_WIND",
+            const.FOREST_MAXSIZE,
+            area_prop="col_fArea",
+        )
+        # Scree
+        _draw_element_category(
+            box,
+            props,
+            "col_scrActive",
+            _("Scree"),
+            "RNDCURVE",
+            const.SCREE_MAXSIZE,
+            area_prop="col_scrArea",
+        )
+        # City Boundaries
+        _draw_element_category(
+            box,
+            props,
+            "col_cActive",
+            _("City Boundaries"),
+            "HOME",
+            const.CITY_MAXSIZE,
+            area_prop="col_cArea",
+        )
+        # Greenspaces
+        _draw_element_category(
+            box,
+            props,
+            "col_grActive",
+            _("Greenspaces"),
+            "OUTLINER_OB_POINTCLOUD",
+            const.GREENSPACE_MAXSIZE,
+            area_prop="col_grArea",
+        )
+        # Farmland
+        _draw_element_category(
+            box,
+            props,
+            "col_faActive",
+            _("Farmland"),
+            "OUTLINER_OB_SURFACE",
+            const.FARMLAND_MAXSIZE,
+            area_prop="col_faArea",
+        )
+        # Glaciers
+        _draw_element_category(
+            box,
+            props,
+            "col_glActive",
+            _("Glaciers"),
+            "FREEZE",
+            const.GLACIER_MAXSIZE,
+            area_prop="col_glArea",
+        )
+        _draw_3d_element_category(box, props)
+
+    def _draw_3d_element_category(box, props):
+        sub3d = box.box()
+        sub3d.label(text=_("3D Elements"), icon="MESH_CUBE")
+        bsub = _draw_element_category(
+            sub3d,
+            props,
+            "el_bActive",
+            _("Buildings"),
+            "OUTLINER_OB_MESH",
+            const.BUILDINGS_MAXSIZE,
+        )
+        if props.el_bActive:
+            if props.elementMode == "SINGLECOLORMODE_REMESH":
+                bsub.label(
+                    text=_("Not compatible with Single Extruder Mode"),
+                    icon="ERROR",
+                )
+            bsub.prop(props, "el_bHeightMultiplier")
+            bsub.prop(props, "el_bMinPrintMM")
+
+        sub = sub3d.box()
+        ensure_road_types(props)
+        _any_road = any_road_active(props)
+        row = sub.row(align=True)
+        row.label(text=_("Roads"), icon="AUTO")
+        row.prop(
+            props,
+            "show_roads",
+            text="",
+            icon="CHECKBOX_HLT" if props.show_roads else "CHECKBOX_DEHLT",
+        )
+        if props.show_roads:
+            col = sub.column(align=True)
+            col.template_list(
+                "TP3D_UL_road_types",
+                "",
+                props,
+                "road_types",
+                props,
+                "road_types_index",
+                rows=5,
+            )
+            if (
+                props.elementMode == "PAINT"
+                and _any_road
+                and props.el_sHeight == 0
+                and props.tex_include_roads == False
+            ):
+                row = sub.row()
+                row.alert = True
+                row.label(
+                    text=_("Road Height must be > 0 in Paint mode"),
+                    icon="ERROR",
+                )
+            row = sub.row(align=True)
+            row.prop(props, "el_sMultiplier")
+            row.prop(props, "el_sHeight")
+            if props.elementMode != "PAINT":
+                row2 = sub.row(align=True)
+                row2.prop(props, "el_sCutTolerance")
+                row2.prop(props, "el_sCutDepth")
+        if _any_road:
+            est_km = estimate_map_km(props)
+            if est_km is not None and est_km > const.ROADS_MAXSIZE:
+                warn_row = sub.row()
+                warn_row.alert = True
+                warn_row.label(
+                    text=_("~%dkm map exceeds %dkm — roads will be skipped")
+                    % (round(est_km), const.ROADS_MAXSIZE),
+                    icon="ERROR",
+                )
+
+    box = _create_box_with_header(
+        layout,
+        props,
+        _("6. Map Elements"),
+        icon="TEXTURE",
+        prop_toggle="elementChoice",
+        help_key="TP3D_PT_help_elements",
+    )
+    if props.elementChoice:
+        box.label(text=_("Element Source:"))
+        elementSource = box.row(align=True)
+        elementSource.scale_y = 1.2
+        elementSource.prop(props, "elementSource", expand=True, emboss=True)
+        if props.elementSource == "WORLDCOVER":
+            box.prop(props, "el_wcMinFeatureArea")
+            lc_box = box.box()
+            for prop_name, mat_name, label in _LANDCOVER_COLOR_ROWS:
+                row = lc_box.row(align=True)
+                row.template_icon(
+                    icon_value=_material_preview_icon_id(mat_name), scale=1.0
+                )
+                is_active = getattr(props, prop_name)
+                row.prop(
+                    props,
+                    prop_name,
+                    text=label,
+                    icon="CHECKBOX_HLT" if is_active else "CHECKBOX_DEHLT",
+                )
+        elif props.elementSource == "OSM":
+            _draw_osm_elements(box, props)
+
+
+def _draw_appearance_box(layout, props):
+    _elem_scm = props.elementMode == "SINGLECOLORMODE_REMESH"
+    box = _create_box_with_header(
+        layout,
+        props,
+        _("7. Appearance"),
+        icon="COLOR",
+        help_key="TP3D_PT_help_appearance",
+    )
+    if "PAINT" in props.elementMode:
+        box.prop(props, "tex_use_texture")
+    trail_tex_row = box.row()
+    trail_tex_row.enabled = (
+        not _elem_scm and not props.singleColorMode and props.tex_use_texture
+    )
+    trail_tex_row.prop(
+        props,
+        "tex_include_trail",
+    )
+    road_tex_row = box.row()
+    road_tex_row.enabled = (
+        not _elem_scm and not props.singleColorMode and props.tex_use_texture
+    )
+    road_tex_row.prop(
+        props,
+        "tex_include_roads",
+    )
 
 
 class TP3D_PT_generate(bpy.types.Panel):
@@ -133,56 +920,7 @@ class TP3D_PT_generate(bpy.types.Panel):
         layout = self.layout
         props = context.scene.tp3d
 
-        # --- Update banner ---
-        if temp.PREMIUMVERSION:
-            latest_version = updater.premium_latest_version
-            update_available = updater.premium_status == "update_available"
-        else:
-            latest_version = updater.latest_version
-            update_available = updater.status == "update_available"
-
-        latest_str = (
-            ".".join(str(x) for x in latest_version) if update_available else ""
-        )
-        if (
-            update_available
-            and addon_preferences.get_prefs().dismissed_update_version != latest_str
-        ):
-            box = layout.box()
-            header = box.row()
-            header.label(text=_("Update available: v%s") % latest_str, icon="FUND")
-            header.operator(
-                "tp3d.dismiss_update", text="", icon="X", emboss=False
-            ).version = latest_str
-            col = box.column(align=True)
-            col.scale_y = 1.3
-            if temp.PREMIUMVERSION:
-                col.operator(
-                    "tp3d.open_premium_update",
-                    text=_("Get Update on Patreon"),
-                    icon="URL",
-                )
-            else:
-                col.operator(
-                    "tp3d.install_update", text=_("Download & Install"), icon="IMPORT"
-                )
-
-        # --- Header ---
-        row = layout.row(align=True)
-        if not temp.PREMIUMVERSION:
-            row.operator("tp3d.open_website", text=_("Patreon"), icon="FUND")
-        row.operator("tp3d.join_discord", text=_("Discord"), icon="URL")
-        # Version comes from constants.ADDON_VERSION at runtime rather than being
-        # baked into this string -- keeps the label (and its translations)
-        # untouched by version bumps; only constants.py needs patching.
-        version_str = ".".join(str(x) for x in const.ADDON_VERSION)
-        if temp.PREMIUMVERSION:
-            layout.label(
-                text=_("Created by: EmGi  |  Premium v") + version_str, icon="INFO"
-            )
-        else:
-            layout.label(text=_("Created by: EmGi  |  v") + version_str, icon="INFO")
-        layout.separator()
+        _draw_header_and_update_banner(layout, props)
 
         # --- Generation mode toggle (3 columns) ---
         row = layout.row(align=True)
@@ -194,633 +932,478 @@ class TP3D_PT_generate(bpy.types.Panel):
             row.operator("tp3d.terrain_dummy", text=_("Terrain"), icon="LOCKED")
 
         # --- Shapely status warning ---
-        from .utils import geometry2d as _g2d
-
-        if not _g2d._HAS_SHAPELY:
-            row = layout.row()
-            row.alert = True
-            row.operator(
-                "tp3d.shapely_status", text=_("Shapely failed to load"), icon="ERROR"
-            )
-
-        # --- Linux + Python 3.14 mismatch warning ---
-        # (repackaged Blender builds like Flatpak, not blender.org's own)
-        if const.LINUX_PYTHON314_MISMATCH:
-            row = layout.row()
-            row.alert = True
-            row.operator(
-                "tp3d.python_mismatch_status",
-                text=_("Unsupported Blender build detected"),
-                icon="ERROR",
-            )
+        _draw_shapely_warnings(layout)
 
         # --- Generate button ---
-        col = layout.column()
-        col.scale_y = 1.4
-        if props.generation_mode == "GENERATION":
-            col.operator("tp3d.run_generation", icon="DISC")
-        elif props.generation_mode == "MULTI":
-            if temp.PREMIUMVERSION:
-                col.operator("tp3d.chain_generation", icon="OUTLINER_DATA_CURVES")
-            else:
-                col.operator(
-                    "tp3d.terrain_dummy", text=_("Multi Generation"), icon="LOCKED"
-                )
-        else:  # TERRAIN
-            if props.sScaleHor is not None and temp.PREMIUMVERSION:
-                if props.mapmode == "FROMCENTER":
-                    col.operator(
-                        "tp3d.from_center_generation",
-                        text=_("Generate (Center + Radius)"),
-                        icon="DISC",
-                    )
-                elif props.mapmode == "FROMPLANE":
-                    col.operator(
-                        "tp3d.terrain",
-                        text=_("Generate from Blank"),
-                        icon="OBJECT_DATA",
-                    )
-                elif props.mapmode == "2POINTS":
-                    col.operator(
-                        "tp3d.2point_generation",
-                        text=_("Generate (2 Corner Points)"),
-                        icon="DISC",
-                    )
-                elif props.mapmode == "GEOJSON":
-                    col.operator(
-                        "tp3d.geojson_generation",
-                        text=_("Generate (GeoJSON Boundary)"),
-                        icon="DISC",
-                    )
-            else:
-                col.operator(
-                    "tp3d.terrain_dummy", text=_("Generate Terrain"), icon="LOCKED"
-                )
+        _draw_generate_button(layout, props, temp)
 
-        # --- Settings ---
-        if props.generation_mode == "TERRAIN":
-            # Custom Map Generation
-            box = layout.box()
-            box.label(text=_("Custom Map Generation"), icon="MOD_BUILD")
-            if props.sScaleHor is not None and temp.PREMIUMVERSION:
-                box.prop(props, "mapmode", text=_("Mode"))
-                boxer = box.box()
-                if props.mapmode == "FROMPLANE":
-                    boxer.operator(
-                        "tp3d.create_blank",
-                        text=_("Create Blank"),
-                        icon="SNAP_FACE",
-                    )
-                    boxer.operator(
-                        "tp3d.extend_tile",
-                        text=_("Extend Selected Tile"),
-                        icon="SELECT_EXTEND",
-                    )
-                    boxer.prop(props, "tileSpacing")
-                    boxer.prop(props, "indipendendTiles")
-                elif props.mapmode == "FROMCENTER":
-                    row = boxer.row(align=True)
-                    row.prop(props, "jMapLat")
-                    row.prop(props, "jMapLon")
-                    boxer.prop(props, "jMapRadius")
-                elif props.mapmode == "2POINTS":
-                    row = boxer.row(align=True)
-                    row.prop(props, "jMapLat1")
-                    row.prop(props, "jMapLon1")
-                    row = boxer.row(align=True)
-                    row.prop(props, "jMapLat2")
-                    row.prop(props, "jMapLon2")
-                elif props.mapmode == "GEOJSON":
-                    boxer.operator(
-                        "tp3d.pick_geojson_file",
-                        text=_("Import GeoJSON…"),
-                        icon="IMPORT",
-                    )
-                    if props.geojsonFilePath:
-                        for _path in props.geojsonFilePath.split("|"):
-                            boxer.label(
-                                text=_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
-                                icon="FILE",
-                            )
-                        boxer.label(
-                            text=f"{props.geojsonPointCount} {_('points')}  —  ~{props.geojsonAreaKm:.0f} km"
-                        )
-                    boxer.prop(props, "geojsonSimplifyTolerance")
-                box.separator(factor=0.5)
-                col = box.column(align=True)
-                col.operator(
-                    "tp3d.merge_with_map",
-                    text=_("Merge with Map"),
-                    icon="AUTOMERGE_OFF",
-                )
-                col.operator(
-                    "tp3d.generate_just_trail",
-                    text=_("Generate Just Trail"),
-                    icon="DECORATE_DRIVER",
-                )
-            else:
-                col = box.column(align=True)
-                col.operator(
-                    "tp3d.terrain_dummy",
-                    text=_("Create Map from selected"),
-                    icon="LOCKED",
-                )
-                col.operator(
-                    "tp3d.terrain_dummy", text=_("Merge with Map"), icon="LOCKED"
-                )
-                col.operator(
-                    "tp3d.terrain_dummy", text=_("Create Blank"), icon="LOCKED"
-                )
-            col.separator(factor=1.0)
-            if temp.PREMIUMVERSION:
-                # pass
-                col.operator(
-                    "tp3d.map_picker", text=_("Multi Tile Generator"), icon="WORLD"
-                )
-            else:
-                col.operator(
-                    "tp3d.terrain_dummy",
-                    text=_("Multi Tile Generator"),
-                    icon="WORLD",
-                )
-            col.operator(
-                "tp3d.map_generator", text=_("Map Generator"), icon="MESH_CIRCLE"
-            )
-        else:
-            # 1. Source
-            box = layout.box()
-            header = box.row()
-            header.label(text=_("1. Source"), icon="FILE_FOLDER")
-            construct_popover(header, "TP3D_PT_help_source")
-            col = box.column(align=True)
-            if props.generation_mode == "GENERATION":
-                col.label(text=_("GPX File Selection:"))
-                row = col.row(align=True)
-                row.label(icon="BLANK1")
-                row.prop(props, "file_path")
-                row.operator("tp3d.pick_gpx_file", text="", icon="FILEBROWSER")
-                if props.cachedTrailBoundsValid and props.scalemode != "COORDINATES":
-                    col.label(
-                        text=_("Estimated Trail Size: %.1f km") % props.estimated_trail_km
-                    )
-            elif temp.PREMIUMVERSION:
-                col.label(text=_("GPX Folder Selection:"))
-                row = col.row(align=True)
-                row.label(icon="BLANK1")
-                row.prop(props, "chain_path")
-            else:
-                col.label(text=_("Exclusive for Patreon Supporters"), icon="FUND")
-                col.label(text=_("- Chain together multiple Trails"))
-            col.label(text=_("Export Path:"))
-            row = col.row(align=True)
-            row.label(icon="BLANK1")
-            row.prop(props, "export_path")
-            col.label(text=_("Trail Name:"))
-            row = col.row(align=True)
-            row.label(icon="BLANK1")
-            row.prop(props, "trailName")
-
-        # 2. Shape
-        box = layout.box()
-        header = box.row()
-        header.label(text=_("2. Shape"), icon="MESH_DATA")
-        construct_popover(header, "TP3D_PT_help_shape")
-        col = box.column(align=True)
-        col.label(text=_("Shape:"))
-        row = col.row(align=True)
-        row.label(icon="BLANK1")
-        row.prop(props, "shape")
-        if props.shape in SHAPE_TEXT_STYLES:
-            col.label(text=_("Shape Extras:"))
-            row = col.row(align=True)
-            row.label(icon="BLANK1")
-            row.prop(props, "shapeTextStyle")
-        col.separator(factor=0.5)
-        if props.shape == "SQUARE":
-            row = col.row(align=True)
-            row.prop(props, "objSize", text=_("Width (mm)"))
-            row.prop(props, "rectangleHeight", text=_("Height (mm)"))
-        elif props.shape == "ELLIPSE":
-            col.prop(props, "objSize", text=_("Width (mm)"))
-            col.prop(props, "ellipseRatio", text=_("Ellipse Height Ratio"))
-        elif props.shape in {"GEOJSON", "SVG"}:
-            row = col.row(align=True)
-            row.prop(props, "customFilePath", text=_("File Path"))
-            if props.shape == "SVG":
-                row.operator("tp3d.pick_svg_shape_file", text="", icon="FILEBROWSER")
-            else:
-                row.operator(
-                    "tp3d.pick_geojson_shape_file", text="", icon="FILEBROWSER"
-                )
-            col.prop(props, "objSize")
-        else:
-            col.prop(props, "objSize")
-        col.prop(props, "num_subdivisions", slider=True)
-
-        # Shape extras
-        effective_shape = get_effective_shape(props)
-        if effective_shape.endswith((" TEXT", " SHELL")):
-            extras = box.box()
-            header = extras.row(align=True)
-            header.label(text=_("Shape Extras"), icon="OUTLINER_OB_FONT")
-            construct_popover(header, "TP3D_PT_help_shape_extras")
-            if effective_shape.endswith(" TEXT"):
-                row = extras.row(align=True)
-                row.prop(props, "textFont")
-                row.operator("tp3d.pick_font_file", text="", icon="FILEBROWSER")
-                row = extras.row(align=True)
-                row.prop(props, "textSizeTitle")
-                row.prop(props, "textSize")
-                row = extras.row(align=True)
-                row.label(text=_("Text (Goes Counter-Clockwise):"))
-                row.label(icon="RECOVER_LAST")
-                col = extras.column()
-                text_fields = [
-                    ("titleIcon", "titlefield", False),
-                    ("iconText5", "textfield5", True),
-                    ("iconText1", "textfield1", False),
-                    ("iconText2", "textfield2", False),
-                    ("iconText3", "textfield3", False),
-                    ("iconText4", "textfield4", True),
-                ]
-                for icon_prop, text_prop, hex_only in text_fields:
-                    if hex_only and effective_shape != "HEXAGON OUTER TEXT":
-                        continue
-                    row = col.row()
-                    split = row.split(factor=0.4)
-                    if temp.PREMIUMVERSION:
-                        split.prop(props, icon_prop, text="")
-                    else:
-                        split.operator(
-                            "tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED"
-                        )
-                    split.prop(props, text_prop, text="")
-                # col.prop(props, "text_angle_preset") | Can't tell what the purpose of this is, disabled for now. TODO
-                if effective_shape in {
-                    "HEXAGON OUTER TEXT",
-                    "HEXAGON FRONT TEXT",
-                    "OCTAGON OUTER TEXT",
-                    "CIRCLE OUTER TEXT",
-                }:
-                    col = extras.column(align=True)
-                    col.prop(props, "plateThickness")
-                    col.prop(props, "outerBorderSize")
-                    col.prop(props, "plateInsertValue")
-                    col.prop(props, "plateBevel")
-                    extras.label(text=_("Medal Handle"))
-                    row = extras.row(align=True)
-                    if temp.PREMIUMVERSION:
-                        row.prop(props, "handleStyle", expand=True)
-                    else:
-                        row.prop_enum(props, "handleStyle", "NONE")
-                        row.operator(
-                            "tp3d.terrain_dummy", text=_("Round"), icon="LOCKED"
-                        )
-                        row.operator(
-                            "tp3d.terrain_dummy", text=_("Flat"), icon="LOCKED"
-                        )
-            elif effective_shape.endswith(" SHELL"):
-                extras.prop(props, "shellWallThickness")
-
-        # 3. Scale -- after Shape, not before: calculate_scale() needs
-        # objSize (Shape's own field) as an input for FACTOR mode
-        box = layout.box()
-        header = box.row()
-        header.label(text=_("3. Scale"), icon="DRIVER_DISTANCE")
-        construct_popover(header, "TP3D_PT_help_scale")
-        col = box.column()
-        col.label(text=_("Scale Mode:"))
-        row = col.row(align=True)
-        row.label(icon="BLANK1")
-        row.prop(props, "scalemode")
-        if props.scalemode == "FACTOR":
-            col.prop(props, "pathScale")
-        elif props.scalemode == "COORDINATES":
-            row = col.row(align=True)
-            row.prop(props, "scaleLat1")
-            row.prop(props, "scaleLon1")
-            row = col.row(align=True)
-            row.prop(props, "scaleLat2")
-            row.prop(props, "scaleLon2")
-        if props.cachedTrailBoundsValid and props.scalemode != "COORDINATES":
-            col.label(
-                text=_("Estimated Map Size: %.1f km") % props.estimated_map_km
-            )
-        # 4. Trail -- structural properties of the printed trail line
-        box = layout.box()
-        header = box.row()
-        header.label(text=_("4. Trail"), icon="IPO_LINEAR")
-        construct_popover(header, "TP3D_PT_help_trail")
-        
-        col = box.column(align=True)
-        col.prop(props, "pathThickness")
-        _elem_scm = props.elementMode == "SINGLECOLORMODE_REMESH"
-        scm_row = col.row(align=True)
-        scm_row.enabled = not _elem_scm
-        scm_row.prop(props, "singleColorMode", icon="CHECKBOX_DEHLT" if not props.singleColorMode and not _elem_scm else "CHECKBOX_HLT")
-        if props.singleColorMode or _elem_scm:
-            scm_settings = col.row(align=True)
-            scm_settings.prop(props, "singleColorModeHeight")
-            scm_settings.prop(props, "tolerance")
-
-        if _elem_scm:
-            col.label(text=_("Auto-enabled with SEM Elements"), icon="INFO")
-
-        # 5. Terrain -- the surrounding ground's height and smoothing.
-        box = layout.box()
-        header = box.row()
-        header.label(text=_("5. Terrain"), icon="RNDCURVE")
-        construct_popover(header, "TP3D_PT_help_terrain")
-        col = box.column(align=True)
-        col.prop(props, "elevationMode")
-        if props.elevationMode == "PROPORTIONAL":
-            col.prop(props, "scaleElevation")
-        else:
-            col.prop(props, "fixedHeightMM")
-        col.prop(props, "minThickness")
-        col.prop(props, "shapeRotation")
-        row = col.row(align=True)
-        row.prop(props, "xTerrainOffset", text=_("X-Offset"))
-        row.prop(props, "yTerrainOffset", text=_("Y-Offset"))
-        smoothRow = col.row(align=True)
-        smoothRow.prop(
+        # General Settings Collapse Toggle
+        row = layout.row(align=True)
+        row.prop(
             props,
-            "smoothTerrainTop",
-            icon="CHECKBOX_DEHLT" if not props.smoothTerrainTop else "CHECKBOX_HLT",
+            "general_settings_expanded",
+            text="General Settings",
+            emboss=False,
+            icon="TRIA_DOWN" if props.general_settings_expanded else "TRIA_RIGHT",
         )
-        if props.smoothTerrainTop:
-            smoothRow.prop(props, "smoothTerrainStrength")
+        if props.general_settings_expanded:
+            # --- Settings ---
+            if props.generation_mode == "TERRAIN":
+                _draw_terrain_settings(layout, props, temp)
+            else:
+                # 1. Source
+                _draw_source_box(layout, props, temp)
 
-        # 6. Map Elements -- what geographic data gets included.
-        # Each category below carries a live size warning
-        box = layout.box()
-        header = box.row()
-        header.label(text=_("6. Map Elements"), icon="TEXTURE")
-        construct_popover(header, "TP3D_PT_help_elements")
-        box.prop(props, "elementChoice")
-        if props.elementChoice:
-            box.label(text=_("Element Source:"))
-            elementSource = box.row(align=True)
-            elementSource.prop(
-                props,
-                "elementSource",
-                expand=True,
-                emboss=True
-            )
-            if props.elementSource == "WORLDCOVER":
-                box.prop(props, "el_wcMinFeatureArea")
-                lc_box = box.box()
-                for prop_name, mat_name, label in _LANDCOVER_COLOR_ROWS:
-                    row = lc_box.row(align=True)
-                    row.template_icon(
-                        icon_value=_material_preview_icon_id(mat_name), scale=1.0
-                    )
-                    is_active = getattr(props, prop_name)
-                    row.prop(
-                        props,
-                        prop_name,
-                        text=label,
-                        icon="CHECKBOX_HLT" if is_active else "CHECKBOX_DEHLT",
-                    )
-            elif props.elementSource == "OSM":
-                box.label(text=_("Multi-Color Mode:"))
-                elementMode = box.row(align=True)
-                elementMode.prop(props, "elementMode", expand=True, emboss=True)
-                elementSettings = box.column(align=True)
-                if props.elementMode == "SINGLECOLORMODE_REMESH":
-                    elementSettings.prop(props, "toleranceElements")
-                elementSettings.prop(props, "col_osmSmoothing")
+            # 2. Shape
+            _draw_shape_box(layout, props, temp)
 
-                sub = box.box()
-                _any_water_not_ocean = (
-                    props.col_wBodiesActive
-                    or props.col_wMinorActive
-                    or props.col_wMajorActive
-                )
-                row = sub.row(align=True)
-                row.label(text=_("Water & Ocean"), icon="MATFLUID")
-                row.prop(
-                    props,
-                    "show_water",
-                    text="",
-                    icon="CHECKBOX_HLT" if props.show_water else "CHECKBOX_DEHLT",
-                )
-                if props.show_water:
-                    col = sub.column(align=True)
-                    row = col.row(align=True)
-                    row.prop(
-                        props,
-                        "col_wBodiesActive",
-                        icon="CHECKBOX_HLT"
-                        if props.col_wBodiesActive
-                        else "CHECKBOX_DEHLT",
-                    )
-                    if props.col_wBodiesActive:
-                        row.prop(props, "col_wArea")
-                    row = col.row(align=True)
-                    row.prop(
-                        props,
-                        "col_wMajorActive",
-                        icon="CHECKBOX_HLT"
-                        if props.col_wMajorActive
-                        else "CHECKBOX_DEHLT",
-                    )
-                    row.prop(
-                        props,
-                        "col_wMinorActive",
-                        icon="CHECKBOX_HLT"
-                        if props.col_wMinorActive
-                        else "CHECKBOX_DEHLT",
-                    )
-                    col.prop(props, "col_wStreamWidth")
-                    if _any_water_not_ocean:
-                        est_km = estimate_map_km(props)
-                        if est_km is not None and est_km > const.WATER_MAXSIZE:
-                            warn_rows = col.column(align=True)
-                            warn_rows.alert = True
-                            warn_row = warn_rows.row()
-                            warn_row.label(
-                                text=_("~%dkm map exceeds %dkm limit")
-                                % (round(est_km), const.WATER_MAXSIZE),
-                                icon="ERROR",
-                            )
-                            warn_row2 = warn_rows.row()
-                            warn_row2.label(
-                                text=_("Bodies and Waterways will be skipped"),
-                                icon="BLANK1",
-                            )
-                    row = col.row(align=True)
+            # 3. Scale -- after Shape, not before: calculate_scale() needs
+            # objSize (Shape's own field) as an input for FACTOR mode
+            _draw_scale_box(layout, props, temp)
 
-                    row.prop(
-                        props,
-                        "el_oActive",
-                        icon="CHECKBOX_HLT" if props.el_oActive else "CHECKBOX_DEHLT",
-                    )
-                    if props.el_oActive:
-                        col.prop(props, "el_oMinIslandArea")
-                        col.prop(props, "el_oRdpEpsilon")
-                    if _elem_scm:
-                        flatten_row = col.row(align=True)
-                        flatten_row.prop(
-                            props,
-                            "col_wFlattenTop",
-                            icon="CHECKBOX_HLT"
-                            if props.col_wFlattenTop
-                            else "CHECKBOX_DEHLT",
-                        )
-                        if props.col_wFlattenTop:
-                            flatten_row.enabled = _elem_scm
-                            flatten_row.prop(props, "col_wInsert")
+            # 4. Trail -- structural properties of the printed trail line
+            _draw_trail_box(layout, props, temp)
 
-                _draw_element_category(
-                    box,
-                    props,
-                    "col_fActive",
-                    _("Forests"),
-                    "FORCE_WIND",
-                    const.FOREST_MAXSIZE,
-                    area_prop="col_fArea",
-                )
-                _draw_element_category(
-                    box,
-                    props,
-                    "col_scrActive",
-                    _("Scree"),
-                    "RNDCURVE",
-                    const.SCREE_MAXSIZE,
-                    area_prop="col_scrArea",
-                )
-                _draw_element_category(
-                    box,
-                    props,
-                    "col_cActive",
-                    _("City Boundaries"),
-                    "HOME",
-                    const.CITY_MAXSIZE,
-                    area_prop="col_cArea",
-                )
-                _draw_element_category(
-                    box,
-                    props,
-                    "col_grActive",
-                    _("Greenspaces"),
-                    "OUTLINER_OB_POINTCLOUD",
-                    const.GREENSPACE_MAXSIZE,
-                    area_prop="col_grArea",
-                )
-                _draw_element_category(
-                    box,
-                    props,
-                    "col_faActive",
-                    _("Farmland"),
-                    "OUTLINER_OB_SURFACE",
-                    const.FARMLAND_MAXSIZE,
-                    area_prop="col_faArea",
-                )
-                _draw_element_category(
-                    box,
-                    props,
-                    "col_glActive",
-                    _("Glaciers"),
-                    "FREEZE",
-                    const.GLACIER_MAXSIZE,
-                    area_prop="col_glArea",
-                )
-            if props.elementSource == "OSM":
-                sub3d = box.box()
-                sub3d.label(text=_("3D Elements"), icon="MESH_CUBE")
-                bsub = _draw_element_category(
-                    sub3d,
-                    props,
-                    "el_bActive",
-                    _("Buildings"),
-                    "OUTLINER_OB_MESH",
-                    const.BUILDINGS_MAXSIZE,
-                )
-                if props.el_bActive:
-                    if props.elementMode == "SINGLECOLORMODE_REMESH":
-                        bsub.label(
-                            text=_("Not compatible with Single Extruder Mode"),
-                            icon="ERROR",
-                        )
-                    bsub.prop(props, "el_bHeightMultiplier")
-                    bsub.prop(props, "el_bMinPrintMM")
+            # 5. Terrain -- the surrounding ground's height and smoothing.
+            _draw_terrain_box(layout, props, temp)
 
-                sub = sub3d.box()
-                ensure_road_types(props)
-                _any_road = any_road_active(props)
-                row = sub.row(align=True)
-                row.label(text=_("Roads"), icon="AUTO")
-                row.prop(
-                    props,
-                    "show_roads",
-                    text="",
-                    icon="CHECKBOX_HLT" if props.show_roads else "CHECKBOX_DEHLT",
-                )
-                if props.show_roads:
-                    col = sub.column(align=True)
-                    col.template_list(
-                        "TP3D_UL_road_types",
-                        "",
-                        props,
-                        "road_types",
-                        props,
-                        "road_types_index",
-                        rows=5,
-                    )
-                    if (
-                        props.elementMode == "PAINT"
-                        and _any_road
-                        and props.el_sHeight == 0
-                        and props.tex_include_roads == False
-                    ):
-                        row = sub.row()
-                        row.alert = True
-                        row.label(
-                            text=_("Road Height must be > 0 in Paint mode"),
-                            icon="ERROR",
-                        )
-                    row = sub.row(align=True)
-                    row.prop(props, "el_sMultiplier")
-                    row.prop(props, "el_sHeight")
-                    if props.elementMode != "PAINT":
-                        row2 = sub.row(align=True)
-                        row2.prop(props, "el_sCutTolerance")
-                        row2.prop(props, "el_sCutDepth")
-                if _any_road:
-                    est_km = estimate_map_km(props)
-                    if est_km is not None and est_km > const.ROADS_MAXSIZE:
-                        warn_row = sub.row()
-                        warn_row.alert = True
-                        warn_row.label(
-                            text=_("~%dkm map exceeds %dkm — roads will be skipped")
-                            % (round(est_km), const.ROADS_MAXSIZE),
-                            icon="ERROR",
-                        )
+            # 6. Map Elements -- what geographic data gets included.
+            _draw_element_box(layout, props, temp)
 
-        if props.elementChoice and temp.has3mf and props.elementMode == "PAINT":
-            # 7. Appearance -- how included elements render
-            header = box.row()
-            header.label(text=_("7. Appearance"), icon="COLOR")
-            construct_popover(header, "TP3D_PT_help_appearance")
-            if "PAINT" in props.elementMode:
-                box.prop(props, "tex_use_texture")
-            if props.tex_use_texture == True:
-                trail_tex_row = box.row()
-                trail_tex_row.enabled = not _elem_scm and not props.singleColorMode
-                trail_tex_row.prop(
-                    props,
-                    "tex_include_trail",
-                )
-                if any_road_active(props):
-                    box.prop(
-                        props,
-                        "tex_include_roads",
-                    )
-
+            if props.elementChoice and temp.has3mf and props.elementMode == "PAINT":
+                # 7. Appearance -- how included elements render
+                _draw_appearance_box(layout, props)
         # --- Status ---
-        layout.separator(factor=0.5)
-        layout.label(text=props.o_time, icon="TIME")
+        if props.o_time != "":
+            layout.separator(type="LINE")
+            layout.label(text=props.o_time, icon="TIME")
+
+
+def _create_collapsible_section(layout, props, collapse_prop):
+    expanded = getattr(props, collapse_prop)
+    layout.prop(
+        props,
+        collapse_prop,
+        icon="TRIA_DOWN" if expanded else "TRIA_RIGHT",
+        emboss=False,
+    )
+    return layout.box() if expanded else None
+
+
+def _draw_export_box(layout, props, temp):
+    box = _create_collapsible_section(layout, props, "show_export")
+    if box is None:
+        return
+    row = box.row(align=True)
+    row.scale_y = 1.2
+    if temp.has3mf and not props.disable_3mf_export:
+        row.operator("tp3d.export_three_mf", text=_("3MF"))
+    row.operator("tp3d.export_obj", text=_("OBJ"))
+    row.operator("tp3d.export_stl", text=_("STL"))
+    if not temp.has3mf:
+        box.operator(
+            "tp3d.install_three_mf",
+            text=_("Install 3MF Addon (by Clonephaze)"),
+            icon="IMPORT",
+        )
+    box.prop(props, "disable_auto_export")
+    if temp.has3mf:
+        box.prop(props, "disable_3mf_export")
+    if props.elementMode == "SINGLECOLORMODE_REMESH":
+        box.prop(props, "keep_positions", text=_("Keep Positions"))
+    if temp.has3mf and not props.disable_3mf_export:
+        box.label(text=_("3MF Export Profile:"))
+        row = box.row(align=True)
+        row.label(text="", icon="BLANK1")
+        row.prop(props, "slicer_profile_name")
+
+
+def _draw_advanced_generation_box(layout, props):
+    box = _create_collapsible_section(layout, props, "show_ags")
+    if box is None:
+        return
+    box.label(text=_("Advanced Trail Settings"), icon="IPO_LINEAR")
+    box.prop(props, "overwritePathElevation")
+    layout.separator(factor=0.5)
+    if props.tex_use_texture == True:
+        box = layout.box()
+        box.label(text=_("Advanced Texture Settings"), icon="TEXTURE")
+        box.prop(props, "tex_resolution")
+
+
+def _draw_pin_box(layout, props, temp, context):
+    box = _create_collapsible_section(layout, props, "show_pin")
+    if box is None:
+        return
+    box.operator("tp3d.import_pin", text=_("Place Pin"), icon="PINNED")
+
+    box.separator(factor=0.5)
+    if temp.PREMIUMVERSION:
+        box.prop(props, "cityname")
+        box.operator("tp3d.city_coords", text=_("Pin on City"), icon="UNPINNED")
+    else:
+        box.prop(props, "cityname")
+        box.operator("tp3d.terrain_dummy", text=_("Pin on City"), icon="LOCKED")
+
+    box.separator(factor=0.5)
+    box.prop(
+        props,
+        "pinCutout",
+        icon="CHECKBOX_HLT" if props.pinCutout else "CHECKBOX_DEHLT",
+    )
+    if props.pinCutout:
+        box.prop(props, "pinCutoutClearance")
+        draw_wrapped_label(
+            box,
+            context,
+            _("New pins cut a socket into the map and elements at their position"),
+        )
+
+
+def _draw_special_box(layout, props, temp):
+    box = _create_collapsible_section(layout, props, "show_special")
+    if box is None:
+        return
+    box.operator(
+        "tp3d.puzzle_configurator",
+        text=_("Jigsaw Puzzle Generator"),
+        icon="MOD_BOOLEAN",
+    )
+    if temp.PREMIUMVERSION:
+        box.operator(
+            "tp3d.sliding_puzzle_configurator",
+            text=_("Sliding Puzzle Generator"),
+            icon="MOD_BOOLEAN",
+        )
+    else:
+        box.operator(
+            "tp3d.terrain_dummy",
+            text=_("Sliding Puzzle Generator"),
+            icon="LOCKED",
+        )
+
+    box.separator(factor=0.5)
+    col = box.column(align=True)
+    col.prop(props, "specialBlendFile")
+    col.prop(props, "specialCollectionName", text=_("Collection"))
+    if props.specialBlendFile == "puzzles.blend":
+        box.operator(
+            "tp3d.append_collection", text=_("Import + Generate"), icon="IMPORT"
+        )
+    box.operator(
+        "tp3d.append_collection_blank", text=_("Import Blank"), icon="IMPORT"
+    )
+
+
+def _draw_post_process_box(layout, props, temp, context):
+    def _draw_color_mountains_box(layout, props, context):
+        sub = layout.box()
+        sub.label(text=_("Color Mountains"), icon="RNDCURVE")
+        col = sub.column(align=True)
+        col.prop(props, "mountain_treshold")
+        col.prop(
+            props,
+            "mountain_noise",
+            icon="CHECKBOX_DEHLT" if not props.mountain_noise else "CHECKBOX_HLT",
+        )
+        if props.mountain_noise:
+            row = col.row(align=True)
+            row.prop(props, "mountain_noise_amplitude")
+            row.prop(props, "mountain_noise_scale")
+        col.operator("tp3d.color_mountain", text=_("Color Mountains"), icon="RNDCURVE")
+        if has_height_bake_undo(context.object):
+            col.operator(
+                "tp3d.undo_mountain_texture",
+                text=_("Undo Texture Bake"),
+                icon="LOOP_BACK",
+            )
+
+    def _draw_contour_lines_box(layout, props, context):
+        sub = layout.box()
+        sub.label(text=_("Contour Lines"), icon="ALIGN_JUSTIFY")
+        col = sub.column(align=True)
+
+        col.prop(props, "cl_useRealMeters")
+        col.separator()
+        col.prop(props, "cl_thickness")
+        col.prop(
+            props,
+            "cl_distance",
+            text=_("Distance (m)") if props.cl_useRealMeters else _("Distance (mm)"),
+        )
+        col.prop(
+            props,
+            "cl_offset",
+            text=_("Offset (m)") if props.cl_useRealMeters else _("Offset (mm)"),
+        )
+        map_obj = next(
+            (
+                o
+                for o in context.selected_objects
+                if "Object type" in o and o["Object type"] == "MAP"
+            ),
+            None,
+        )
+        if map_obj is not None:
+            _unused, _unused, is_valid = get_effective_cl_values(
+                map_obj,
+                props.cl_distance,
+                props.cl_offset,
+                props.cl_thickness,
+                props.cl_useRealMeters,
+            )
+            if not is_valid:
+                col.label(text=_("Distance must exceed thickness"), icon="ERROR")
+            else:
+                z_extent = get_map_z_extent(map_obj)
+                dist_eff, _unused, _unused = get_effective_cl_values(
+                    map_obj,
+                    props.cl_distance,
+                    props.cl_offset,
+                    props.cl_thickness,
+                    props.cl_useRealMeters,
+                )
+                est_count = ceil(z_extent / dist_eff) - 1 if dist_eff else 0
+                col.label(text=f"~{est_count} slices", icon="INFO")
+
+        col.separator()
+        col.operator("tp3d.contour_lines", icon="MOD_ARRAY")
+
+    def _draw_connections_box(layout, props):
+        sub = layout.box()
+        sub.label(text=_("Connections"), icon="AREA_JOIN")
+        col = sub.column(align=True)
+        row = col.row(align=True)
+        row.prop(props, "magnetHeight", slider=True)
+        row.prop(props, "magnetDiameter", slider=True)
+        row = col.row(align=True)
+        row.prop(props, "magnetMargin", slider=True)
+        row.prop(props, "magnetCount", slider=True)
+        sub.operator("tp3d.magnet_holes", text=_("Add Magnet Holes"), icon="SNAP_OFF")
+        sub.operator(
+            "tp3d.dovetail", text=_("Add Dovetail Cutouts"), icon="SHAPEKEY_DATA"
+        )
+
+    def _draw_bottom_mark_box(layout, props):
+        sub = layout.box()
+        sub.label(text=_("Bottom Mark"), icon="SMALL_CAPS")
+        col = sub.column(align=True)
+        col.operator("tp3d.bottom_mark", text=_("Add Bottom Mark"), icon="SMALL_CAPS")
+        col.prop(props, "bottomMarkCutout")
+
+    def _draw_svg_text_import_box(layout, props):
+        sub = layout.box()
+        row = sub.row()
+        row.label(text=_("SVG / Text Import"), icon="FILE_IMAGE")
+        ln = row.operator("tp3d.info_video", text="", icon="QUESTION")
+        ln.url = "https://www.youtube.com/@EmGi_"
+        row = sub.row(align=True)
+        row.prop(props, "svg_path", text=_("SVG File"))
+        row.operator("tp3d.pick_svg_file", text="", icon="FILEBROWSER")
+        sub.operator("tp3d.import_svg", text=_("Import SVG"))
+        sub.operator("tp3d.import_text", text=_("Place Text"), icon="FONT_DATA")
+
+    def _draw_heightmap_box(layout):
+        sub = layout.box()
+        if temp.PREMIUMVERSION:
+            sub.operator(
+                "tp3d.import_height_map",
+                text=_("Import 2D Heightmap"),
+                icon="IMAGE_DATA",
+            )
+        else:
+            sub.operator(
+                "tp3d.terrain_dummy", text=_("Create Heightmap"), icon="LOCKED"
+            )
+
+    box = _create_collapsible_section(layout, props, "show_postProcess")
+    if box is None:
+        return
+    box.label(text=_("Manually export object after these actions"))
+    box.separator(type="LINE")
+    _draw_color_mountains_box(box, props, context)
+
+    _draw_contour_lines_box(box, props, context)
+
+    _draw_connections_box(box, props)
+
+    _draw_bottom_mark_box(box, props)
+
+    _draw_svg_text_import_box(box, props)
+
+    _draw_heightmap_box(box)
+
+
+def _draw_preset_box(layout, props, context):
+    box = _create_collapsible_section(layout, props, "show_preset")
+    if box is None:
+        return
+    box.prop(context.scene, "preset_list")
+    box.operator("tp3d.load_preset", icon="PRESET")
+    row = box.row(align=True)
+    row.operator("tp3d.save_preset", icon="PRESET_NEW")
+    row.operator("tp3d.delete_preset", icon="REMOVE")
+
+
+def _draw_api_box(layout, props, context):
+    box = _create_collapsible_section(layout, props, "show_api")
+    if box is None:
+        return
+    box.prop(props, "api", icon="INTERNET")
+    if props.api == "OPENTOPODATA":
+        box2 = box.box()
+        col = box2.column(align=True)
+        col.prop(props, "dataset")
+        col.separator(factor=0.5)
+        col.label(text=_("If you hosted your own Version of Opentopodata:"))
+        col.prop(props, "selfHosted")
+    if props.api == "OPENTOPOGRAPHY":
+        from .addon_preferences import get_prefs
+
+        box2 = box.box()
+        col = box2.column(align=True)
+        col.prop(props, "openTopographyDataset")
+        col.separator(factor=0.5)
+        if not get_prefs().openTopographyApiKey:
+            col.label(
+                text=_("API key required — set it in the addon preferences"),
+                icon="ERROR",
+            )
+        else:
+            col.label(text=_("API key set"), icon="CHECKMARK")
+        col.operator(
+            "screen.userpref_show",
+            text=_("Open Preferences"),
+            icon="PREFERENCES",
+        )
+    if props.api == "LOCAL_DEM":
+        box2 = box.box()
+        col = box2.column(align=True)
+        row = col.row(align=True)
+        row.prop(props, "demFilePath", text=_("DEM File"))
+        row.operator("tp3d.pick_dem_path", text="", icon="FILEBROWSER")
+        col.separator(factor=0.5)
+        draw_wrapped_label(
+            col,
+            context,
+            _(
+                "GeoTIFF only — WGS84 lat/lon, or UTM in WGS84 (EPSG:32601-32660 N / "
+                "32701-32760 S), ETRS89 (EPSG:25828-25838), or NAD83 (EPSG:26901-26923)"
+            ),
+            icon="INFO",
+        )
+        draw_wrapped_label(
+            col,
+            context,
+            _(
+                "Can also point at a folder of tiled GeoTIFFs (e.g. a bulk multi-tile "
+                "download) — only the tile(s) covering the generated area are read"
+            ),
+            icon="FILE_FOLDER",
+        )
+    if props.api in {"OPENTOPODATA", "TERRAIN-TILES", "MAPTERHORN"}:
+        col = box.column(align=True)
+        col.prop(props, "disableCache")
+        col.prop(props, "ccacheSize")
+    box.prop(props, "disableElevationOutlierFix")
+    box.separator(factor=0.5)
+    box.label(text=_("Elements (Water, forest, ...) runs on the Overpass API"))
+    box.prop(props, "apiRetries")
+    box.separator(factor=0.5)
+    box.operator("tp3d.clear_cache", icon="BRUSH_DATA")
+
+
+def _draw_stats_box(layout, props):
+    box = _create_collapsible_section(layout, props, "show_stats")
+    if box is None:
+        return
+    box.label(
+        text=_("Get Input Settings of Selected Generate Map"), icon="QUESTION"
+    )
+    box.operator("tp3d.show_custom_props_popup", icon="QUESTION")
+    box.separator(factor=0.5)
+    box.label(text=_("Last Generation"), icon="TIME")
+    col = box.column(align=True)
+    col.label(text=props.o_verticesPath)
+    col.label(text=props.o_verticesMap)
+    col.label(text=props.o_mapScale)
+    col.label(text=f"scaleHor: {props.sScaleHor}")
+    col.label(text=f"Map Size: {props.sMapInKm}")
+    col.label(text=props.o_time)
+    box.separator(factor=0.5)
+    col = box.column(align=True)
+    col.label(text=_("Opentopodata:"))
+    col.label(text=props.o_apiCounter_OpenTopoData)
+    col.label(text=_("OpenElevation:"))
+    col.label(text=props.o_apiCounter_OpenElevation)
+    box.separator(factor=0.5)
+    col = box.column(align=True)
+    col.label(
+        text=props.o_mapsGenerated
+        if props.o_mapsGenerated
+        else _("Maps Generated: ---"),
+        icon="RENDER_RESULT",
+    )
+
+
+def _draw_attribution_box(layout, props):
+    box = _create_collapsible_section(layout, props, "show_attribution")
+    if box is None:
+        return
+    col = box.column(align=True)
+    col.operator(
+        "wm.url_open",
+        text=_("OpenTopoData — elevation (SRTM and other datasets)"),
+        icon="URL",
+    ).url = "https://www.opentopodata.org/"
+    col.operator(
+        "wm.url_open",
+        text=_("Open-Elevation — elevation (SRTM © NASA)"),
+        icon="URL",
+    ).url = "https://open-elevation.com/"
+    col.operator(
+        "wm.url_open",
+        text=_("OpenStreetMap contributors — water, forests, city data"),
+        icon="URL",
+    ).url = "https://www.openstreetmap.org/copyright"
+    col.operator(
+        "wm.url_open",
+        text=_("Mapzen Terrain Tiles — terrain (OSM, NASA SRTM, USGS)"),
+        icon="URL",
+    ).url = "https://registry.opendata.aws/terrain-tiles/"
+    col.operator(
+        "wm.url_open",
+        text=_("OpenTopography — elevation (Global DEM)"),
+        icon="URL",
+    ).url = "https://opentopography.org/"
+    col.operator(
+        "wm.url_open",
+        text=_("Mapterhorn — terrain tiles (open-data sources)"),
+        icon="URL",
+    ).url = "https://github.com/mapterhorn/mapterhorn"
+    col.separator(factor=0.8)
+    disclaimer = box.column(align=True)
+    disclaimer.scale_y = 0.75
+    disclaimer.label(
+        text=_("TrailPrint3D itself may be used commercially."), icon="NONE"
+    )
+    disclaimer.label(
+        text=_("Data obtained through the add-on (such as OpenStreetMap"),
+        icon="NONE",
+    )
+    disclaimer.label(
+        text=_("or other providers) is subject to the respective"), icon="NONE"
+    )
+    disclaimer.label(
+        text=_("provider's license and terms, which may include"), icon="NONE"
+    )
+    disclaimer.label(
+        text=_("attribution or other requirements. Users are"), icon="NONE"
+    )
+    disclaimer.label(
+        text=_("responsible for ensuring compliance with those terms."),
+        icon="NONE",
+    )
 
 
 class TP3D_PT_advanced(bpy.types.Panel):
@@ -835,428 +1418,31 @@ class TP3D_PT_advanced(bpy.types.Panel):
         props = context.scene.tp3d
 
         # --- Export ---
-        layout.prop(
-            props,
-            "show_export",
-            icon="TRIA_DOWN" if props.show_export else "TRIA_RIGHT",
-            emboss=False,
-        )
-        if props.show_export:
-            box = layout.box()
-            row = box.row(align=True)
-            if temp.has3mf and not props.disable_3mf_export:
-                row.operator("tp3d.export_three_mf", text=_("3MF"))
-            row.operator("tp3d.export_obj", text=_("OBJ"))
-            row.operator("tp3d.export_stl", text=_("STL"))
-            if not temp.has3mf:
-                box.operator(
-                    "tp3d.install_three_mf",
-                    text=_("Install 3MF Addon (by Clonephaze)"),
-                    icon="IMPORT",
-                )
-            box.prop(props, "disable_auto_export")
-            if temp.has3mf:
-                box.prop(props, "disable_3mf_export")
-            if props.elementMode == "SINGLECOLORMODE_REMESH":
-                box.prop(props, "keep_positions", text=_("Keep Positions"))
-            if temp.has3mf and not props.disable_3mf_export:
-                box.prop(props, "slicer_profile_name", text=_("Slicer Profile Name"))
+        _draw_export_box(layout, props, temp)
 
         # --- Advanced Generation Settings
-        layout.prop(
-            props,
-            "show_ags",
-            icon="TRIA_DOWN" if props.show_ags else "TRIA_RIGHT",
-            emboss=False,
-        )
-        if props.show_ags:
-            box = layout.box()
-            box.label(text=_("Advanced Trail Settings"), icon="IPO_LINEAR")
-            box.prop(props, "overwritePathElevation")
-            layout.separator(factor=0.5)
-            if props.tex_use_texture == True:
-                box = layout.box()
-                box.label(text=_("Advanced Texture Settings"), icon="TEXTURE")
-                box.prop(props, "tex_resolution")
+        _draw_advanced_generation_box(layout, props)
+
         # --- PIN ---
-        layout.prop(
-            props,
-            "show_pin",
-            icon="TRIA_DOWN" if props.show_pin else "TRIA_RIGHT",
-            emboss=False,
-        )
-        if props.show_pin:
-            box = layout.box()
-            box.operator("tp3d.import_pin", text=_("Place Pin"), icon="PINNED")
-
-            box.separator(factor=0.5)
-            if temp.PREMIUMVERSION:
-                box.prop(props, "cityname")
-                box.operator("tp3d.city_coords", text=_("Pin on City"), icon="UNPINNED")
-            else:
-                box.prop(props, "cityname")
-                box.operator("tp3d.terrain_dummy", text=_("Pin on City"), icon="LOCKED")
-
-            box.separator(factor=0.5)
-            box.prop(
-                props,
-                "pinCutout",
-                icon="CHECKBOX_HLT" if props.pinCutout else "CHECKBOX_DEHLT",
-            )
-            if props.pinCutout:
-                box.prop(props, "pinCutoutClearance")
-                draw_wrapped_label(
-                    box,
-                    context,
-                    _(
-                        "New pins cut a socket into the map and elements at their position"
-                    ),
-                )
+        _draw_pin_box(layout, props, temp, context)
 
         # --- SPECIAL ---
-        layout.prop(
-            props,
-            "show_special",
-            icon="TRIA_DOWN" if props.show_special else "TRIA_RIGHT",
-            emboss=False,
-        )
-        if props.show_special:
-            box = layout.box()
-            box.operator(
-                "tp3d.puzzle_configurator",
-                text=_("Jigsaw Puzzle Generator"),
-                icon="MOD_BOOLEAN",
-            )
-            if temp.PREMIUMVERSION:
-                box.operator(
-                    "tp3d.sliding_puzzle_configurator",
-                    text=_("Sliding Puzzle Generator"),
-                    icon="MOD_BOOLEAN",
-                )
-            else:
-                box.operator(
-                    "tp3d.terrain_dummy",
-                    text=_("Sliding Puzzle Generator"),
-                    icon="LOCKED",
-                )
-
-            box.separator(factor=0.5)
-            col = box.column(align=True)
-            col.prop(props, "specialBlendFile")
-            col.prop(props, "specialCollectionName", text=_("Collection"))
-            if props.specialBlendFile == "puzzles.blend":
-                box.operator(
-                    "tp3d.append_collection", text=_("Import + Generate"), icon="IMPORT"
-                )
-            box.operator(
-                "tp3d.append_collection_blank", text=_("Import Blank"), icon="IMPORT"
-            )
+        _draw_special_box(layout, props, temp)
 
         # --- POST PROCESS ---
-        layout.prop(
-            props,
-            "show_postProcess",
-            icon="TRIA_DOWN" if props.show_postProcess else "TRIA_RIGHT",
-            emboss=False,
-        )
-        if props.show_postProcess:
-            box = layout.box()
-            box.label(text=_("Manually export object after these actions"))
-
-            sub = box.box()
-            sub.label(text=_("Color Mountains"), icon="RNDCURVE")
-            col = sub.column(align=True)
-            col.prop(props, "mountain_treshold")
-            col.prop(props, "mountain_noise", icon="CHECKBOX_DEHLT" if not props.mountain_noise else "CHECKBOX_HLT")
-            if props.mountain_noise:
-                row = col.row(align=True)
-                row.prop(props, "mountain_noise_amplitude")
-                row.prop(props, "mountain_noise_scale")
-            col.operator(
-                "tp3d.color_mountain", text=_("Color Mountains"), icon="RNDCURVE"
-            )
-            if has_height_bake_undo(context.object):
-                col.operator(
-                    "tp3d.undo_mountain_texture",
-                    text=_("Undo Texture Bake"),
-                    icon="LOOP_BACK",
-                )
-
-            sub = box.box()
-            sub.label(text=_("Contour Lines"), icon="ALIGN_JUSTIFY")
-            col = sub.column(align=True)
-
-            col.prop(props, "cl_useRealMeters")
-            col.separator()
-            col.prop(props, "cl_thickness")
-            col.prop(
-                props,
-                "cl_distance",
-                text=_("Distance (m)") if props.cl_useRealMeters else _("Distance (mm)"),
-            )
-            col.prop(
-                props,
-                "cl_offset",
-                text=_("Offset (m)") if props.cl_useRealMeters else _("Offset (mm)"),
-            )
-            map_obj = next(
-                (o for o in context.selected_objects
-                if "Object type" in o and o["Object type"] == "MAP"),
-                None,
-            )
-            if map_obj is not None:
-                _unused, _unused, is_valid = get_effective_cl_values(
-                    map_obj, props.cl_distance, props.cl_offset,
-                    props.cl_thickness, props.cl_useRealMeters,
-                )
-                if not is_valid:
-                    col.label(text=_("Distance must exceed thickness"), icon="ERROR")
-                else:
-                    z_extent = get_map_z_extent(map_obj)
-                    dist_eff, _unused, _unused = get_effective_cl_values(
-                        map_obj, props.cl_distance, props.cl_offset,
-                        props.cl_thickness, props.cl_useRealMeters,
-                    )
-                    est_count = ceil(z_extent / dist_eff) - 1 if dist_eff else 0
-                    col.label(text=f"~{est_count} slices", icon="INFO")
-
-            col.separator()
-            col.operator("tp3d.contour_lines", icon="MOD_ARRAY")
-
-            sub = box.box()
-            sub.label(text=_("Magnet Holes"), icon="SNAP_OFF")
-            col = sub.column(align=True)
-            row = col.row(align=True)
-            row.prop(props, "magnetHeight", slider=True)
-            row.prop(props, "magnetDiameter", slider=True)
-            row = col.row(align=True)
-            row.prop(props, "magnetMargin", slider=True)
-            row.prop(props, "magnetCount", slider=True)
-            sub.operator("tp3d.magnet_holes", text=_("Add Magnet Holes"), icon="SNAP_OFF")
-
-            sub = box.box()
-            sub.operator(
-                "tp3d.dovetail", text=_("Add Dovetail Cutouts"), icon="SHAPEKEY_DATA"
-            )
-
-            sub = box.box()
-            sub.label(text=_("Bottom Mark"), icon="SMALL_CAPS")
-            col = sub.column(align=True)
-            col.operator(
-                "tp3d.bottom_mark", text=_("Add Bottom Mark"), icon="SMALL_CAPS"
-            )
-            col.prop(props, "bottomMarkCutout")
-
-            sub = box.box()
-            row = sub.row()
-            row.label(text=_("SVG / Text Import"), icon="FILE_IMAGE")
-            ln = row.operator("tp3d.info_video", text="", icon="QUESTION")
-            ln.url = "https://www.youtube.com/@EmGi_"
-            row = sub.row(align=True)
-            row.prop(props, "svg_path", text=_("SVG File"))
-            row.operator("tp3d.pick_svg_file", text="", icon="FILEBROWSER")
-            sub.operator("tp3d.import_svg", text=_("Import SVG"))
-            sub.operator("tp3d.import_text", text=_("Place Text"), icon="FONT_DATA")
-
-            sub = box.box()
-            if temp.PREMIUMVERSION:
-                sub.operator(
-                    "tp3d.import_height_map",
-                    text=_("Import 2D Heightmap"),
-                    icon="IMAGE_DATA",
-                )
-            else:
-                sub.operator(
-                    "tp3d.terrain_dummy", text=_("Create Heightmap"), icon="LOCKED"
-                )
+        _draw_post_process_box(layout, props, temp, context)
 
         # --- PRESET ---
-        layout.prop(
-            props,
-            "show_preset",
-            icon="TRIA_DOWN" if props.show_preset else "TRIA_RIGHT",
-            emboss=False,
-        )
-        if props.show_preset:
-            box = layout.box()
-            box.prop(context.scene, "preset_list")
-            box.operator("tp3d.load_preset", icon="PRESET")
-            row = box.row(align=True)
-            row.operator("tp3d.save_preset", icon="PRESET_NEW")
-            row.operator("tp3d.delete_preset", icon="REMOVE")
+        _draw_preset_box(layout, props, context)
 
         # --- API ---
-        layout.prop(
-            props,
-            "show_api",
-            icon="TRIA_DOWN" if props.show_api else "TRIA_RIGHT",
-            emboss=False,
-        )
-        if props.show_api:
-            box = layout.box()
-            box.prop(props, "api", icon="INTERNET")
-            if props.api == "OPENTOPODATA":
-                box2 = box.box()
-                col = box2.column(align=True)
-                col.prop(props, "dataset")
-                col.separator(factor=0.5)
-                col.label(text=_("If you hosted your own Version of Opentopodata:"))
-                col.prop(props, "selfHosted")
-            if props.api == "OPENTOPOGRAPHY":
-                from .addon_preferences import get_prefs
-
-                box2 = box.box()
-                col = box2.column(align=True)
-                col.prop(props, "openTopographyDataset")
-                col.separator(factor=0.5)
-                if not get_prefs().openTopographyApiKey:
-                    col.label(
-                        text=_("API key required — set it in the addon preferences"),
-                        icon="ERROR",
-                    )
-                else:
-                    col.label(text=_("API key set"), icon="CHECKMARK")
-                col.operator(
-                    "screen.userpref_show",
-                    text=_("Open Preferences"),
-                    icon="PREFERENCES",
-                )
-            if props.api == "LOCAL_DEM":
-                box2 = box.box()
-                col = box2.column(align=True)
-                row = col.row(align=True)
-                row.prop(props, "demFilePath", text=_("DEM File"))
-                row.operator("tp3d.pick_dem_path", text="", icon="FILEBROWSER")
-                col.separator(factor=0.5)
-                draw_wrapped_label(
-                    col,
-                    context,
-                    _(
-                        "GeoTIFF only — WGS84 lat/lon, or UTM in WGS84 (EPSG:32601-32660 N / "
-                        "32701-32760 S), ETRS89 (EPSG:25828-25838), or NAD83 (EPSG:26901-26923)"
-                    ),
-                    icon="INFO",
-                )
-                draw_wrapped_label(
-                    col,
-                    context,
-                    _(
-                        "Can also point at a folder of tiled GeoTIFFs (e.g. a bulk multi-tile "
-                        "download) — only the tile(s) covering the generated area are read"
-                    ),
-                    icon="FILE_FOLDER",
-                )
-            if props.api in {"OPENTOPODATA", "TERRAIN-TILES", "MAPTERHORN"}:
-                col = box.column(align=True)
-                col.prop(props, "disableCache")
-                col.prop(props, "ccacheSize")
-            box.prop(props, "disableElevationOutlierFix")
-            box.separator(factor=0.5)
-            box.label(text=_("Elements (Water, forest, ...) runs on the Overpass API"))
-            box.prop(props, "apiRetries")
-            box.separator(factor=0.5)
-            box.operator("tp3d.clear_cache", icon="BRUSH_DATA")
+        _draw_api_box(layout, props, context)
 
         # --- STATS ---
-        layout.prop(
-            props,
-            "show_stats",
-            icon="TRIA_DOWN" if props.show_stats else "TRIA_RIGHT",
-            emboss=False,
-        )
-        if props.show_stats:
-            box = layout.box()
-            box.label(
-                text=_("Get Input Settings of Selected Generate Map"), icon="QUESTION"
-            )
-            box.operator("tp3d.show_custom_props_popup", icon="QUESTION")
-            box.separator(factor=0.5)
-            box.label(text=_("Last Generation"), icon="TIME")
-            col = box.column(align=True)
-            col.label(text=props.o_verticesPath)
-            col.label(text=props.o_verticesMap)
-            col.label(text=props.o_mapScale)
-            col.label(text=f"scaleHor: {props.sScaleHor}")
-            col.label(text=f"Map Size: {props.sMapInKm}")
-            col.label(text=props.o_time)
-            box.separator(factor=0.5)
-            col = box.column(align=True)
-            col.label(text=_("Opentopodata:"))
-            col.label(text=props.o_apiCounter_OpenTopoData)
-            col.label(text=_("OpenElevation:"))
-            col.label(text=props.o_apiCounter_OpenElevation)
-            box.separator(factor=0.5)
-            col = box.column(align=True)
-            col.label(
-                text=props.o_mapsGenerated
-                if props.o_mapsGenerated
-                else _("Maps Generated: ---"),
-                icon="RENDER_RESULT",
-            )
+        _draw_stats_box(layout, props)
 
         # --- ATTRIBUTION ---
-        layout.prop(
-            props,
-            "show_attribution",
-            icon="TRIA_DOWN" if props.show_attribution else "TRIA_RIGHT",
-            emboss=False,
-        )
-        if props.show_attribution:
-            box = layout.box()
-            col = box.column(align=True)
-            col.operator(
-                "wm.url_open",
-                text=_("OpenTopoData — elevation (SRTM and other datasets)"),
-                icon="URL",
-            ).url = "https://www.opentopodata.org/"
-            col.operator(
-                "wm.url_open",
-                text=_("Open-Elevation — elevation (SRTM © NASA)"),
-                icon="URL",
-            ).url = "https://open-elevation.com/"
-            col.operator(
-                "wm.url_open",
-                text=_("OpenStreetMap contributors — water, forests, city data"),
-                icon="URL",
-            ).url = "https://www.openstreetmap.org/copyright"
-            col.operator(
-                "wm.url_open",
-                text=_("Mapzen Terrain Tiles — terrain (OSM, NASA SRTM, USGS)"),
-                icon="URL",
-            ).url = "https://registry.opendata.aws/terrain-tiles/"
-            col.operator(
-                "wm.url_open",
-                text=_("OpenTopography — elevation (Global DEM)"),
-                icon="URL",
-            ).url = "https://opentopography.org/"
-            col.operator(
-                "wm.url_open",
-                text=_("Mapterhorn — terrain tiles (open-data sources)"),
-                icon="URL",
-            ).url = "https://github.com/mapterhorn/mapterhorn"
-            col.separator(factor=0.8)
-            disclaimer = box.column(align=True)
-            disclaimer.scale_y = 0.75
-            disclaimer.label(
-                text=_("TrailPrint3D itself may be used commercially."), icon="NONE"
-            )
-            disclaimer.label(
-                text=_("Data obtained through the add-on (such as OpenStreetMap"),
-                icon="NONE",
-            )
-            disclaimer.label(
-                text=_("or other providers) is subject to the respective"), icon="NONE"
-            )
-            disclaimer.label(
-                text=_("provider's license and terms, which may include"), icon="NONE"
-            )
-            disclaimer.label(
-                text=_("attribution or other requirements. Users are"), icon="NONE"
-            )
-            disclaimer.label(
-                text=_("responsible for ensuring compliance with those terms."),
-                icon="NONE",
-            )
+        _draw_attribution_box(layout, props)
 
 
 class TP3D_OT_show_custom_props_popup(bpy.types.Operator):
@@ -1361,7 +1547,6 @@ class TP3D_MT_generators_menu(bpy.types.Menu):
             layout.operator(
                 "tp3d.terrain_dummy", text=_("Sliding Puzzle Generator"), icon="LOCKED"
             )
-
 
 
 def draw_tp3d_viewport_menu(self, context):

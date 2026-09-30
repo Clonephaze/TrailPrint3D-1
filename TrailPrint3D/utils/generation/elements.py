@@ -4,10 +4,11 @@ from typing import Any, cast
 
 import bpy  # type: ignore
 from bpy.app.translations import pgettext as _
-from bpy.types import Object  # type: ignore
 
 from ... import constants as const
 from ... import progress as _progress
+from ... import temp
+from ...utils.plate import _expand_outline
 from ..dataclasses import GenerationContext, GenerationError
 from ..terrain import _ColoringTextureResult
 
@@ -15,97 +16,150 @@ from ..terrain import _ColoringTextureResult
 # geometry per piece without re-running the road pipeline.
 _puzzle_roads_data: tuple | None = None
 
-def _rg_create_text_and_overlays(gen: GenerationContext):
-    from math import pi
 
-    from ..scene import set_origin_to_3d_cursor, transform_MapObject
+def _stamp_shell_wkt(shell_obj, map_obj):
+    """Attach canonical 2D outlines to a shell for downstream tools.
+
+    Pure metadata — never touches geometry. The shell itself still comes from
+    build_map_shell's terrain-following extraction; the WKT is just the map's
+    own outline plus the nominal buffer boundaries, so post-processing can
+    reason about the shell without re-deriving them.
+    """
+    from shapely import wkt
+
+    if shell_obj is None or map_obj is None:
+        return
+    if "map_polygon_wkt" not in map_obj:
+        return
+    try:
+        map_poly = wkt.loads(map_obj["map_polygon_wkt"])
+    except Exception as exc:
+        print(f"[TrailPrint3D] shell WKT stamp skipped: {exc!r}")
+        return
+
+    tp3d = bpy.context.scene.tp3d
+    tol = tp3d.tolerance
+    wall = tp3d.shellWallThickness
+
+    outer_poly = _expand_outline(map_poly, tol + wall)
+    inner_poly = _expand_outline(map_poly, tol)
+
+    shell_obj["shell_mode"] = "SHELL"
+    shell_obj["shell_map_wkt"] = map_poly.wkt
+    if outer_poly is not None and not outer_poly.is_empty:
+        shell_obj["shell_outer_wkt"] = outer_poly.wkt
+        shell_obj.data["shell_outer_wkt"] = outer_poly.wkt
+    if inner_poly is not None and not inner_poly.is_empty:
+        shell_obj["shell_inner_wkt"] = inner_poly.wkt
+        shell_obj.data["shell_inner_wkt"] = inner_poly.wkt
+
+
+def _raise_overlays_with_plate(gen, plate_thickness):
+    """Lift every object that sits on top of the map by the same amount
+    the plate itself is lifted, so trails, roads, and elements stay
+    aligned with the map surface."""
+    objs = []
+    if gen.runtime.mapObject is not None:
+        objs.append(gen.runtime.mapObject)
+    if gen.runtime.curveObjs:
+        objs.extend(gen.runtime.curveObjs)
+    if gen.runtime.roadObj is not None:
+        objs.append(gen.runtime.roadObj)
+    if gen.runtime.elements:
+        for el in gen.runtime.elements:
+            if hasattr(el, "location"):
+                objs.append(el)
+    for obj in objs:
+        obj.location.z += plate_thickness - gen.settings.plateInsertValue
+
+
+def _rg_create_text_and_overlays(gen: GenerationContext):
+    from ..plate import create_generic_plate  # deferred
+    from ..scene import (
+        set_origin_to_3d_cursor,
+        transform_MapObject,
+    )
+    from ..terrain import plateInsert  # deferred
+    from ..text_layouts import apply_text_layout  # deferred
 
     try:
         from ...premium.utils_pe import (
-            build_map_shell,  # Premium-only: Shell shape extra
+            build_map_shell,  # Premium-only, unchanged
         )
     except ImportError:
 
         def build_map_shell(*_args, **_kwargs):
             return None
 
-    from ..terrain import plateInsert  # deferred to avoid circular import at load time
-    from ..text_objects import (  # deferred to avoid circular import at load time
-        HexagonFrontText,
-        HexagonInnerText,
-        HexagonOuterText,
-        MedalText,
-        OctagonOuterText,
-    )
-
     textobj = None
     plateobj = None
     shellobj = None
     bpy.ops.object.select_all(action="DESELECT")
 
-    if "append_collection" not in gen.settings.flags:
-        if gen.settings.shape == "HEXAGON INNER TEXT":
-            textobj = HexagonInnerText(gen.runtime.mapObject)
-        elif gen.settings.shape == "HEXAGON OUTER TEXT":
-            textobj, plateobj = HexagonOuterText()
-            gen.runtime.mapObject.location.z += gen.settings.plateThickness
-        elif gen.settings.shape == "OCTAGON OUTER TEXT":
-            textobj, plateobj = OctagonOuterText()
-            gen.runtime.mapObject.location.z += gen.settings.plateThickness
-        elif gen.settings.shape == "HEXAGON FRONT TEXT":
-            textobj, plateobj = HexagonFrontText()
-            gen.runtime.mapObject.location.z += gen.settings.plateThickness
-        elif gen.settings.shape == "CIRCLE OUTER TEXT":
-            textobj, plateobj = MedalText()
-            gen.runtime.mapObject.location.z += gen.settings.plateThickness
-        elif gen.settings.shape.endswith(" SHELL"):
-            shellobj = build_map_shell(
-                gen.runtime.mapObject,
-                gen.settings.tolerance,
-                wall=gen.settings.shellWallThickness,
-                bottom_wall=1.0,
+    if "append_collection" in gen.settings.flags or not gen.settings.shapeExtrasActive:
+        gen.runtime.textObj = None
+        gen.runtime.plateObj = None
+        gen.runtime.shellObj = None
+        return
+
+    map_obj = gen.runtime.mapObject
+    plate_mode = getattr(gen.settings, "plateMode", "NONE")
+    text_layout = getattr(gen.settings, "textLayout", "NONE")
+    shape = gen.settings.shape
+
+    # --- 1. Plate --------------------------------------------------------
+    if plate_mode == "SOLID_PLATE":
+        plateobj = create_generic_plate(
+            map_obj,
+            "SOLID_PLATE",
+            shape=shape,
+            outer_border_pct=gen.settings.outerBorderSize,
+            thickness=gen.settings.plateThickness,
+            bevel=gen.settings.plateBevel,
+            shape_rotation=gen.settings.shapeRotation,
+        )
+        if plateobj is not None:
+            tp3d = bpy.context.scene.tp3d
+            transform_MapObject(
+                plateobj,
+                tp3d.o_centerx + gen.settings.xTerrainOffset,
+                tp3d.o_centery + gen.settings.yTerrainOffset,
             )
+            # Sit the plate on the ground: local [0, -thickness] → world
+            # [plateThickness, 0].
+            plateobj.location.z += gen.settings.plateThickness
 
-            if shellobj:
-                set_origin_to_3d_cursor(shellobj)
-        else:
-            pass  # BottomText() — currently disabled
+    elif plate_mode == "SHELL" and temp.PREMIUMVERSION:
+        shellobj = build_map_shell(...)
+        if shellobj is not None:
+            _stamp_shell_wkt(shellobj, map_obj)
+            tp3d = bpy.context.scene.tp3d
+            transform_MapObject(
+                shellobj,
+                tp3d.o_centerx + gen.settings.xTerrainOffset,
+                tp3d.o_centery + gen.settings.yTerrainOffset,
+            )
+            set_origin_to_3d_cursor(shellobj)
+            shellobj.location.z += gen.settings.plateThickness
 
-    if (
-        "TEXT" in gen.settings.shape
-        and gen.runtime.curveObjs is not None
-        and "INNER TEXT" not in gen.settings.shape
-    ) or (gen.settings.shape == "CIRCLE OUTER TEXT" and gen.runtime.curveObjs is not None):
-        for tcrv in gen.runtime.curveObjs:
-            tcrv.location.z += gen.settings.plateThickness
+    # --- 2. Raise map/trail/elements with the plate ---------------------
+    if plateobj is not None or shellobj is not None:
+        _raise_overlays_with_plate(gen, gen.settings.plateThickness)
 
-    # Plate insert
-    bpy.ops.object.select_all(action="DESELECT")
-    dist = gen.settings.plateInsertValue
-    if (
-        gen.settings.shape
-        in {
-            "HEXAGON OUTER TEXT",
-            "OCTAGON OUTER TEXT",
-            "HEXAGON FRONT TEXT",
-            "CIRCLE OUTER TEXT",
-        }
-        and plateobj
-        and textobj
-    ):
-        transform_MapObject(plateobj, gen.settings.xTerrainOffset, gen.settings.yTerrainOffset)
-        transform_MapObject(textobj, gen.settings.xTerrainOffset, gen.settings.yTerrainOffset)
-        set_origin_to_3d_cursor(plateobj)
-        set_origin_to_3d_cursor(textobj)
-        if dist > 0:
-            plateInsert(plateobj, gen.runtime.mapObject)
-            textobj.location.z += dist
-        if gen.settings.shapeRotation != 0:
-            textobj.rotation_euler[2] += gen.settings.shapeRotation * (pi / 180)
+    # --- 3. Text layout --------------------------------------------------
+    if text_layout != "NONE":
+        inset = gen.settings.textPlacement
+        textobj = apply_text_layout(
+            map_obj, plateobj or shellobj, text_layout, shape,
+            inset=inset,
+            inset_depth=gen.settings.plateInsertValue or 0.8,
+        )
+        if textobj is not None and not inset and (plateobj is not None or shellobj is not None):
+            textobj.location.z += gen.settings.plateThickness + 0.002
 
-    gen.runtime.textObj = textobj
-    gen.runtime.plateObj = plateobj
-    gen.runtime.shellObj = shellobj
+    # --- 4. Plate insert -------------------------------------------------
+    if plateobj is not None:
+        plateInsert(plateobj, map_obj)
 
 
 def _rg_build_terrain_elements(
@@ -175,8 +229,9 @@ def _rg_build_terrain_elements(
         ),
         (
             "water",
-            lambda t: t.show_water and (
-                t.col_wBodiesActive or t.col_wMinorActive or t.col_wMajorActive
+            lambda t: (
+                t.show_water
+                and (t.col_wBodiesActive or t.col_wMinorActive or t.col_wMajorActive)
             ),
             const.WATER_MAXSIZE,
             "Water",
@@ -227,7 +282,9 @@ def _rg_build_terrain_elements(
         ]
         + (
             ["_ocean"]
-            if tp3d.show_water and tp3d.el_oActive == 1 and map_km <= const.COASTLINE_WATERPOLY_MAXSIZE
+            if tp3d.show_water
+            and tp3d.el_oActive == 1
+            and map_km <= const.COASTLINE_WATERPOLY_MAXSIZE
             else []
         )
         + (
@@ -241,7 +298,7 @@ def _rg_build_terrain_elements(
             else []
         )
     )
-    obj: Object = gen.runtime.mapObject
+    obj: bpy.types.Mesh = cast(bpy.types.Mesh, gen.runtime.mapObject)
     scaleHor = gen.runtime.sScaleHor
     _total_active = max(len(_active_elem_flags), 1)
     _elem_step = (_ELEM_PHASE_END - _ELEM_PHASE_START) / _total_active
@@ -257,14 +314,14 @@ def _rg_build_terrain_elements(
     _water_feat_active = (
         gen.settings.elementSource == "OSM"
         and tp3d.show_water
-        and (
-            tp3d.col_wBodiesActive
-            or tp3d.col_wMinorActive
-            or tp3d.col_wMajorActive
-        )
+        and (tp3d.col_wBodiesActive or tp3d.col_wMinorActive or tp3d.col_wMajorActive)
         and map_km <= const.WATER_MAXSIZE
     )
-    _ocean_active = tp3d.show_water and tp3d.el_oActive == 1 and map_km <= const.COASTLINE_WATERPOLY_MAXSIZE
+    _ocean_active = (
+        tp3d.show_water
+        and tp3d.el_oActive == 1
+        and map_km <= const.COASTLINE_WATERPOLY_MAXSIZE
+    )
     _water_ocean_combined = _water_feat_active and _ocean_active
 
     # --------------------------------------------------
@@ -274,8 +331,12 @@ def _rg_build_terrain_elements(
     if prefetched_osm is None:
         _lat_step = min(2.0, gen.runtime.tbMaxLat - gen.runtime.tbMinLat)
         _lon_step = min(2.0, gen.runtime.tbMaxLon - gen.runtime.tbMinLon)
-        _tile_lats = math.ceil((gen.runtime.tbMaxLat - gen.runtime.tbMinLat) / _lat_step)
-        _tile_lons = math.ceil((gen.runtime.tbMaxLon - gen.runtime.tbMinLon) / _lon_step)
+        _tile_lats = math.ceil(
+            (gen.runtime.tbMaxLat - gen.runtime.tbMinLat) / _lat_step
+        )
+        _tile_lons = math.ceil(
+            (gen.runtime.tbMaxLon - gen.runtime.tbMinLon) / _lon_step
+        )
         _tile_tasks = [
             (
                 gen.runtime.tbMinLat + k * _lat_step,
@@ -321,7 +382,11 @@ def _rg_build_terrain_elements(
             _active_kind_tasks.append(("BUILDINGS", _tile_tasks))
         if any_road_active(tp3d) and map_km <= const.ROADS_MAXSIZE:
             _active_kind_tasks.append(("STREETS", _tile_tasks))
-        if tp3d.show_water and tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE:
+        if (
+            tp3d.show_water
+            and tp3d.el_oActive == 1
+            and map_km <= const.COASTLINE_MAXSIZE
+        ):
             _active_kind_tasks.append(("COASTLINE", _tile_tasks))
         _all_prefetched = _fetch_all_kinds_parallel(
             _active_kind_tasks, _overpass_semaphore, settings=_fetch_settings
@@ -462,9 +527,7 @@ def _rg_build_terrain_elements(
                 "Map too big for Ocean/Coastline layer.", "warn"
             )
         elif isinstance(terrain["ocean"], _ColoringTextureResult):
-            terrain["_osm_polygons"][terrain["ocean"].kind] = terrain[
-                "ocean"
-            ].polygon
+            terrain["_osm_polygons"][terrain["ocean"].kind] = terrain["ocean"].polygon
             terrain["ocean"] = None
             _ov.set_fetch_done("water", success=True)
         elif terrain["ocean"] is not None:
@@ -495,7 +558,9 @@ def _rg_build_terrain_elements(
             _ov.set_fetch_progress("buildings", 0.0)
             _ov.set_fetch_ready("buildings")
             buildings = create_buildings(
-                gen, 10, gen.runtime.sScaleHor or 1,
+                gen,
+                10,
+                gen.runtime.sScaleHor or 1,
                 prefetched_tiles=_all_prefetched.get("BUILDINGS"),
             )
 
@@ -563,9 +628,15 @@ def _rg_build_terrain_elements(
                 terrain["roads_bottom_z"] = None
                 if tp3d.elementMode != "PAINT" and roads_polygon is not None:
                     terrain["roads_bottom_z"] = compute_full_depth_bottom_z(
-                        terrain["_terrain_tris_cache"], roads_polygon, gen.elevation.el_sHeight
+                        terrain["_terrain_tris_cache"],
+                        roads_polygon,
+                        gen.elevation.el_sHeight,
                     )
-                if gen.texture.useTexture and roads_polygon is not None and gen.texture.texRoads:
+                if (
+                    gen.texture.useTexture
+                    and roads_polygon is not None
+                    and gen.texture.texRoads
+                ):
                     terrain["_osm_polygons"]["ROADS"] = roads_polygon
                 if gen.texture.useTexture and gen.texture.texRoads:
                     # tex_include_roads on — polygon stored above; discard the mesh.
@@ -668,7 +739,9 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
             return thickerCurves, trail_thick_ribbons
 
         except Exception as e:
-            raise GenerationError(_("Failed to process curve projections: {e}").format(e=str(e))) from e
+            raise GenerationError(
+                _("Failed to process curve projections: {e}").format(e=str(e))
+            ) from e
 
     def _clip_paint_trail_curves_to_map(gen: GenerationContext, map_obj):
         """Trim each PAINT-mode trail curve's spline points to the map's true
@@ -773,7 +846,11 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                 new_splines_coords = []
                 was_cut = False
                 for spline in crv.data.splines:
-                    pts = spline.points if len(spline.points) > 0 else spline.bezier_points
+                    pts = (
+                        spline.points
+                        if len(spline.points) > 0
+                        else spline.bezier_points
+                    )
                     if len(pts) < 2:
                         continue
                     world_coords = [
@@ -787,9 +864,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                     for part in kept_parts:
                         coords = list(part.coords)
                         if len(coords) >= 2:
-                            new_splines_coords.append(
-                                [inv @ Vector(c) for c in coords]
-                            )
+                            new_splines_coords.append([inv @ Vector(c) for c in coords])
 
                 if not new_splines_coords:
                     # Whole curve fell outside the map -- drop it entirely.
@@ -828,7 +903,9 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
 
             gen.runtime.curveObjs = clipped_objs
         except Exception as e:
-            raise GenerationError(_("Failed to clip trail to map shape: {e}").format(e=str(e))) from e
+            raise GenerationError(
+                _("Failed to clip trail to map shape: {e}").format(e=str(e))
+            ) from e
 
     def _collect_paint_trail_ribbons(gen: GenerationContext):
         """In PAINT mode, derive 2D ribbon footprints from _Trail curve objects."""
@@ -867,7 +944,9 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
             return trail_thick_ribbons
 
         except Exception as e:
-            raise GenerationError(_("Failed to collect paint trail ribbons: {e}").format(e=str(e))) from e
+            raise GenerationError(
+                _("Failed to collect paint trail ribbons: {e}").format(e=str(e))
+            ) from e
 
     def _store_trail_union_for_texture(
         gen: GenerationContext, terrain: dict, trail_thick_ribbons
@@ -934,7 +1013,12 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                         message=f"Single-color: remeshing {key.capitalize()} ({_scm_done + 1}/{_n_scm})…",
                     )
 
-                thicker = single_color_mode_mesh_remesh(elem_obj, obj, map_outline=gen.runtime.mapOutline, shared_bottom_z=_scm_bottom_z)
+                thicker = single_color_mode_mesh_remesh(
+                    elem_obj,
+                    obj,
+                    map_outline=gen.runtime.mapOutline,
+                    shared_bottom_z=_scm_bottom_z,
+                )
                 thicker_by_key[key] = thicker
 
                 if _ov.active:
@@ -1121,7 +1205,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
             el_sHeight = gen.elevation.el_sHeight
             full_depth = gen.settings.elementMode != "PAINT"
             _roads_poly = gen.runtime.roadUnion
-            terrain_tris: list = terrain.get("_terrain_tris_cache")
+            terrain_tris: list = cast(list, terrain.get("_terrain_tris_cache"))
             if trail_thick_ribbons and _roads_poly is not None:
                 _trail_union = _g2d.union(trail_thick_ribbons)
                 _roads_poly = _roads_poly.difference(_trail_union)
@@ -1133,6 +1217,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
             _map_outline_world = None
             if gen.runtime.mapOutline is not None and gen.runtime.mapObject is not None:
                 from shapely.affinity import translate as _shp_translate
+
                 _map_outline_world = _shp_translate(
                     gen.runtime.mapOutline,
                     xoff=gen.runtime.mapObject.location.x,
@@ -1177,7 +1262,9 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
             bpy.ops.object.mode_set(mode="OBJECT")
 
         except Exception as e:
-            raise GenerationError(_("Failed to finalise roads: {e}").format(e=str(e))) from e
+            raise GenerationError(
+                _("Failed to finalise roads: {e}").format(e=str(e))
+            ) from e
 
     def _cleanup_thicker_curves(thickerCurves, debug: bool, map_size: float):
         """Either move thicker curves aside (debug) or delete them."""
@@ -1190,7 +1277,9 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
 
                 remove_objects(thickerCurves)
         except Exception as e:
-            raise GenerationError(_("Failed to clean up thicker curves: {e}").format(e=str(e))) from e
+            raise GenerationError(
+                _("Failed to clean up thicker curves: {e}").format(e=str(e))
+            ) from e
 
     obj = gen.runtime.mapObject
     terrain: dict[str, Any] = cast(dict[str, Any], gen.runtime.elements)
@@ -1233,5 +1322,3 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
 
     # Step 8: Clean up temporary thicker curves
     _cleanup_thicker_curves(thickerCurves, bpy.app.debug, gen.settings.size)
-
-

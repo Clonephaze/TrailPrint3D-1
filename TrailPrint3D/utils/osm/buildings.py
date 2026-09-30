@@ -1028,6 +1028,9 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0, pr
     mat = bpy.data.materials.get("BUILDINGS")
     obj.data.materials.clear()
     obj.data.materials.append(mat)
+    
+    obj["Object type"] = "BUILDINGS"
+    obj["ExportGroup"] = 1
 
     print(
         f"[TP3D buildings] final mesh build ({len(b_verts)} verts) took {time.time() - _t0:.1f}s"

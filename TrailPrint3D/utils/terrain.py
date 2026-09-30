@@ -1220,48 +1220,121 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
 
 
 def plateInsert(plate, map):
-    from .mesh_ops import (  # deferred to avoid circular import at load time
-        recalculateNormals,
-        selectBottomFaces,
+    """Cut a footprint-shaped cavity into the top of the plate so the map
+    sits down into it by `plateInsertValue` millimeters.
+
+    Built from the map's stored canonical WKT outline (`map_polygon_wkt`),
+    NOT from its mesh. The mesh is a solidified heightfield: its bottom
+    follows the terrain rather than sitting on a flat plane, it's made of
+    tens of thousands of tessellation slivers, and normal-direction
+    selection can't reliably reduce it to "just the bottom faces" on any
+    mesh with a non-manifold seam -- which every SVG import has. The WKT
+    is a single clean 2D polygon that predates all of that, so the
+    cutter comes out as a clean prism every time.
+
+    The cavity is flat-bottomed rather than conforming to the map's
+    underside. That's a deliberate trade: flat cavities have predictable
+    depth, print without thin floors under terrain peaks, and -- most
+    importantly -- work on every shape, whereas the terrain-conforming
+    approach only worked when normal-based bottom selection happened to
+    succeed.
+    """
+    from mathutils import Vector
+    from shapely import wkt
+    from shapely.affinity import rotate as shp_rotate
+
+    from . import geometry2d as g2d
+    from .mesh_ops import recalculateNormals
+    from .plate import _build_prism
+
+    tp3d = bpy.context.scene.tp3d
+    tol = tp3d.tolerance
+    dist = tp3d.plateInsertValue
+    shape_rotation = tp3d.shapeRotation
+
+    if dist <= 0:
+        return
+
+    if "map_polygon_wkt" not in map:
+        print("[plateInsert] map has no map_polygon_wkt -- aborting.")
+        return
+
+    poly = wkt.loads(map["map_polygon_wkt"])
+    if poly is None or poly.is_empty:
+        print("[plateInsert] map WKT is empty -- aborting.")
+        return
+
+    # The WKT is stored pre-rotation: build_mesh_from_polygon writes it
+    # before _rg_create_map_object's transform_apply bakes shapeRotation
+    # into the mesh data. Apply the same rotation here so the cutter's
+    # XY footprint lines up with the visible map.
+    if shape_rotation:
+        poly = shp_rotate(poly, shape_rotation, origin="centroid")
+
+    # Buffer outward by tolerance for a uniform clearance ring around the
+    # map footprint. Mitre join keeps polygon corners crisp; the same
+    # mitre_limit that un-spiked the plate bevel.
+    if tol > 0:
+        poly = g2d.validate(poly.buffer(tol, join_style="mitre", mitre_limit=2.0))
+        if poly is None or poly.is_empty:
+            print("[plateInsert] WKT buffer produced empty geometry -- aborting.")
+            return
+
+    # --- Cutter's Z span, in world space ---
+    # Cavity floor = plate's world top minus the requested insert depth.
+    # Cutter extends from there up past the plate top by a 1-unit margin
+    # so the boolean sees clean, non-coincident caps at both ends.
+    bpy.context.view_layer.update()
+    plate_top_z = max((plate.matrix_world @ v.co).z for v in plate.data.vertices)
+
+    cavity_floor_z = plate_top_z - dist
+    cutter_height = (plate_top_z + 1.0) - cavity_floor_z
+    print(
+        f"[plateInsert] top={plate_top_z:.2f} "
+        f"floor={cavity_floor_z:.2f} "
+        f"cutter_span=[{cavity_floor_z:.2f}, {cavity_floor_z + cutter_height:.2f}]"
     )
 
+    cutter = _build_prism(poly, cutter_height, 0.0, "_PlateInsert_Cutter")
+    if cutter is None:
+        print("[plateInsert] failed to build cutter prism -- aborting.")
+        return
+
+    # Position the cutter's local z=0 at the cavity floor and align its
+    # XY with the map's footprint. Map and plate were both placed by the
+    # same transform_MapObject call so their origins coincide in XY.
+    cutter.location = (
+        map.location.x,
+        map.location.y,
+        cavity_floor_z,
+    )
+
+    recalculateNormals(cutter)
+
+    # --- Boolean difference ---
     bpy.ops.object.select_all(action="DESELECT")
-
-    tol = bpy.context.scene.tp3d.tolerance
-    dist = bpy.context.scene.tp3d.plateInsertValue
-    size = bpy.context.scene.tp3d.objSize
-
-    # Duplicate the map object
-    map_copy = map.copy()
-    map_copy.data = map.data.copy()
-    bpy.context.collection.objects.link(map_copy)
-    map_copy.scale *= (size + tol) / size
-
-    plate.location.z += dist
-
-    selectBottomFaces(map_copy)
-    bpy.ops.mesh.select_all(action="INVERT")
-    bpy.ops.mesh.delete(type="FACE")
-    bpy.ops.mesh.select_all(action="SELECT")
-
-    bpy.ops.mesh.extrude_region_move()
-    bpy.ops.transform.translate(value=(0, 0, 100))
-    bpy.ops.object.mode_set(mode="OBJECT")
-
-    recalculateNormals(map_copy)
-    bpy.ops.object.select_all(action="DESELECT")
-
     plate.select_set(True)
     bpy.context.view_layer.objects.active = plate
 
-    mod = plate.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
+    mod = plate.modifiers.new(name=_("Boolean"), type="BOOLEAN")
     mod.operation = "DIFFERENCE"
     mod.solver = "MANIFOLD"
-    mod.object = map_copy
+    mod.object = cutter
 
-    bpy.ops.object.modifier_apply(modifier=mod.name)
+    try:
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+    except RuntimeError as exc:
+        print(f"[plateInsert] MANIFOLD solver failed: {exc!r}")
+        print("[plateInsert] retrying with EXACT solver...")
+        mod.solver = "EXACT"
+        bpy.ops.object.modifier_apply(modifier=mod.name)
 
-    bpy.data.objects.remove(map_copy, do_unlink=True)
+    if not bpy.app.debug:
+        bpy.data.objects.remove(cutter, do_unlink=True)
+    else:
+        cutter.name = "_PlateInsert_Cutter_DEBUG"
+
+    recalculateNormals(plate)
 
 
 # ---------------------------------------------------------------------------
