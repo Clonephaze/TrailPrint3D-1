@@ -7,6 +7,7 @@
 import json
 import pathlib
 import queue
+import re
 import shutil
 import socket
 import subprocess as sp
@@ -16,6 +17,8 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import cast
+
+from . import constants as const
 
 # Element-status chip clicks (POST /toggle_element, see the picker pages'
 # element_status.js) land on this HTTP server's own background thread --
@@ -163,6 +166,90 @@ def _element_icons_js() -> str:
 _PREFERRED_PORT = 27373
 _active_server: HTTPServer | None = None
 _STATE_PATH = pathlib.Path(tempfile.gettempdir()) / "trailprint_picker_state.json"
+
+# Per-generator generation history (assets/history_panel.js's right-hand
+# drawer) -- one JSON file per picker page, keyed by html_path.stem the same
+# way _STATE_PATH is keyed for the multi-page-aware state_path below (see
+# _history_key). Kept in the addon's persistent CONFIG dir (unlike the
+# session-only state files above, which live in the OS temp dir) since the
+# whole point of a history is to survive across Blender restarts.
+_HISTORY_DIR = pathlib.Path(const.generation_history_dir)
+_HISTORY_MAX_ENTRIES = 50
+
+
+def _history_key(html_path: pathlib.Path) -> str:
+    """History-file key for a picker page. Free/premium page pairs (e.g.
+    map_generator.html / premium/map_generator_pe.html, puzzleGenerator.html /
+    premium/puzzleGenerator_pe.html) share one history file -- a map or
+    puzzle generated in one should show up in the other's history drawer --
+    so the trailing '_pe' that otherwise distinguishes the premium filename
+    is stripped before it's used as the history/state key. Premium-only
+    pages (multitile_generator.html, slidingPuzzleGenerator.html) don't have
+    a '_pe' suffix to begin with and keep their own history as before.
+    """
+    stem = html_path.stem
+    return stem[:-3] if stem.endswith('_pe') else stem
+
+# Real top-down Blender renders (export.save_history_thumbnail), written well
+# after this server has usually already shut down -- see /get_history_render
+# and _read_history's own render-lookup below. Entry ids are uuid4().hex (32
+# lowercase hex chars); this regex doubles as the path-traversal guard for
+# both the render lookup and the on-disk filename.
+_HISTORY_THUMBNAILS_DIR = pathlib.Path(const.generation_history_thumbnails_dir)
+_HISTORY_ID_RE = re.compile(r'^[0-9a-f]{32}$')
+
+
+def _history_render_path(entry_id: str) -> 'pathlib.Path | None':
+    if not isinstance(entry_id, str) or not _HISTORY_ID_RE.match(entry_id):
+        return None
+    return _HISTORY_THUMBNAILS_DIR / f'{entry_id}.png'
+
+
+def _read_history(path: pathlib.Path) -> list:
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return data if isinstance(data, list) else []
+
+
+def _with_render_urls(entries: list) -> list:
+    """Copy of *entries* with a 'render' URL added wherever a real top-down
+    Blender render (export.save_history_thumbnail) now exists on disk for
+    that entry -- checked fresh on every call (GET /get_history only) rather
+    than cached in the JSON file itself, so a picker page that's still open
+    when generation finishes picks it up on its very next poll instead of
+    only after a reopen. Deliberately not folded into _read_history, whose
+    result also feeds straight back into _write_history elsewhere -- this
+    derived field must never actually get persisted.
+    """
+    out = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            out.append(entry)
+            continue
+        render_path = _history_render_path(entry.get('id'))
+        if render_path is not None and render_path.exists():
+            entry = dict(entry, render=f'/get_history_render?id={entry["id"]}')
+        out.append(entry)
+    return out
+
+
+def _write_history(path: pathlib.Path, entries: list) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(entries), encoding='utf-8')
+    except OSError as e:
+        print(f"[TP3D picker] Failed to write history {path}: {e}")
+
+
+def _delete_history_render(entry_id: str) -> None:
+    render_path = _history_render_path(entry_id)
+    if render_path is not None:
+        try:
+            render_path.unlink(missing_ok=True)
+        except OSError as e:
+            print(f"[TP3D picker] Failed to delete history render {render_path}: {e}")
 
 
 def _bring_blender_to_foreground() -> None:
@@ -328,6 +415,7 @@ class _Handler(BaseHTTPRequestHandler):
     obj_size: float = 100.0
     html_path: pathlib.Path = _HTML_PATH
     state_path: pathlib.Path = _STATE_PATH
+    history_path: pathlib.Path = _HISTORY_DIR / f'{_history_key(_HTML_PATH)}.json'
 
     def log_message(self, *args):
         pass
@@ -728,6 +816,7 @@ def start_picker(
         else pathlib.Path(tempfile.gettempdir())
         / f"trailprint_picker_state_{html_path.stem}.json"
     )
+    history_path = _HISTORY_DIR / f'{_history_key(html_path)}.json'
 
     print(
         f"[TP3D picker] starting session: html_path={html_path} state_path={state_path} "
@@ -748,6 +837,7 @@ def start_picker(
     _Handler.obj_size = obj_size or 100.0
     _Handler.html_path = html_path
     _Handler.state_path = state_path
+    _Handler.history_path = history_path
 
     server = HTTPServer(("127.0.0.1", port), _Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

@@ -139,6 +139,13 @@ ROAD_TYPE_DEFS = [
         ),
     ),
     (
+        "pedestrian",
+        _("Pedestrian Streets"),
+        "highway=pedestrian -- ways reserved for pedestrians, e.g. shopping streets/squares "
+        "(see Key:highway on the OSM wiki). Kept separate from Footways/Sidewalks since it's "
+        "a distinct OSM tag for wider pedestrianised streets rather than sidewalks alongside a road.",
+    ),
+    (
         "cycle_bridle",
         _("Cycle/Bridle Paths"),
         "highway=cycleway, bridleway -- dedicated bike and horse paths",
@@ -1176,7 +1183,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
                 "WORLDCOVER",
                 _("ESA WorldCover"),
                 _(
-                    "Color the terrain from ESA WorldCover's land-cover classification instead of individual OSM element toggles. Roads and Buildings still come from OSM."
+                    "Color the terrain from ESA WorldCover's land-cover classification instead of individual OSM element toggles. Roads and Buildings are OSM-only and are not generated in this mode."
                 ),
             ),
         ],
@@ -1596,6 +1603,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
             "Extra size added to the cutout so the printed pin actually fits into the socket"
         ),
     )  # type: ignore
+
+    pinCutout: BoolProperty(name= _("Pin Cutout"), default=False, description=_("When placing a pin, also cut a matching socket into the map and elements at the pin's position, so the printed pin can be inserted afterward")) # type: ignore
+    pinCutoutClearance: FloatProperty(name= _("Cutout Clearance"), default=0.2, min=0.0, soft_max=2.0, description=_("Extra size added to the cutout so the printed pin actually fits into the socket")) # type: ignore
 
     mapmode: EnumProperty(
         name=_("mapmode"),

@@ -414,10 +414,10 @@ def BottomText(obj):
 
     from . import transform_MapObject  # deferred to avoid circular import at load time
 
-    name = obj.name
-    if "objSize" in obj:
-        size = obj["objSize"]
-    else:
+    # Drop Blender's duplicate-name suffix (".001", ".002", ...) so a piece
+    # renamed "A1.001" on collision is still marked "A1".
+    name = re.sub(r"\.\d{3,}$", "", obj.name)
+    if "objSize" not in obj:
         return
 
         # Place text objects
@@ -425,6 +425,13 @@ def BottomText(obj):
 
     tName = create_text("t_name", "Name", (0, 0, 1.1), text_size)
 
+    # obj.location -- for puzzle/sliding-puzzle pieces this is each piece's
+    # own regularly-spaced RASTER cell center (cut_into_puzzle_pieces /
+    # cut_into_sliding_puzzle_pieces re-home the origin there via
+    # set_origin_to_3d_cursor), not that piece's own bounding-box center --
+    # a jigsaw piece's actual shape is skewed off-center by its own tabs/
+    # blanks bulging asymmetrically into its neighbors, so the bbox center
+    # would place the mark off to one side instead of centered on the cell.
     cx = obj.location.x
     cy = obj.location.y
 
@@ -439,6 +446,56 @@ def BottomText(obj):
 
     convert_text_to_mesh("t_name", obj.name, False)
 
+    if is_jigsaw:
+        verts = [(v.co.x, v.co.y) for v in tName.data.vertices]
+        vxs = [x for x, _y in verts]
+        vys = [y for _x, y in verts]
+        local_cx = (max(vxs) + min(vxs)) / 2
+        local_cy = (max(vys) + min(vys)) / 2
+
+        # One box per text line, relative to the block's own center, so a
+        # narrow line isn't held to a wider line's width. Lines are split at
+        # the widest Y band no edge crosses -- vertex heights alone aren't
+        # enough, a straight stem (e.g. "1") has none along its length.
+        line_groups = [verts]
+        if "\n" in mark_text:
+            spans = sorted(
+                (min(verts[a][1], verts[b][1]), max(verts[a][1], verts[b][1]))
+                for a, b in (e.vertices for e in tName.data.edges)
+            )
+            best_gap, split_y = 0.0, None
+            reach = spans[0][1] if spans else 0.0
+            for lo_y, hi_y in spans[1:]:
+                if lo_y - reach > best_gap:
+                    best_gap, split_y = lo_y - reach, (lo_y + reach) / 2
+                reach = max(reach, hi_y)
+            if split_y is not None:
+                line_groups = [[p for p in verts if p[1] > split_y],
+                               [p for p in verts if p[1] <= split_y]]
+        rects = []
+        for group in line_groups:
+            gxs = [x for x, _y in group]
+            gys = [y for _x, y in group]
+            rects.append((
+                -((max(gxs) + min(gxs)) / 2 - local_cx),  # X mirrored in world
+                (max(gys) + min(gys)) / 2 - local_cy,
+                (max(gxs) - min(gxs)) / 2,
+                (max(gys) - min(gys)) / 2,
+            ))
+
+        fit = _fit_jigsaw_mark(obj, rects, cx, cy, size)
+        if fit is None:
+            # No clean spot found (degenerate piece) -- fall back to a fixed
+            # size at the cell center.
+            fit = (size / 8, cx, cy)
+        s, px, py = fit
+        # Scale is (-s, s, 1) -- X stays mirrored, so a local X offset lands
+        # at -s * local_cx in world space; shift the location to put the
+        # text's own bbox center exactly on (px, py).
+        tName.scale = (-s, s, 1)
+        tName.location.x = px + s * local_cx
+        tName.location.y = py - s * local_cy
+
     tName.name = name + "_Mark"
 
     bpy.ops.object.select_all(action="DESELECT")
@@ -450,5 +507,9 @@ def BottomText(obj):
     mat = bpy.data.materials.get("TRAIL")
     tName.data.materials.clear()
     tName.data.materials.append(mat)
+
+    # Bake the mirrored X scale into the mesh; a negative scale flips normals.
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    recalculateNormals(tName)
 
     return tName

@@ -16,7 +16,7 @@ from bpy.app.translations import pgettext as _
 from bpy.props import CollectionProperty, StringProperty  # type: ignore
 from mathutils import Euler, Quaternion, Vector, noise  # type: ignore
 
-from . import addon_preferences, utils
+from . import addon_preferences, export, utils
 from . import constants as const
 from . import progress as _progress
 from .utils.dataclasses import ExportError, GenerationError
@@ -963,6 +963,29 @@ class TP3D_OT_bottom_mark(bpy.types.Operator):
 
         if not generated:
             utils.show_message_box("Not a valid Object selected")
+
+        # Marking a whole puzzle (dozens of pieces, two booleans each) takes
+        # a while -- show how many are done instead of a frozen viewport.
+        overlay = None
+        if len(targets) > 1:
+            overlay = _progress.ProgressOverlay.get()
+            overlay.start()
+        try:
+            n_targets = len(targets)
+            for idx, zobj in enumerate(targets):
+                if overlay is not None:
+                    if _progress.SubprocessProgress.get().is_cancel_requested():
+                        break
+                    overlay.update(
+                        idx / n_targets, "Bottom Mark",
+                        f"{idx}/{n_targets} marked — {zobj.name}…",
+                    )
+                self._mark_tile(context, zobj, bottomMarkCutout)
+                if overlay is not None:
+                    overlay.add_completed_step(f"{zobj.name} marked ({idx + 1}/{n_targets})")
+        finally:
+            if overlay is not None:
+                overlay.finish()
 
         bpy.context.view_layer.objects.active = selected_objects[0]
         for zobj in selected_objects:
@@ -2813,6 +2836,16 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
                 and puzzle_min_y <= obs.location.y <= puzzle_max_y
             ):
                 bpy.data.objects.remove(obs, do_unlink=True)
+        # Removing an object above (or the user deleting old pieces by hand
+        # before regenerating) only drops that object's own reference -- the
+        # underlying mesh stays in bpy.data as a 0-user orphan under its old
+        # name until the file is saved/reloaded or purged by hand. Piece
+        # names are now short and reused every generation rather than unique
+        # per-puzzle (see piece_grid_label), so without this, a leftover
+        # orphan mesh still named e.g. "A1" collides with the new one
+        # cut_into_puzzle_pieces is about to create and gets suffixed
+        # "A1.001", then "A1.002" next time, and so on.
+        bpy.data.orphans_purge(do_local_ids=True, do_recursive=True)
 
         # blank_w/h stay equal to tile_w/h unless a holder with "Terrain on
         # Frame" was requested -- one shared tile/elevation-fetch/paint pass
@@ -2976,7 +3009,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # keep_terrain_obj leaves `blank` around afterward so the holder's
         # own terrain rim can still be cut from this SAME object/paint pass
         # below instead of a second, independently-generated tile.
-        overlay.update(0.75, "Cutting puzzle pieces…", f"{len(pieces)} piece(s)…")
+        overlay.update(0.75, f"Create Puzzle Piece 0/{len(pieces)}", "")
         piece_objs, piece_seam_polys = utils.cut_into_puzzle_pieces(
             blank,
             pieces,
@@ -2987,6 +3020,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             if frame_terrain_requested
             else None,
             keep_terrain_obj=frame_terrain_requested,
+            overlay=overlay, progress_start=0.75, progress_end=0.85,
         )
 
         if trails:
@@ -3071,6 +3105,16 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         if frame_terrain_requested and blank_name in bpy.data.objects:
             bpy.data.objects.remove(bpy.data.objects[blank_name], do_unlink=True)
 
+        finished_objs = piece_objs + ([holder_obj] if holder_obj is not None else [])
+        bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
+        export.save_history_thumbnail(data.get('history_id'), finished_objs)
+        # Re-zoom LAST, after the thumbnail render -- customThumbnail swaps in
+        # its own temp top-down camera view for the screenshot and then tries
+        # to restore the previous one, but a direct RegionView3D.view_matrix
+        # assignment isn't reliable enough to trust as the final on-screen
+        # state, so explicitly re-focus on the actual finished puzzle
+        # afterward rather than before it (a zoom done before the thumbnail
+        # render could otherwise get clobbered by that restore).
         try:
             utils.zoom_camera_to_objects(
                 piece_objs + ([holder_obj] if holder_obj is not None else [])
@@ -3135,9 +3179,9 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
         for request in mp.drain_pending_prefetch():
             self._start_prefetch(context, request)
-        # Keeps a later page reload (premium/map_generator_pe.html's OSM/ESA
-        # WorldCover switch, settings_modal.js) in sync with whatever was
-        # just applied above -- see refresh_state_snapshots' own docstring.
+        # Keeps a later page reload (the OSM/ESA WorldCover switch,
+        # settings_modal.js) in sync with whatever was just applied above --
+        # see refresh_state_snapshots' own docstring.
         mp.refresh_state_snapshots(
             element_states=utils.build_element_toggle_states(context.scene.tp3d),
             settings_state=utils.build_settings_row_state(context.scene.tp3d),
@@ -3266,7 +3310,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             # Trail-only: no area was drawn — just add the trail(s) using
             # whatever map setup (scale, position) is already active in the
             # scene, same as the sidebar's "Generate Just Trail" button.
-            _generate_trails(context, gpx_paths, overlay, 0.1, 0.95)
+            trails = _generate_trails(context, gpx_paths, overlay, 0.1, 0.95)
             if props.singleColorMode:
                 _progress.WarningsOverlay.add_warning(
                     _(

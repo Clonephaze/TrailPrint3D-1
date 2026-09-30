@@ -20,8 +20,8 @@ def transform_MapObject(obj, newX, newY):
 
 def zoom_camera_to_objects(objs):
     """Select every object in *objs* and zoom the 3D viewport to fit all of
-    them -- the multi-object counterpart of zoom_camera_to_selected, for
-    results made of several separate objects (e.g. puzzle pieces) where
+    them. Pass a one-item list for a single object; for results made of
+    several separate objects (e.g. puzzle pieces) pass them all, since
     fitting to just one would zoom in too far and miss the rest."""
     objs = [o for o in (objs or []) if o is not None]
     if not objs:
@@ -44,10 +44,6 @@ def zoom_camera_to_objects(objs):
 
     with bpy.context.temp_override(area=area, region=region):
         bpy.ops.view3d.view_selected(use_all_regions=False)
-
-
-def zoom_camera_to_selected(obj):
-    zoom_camera_to_objects([obj])
 
 
 def set_origin_to_3d_cursor(tobj=None):
@@ -364,14 +360,6 @@ def show_message_box(message, ic = "ERROR", ti = "ERROR"):
     print(message)
     if not bpy.app.background:
         bpy.context.window_manager.popup_menu(draw, title=ti, icon=ic)
-
-
-def toggle_console():
-    try:
-        if platform.system() == "Windows":
-            bpy.ops.wm.console_toggle()
-    except RuntimeError as e:
-        print(f"Could not toggle console: {e}")
 
 
 def importSVGtoMerge(Mapobject):

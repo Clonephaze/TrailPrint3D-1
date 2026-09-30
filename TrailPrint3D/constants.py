@@ -14,7 +14,7 @@ from bpy.app.translations import (  # type: ignore
 )
 
 ADDON_NAME = "TrailPrint3D"
-ADDON_VERSION = (3, 2, 0)
+ADDON_VERSION = (3, 2, 1)
 required_blender_version = (5, 1, 0)
 
 ENABLE_UPDATE_CHECKER = True
@@ -137,6 +137,18 @@ water_cache_dir = os.path.join(
 # Set up a folder for Presets
 preset_dir = os.path.join(bpy.utils.user_resource("CONFIG"), "TP3D-presets")
 
+# Set up a folder for the picker pages' (puzzleGenerator.html etc.) per-
+# generator generation history -- one JSON file per page, see
+# picker_server.py's /save_history_entry & /get_history.
+generation_history_dir = os.path.join(bpy.utils.user_resource('CONFIG'), "TP3D-history")
+
+# Real top-down Blender renders of past generations (export.save_history_thumbnail),
+# named <history entry id>.png -- served by picker_server.py's
+# /get_history_render once the generation that created them has actually
+# finished, which is usually well after that picker session's own server
+# already shut down.
+generation_history_thumbnails_dir = os.path.join(generation_history_dir, "thumbnails")
+
 
 def _ensure_dirs():
     """Create addon cache/preset directories. Call from register() only."""
@@ -147,6 +159,8 @@ def _ensure_dirs():
     os.makedirs(satellite_cache_dir, exist_ok=True)
     os.makedirs(water_cache_dir, exist_ok=True)
     os.makedirs(preset_dir, exist_ok=True)
+    os.makedirs(generation_history_dir, exist_ok=True)
+    os.makedirs(generation_history_thumbnails_dir, exist_ok=True)
 
 
 LINUX_PYTHON314_MISMATCH = platform.system() == "Linux" and sys.version_info[:2] == (

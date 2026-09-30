@@ -98,9 +98,9 @@
             <div class="field-row" id="gridRowRect">
                 <label>Grid (cols × rows)</label>
                 <div style="display: flex; align-items: center; gap: 4px;">
-                    <input type="number" id="colsInput" min="1" max="20" step="1" value="3" title="Columns" style="width: 50px;">
+                    <input type="number" id="colsInput" min="1" max="50" step="1" value="3" title="Columns" style="width: 50px;">
                     <span style="color: #666;">×</span>
-                    <input type="number" id="rowsInput" min="1" max="20" step="1" value="3" title="Rows" style="width: 50px;">
+                    <input type="number" id="rowsInput" min="1" max="50" step="1" value="3" title="Rows" style="width: 50px;">
                 </div>
             </div>
         </div>
@@ -114,9 +114,7 @@
              those existing input elements still exist in the DOM for it to
              relocate (same ids, so saveState/restoreState/regeneratePuzzle's
              own listeners below keep working unchanged regardless of where
-             they end up living). Tolerance (mm) used to be here too; it was
-             dropped rather than moved, so the puzzle-cut tolerance sent on
-             Send just falls back to _apply_puzzle_result's own 0.3 default. -->
+             they end up living). -->
         <div id="puzzleTabFieldsSource" style="display:none;">
             <div class="field-row">
                 <label for="tabSizeInput">Tab Size</label>
@@ -133,6 +131,10 @@
             <div class="field-row" id="puzzleCornerRadiusRow">
                 <label for="puzzleCornerRadiusInput">Corner Radius</label>
                 <input type="number" id="puzzleCornerRadiusInput" min="0" max="30" step="1.0" value="4">
+            </div>
+            <div class="field-row">
+                <label for="puzzleToleranceInput">Tolerance (mm)</label>
+                <input type="number" id="puzzleToleranceInput" min="0" max="2" step="0.05" value="0.3" title="Gap between neighboring puzzle pieces (each piece shrinks by half of it)">
             </div>
         </div>
         <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -254,10 +256,12 @@
         var TP3D_IS_PUZZLE_PAGE = true; // read by settings_modal.js to decide whether to add its "Puzzle" tab
         __ELEMENT_ICONS_JS__
         __ELEMENT_STATES_JS__
+        __ELEMENT_SOURCE_JS__
         __ELEMENT_STATUS_JS__
         __SETTINGS_STATE_JS__
         __ADVANCED_SETTINGS_STATE_JS__
         __SETTINGS_MODAL_JS__
+        __HISTORY_PANEL_JS__
         __DEM_BOUNDS_JS__
         __MAP_INIT_JS__
 
@@ -384,7 +388,10 @@
                 + 'Multiple trails can be imported in the Premium version.</div>';
         }
 
-        function saveState() {
+        // Shared by saveState() (persists this across reopens) and the
+        // "Send to Blender" handler (records it into the generation history
+        // via tp3dPushHistory, see assets/history_panel.js).
+        function tp3dBuildStateSnapshot() {
             // Unlike multitile_generator.html, gpxPaths/gpxNames ARE persisted here --
             // the puzzle page caches the selected trails across reopens
             // instead of treating GPX import as session-only. The server
@@ -394,45 +401,72 @@
             // isn't redrawn on restore, since the raw GPX content isn't kept
             // client-side -- only the already-imported names/paths).
             var c = map.getCenter();
+            return {
+                lat: c.lat, lng: c.lng, zoom: map.getZoom(),
+                baseLayer: activeBaseLayerName,
+                settingsTab: TP3D_SETTINGS_TAB,
+                length: document.getElementById('lengthInput').value,
+                width: document.getElementById('widthInput').value,
+                rows: document.getElementById('rowsInput').value,
+                cols: document.getElementById('colsInput').value,
+                resolution: document.getElementById('resolutionSlider').value,
+                tabSize: document.getElementById('tabSizeInput').value,
+                jitter: document.getElementById('jitterInput').value,
+                puzzleSeed: document.getElementById('puzzleSeedInput').value,
+                puzzleCornerRadius: document.getElementById('puzzleCornerRadiusInput').value,
+                puzzleTolerance: document.getElementById('puzzleToleranceInput').value,
+                coords: coords,
+                prefetch: tp3dPrefetchState(),
+                drawMode: drawMode,
+                shapeCenter: shapeCenter,
+                gpxPaths: gpxPaths,
+                gpxNames: gpxNames,
+                holderEnabled: document.getElementById('holderEnabled').checked,
+                holderText: document.getElementById('holderTextInput').value,
+                holderWallWidth: document.getElementById('holderWallWidthInput').value,
+                holderCornerRadius: document.getElementById('holderCornerRadiusInput').value,
+                holderSeamEngraving: document.getElementById('holderSeamEngravingInput').checked,
+                holderFrameTerrain: document.getElementById('holderFrameTerrainInput').checked,
+                holderFont: document.getElementById('holderFontSelect').value,
+                holderTextSize: document.getElementById('holderTextSizeInput').value
+            };
+        }
+
+        // Short one-line description for a history-panel row -- see
+        // assets/history_panel.js.
+        function tp3dHistorySummary() {
+            var rows = document.getElementById('rowsInput').value || '?';
+            var cols = document.getElementById('colsInput').value || '?';
+            var length = document.getElementById('lengthInput').value || '?';
+            var width = document.getElementById('widthInput').value || '?';
+            return rows + '×' + cols + ' pieces, ' + length + '×' + width + 'mm';
+        }
+
+        // Small "shape outline" preview image for a history-panel row -- see
+        // tp3dRenderShapeThumbnail in assets/history_panel.js.
+        function tp3dHistoryThumbnail() {
+            return tp3dRenderShapeThumbnail({
+                shape: 'rect',
+                width: parseFloat(document.getElementById('lengthInput').value) || 0,
+                height: parseFloat(document.getElementById('widthInput').value) || 0,
+                rows: parseInt(document.getElementById('rowsInput').value) || 0,
+                cols: parseInt(document.getElementById('colsInput').value) || 0
+            });
+        }
+
+        function saveState() {
             fetch('http://127.0.0.1:' + PORT + '/save_state', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    lat: c.lat, lng: c.lng, zoom: map.getZoom(),
-                    baseLayer: activeBaseLayerName,
-                    settingsTab: TP3D_SETTINGS_TAB,
-                    length: document.getElementById('lengthInput').value,
-                    width: document.getElementById('widthInput').value,
-                    rows: document.getElementById('rowsInput').value,
-                    cols: document.getElementById('colsInput').value,
-                    resolution: document.getElementById('resolutionSlider').value,
-                    tabSize: document.getElementById('tabSizeInput').value,
-                    jitter: document.getElementById('jitterInput').value,
-                    puzzleSeed: document.getElementById('puzzleSeedInput').value,
-                    puzzleCornerRadius: document.getElementById('puzzleCornerRadiusInput').value,
-                    coords: coords,
-                    prefetch: tp3dPrefetchState(),
-                    drawMode: drawMode,
-                    shapeCenter: shapeCenter,
-                    gpxPaths: gpxPaths,
-                    gpxNames: gpxNames,
-                    holderEnabled: document.getElementById('holderEnabled').checked,
-                    holderText: document.getElementById('holderTextInput').value,
-                    holderWallWidth: document.getElementById('holderWallWidthInput').value,
-                    holderCornerRadius: document.getElementById('holderCornerRadiusInput').value,
-                    holderSeamEngraving: document.getElementById('holderSeamEngravingInput').checked,
-                    holderFrameTerrain: document.getElementById('holderFrameTerrainInput').checked,
-                    holderFont: document.getElementById('holderFontSelect').value,
-                    holderTextSize: document.getElementById('holderTextSizeInput').value
-                })
+                body: JSON.stringify(tp3dBuildStateSnapshot())
             }).catch(function() {});
         }
 
-        function restoreState() {
-            fetch('http://127.0.0.1:' + PORT + '/get_state', { cache: 'no-store' })
-                .then(function(r) { return r.json(); })
-                .then(function(s) {
-                    console.log('[TP3D picker] /get_state returned:', s);
+        // Applies a saved state blob (either the last session's, from
+        // /get_state, or a past entry picked from the history panel) to the
+        // page's own fields -- shared by restoreState() and
+        // window.tp3dApplyHistoryEntry (see assets/history_panel.js).
+        function tp3dApplyStateSnapshot(s) {
                     if (!s) return;
                     if (s.settingsTab) tp3dActivateSettingsTab(s.settingsTab);
                     if (s.baseLayer && baseLayers[s.baseLayer] && s.baseLayer !== activeBaseLayerName) {
@@ -452,6 +486,7 @@
                     if (s.jitter != null) document.getElementById('jitterInput').value = s.jitter;
                     if (s.puzzleSeed != null) document.getElementById('puzzleSeedInput').value = s.puzzleSeed;
                     if (s.puzzleCornerRadius != null) document.getElementById('puzzleCornerRadiusInput').value = s.puzzleCornerRadius;
+                    if (s.puzzleTolerance != null) document.getElementById('puzzleToleranceInput').value = s.puzzleTolerance;
                     if (s.drawMode) {
                         drawMode = s.drawMode;
                         document.querySelectorAll('.draw-mode-btn').forEach(function(b) {
@@ -517,6 +552,15 @@
                     // state file, silently wiping the drawn area on every
                     // reopen even when nothing else changed.
                     if (s.lat != null) map.setView([s.lat, s.lng], s.zoom);
+        }
+        window.tp3dApplyHistoryEntry = tp3dApplyStateSnapshot;
+
+        function restoreState() {
+            fetch('http://127.0.0.1:' + PORT + '/get_state', { cache: 'no-store' })
+                .then(function(r) { return r.json(); })
+                .then(function(s) {
+                    console.log('[TP3D picker] /get_state returned:', s);
+                    tp3dApplyStateSnapshot(s);
                 })
                 .catch(function() {});
         }
@@ -1068,7 +1112,10 @@
                             updateStatus();
                             saveState();
                         })
-                        .catch(function() { alert('Could not save GPX to temp file.'); });
+                        .catch(function() {
+                            gpxLayer.clearLayers();
+                            alert('Could not save GPX to temp file.');
+                        });
                     } catch (err) { alert('Error importing GPX: ' + err.message); }
                     finally {
                         pending--;
@@ -1119,6 +1166,7 @@
         document.getElementById('jitterInput').addEventListener('input', function() { regeneratePuzzle(); saveState(); });
         document.getElementById('puzzleSeedInput').addEventListener('input', function() { regeneratePuzzle(); saveState(); });
         document.getElementById('puzzleCornerRadiusInput').addEventListener('input', function() { regeneratePuzzle(); saveState(); });
+        document.getElementById('puzzleToleranceInput').addEventListener('input', saveState);
         document.getElementById('resolutionSlider').addEventListener('input', function() {
             document.getElementById('resolutionValue').textContent = this.value;
             saveState();
@@ -1196,6 +1244,13 @@
             saveState();
         });
 
+        // Piece-to-piece gap for cut_into_puzzle_pieces. Not `|| 0.3` -- an
+        // explicit 0 must survive; only a blank/invalid field falls back.
+        function tp3dPuzzleToleranceValue() {
+            var v = parseFloat(document.getElementById('puzzleToleranceInput').value);
+            return isNaN(v) ? 0.3 : Math.max(0, v);
+        }
+
         document.getElementById('send').onclick = function() {
             if (!coords) return;
             // bbox/pieces are sent relative to the PUZZLE's own true
@@ -1213,6 +1268,7 @@
                 resolution: parseInt(document.getElementById('resolutionSlider').value) || 4,
                 puzzleSeed: document.getElementById('puzzleSeedInput').value || '',
                 puzzleCornerRadius: parseFloat(document.getElementById('puzzleCornerRadiusInput').value) || 0,
+                tolerance: tp3dPuzzleToleranceValue(),
                 gpx_paths: gpxPaths,
                 holder: {
                     enabled: document.getElementById('holderEnabled').checked,
@@ -1227,11 +1283,14 @@
             };
             document.getElementById('send').disabled = true;
             document.getElementById('status').textContent = 'Sending to Blender...';
-            fetch('http://127.0.0.1:' + PORT + '/confirm', {
-                method: 'POST',
-                mode: 'cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+            tp3dPushHistory(tp3dBuildStateSnapshot(), tp3dHistorySummary(), tp3dHistoryThumbnail()).then(function(historyId) {
+                payload.history_id = historyId;
+                return fetch('http://127.0.0.1:' + PORT + '/confirm', {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
             })
             .then(function() { window.close(); })
             .catch(function() {

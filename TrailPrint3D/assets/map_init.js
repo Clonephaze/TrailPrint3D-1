@@ -23,6 +23,18 @@ Array.prototype.forEach.call(document.getElementById('map').children, function (
     L.DomEvent.disableScrollPropagation(el);
 });
 
+// Pinned explicitly on every tile <img> (Leaflet's `referrerPolicy` option)
+// instead of relying on the browser's default. OSMF's tile servers reject
+// browser requests that carry no Referer -- they serve an "Access blocked"
+// placeholder image in place of every tile (with an HTTP 200, so nothing
+// errors, the map just looks broken) -- and a per-image policy wins over a
+// document-level one, so a future <meta name="referrer"> or Referrer-Policy
+// header on these pages can't silently strip it. strict-origin-when-cross-
+// origin sends only the origin (http://127.0.0.1:<port>/), never the full
+// page URL. The other providers get the same policy, for consistency.
+var TP3D_TILE_REFERRER_POLICY = 'strict-origin-when-cross-origin';
+var OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors';
+
 var baseLayers = {
     // Single canonical hostname, no '{s}.' subdomain prefix -- OSMF's Tile
     // Usage Policy (operations.osmfoundation.org/policies/tiles) documents
@@ -32,22 +44,34 @@ var baseLayers = {
     // capped parallel connections per hostname) are deprecated and are why
     // some users saw 403s here -- whichever letter a given tile's URL
     // happened to hash to could be one of the now-blocked subdomains, while
-    // others (hashing to a still-working one) saw nothing wrong.
+    // others (hashing to a still-working one) saw nothing wrong. The same
+    // policy asks for the attribution to link to the copyright page.
     'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
+        referrerPolicy: TP3D_TILE_REFERRER_POLICY,
+        attribution: OSM_ATTRIBUTION
     }),
     'Satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: 'Tiles &copy; Esri'
+        referrerPolicy: TP3D_TILE_REFERRER_POLICY,
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
     }),
-    // CARTO now requires a per-project API key for basemaps.cartocdn.com
-    // (free tier, but capped and no longer anonymous) -- this addon has no
-    // way to embed one that wouldn't be shared (and exhausted) across every
-    // install, so this entry is left in as a user-selectable option but is
-    // NOT the default (see activeBaseLayerName below) and will keep
-    // returning "API key required" / 403 until CARTO's own policy is
-    // addressed separately.
-    'Voyager': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+    // Replaces CARTO's Voyager, which now serves an "API KEY REQUIRED"
+    // placeholder for every tile without a per-project key (and any key
+    // embedded here would be shared and exhausted across every install).
+    // Both of these are keyless: OpenTopoMap is free OSM-based topo
+    // (contours + hillshade, handy for judging terrain before printing, fair
+    // use, tops out at z17); Esri's World Topo Map is the same arcgisonline
+    // server the Satellite layer already uses, with a cleaner Voyager-like
+    // look. A previously saved 'Voyager' selection just fails the
+    // `baseLayers[s.baseLayer]` check in each page's restoreState and falls
+    // back to the OpenStreetMap default.
+    'Topographic': L.tileLayer('https://tile.opentopomap.org/{z}/{x}/{y}.png', {
+        maxZoom: 17,
+        referrerPolicy: TP3D_TILE_REFERRER_POLICY,
+        attribution: 'Map data: ' + OSM_ATTRIBUTION + ', SRTM | Style: &copy; <a href="https://opentopomap.org" target="_blank">OpenTopoMap</a> (CC-BY-SA)'
+    }),
+    'Esri Topo': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+        referrerPolicy: TP3D_TILE_REFERRER_POLICY,
+        attribution: 'Tiles &copy; Esri &mdash; Esri and the GIS User Community'
     })
 };
 var activeBaseLayerName = 'OpenStreetMap';

@@ -75,7 +75,13 @@ def build_fetch_items(map_km=None):
         map_km = round(tp3d.get("sMapInKm", 0), 1)
     items = [{"key": "elevation", "icon": "E", "label": "Elevation"}]
     if tp3d.elementSource == "WORLDCOVER":
+        # WorldCover paints every category off one combined image fetch (see
+        # terrain_gen.py's fetch_landcover_thread/paint_terrain_from_landcover)
+        # and generation.py's element phase skips all of the OSM defs below
+        # entirely when elementSource == "WORLDCOVER" -- so none of them are
+        # ever actually fetched here either, regardless of leftover OSM flags.
         items.append({"key": "landcover", "icon": "L", "label": "Land Cover"})
+        return items
     defs = [
         ("forest", "col_fActive", const.FOREST_MAXSIZE, "F", "Forest"),
         ("water", None, const.WATER_MAXSIZE, "W", "Water"),
@@ -290,6 +296,7 @@ def apply_element_toggle(tp3d, key):
 # construction.
 _SETTINGS_ROW_FIELDS = {
     "elementSource": ("elementSource", str),
+    "elementMode": ("elementMode", str),
     "scaleElevation": ("scaleElevation", float),
     "elevationMode": ("elevationMode", str),
     "fixedHeightMM": ("fixedHeightMM", float),
@@ -334,7 +341,15 @@ def apply_setting_update(tp3d, key, value):
     try:
         setattr(tp3d, attr, caster(value))
     except (TypeError, ValueError):
-        pass
+        return
+    # Property changes made from a modal timer don't redraw the sidebar on
+    # their own -- without this it keeps showing the old value (e.g. ESA
+    # WorldCover after the page switched to OSM) until the mouse hovers it.
+    wm = getattr(bpy.context, "window_manager", None)
+    if wm is not None:
+        for window in wm.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
 
 
 # The Settings popup's Elements tab -- a much larger whitelist than
@@ -356,6 +371,12 @@ _ADVANCED_SETTINGS_FIELDS = [
         "attr": "disableElevationOutlierFix",
         "type": bool,
         "group": "Elevation",
+    },
+    {
+        "key": "colOsmSmoothing",
+        "attr": "col_osmSmoothing",
+        "type": float,
+        "group": "OSM",
     },
     {
         "key": "colWPondsActive",
@@ -420,6 +441,7 @@ _ADVANCED_SETTINGS_FIELDS = [
     {"key": "elSResidentialActive", "road_id": "residential", "type": bool, "group": "Roads"},
     {"key": "elSServiceActive", "road_id": "service", "type": bool, "group": "Roads"},
     {"key": "elSFootwayActive", "road_id": "footway", "type": bool, "group": "Roads"},
+    {"key": "elSPedestrianActive", "road_id": "pedestrian", "type": bool, "group": "Roads"},
     {"key": "elSCycleBridleActive", "road_id": "cycle_bridle", "type": bool, "group": "Roads"},
     {"key": "elSTrackActive", "road_id": "track", "type": bool, "group": "Roads"},
     {"key": "elSPathActive", "road_id": "path", "type": bool, "group": "Roads"},

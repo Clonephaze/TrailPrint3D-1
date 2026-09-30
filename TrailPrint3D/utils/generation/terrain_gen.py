@@ -67,7 +67,7 @@ def _rg_create_map_object(gen: GenerationContext):
     )
     from ..scene import (
         transform_MapObject,  # deferred to avoid circular import at load time
-        zoom_camera_to_selected,
+        zoom_camera_to_objects,
     )
 
     MapObject = None
@@ -175,53 +175,80 @@ def _rg_create_map_object(gen: GenerationContext):
         gen.runtime.mapObject = MapObject
         bpy.context.scene.tp3d.currentMap = MapObject
 
-    zoom_camera_to_selected(MapObject)
+    zoom_camera_to_objects([MapObject])
     compute_and_store_tile_bounds(gen)
     return MapObject
 
 
-def _rg_start_osm_prefetch(gen: GenerationContext):
-    """Snapshot all bpy values on the main thread and launch a daemon thread
-    that pre-fetches every active OSM coloring kind before mesh-building begins.
+def _rg_build_osm_kind_tasks(min_lat, max_lat, min_lon, max_lon, map_km, element_source, tp3d):
+    """Given explicit bounds + map size, build the (kind, tile_tasks) list
+    _fetch_all_kinds_parallel expects: which OSM kinds are active (per tp3d
+    flags, each gated on its own MAXSIZE constant) and the 2°-chunked grid
+    of tile bboxes covering [min_lat, max_lat] x [min_lon, max_lon] each of
+    them should be fetched over.
 
-    The caller must call thread.join() before consuming the result dict.
-    Returns (None, {}) immediately if no coloring elements are active.
+    Shared by _rg_start_osm_prefetch (single-tile background prefetch),
+    elements.py's inline per-tile fetch, and fetch_combined_osm_data
+    (multi-tile batch prefetch) so the "which kinds, which grid" decision
+    lives in one place. Returns [] if the bounds are degenerate or no kind
+    is active -- callers treat that as "nothing to fetch".
     """
-    from ...props import (  # deferred to avoid circular import
-        any_road_active,
-        get_road_active,
-    )
-    from ..osm.fetch_utils import (
-        OsmFetchSettings,  # deferred to avoid circular import at load time
-    )
-    from ..osm.roads import TIER_TAGS  # deferred to avoid circular import at load time
-    from ..terrain import (
-        _fetch_all_kinds_parallel,  # deferred to avoid circular import at load time
-    )
+    from ...props import any_road_active
 
-    _lat_span = gen.runtime.tbMaxLat - gen.runtime.tbMinLat
-    _lon_span = gen.runtime.tbMaxLon - gen.runtime.tbMinLon
+    _lat_span = max_lat - min_lat
+    _lon_span = max_lon - min_lon
     if _lat_span <= 0 or _lon_span <= 0:
-        return None, {}
+        return []
     _lat_step = min(2.0, _lat_span)
     _lon_step = min(2.0, _lon_span)
     _tile_lats = math.ceil(_lat_span / _lat_step)
     _tile_lons = math.ceil(_lon_span / _lon_step)
     _tile_tasks = [
         (
-            gen.runtime.tbMinLat + k * _lat_step,
-            gen.runtime.tbMinLon + l * _lon_step,
-            gen.runtime.tbMinLat + k * _lat_step + _lat_step,
-            gen.runtime.tbMinLon + l * _lon_step + _lon_step,
+            min_lat + k * _lat_step,
+            min_lon + l * _lon_step,
+            min_lat + k * _lat_step + _lat_step,
+            min_lon + l * _lon_step + _lon_step,
         )
         for k in range(_tile_lats)
         for l in range(_tile_lons)
     ]
-    _semaphore = threading.Semaphore(
-        1
-    )  # max 1 concurrent live Overpass request (avoid 429s on the public instance)
-    tp3d = bpy.context.scene.tp3d
-    _fetch_settings = OsmFetchSettings(
+
+    _active_kind_tasks = (
+        [
+            (key.upper(), _tile_tasks)
+            for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS
+            if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1)
+            and map_km <= max_size
+        ]
+        if element_source == "OSM"
+        else []
+    )
+    # Buildings/roads/coastline are OSM-only, same as COLORING_ELEMENTS above --
+    # gated on element_source too so a WorldCover generation doesn't still kick
+    # off an Overpass fetch for them just because their flag was left on from
+    # an earlier OSM generation.
+    if element_source == "OSM":
+        if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE:
+            _active_kind_tasks.append(("BUILDINGS", _tile_tasks))
+        if any_road_active(tp3d) and map_km <= const.ROADS_MAXSIZE:
+            _active_kind_tasks.append(("STREETS", _tile_tasks))
+        if tp3d.show_water and tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE:
+            _active_kind_tasks.append(("COASTLINE", _tile_tasks))
+    return _active_kind_tasks
+
+
+def _rg_osm_fetch_settings(tp3d):
+    """OsmFetchSettings snapshot shared by _rg_start_osm_prefetch and
+    fetch_combined_osm_data -- must run on the main thread (reads
+    bpy.context.scene.tp3d)."""
+    from ...props import get_road_active  # deferred to avoid circular import
+    from ..osm.fetch_utils import (
+        OsmFetchSettings,  # deferred to avoid circular import at load time
+    )
+    from ..osm.roads import TIER_TAGS  # deferred to avoid circular import at load time
+
+    return OsmFetchSettings(
         disable_cache=tp3d.disableCache,
         api_retries=tp3d.apiRetries,
         mapsize=tp3d.sMapInKm,
@@ -246,14 +273,13 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
         if gen.settings.elementSource == "OSM"
         else []
     )
-    if tp3d.el_bActive == 1 and map_km <= const.BUILDINGS_MAXSIZE:
-        _active_kind_tasks.append(("BUILDINGS", _tile_tasks))
-    if any_road_active(tp3d) and map_km <= const.ROADS_MAXSIZE:
-        _active_kind_tasks.append(("STREETS", _tile_tasks))
-    if tp3d.show_water and tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE:
-        _active_kind_tasks.append(("COASTLINE", _tile_tasks))
     if not _active_kind_tasks:
         return None, {}
+
+    _semaphore = threading.Semaphore(
+        1
+    )  # max 1 concurrent live Overpass request (avoid 429s on the public instance)
+    _fetch_settings = _rg_osm_fetch_settings(tp3d)
 
     result = {}
 
@@ -267,6 +293,45 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
     t.start()
     gen.fetch.fetchThread = t
     gen.fetch.fetchResult = result
+
+
+def fetch_combined_osm_data(min_lat, max_lat, min_lon, max_lon, map_km):
+    """Fetch every active OSM kind once for a combined multi-tile bbox.
+
+    For batch callers (e.g. premium/operators_pe.py's _apply_grid_segments)
+    where several physical tiles together cover one larger area and no
+    single tile's GenerationContext represents the combined extent -- each
+    physical tile can then reuse this one dataset instead of separately
+    querying Overpass with its own small bbox, which is how an OSM element
+    bigger than one tile (a lake, a forest, the ocean's coastline, ...) used
+    to vanish: Overpass only returns a way if one of its own nodes falls
+    inside the query bbox, so an element that fully encloses one small tile
+    had none.
+
+    Mirrors _rg_start_osm_prefetch's tile-chunking + kind-selection via the
+    shared _rg_build_osm_kind_tasks/_rg_osm_fetch_settings helpers, but runs
+    synchronously on the calling thread and takes plain bounds instead of a
+    GenerationContext.
+
+    Returns {kind: {bbox: (data, from_cache)}}, the same shape
+    _fetch_all_kinds_parallel produces -- pass straight into every physical
+    tile's _rg_build_terrain_elements(gen, prefetched_osm=...).
+    """
+    from ..terrain import (
+        _fetch_all_kinds_parallel,  # deferred to avoid circular import at load time
+    )
+
+    tp3d = bpy.context.scene.tp3d
+    _active_kind_tasks = _rg_build_osm_kind_tasks(
+        min_lat, max_lat, min_lon, max_lon, map_km, tp3d.elementSource, tp3d,
+    )
+    if not _active_kind_tasks:
+        return {}
+
+    _fetch_settings = _rg_osm_fetch_settings(tp3d)
+    return _fetch_all_kinds_parallel(
+        _active_kind_tasks, threading.Semaphore(1), settings=_fetch_settings
+    )
 
 
 def _rg_start_satellite_prefetch(gen: GenerationContext):
@@ -328,7 +393,12 @@ def _rg_create_satellite_plane(gen: GenerationContext):
 
     No-op if elementSource isn't WORLDCOVER or the fetch produced nothing.
     """
-    if gen.settings.elementSource != "WORLDCOVER" or gen.fetch.satelliteThread is None:
+    if gen.settings.elementSource != "WORLDCOVER":
+        from ..satellite import remove_stale_satellite_debug
+
+        remove_stale_satellite_debug()
+        return
+    if gen.fetch.satelliteThread is None:
         return
 
     from ...progress import ProgressOverlay

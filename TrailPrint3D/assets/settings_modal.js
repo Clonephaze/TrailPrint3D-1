@@ -230,6 +230,7 @@ var COMPOSITE_ELEMENTS = {
             { key: 'elSResidentialActive', label: 'Residential Roads' },
             { key: 'elSServiceActive', label: 'Service Roads' },
             { key: 'elSFootwayActive', label: 'Footways/Sidewalks' },
+            { key: 'elSPedestrianActive', label: 'Pedestrian Streets' },
             { key: 'elSCycleBridleActive', label: 'Cycle/Bridle Paths' },
             { key: 'elSTrackActive', label: 'Tracks' },
             { key: 'elSPathActive', label: 'Trails/Paths' }
@@ -648,14 +649,13 @@ function tp3dBuildMapTab() {
 }
 
 // Two-button OSM / ESA WorldCover switch at the top of the Elements tab --
-// only built when ELEMENT_SOURCE is defined (see element_status.js), i.e.
-// only on premium/map_generator_pe.html; every other picker page's Elements
-// tab is unaffected. Posts to the existing /update_setting route's
-// 'elementSource' field (utils.ui_state._SETTINGS_ROW_FIELDS), then patches
-// ELEMENT_SOURCE and the chip strip/Elements tab in place instead of
-// reloading the whole page -- a reload used to close this modal right after
-// the switch was clicked from inside it, which read as broken. Returns the
-// whole labeled block (heading + button pair), not just the buttons.
+// only built when ELEMENT_SOURCE is defined (see element_status.js); every
+// picker page now carries that token, so this shows up in all of them. The
+// actual switch (POST /update_setting, poll, re-sync + repaint) lives in
+// element_status.js's tp3dSwitchElementSource, shared with the compact pill
+// toggle in the element-status row itself -- this just builds the buttons
+// and wires them to it. Returns the whole labeled block (heading + button
+// pair), not just the buttons.
 function tp3dBuildElementSourceSwitch() {
     var block = document.createElement('div');
     block.className = 'element-source-block';
@@ -671,60 +671,182 @@ function tp3dBuildElementSourceSwitch() {
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'shape-btn' + (ELEMENT_SOURCE === opt[0] ? ' active' : '');
+        btn.setAttribute('data-tp3d-source-btn', '');
         btn.textContent = opt[1];
-        btn.addEventListener('click', function() {
-            if (ELEMENT_SOURCE === opt[0]) return;
-            wrap.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
-            fetch('http://127.0.0.1:' + PORT + '/update_setting', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ key: 'elementSource', value: opt[0] })
-            }).then(function() {
-                // Blender's modal timer only ticks every 0.5s -- wait for at
-                // least one tick so the switch is actually applied and this
-                // server's cached snapshots are refreshed
-                // (picker_server.refresh_state_snapshots) before asking for
-                // them back below.
-                return new Promise(function(resolve) { setTimeout(resolve, 700); });
-            }).then(function() {
-                return fetch('http://127.0.0.1:' + PORT + '/get_source_state', { cache: 'no-store' });
-            }).then(function(r) { return r.json(); })
-            .then(function(s) {
-                ELEMENT_SOURCE = s.elementSource;
-                SETTINGS_STATE = s.settingsState;
-                ADVANCED_SETTINGS_STATE = s.advancedSettings;
-                ELEMENT_STATUS_ORDER = tp3dIsWorldCover() ? ELEMENT_STATUS_ORDER_WORLDCOVER : ELEMENT_STATUS_ORDER_OSM;
-                TP3D_ELEMENT_STATE = {};
-                ELEMENT_STATUS_ORDER.forEach(function(entry) { TP3D_ELEMENT_STATE[entry[0]] = !!s.elementStates[entry[0]]; });
-                tp3dRenderElementStatus();
-                window.tp3dRebuildElementsTab();
-                saveState();
-            })
-            .catch(function() {
-                wrap.querySelectorAll('button').forEach(function(b) { b.disabled = false; });
-            });
-        });
+        btn.addEventListener('click', function() { tp3dSwitchElementSource(opt[0]); });
         wrap.appendChild(btn);
     });
     block.appendChild(wrap);
     return block;
 }
 
+// Small two-button Paint on Map / Single Extruder Mode switch -- mirrors
+// panels.py's own "Paint or Single Extruder Mode" row in the "6. Map
+// Elements" sidebar section, which only shows up there when
+// props.elementSource == "OSM" (ESA WorldCover has no per-element
+// paint-vs-remesh split of its own). Unlike that sidebar row, this stays
+// visible under WorldCover too -- just disabled with neither side marked
+// active -- rather than disappearing, so the row doesn't jump around as the
+// source switch above it is used. Posts straight to /update_setting's
+// 'elementMode' key (now part of _SETTINGS_ROW_FIELDS, same whitelist
+// elementSource itself uses) -- no poll-and-resync needed here the way the
+// source switch needs one: unlike elementSource, changing elementMode
+// doesn't change which fields/cards the rest of this tab shows, so there's
+// nothing else on this page that needs to react to it.
+function tp3dBuildElementModeSwitch() {
+    var row = document.createElement('div');
+    row.className = 'adv-field-row element-mode-row';
+
+    var label = document.createElement('label');
+    label.textContent = 'Paint or Single Extruder Mode';
+    row.appendChild(label);
+
+    var isWorldCover = tp3dIsWorldCover();
+    var wrap = document.createElement('div');
+    wrap.className = 'element-mode-switch';
+    wrap.title = isWorldCover ? 'Only available for OpenStreetMap' : '';
+    [['PAINT', 'Paint'], ['SINGLECOLORMODE_REMESH', 'Single Extruder']].forEach(function(opt) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'element-mode-btn' + (!isWorldCover && SETTINGS_STATE.elementMode === opt[0] ? ' active' : '');
+        btn.disabled = isWorldCover;
+        btn.textContent = opt[1];
+        btn.addEventListener('click', function() {
+            if (SETTINGS_STATE.elementMode === opt[0]) return;
+            SETTINGS_STATE.elementMode = opt[0];
+            wrap.querySelectorAll('button').forEach(function(b) { b.classList.toggle('active', b === btn); });
+            tp3dSendMapField({ key: 'elementMode', endpoint: 'update_setting' }, opt[0]);
+        });
+        wrap.appendChild(btn);
+    });
+    row.appendChild(wrap);
+    return row;
+}
+
+// On/off toggle plus strength slider for OSM element smoothing
+// (props.col_osmSmoothing, panels.py's "Element Smoothing" -- a 0-1 FACTOR
+// slider that utils/terrain.py turns into int(value * 20) Taubin smoothing
+// rounds). The toggle sits left of a range+number pair (same
+// .range-with-number look as tp3dBuildRangeField) that's shown only while ON:
+// the slider snaps to 0.1 steps for quick picks, the number box takes any
+// exact value. Min is 0.05 because anything lower rounds down to 0 rounds,
+// i.e. silently off. OFF writes exactly 0; turning it back ON restores the
+// last strength used this session (TP3D_OSM_SMOOTHING_ON the first time).
+// OSM-only, same as panels.py's own placement inside its `elif
+// props.elementSource == "OSM":` branch -- ESA WorldCover has no equivalent.
+var TP3D_OSM_SMOOTHING_ON = 0.5;
+var TP3D_OSM_SMOOTHING_MIN = 0.05;
+function tp3dBuildOsmSmoothingToggle() {
+    var row = document.createElement('div');
+    row.className = 'adv-field-row element-mode-row';
+    row.title = 'Rounds element polygon edges, making them easier to print';
+
+    var label = document.createElement('label');
+    label.textContent = 'Element Smoothing';
+    row.appendChild(label);
+
+    var current = ADVANCED_SETTINGS_STATE.colOsmSmoothing || 0;
+    var isOn = current > 0;
+    var lastOnValue = isOn ? tp3dRoundForDisplay(current, 2) : TP3D_OSM_SMOOTHING_ON;
+
+    var controls = document.createElement('div');
+    controls.className = 'adv-field-controls';
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'element-mode-btn' + (isOn ? ' active' : '');
+    btn.textContent = isOn ? 'On' : 'Off';
+
+    // Hidden via style.display, not the `hidden` attribute --
+    // .range-with-number's own `display: flex` would override that.
+    var strengthWrap = document.createElement('div');
+    strengthWrap.className = 'range-with-number';
+    strengthWrap.title = 'Smoothing strength (0-1) -- higher rounds edges more but loses detail';
+    strengthWrap.style.display = isOn ? '' : 'none';
+    // Explicit width: inside the content-sized .adv-field-controls, the
+    // class's own flex:1 + min-width:0 would otherwise let the range collapse.
+    strengthWrap.style.width = '180px';
+
+    var range = document.createElement('input');
+    range.type = 'range';
+    range.min = 0.1;
+    range.max = 1;
+    range.step = 0.1;
+    range.value = lastOnValue;
+
+    var number = document.createElement('input');
+    number.type = 'number';
+    number.min = TP3D_OSM_SMOOTHING_MIN;
+    number.max = 1;
+    number.step = 0.01;
+    number.value = lastOnValue;
+
+    function commit(value) {
+        value = parseFloat(Math.min(Math.max(value, TP3D_OSM_SMOOTHING_MIN), 1).toFixed(2));
+        number.value = value;
+        range.value = value;
+        lastOnValue = value;
+        ADVANCED_SETTINGS_STATE.colOsmSmoothing = value;
+        tp3dSendAdvancedUpdate('colOsmSmoothing', value);
+    }
+
+    // Live-mirror into the number box while dragging, but only send once on
+    // release rather than on every intermediate step.
+    range.addEventListener('input', function() {
+        number.value = parseFloat(parseFloat(range.value).toFixed(2));
+    });
+    range.addEventListener('change', function() { commit(parseFloat(range.value)); });
+    number.addEventListener('change', function() {
+        var value = parseFloat(number.value);
+        if (isNaN(value)) {
+            number.value = lastOnValue;
+            return;
+        }
+        commit(value);
+    });
+
+    btn.addEventListener('click', function() {
+        isOn = !isOn;
+        var value = isOn ? lastOnValue : 0.0;
+        ADVANCED_SETTINGS_STATE.colOsmSmoothing = value;
+        btn.classList.toggle('active', isOn);
+        btn.textContent = isOn ? 'On' : 'Off';
+        strengthWrap.style.display = isOn ? '' : 'none';
+        tp3dSendAdvancedUpdate('colOsmSmoothing', value);
+    });
+
+    strengthWrap.appendChild(range);
+    strengthWrap.appendChild(number);
+    controls.appendChild(btn);
+    controls.appendChild(strengthWrap);
+    row.appendChild(controls);
+    return row;
+}
+
 function tp3dBuildElementsTab() {
     var wrap = document.createElement('div');
     wrap.className = 'elements-grid';
 
+    // Paint/Single Extruder switch shares one two-column row with the
+    // source's own top-level option -- Element Smoothing under OSM, Min
+    // Feature Area under ESA WorldCover. See .element-options-row in
+    // picker_common.css.
+    var optionsRow = document.createElement('div');
+    optionsRow.className = 'element-options-row';
     if (typeof ELEMENT_SOURCE !== 'undefined') {
         wrap.appendChild(tp3dBuildElementSourceSwitch());
+        optionsRow.appendChild(tp3dBuildElementModeSwitch());
     }
+    optionsRow.appendChild(tp3dIsWorldCover()
+        ? tp3dBuildFieldRow(WORLDCOVER_MIN_AREA_FIELD)
+        : tp3dBuildOsmSmoothingToggle());
+    wrap.appendChild(optionsRow);
 
     // ESA WorldCover has none of OSM's per-category thresholds or
-    // Water/Roads composites -- one shared Min Feature Area field plus a
-    // row of plain toggle cards, mirroring panels.py's "6. Map Elements"
-    // WORLDCOVER branch structure.
+    // Water/Roads composites -- one shared Min Feature Area field (in the
+    // options row above) plus a row of plain toggle cards, mirroring
+    // panels.py's "6. Map Elements" WORLDCOVER branch structure.
     if (tp3dIsWorldCover()) {
-        wrap.appendChild(tp3dBuildFieldRow(WORLDCOVER_MIN_AREA_FIELD));
-
         var landcoverRow = document.createElement('div');
         landcoverRow.className = 'elements-row';
         LANDCOVER_ELEMENT_ORDER.forEach(function(key) { landcoverRow.appendChild(tp3dBuildSimpleElementCard(key)); });
@@ -746,7 +868,7 @@ function tp3dBuildElementsTab() {
     return wrap;
 }
 
-// Relocates the puzzle-cut field-rows (Tab Size, Jitter, Seed, Corner Radius)
+// Relocates the puzzle-cut field-rows (Tab Size, Jitter, Seed, Corner Radius, Tolerance)
 // out of their hidden sidebar container into this tab -- same elements, same
 // ids, so the page's own saveState/restoreState/regeneratePuzzle listeners
 // keep working unchanged regardless of where they end up living in the DOM.
@@ -868,6 +990,17 @@ function tp3dBuildPuzzleTab() {
         panels.elements.innerHTML = '';
         panels.elements.appendChild(tp3dBuildElementsTab());
         tp3dRepaintAllElementToggles();
+    };
+
+    // Same idea for the Map tab -- used by assets/history_panel.js's
+    // tp3dApplyHistorySettings after pushing a history entry's SETTINGS_STATE
+    // back to Blender, so the modal's Elevation Scale/Path Thickness/etc.
+    // inputs pick up the restored values instead of showing whatever was
+    // there when the modal was first built.
+    window.tp3dRebuildMapTab = function() {
+        if (!panels.map) return;
+        panels.map.innerHTML = '';
+        panels.map.appendChild(tp3dBuildMapTab());
     };
 
     document.body.appendChild(modal);

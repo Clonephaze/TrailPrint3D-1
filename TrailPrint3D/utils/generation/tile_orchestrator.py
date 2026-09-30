@@ -84,6 +84,19 @@ def _rtg_apply_elevation(
 
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
     gen.runtime.mapObject = zobj
+    # zobj was built by one of primitives.create_*()/build_tile_from_polygon(), which
+    # all stamp map_polygon_wkt via build_mesh_from_polygon() -- restore it into
+    # gen.runtime.mapOutline the same way _rg_create_map_object() does for the
+    # from-scratch flow. Without this, gen.runtime.mapOutline stays at its dataclass
+    # default of None for every tile-based generation (map picker / puzzle picker /
+    # Extend), so smooth_polygon_taubin()'s outline-pinning in terrain.py silently
+    # treats every element boundary vertex as unpinned instead of raising an error --
+    # element (e.g. water) edges get Taubin-smoothed right across the tile's own
+    # outline instead of staying pinned to it.
+    if "map_polygon_wkt" in zobj:
+        from shapely.wkt import loads as _shp_loads  # deferred to avoid circular import at load time
+
+        gen.runtime.mapOutline = _shp_loads(zobj["map_polygon_wkt"])
     # get_tile_elevation only populates gen.runtime.mapKm/tbMin*/tbMax* via its
     # own internal call to compute_and_store_tile_bounds when that call is made
     # with the bare object -- call it here first so _rg_build_terrain_elements
@@ -356,6 +369,7 @@ def _rtg_process_tile(
     skip_bottom_recess: bool,
     overlay,
     map_km: float,
+    prefetched_osm=None,
 ):
     """Run one tile through the same back-half phases runGeneration itself uses.
 
@@ -364,6 +378,14 @@ def _rtg_process_tile(
     elevation+trail steps handled by _rtg_apply_elevation/_rtg_handle_trail
     instead of runGeneration's curve-driven displacement (these tiles are
     pre-shaped primitives, not a trail-derived outline).
+
+    prefetched_osm: optional {kind: {bbox: (data, from_cache)}} dataset already
+    fetched for the WHOLE multi-tile batch (see
+    terrain_gen.fetch_combined_osm_data), forwarded straight to
+    _rg_build_terrain_elements so this one tile reuses/clips it instead of
+    querying Overpass with its own small bbox -- see that function's
+    prefetched_osm docstring for why that matters for an OSM element bigger
+    than one physical tile.
 
     Raises GenerationError on failure -- caught by the caller's per-tile loop.
     Returns (lowestZ, highestZ, additionalExtrusion).
@@ -457,6 +479,7 @@ def _rtg_process_tile(
         phase_start=_elem_start,
         phase_end=_elem_end,
         tile_label=tile_label,
+        prefetched_osm=prefetched_osm,
     )
     if terrain["roads"]:
         terrain["roads"].location.z += 0.4
@@ -502,7 +525,7 @@ def _rtg_process_tile(
     return lowestZ, highestZ, additionalExtrusion
 
 
-def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
+def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_osm=None):
     """Run the generation pipeline's back half on already-placed tile objects.
 
     An orchestrator in its own right, same as runGeneration -- the map
@@ -520,6 +543,14 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
     skip_bottom_recess: forwarded to _rtg_apply_elevation -- see its
     docstring. Pass True for fresh single-tile callers with no neighbor
     baseline to protect (e.g. the puzzle generator).
+
+    prefetched_osm: optional {kind: {bbox: (data, from_cache)}} OSM dataset
+    already fetched for the combined bbox of every tile in *selected_objects*
+    (see generation/terrain_gen.py's fetch_combined_osm_data) -- forwarded to
+    every tile's _rtg_process_tile so a multi-tile batch (e.g.
+    premium/operators_pe.py's _apply_grid_segments) fetches each OSM kind
+    once for the whole batch instead of once per physical tile. None (the
+    default) preserves the original per-tile fetch for every other caller.
 
     Does NOT export -- unlike runGeneration's own Phase 18, a single call
     here doesn't necessarily mean the caller's final deliverable is ready
@@ -625,6 +656,7 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False):
                     skip_bottom_recess,
                     overlay,
                     _map_km,
+                    prefetched_osm=prefetched_osm,
                 )
             except GenerationError as e:
                 print(f"{tile_label} — generation phase failed: {e}")

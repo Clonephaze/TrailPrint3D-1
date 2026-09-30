@@ -184,7 +184,7 @@ def _rg_export(gen: GenerationContext):
         load_counter,  # deferred to avoid circular import at load time
     )
     from ..scene import (
-        zoom_camera_to_selected,  # deferred to avoid circular import at load time
+        zoom_camera_to_objects,  # deferred to avoid circular import at load time
     )
 
     shape = gen.settings.shape
@@ -328,4 +328,4 @@ def _rg_export(gen: GenerationContext):
             "API might have faulty DATA. Maybe try diffrent Resolution or API", "warn"
         )
 
-    zoom_camera_to_selected(gen.runtime.mapObject)
+    zoom_camera_to_objects([gen.runtime.mapObject])
