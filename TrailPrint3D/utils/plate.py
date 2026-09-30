@@ -398,7 +398,7 @@ def create_generic_plate(
         if plate_obj is None:
             return None
         recalculateNormals(plate_obj)
-        _limited_dissolve(plate_obj, angle_limit=0.01)  
+        _limited_dissolve(plate_obj, angle_limit=0.01)
         _apply_perimeter_bevel(plate_obj, bevel, 0.0, -thickness)
         recalculateNormals(plate_obj)
         handle_style = bpy.context.scene.tp3d.handleStyle

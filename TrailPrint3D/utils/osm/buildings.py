@@ -1028,7 +1028,7 @@ def create_buildings(gen: GenerationContext, default_height=10, scaleHor=1.0, pr
     mat = bpy.data.materials.get("BUILDINGS")
     obj.data.materials.clear()
     obj.data.materials.append(mat)
-    
+
     obj["Object type"] = "BUILDINGS"
     obj["ExportGroup"] = 1
 

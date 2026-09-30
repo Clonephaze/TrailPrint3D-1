@@ -53,7 +53,7 @@ class RunSettings:
     num_subdivisions: int
     plateThickness: float
     outerBorderSize: int = 20
-    plateBevel: float = 0.0   
+    plateBevel: float = 0.0
     rectangleHeight: int = 100
     ellipseRatio: float = 0.75
     customFilePath: str = ""
