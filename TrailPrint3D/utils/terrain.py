@@ -1555,6 +1555,23 @@ def cut_water_pocket(gen: GenerationContext, map_obj, polygon, insert, water_mat
     )
 
 
+def effective_water_insert(tp3d):
+    """col_wInsert capped to minThickness - WATER_INSERT_MARGIN (never
+    negative) -- deeper would sink the water through the bottom of the map."""
+    from .. import constants as _const  # deferred to avoid circular import at load time
+
+    cap = max(0.0, tp3d.minThickness - _const.WATER_INSERT_MARGIN)
+    if tp3d.col_wInsert > cap:
+        print(f"  [water insert] {tp3d.col_wInsert}mm capped to {cap}mm (Extra Map Height {tp3d.minThickness}mm)")
+        # add_warning collapses duplicates, so calling this per water body/tile is fine
+        _progress.WarningsOverlay.add_warning(
+            f"Water Insert {tp3d.col_wInsert:g}mm is deeper than Extra Map Height allows "
+            f"-- capped to {cap:g}mm (Extra Map Height - {_const.WATER_INSERT_MARGIN:g}mm)",
+            "warn",
+        )
+    return min(tp3d.col_wInsert, cap)
+
+
 def _flatten_painted_water(gen: GenerationContext, map_obj, polygon, mat_index=None):
     """Flatten the water (painted faces via `mat_index`, else the texture
     `polygon`), recess it by the scene's Insert with cut_water_pocket, then
@@ -1563,7 +1580,7 @@ def _flatten_painted_water(gen: GenerationContext, map_obj, polygon, mat_index=N
     sink into) the new water level."""
     from .mesh_ops import RaycastCurveToMesh  # deferred to avoid circular import at load time
 
-    insert = bpy.context.scene.tp3d.col_wInsert
+    insert = effective_water_insert(bpy.context.scene.tp3d)
     boxes = flatten_terrain_water(
         map_obj,
         polygon=None if mat_index is not None else polygon,
@@ -1663,10 +1680,11 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
 
 
 def plateInsert(plate, map):
-    from .mesh_ops import (  # deferred to avoid circular import at load time
-        recalculateNormals,
-        selectBottomFaces,
-    )
+    from shapely.affinity import scale as _shp_scale
+    from shapely.geometry import Polygon
+
+    from . import geometry2d as _g2d
+    from .mesh_ops import _clean_solid_mesh, _extrude_flat_polygon  # deferred to avoid circular import at load time
 
     bpy.ops.object.select_all(action="DESELECT")
 
@@ -1674,25 +1692,39 @@ def plateInsert(plate, map):
     dist = bpy.context.scene.tp3d.plateInsertValue
     size = bpy.context.scene.tp3d.objSize
 
-    # Duplicate the map object
-    map_copy = map.copy()
-    map_copy.data = map.data.copy()
-    bpy.context.collection.objects.link(map_copy)
-    map_copy.scale *= (size + tol) / size
-
     plate.location.z += dist
 
-    selectBottomFaces(map_copy)
-    bpy.ops.mesh.select_all(action="INVERT")
-    bpy.ops.mesh.delete(type="FACE")
-    bpy.ops.mesh.select_all(action="SELECT")
+    # Cut the plate by the map's OUTER outline only. The map's bottom can have
+    # holes where an element recess went all the way through it (e.g. water
+    # with an Insert in single-color mode) -- the map generator adds the plate
+    # after the elements, so a bottom-face cutter would leave uncut columns
+    # in the plate under those holes.
+    fp = _g2d.footprint_with_holes(map, down_only=True)
+    if fp is None or fp.is_empty:
+        print("[plateInsert] map has no bottom footprint -- skipping insert")
+        return
+    outline = _g2d.union([Polygon(p.exterior) for p in _g2d.iter_polygons(fp)])
+    # Grow by the tolerance gap about the map origin (same scale factor the
+    # map itself would need to fit loosely)
+    factor = (size + tol) / size
+    outline = _shp_scale(
+        outline, xfact=factor, yfact=factor, origin=(map.location.x, map.location.y)
+    )
 
-    bpy.ops.mesh.extrude_region_move()
-    bpy.ops.transform.translate(value=(0, 0, 100))
-    bpy.ops.object.mode_set(mode="OBJECT")
-
-    recalculateNormals(map_copy)
-    bpy.ops.object.select_all(action="DESELECT")
+    mw = map.matrix_world
+    bottom_z = min((mw @ v.co).z for v in map.data.vertices)
+    verts, faces = [], []
+    for poly in _g2d.iter_polygons(outline):
+        _extrude_flat_polygon(_g2d, poly, bottom_z, bottom_z + 100, verts, faces)
+    if not faces:
+        print("[plateInsert] empty insert outline -- skipping insert")
+        return
+    mesh = bpy.data.meshes.new(f"{map.name}_plate_insert")
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+    _clean_solid_mesh(mesh)
+    cutter = bpy.data.objects.new(mesh.name, mesh)
+    bpy.context.collection.objects.link(cutter)
 
     plate.select_set(True)
     bpy.context.view_layer.objects.active = plate
@@ -1700,11 +1732,12 @@ def plateInsert(plate, map):
     mod = plate.modifiers.new(name="Boolean", type="BOOLEAN")
     mod.operation = "DIFFERENCE"
     mod.solver = "MANIFOLD"
-    mod.object = map_copy
+    mod.object = cutter
 
     bpy.ops.object.modifier_apply(modifier=mod.name)
 
-    bpy.data.objects.remove(map_copy, do_unlink=True)
+    bpy.data.objects.remove(cutter, do_unlink=True)
+    bpy.data.meshes.remove(mesh)
 
 
 # ---------------------------------------------------------------------------

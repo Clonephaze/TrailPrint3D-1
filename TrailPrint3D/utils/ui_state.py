@@ -433,6 +433,13 @@ _ADVANCED_SETTINGS_FIELDS = [
         "group": "Water",
     },
     {"key": "elORdpEpsilon", "attr": "el_oRdpEpsilon", "type": float, "group": "Water"},
+    {
+        "key": "colWFlattenTop",
+        "attr": "col_wFlattenTop",
+        "type": bool,
+        "group": "Water",
+    },
+    {"key": "colWInsert", "attr": "col_wInsert", "type": float, "group": "Water"},
     {"key": "colFArea", "attr": "col_fArea", "type": float, "group": "Forest"},
     {"key": "colScrArea", "attr": "col_scrArea", "type": float, "group": "Scree"},
     {"key": "colCArea", "attr": "col_cArea", "type": float, "group": "City Boundaries"},

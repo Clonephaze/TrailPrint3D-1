@@ -220,7 +220,8 @@ var COMPOSITE_ELEMENTS = {
             { key: 'colWStreamWidth', label: 'River Width', step: 0.1, min: 0.1, max: 100 },
             { key: 'elOMinIslandArea', label: 'Min Island Area', step: 0.5, min: 0 },
             { key: 'elORdpEpsilon', label: 'Coastline Simplify', step: 0.01, min: 0, max: 2 }
-        ]
+        ],
+        extraFields: tp3dBuildWaterFlattenFields
     },
     roads: {
         checkboxes: [
@@ -464,10 +465,71 @@ function tp3dBuildCompositeElementCard(key) {
     card.appendChild(checklist);
 
     def.numberFields.forEach(function(field) { card.appendChild(tp3dBuildNumberField(field)); });
+    if (def.extraFields) card.appendChild(def.extraFields());
 
     tp3dRepaintElementToggle(key);
     return card;
 }
+
+// Water card's Flatten Water Surface checkbox + Insert (mm) field --
+// mirrors panels.py's flatten_row, where Insert only shows while
+// col_wFlattenTop is on.
+function tp3dBuildWaterFlattenFields() {
+    var wrap = document.createElement('div');
+    var flatten = tp3dBuildCheckboxField({
+        key: 'colWFlattenTop',
+        label: 'Flatten Water Surface',
+        title: "Flatten each water body's surface to its own median height instead of following every terrain bump"
+    });
+    var insert = tp3dBuildNumberField({
+        key: 'colWInsert',
+        label: 'Insert (mm)',
+        step: 0.1,
+        min: 0,
+        title: 'Sink the water this many mm lower in Z'
+    });
+    var insertInput = insert.querySelector('input');
+    // Mirrors panels.py's INFO label: generation caps Insert to Extra Map
+    // Height - TP3D_WATER_INSERT_MARGIN (terrain.effective_water_insert).
+    var note = document.createElement('div');
+    note.className = 'card-field';
+    note.style.color = '#e0b050';
+    function refresh() {
+        var flat = !!ADVANCED_SETTINGS_STATE.colWFlattenTop;
+        insert.style.display = flat ? '' : 'none';
+        var minT = parseFloat(MAP_TAB_CONTROL_VALUES.minThickness != null
+            ? MAP_TAB_CONTROL_VALUES.minThickness : SETTINGS_STATE.minThickness);
+        var cap = Math.max(0, minT - TP3D_WATER_INSERT_MARGIN);
+        var over = flat && !isNaN(cap) && parseFloat(insertInput.value) > cap;
+        note.textContent = over
+            ? 'ⓘ Deeper than Extra Map Height allows — capped to ' + tp3dRoundForDisplay(cap, 2) + ' mm'
+            : '';
+        note.style.display = over ? '' : 'none';
+    }
+    var checkbox = flatten.querySelector('input[type="checkbox"]');
+    checkbox.addEventListener('change', function() {
+        ADVANCED_SETTINGS_STATE.colWFlattenTop = checkbox.checked;
+        refresh();
+    });
+    tp3dWaterInsertNoteRefresh = refresh;
+    var checklist = document.createElement('div');
+    checklist.className = 'card-checklist';
+    checklist.appendChild(flatten);
+    wrap.appendChild(checklist);
+    wrap.appendChild(insert);
+    wrap.appendChild(note);
+    refresh();
+    return wrap;
+}
+var TP3D_WATER_INSERT_MARGIN = 0.5; // constants.WATER_INSERT_MARGIN
+// The Elements tab gets rebuilt in place (tp3dRebuildElementsTab), so one
+// document listener calls whichever Water card is current instead of each
+// build adding its own. Any field change counts -- Insert here, or Extra Map
+// Height on the Map tab.
+var tp3dWaterInsertNoteRefresh = null;
+document.addEventListener('change', function() {
+    if (tp3dWaterInsertNoteRefresh) tp3dWaterInsertNoteRefresh();
+});
 
 function tp3dSendMapField(field, value) {
     fetch('http://127.0.0.1:' + PORT + '/' + field.endpoint, {

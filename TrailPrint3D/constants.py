@@ -15,6 +15,10 @@ ENABLE_UPDATE_CHECKER = True
 
 R = 6371.0  # Earth radius in kilometers
 
+# Water Insert is capped to Extra Map Height minus this (mm), so sunk water
+# never reaches the bottom of the map
+WATER_INSERT_MARGIN = 0.5
+
 WATER_MAXSIZE = 500
 SMALL_RIVERS_MAXSIZE = 50  # small/minor waterways drop out above this; big (wikidata) rivers + ponds still apply up to WATER_MAXSIZE
 FOREST_MAXSIZE = 150

@@ -688,6 +688,14 @@ class TP3D_PT_generate(bpy.types.Panel):
                     )
                     if props.col_wFlattenTop:
                         flatten_row.prop(props, "col_wInsert")
+                        _insert_cap = max(0.0, props.minThickness - const.WATER_INSERT_MARGIN)
+                        if props.col_wInsert > _insert_cap:
+                            col.label(
+                                text=_("Insert is capped to {:.1f}mm (Extra Map Height - {}mm)").format(
+                                    _insert_cap, const.WATER_INSERT_MARGIN
+                                ),
+                                icon="INFO",
+                            )
 
                 _draw_element_category(
                     box,

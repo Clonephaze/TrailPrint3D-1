@@ -958,7 +958,9 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                 # shared recess depth is not dragged down with it.
                 _bottom_z = _scm_bottom_z
                 if key == "water":
-                    _wInsert = bpy.context.scene.tp3d.col_wInsert
+                    from ..terrain import effective_water_insert  # deferred to avoid circular import at load time
+
+                    _wInsert = effective_water_insert(bpy.context.scene.tp3d)
                     if _wInsert > 0:
                         elem_obj.location.z -= _wInsert
                         # matrix_world is read immediately by the cutter builder

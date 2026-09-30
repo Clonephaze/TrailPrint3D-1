@@ -76,6 +76,9 @@ def _rtg_apply_elevation(
     from ..geo import (
         convert_to_geo,  # deferred to avoid circular import at load time
     )
+    from ..mesh_ops import (
+        recalculateNormals,  # deferred to avoid circular import at load time
+    )
 
     tp3d = bpy.context.scene.tp3d
     scaleElevation = gen.settings.scaleElevation
@@ -230,6 +233,13 @@ def _rtg_apply_elevation(
                 f"{zobj.name}: base recessed {bottom_drop:.0f}mm to keep the terrain seamless with the existing map",
                 "warn",
             )
+
+    # extrude_region_move on the open terrain surface leaves the solid inside
+    # out: the terrain faces point down and the dissolved bottom n-gon points
+    # up. Everything after this that picks "top" faces by normal.z (water
+    # flattening, WorldCover painting) would otherwise grab the bottom face --
+    # water flattening then drags bottom vertices up into a step.
+    recalculateNormals(zobj)
 
     return lowestZ, highestZ, additionalExtrusion, len(tileVerts)
 
