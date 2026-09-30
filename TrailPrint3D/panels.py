@@ -465,9 +465,6 @@ def _draw_shape_extras(box, props, temp):
                 split.operator("tp3d.terrain_dummy", text=_("Icon"), icon="LOCKED")
             split.prop(props, text_prop, text="")
 
-        if props.textLayout in {"OUTER_EDGE", "FRONT_FACE", "CURVED"}:
-            box.prop(props, "shapeRotation")
-
     def _draw_handle_group(extras, props, temp):
         box = _create_box_with_header(
             extras, props, _("Medal Handle"), icon="MOD_CURVE"
@@ -1022,13 +1019,22 @@ def _draw_advanced_generation_box(layout, props):
     box = _create_collapsible_section(layout, props, "show_ags")
     if box is None:
         return
+    box.label(text=_("Advanced Shape Settings"), icon="MESH_DATA")
+    row = box.row(align=True)
+    row.label(icon="BLANK1")
+    row.prop(props, "shapeRotation")
+    box.separator(type="LINE")
     box.label(text=_("Advanced Trail Settings"), icon="IPO_LINEAR")
-    box.prop(props, "overwritePathElevation")
-    layout.separator(factor=0.5)
+    row = box.row(align=True)
+    row.label(icon="BLANK1")
+    row.prop(props, "overwritePathElevation")
     if props.tex_use_texture == True:
-        box = layout.box()
+        box.separator(type="LINE")
         box.label(text=_("Advanced Texture Settings"), icon="TEXTURE")
-        box.prop(props, "tex_resolution")
+        row = box.row(align=True)
+        row.label(icon="BLANK1")
+        row.prop(props, "tex_resolution")
+    
 
 
 def _draw_pin_box(layout, props, temp, context):
