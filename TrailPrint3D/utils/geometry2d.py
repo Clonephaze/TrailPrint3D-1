@@ -19,7 +19,7 @@ from typing import Any
 import bmesh  # type: ignore
 import bpy  # type: ignore
 import numpy as np  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
 
 from .dataclasses import GenerationContext
 

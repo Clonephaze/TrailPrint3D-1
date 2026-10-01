@@ -25,7 +25,7 @@ import time
 import blf
 import bpy
 import gpu
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
 from gpu_extras.batch import batch_for_shader
 
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == 'win32' else 0

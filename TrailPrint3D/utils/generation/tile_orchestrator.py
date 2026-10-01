@@ -2,6 +2,7 @@ import math
 import time
 
 import bpy  # type: ignore
+from bpy.app.translations import pgettext_rpt as _rpt
 from mathutils import Vector  # type: ignore
 
 from ... import progress as _progress
@@ -20,7 +21,6 @@ from .output import (
 )
 from .terrain_gen import _rg_create_satellite_plane, _rg_start_satellite_prefetch
 
-# ---------------------------------------------------------------------------
 # createTerrainFromSelected sub-phase helpers
 #
 # Builds terrain on already-placed tile objects (blanks dropped by the map
@@ -117,7 +117,7 @@ def _rtg_apply_elevation(
 
     if len(tileVerts) < 500:
         _progress.WarningsOverlay.add_warning(
-            f"Mesh has only {len(tileVerts)} Points. Increase Resolution for higher Quality",
+            _rpt("Mesh has only {vertCount} Points. Increase Resolution for higher Quality").format(vertCount=len(tileVerts)),
             "warn",
         )
 
@@ -225,7 +225,9 @@ def _rtg_apply_elevation(
                 for vert_idx in face.vertices:
                     mesh.vertices[vert_idx].co.z -= bottom_drop
             _progress.WarningsOverlay.add_warning(
-                f"{zobj.name}: base recessed {bottom_drop:.0f}mm to keep the terrain seamless with the existing map",
+                _rpt("{objName}: base recessed {bottomDrop:.0f}mm to keep the terrain seamless with the existing map").format(
+                    objName=zobj.name, bottomDrop=bottom_drop
+                ),
                 "warn",
             )
 
@@ -661,7 +663,7 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_
             except GenerationError as e:
                 print(f"{tile_label} — generation phase failed: {e}")
                 _progress.WarningsOverlay.add_warning(
-                    f"{tile_label}: {e}", icon="error"
+                    _rpt("Generation Failed - See console for details")
                 )
                 continue
             except Exception as e:  # noqa: BLE001 - a single tile's bpy.ops/mesh-op failure shouldn't abort the whole batch
@@ -670,7 +672,7 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_
                 traceback.print_exc()
                 print(f"{tile_label} — unexpected failure: {e}")
                 _progress.WarningsOverlay.add_warning(
-                    f"{tile_label}: unexpected failure, check console for details",
+                    _rpt("Generation Failed - See console for details"),
                     icon="error",
                 )
                 continue
@@ -697,13 +699,13 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_
         overlay.add_completed_step(f"Done  —  {_m:02d}:{_s:02d} total")
         if n_tiles > 1:
             _progress.WarningsOverlay.add_warning(
-                "Multi-tile maps are not exported automatically — please use the Export buttons to export your tiles manually.",
+                _rpt("Multi-tile maps are not exported automatically — please use the Export buttons to export your tiles manually."),
                 "warn",
             )
         return gen
     except ValidationError as e:
         print(f"Validation Failed: {e}")
-        _progress.WarningsOverlay.add_warning(f"Error: {e}")
+        _progress.WarningsOverlay.add_warning(_rpt("Error: {e}").format(e=e))
         return None
     except GenerationError as e:
         print(f"Generation phase failed: {e}")
@@ -715,7 +717,7 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_
         traceback.print_exc()
         print(f"Generation failed: {e}")
         _progress.WarningsOverlay.add_warning(
-            "Generation failed, check console for details"
+            _rpt("Generation failed, check console for details")
         )
         return None
     finally:

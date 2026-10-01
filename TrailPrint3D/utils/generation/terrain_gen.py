@@ -4,7 +4,8 @@ import time
 
 import bpy  # type: ignore
 import numpy as np  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 from mathutils import Vector  # type: ignore
 
 from ... import constants as const
@@ -379,7 +380,7 @@ def _rg_start_satellite_prefetch(gen: GenerationContext):
         result["landcover"] = landcover
         result["photo"] = photo
 
-    t = threading.Thread(target=_run, daemon=True, name=_("satellite-prefetch"))
+    t = threading.Thread(target=_run, daemon=True, name="satellite-prefetch")
     t.start()
     gen.fetch.satelliteThread = t
     gen.fetch.satelliteResult = result
@@ -491,7 +492,7 @@ def _rg_fetch_elevation(gen: GenerationContext):
         )
     ):
         warning.add_warning(
-            _(
+            _rpt(
                 "Terrain seems to be really flat. If not intended, increase Elevation scale"
             ),
             icon="warn",

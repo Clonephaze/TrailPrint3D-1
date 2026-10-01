@@ -12,7 +12,9 @@ import time
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
+from bpy.app.translations import pgettext_tip as _tip
 from bpy.props import CollectionProperty, StringProperty  # type: ignore
 from mathutils import Euler, Quaternion, Vector, noise  # type: ignore
 
@@ -28,23 +30,18 @@ _warn = _progress.WarningsOverlay.add_warning
 class TP3D_OT_run_generation(bpy.types.Operator):
     bl_idname = "tp3d.run_generation"
     bl_label = _("Generate")
-    bl_description = _("Generate the Path and the Map with current Settings")
+    bl_description = _tip("Generate the Path and the Map with current Settings")
 
     @classmethod
     def poll(cls, context):
         export_path_set = bool(getattr(context.scene.tp3d, "export_path", None))
         file_path_set = bool(getattr(context.scene.tp3d, "file_path", None))
-        _message = (
-            "Choose a GPX file, and set an export path"
-            if not export_path_set and not file_path_set
-            else (
-                "Set an export path"
-                if not export_path_set
-                else ("Choose a GPX file" if not file_path_set else "")
-            )
-        )
-        if not export_path_set or not file_path_set:
-            cls.poll_message_set(_(_message))
+        if not export_path_set and not file_path_set:
+            cls.poll_message_set(_tip("Choose a GPX file, and set an export path"))
+        elif not export_path_set:
+            cls.poll_message_set(_tip("Set an export path"))
+        elif not file_path_set:
+            cls.poll_message_set(_tip("Choose a GPX file"))
         return export_path_set and file_path_set
 
     def execute(self, context):
@@ -84,7 +81,7 @@ class TP3D_OT_run_generation(bpy.types.Operator):
 class TP3D_OT_shapely_status(bpy.types.Operator):
     bl_idname = "tp3d.shapely_status"
     bl_label = _("Shapely Status")
-    bl_description = _("Check or display Shapely library load status")
+    bl_description = _tip("Check or display Shapely library load status")
 
     @classmethod
     def _get_shapely_error(cls) -> str | None:
@@ -117,12 +114,12 @@ class TP3D_OT_shapely_status(bpy.types.Operator):
         except GenerationError as e:
             msg = str(e)
             _warn(msg)
-            self.report({"ERROR"}, msg)
+            print(msg)
             return {"CANCELLED"}
         finally:
             _progress.WarningsOverlay.get().show()
 
-        self.report({"INFO"}, _("Shapely is working properly."))
+        self.report({"INFO"}, _rpt("Shapely is working properly."))
         return {"FINISHED"}
 
 
@@ -205,7 +202,7 @@ class TP3D_ExportBase:
 class TP3D_OT_export_stl(bpy.types.Operator, TP3D_ExportBase):
     bl_idname = "tp3d.export_stl"
     bl_label = _("Export STL")
-    bl_description = _("Export Selected Objects as Separate STL (Will lose Colors)")
+    bl_description = _tip("Export Selected Objects as Separate STL (Will lose Colors)")
 
     def execute(self, context):
         self._handler = getattr(self, "_handler", None)
@@ -237,7 +234,7 @@ class TP3D_OT_export_stl(bpy.types.Operator, TP3D_ExportBase):
 class TP3D_OT_export_obj(bpy.types.Operator, TP3D_ExportBase):
     bl_idname = "tp3d.export_obj"
     bl_label = _("Export OBJ")
-    bl_description = _("Export Selected Objects as Separate OBJ")
+    bl_description = _tip("Export Selected Objects as Separate OBJ")
 
     def execute(self, context):
         self._handler = getattr(self, "_handler", None)
@@ -268,7 +265,7 @@ class TP3D_OT_export_obj(bpy.types.Operator, TP3D_ExportBase):
 class TP3D_OT_export_three_mf(bpy.types.Operator, TP3D_ExportBase):
     bl_idname = "tp3d.export_three_mf"
     bl_label = _("Export 3mf")
-    bl_description = _(
+    bl_description = _tip(
         "Export Selected Objects as Separate 3MF. Separate Addon by Clonephaze"
     )
     bl_options = {"REGISTER"}
@@ -310,7 +307,7 @@ class TP3D_OT_export_three_mf(bpy.types.Operator, TP3D_ExportBase):
 class TP3D_OT_open_website(bpy.types.Operator):
     bl_idname = "tp3d.open_website"
     bl_label = _("Visit My Website")
-    bl_description = _("The Patreon Version has Additional Features!")
+    bl_description = _tip("The Patreon Version has Additional Features!")
 
     def execute(self, context):
         utils.open_website(self, context)
@@ -321,7 +318,7 @@ class TP3D_OT_open_website(bpy.types.Operator):
 class TP3D_OT_join_discord(bpy.types.Operator):
     bl_idname = "tp3d.join_discord"
     bl_label = _("Join Discord")
-    bl_description = _("Discord Community for TrailPrint3D!")
+    bl_description = _tip("Discord Community for TrailPrint3D!")
 
     def execute(self, context):
         utils.open_website(self, context, "https://discord.gg/C67H9EJFbz")
@@ -332,7 +329,7 @@ class TP3D_OT_join_discord(bpy.types.Operator):
 class TP3D_OT_info_video(bpy.types.Operator):
     bl_idname = "tp3d.info_video"
     bl_label = _("Tutorial Video")
-    bl_description = _("Link to Video explaining this Feature")
+    bl_description = _tip("Link to Video explaining this Feature")
 
     url: bpy.props.StringProperty(name=_("Url"), default="")  # type: ignore
 
@@ -345,7 +342,7 @@ class TP3D_OT_info_video(bpy.types.Operator):
 class TP3D_OT_save_preset(bpy.types.Operator):
     bl_idname = "tp3d.save_preset"
     bl_label = _("Save preset")
-    bl_description = _("Save the current settings as a preset")
+    bl_description = _tip("Save the current settings as a preset")
     bl_options = {"REGISTER", "UNDO"}
 
     user_input: StringProperty(name=_("Preset name"))  # type: ignore
@@ -369,7 +366,7 @@ class TP3D_OT_save_preset(bpy.types.Operator):
 class TP3D_OT_load_preset(bpy.types.Operator):
     bl_idname = "tp3d.load_preset"
     bl_label = _("Load preset")
-    bl_description = _("Load the current settings as a preset")
+    bl_description = _tip("Load the current settings as a preset")
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -384,7 +381,7 @@ class TP3D_OT_load_preset(bpy.types.Operator):
 class TP3D_OT_delete_preset(bpy.types.Operator):
     bl_idname = "tp3d.delete_preset"
     bl_label = _("Delete preset")
-    bl_description = _("Delete the current selected preset")
+    bl_description = _tip("Delete the current selected preset")
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -399,7 +396,7 @@ class TP3D_OT_delete_preset(bpy.types.Operator):
 class TP3D_OT_clear_cache(bpy.types.Operator):
     bl_idname = "tp3d.clear_cache"
     bl_label = _("Clear Cache")
-    bl_description = _("Delete all Cached Files from API calls")
+    bl_description = _tip("Delete all Cached Files from API calls")
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -529,7 +526,7 @@ class TP3D_OT_magnet_holes(bpy.types.Operator):
             zobj.select_set(True)
             bpy.context.view_layer.objects.active = zobj
 
-            bool_mod = zobj.modifiers.new(name=_("MagnetCutout"), type="BOOLEAN")
+            bool_mod = zobj.modifiers.new(name="MagnetCutout", type="BOOLEAN")
             bool_mod.operation = "DIFFERENCE"
             bool_mod.object = merged_cylinders
 
@@ -689,7 +686,7 @@ def apply_pin_cutout(context, pin, clearance=0.0):
         target.select_set(True)
         bpy.context.view_layer.objects.active = target
 
-        bool_mod = target.modifiers.new(name=_("PinSocket"), type="BOOLEAN")
+        bool_mod = target.modifiers.new(name="PinSocket", type="BOOLEAN")
         bool_mod.operation = "DIFFERENCE"
         # MANIFOLD (not EXACT): on a real, large terrain (800k+ faces)
         # cut by this cutter's short tapered section, EXACT was found
@@ -724,7 +721,7 @@ class TP3D_OT_dovetail(bpy.types.Operator):
     bl_idname = "tp3d.dovetail"
     bl_label = _("Dovetail")
     bl_options = {"REGISTER", "UNDO"}
-    bl_description = _("Add dovetail cutouts to the selected object")
+    bl_description = _tip("Add dovetail cutouts to the selected object")
 
     @classmethod
     def poll(cls, context):
@@ -864,7 +861,7 @@ class TP3D_OT_dovetail(bpy.types.Operator):
             zobj.select_set(True)
             bpy.context.view_layer.objects.active = zobj
 
-            bool_mod = zobj.modifiers.new(name=_("DovetailCutout"), type="BOOLEAN")
+            bool_mod = zobj.modifiers.new(name="DovetailCutout", type="BOOLEAN")
             bool_mod.operation = "DIFFERENCE"
             bool_mod.object = merged_cylinders
 
@@ -891,7 +888,7 @@ class TP3D_OT_bottom_mark(bpy.types.Operator):
     bl_idname = "tp3d.bottom_mark"
     bl_label = _("Bottom Mark")
     bl_options = {"REGISTER", "UNDO"}
-    bl_description = _("Add the current title to the bottom of the selected object")
+    bl_description = _tip("Add the current title to the bottom of the selected object")
 
     @classmethod
     def poll(cls, context):
@@ -948,7 +945,7 @@ class TP3D_OT_bottom_mark(bpy.types.Operator):
 
                     utils.recalculateNormals(mark)
                     # Add boolean modifier
-                    bool_mod = zobj.modifiers.new(name=_("Boolean"), type="BOOLEAN")
+                    bool_mod = zobj.modifiers.new(name="Boolean", type="BOOLEAN")
                     bool_mod.object = mark
                     bool_mod.operation = "DIFFERENCE"
                     bool_mod.solver = "EXACT"
@@ -977,12 +974,15 @@ class TP3D_OT_bottom_mark(bpy.types.Operator):
                     if _progress.SubprocessProgress.get().is_cancel_requested():
                         break
                     overlay.update(
-                        idx / n_targets, "Bottom Mark",
+                        idx / n_targets,
+                        "Bottom Mark",
                         f"{idx}/{n_targets} marked — {zobj.name}…",
                     )
                 self._mark_tile(context, zobj, bottomMarkCutout)
                 if overlay is not None:
-                    overlay.add_completed_step(f"{zobj.name} marked ({idx + 1}/{n_targets})")
+                    overlay.add_completed_step(
+                        f"{zobj.name} marked ({idx + 1}/{n_targets})"
+                    )
         finally:
             if overlay is not None:
                 overlay.finish()
@@ -999,14 +999,14 @@ class TP3D_OT_terrain_dummy(bpy.types.Operator):
     bl_label = _("Premium Feature")
 
     def execute(self, context):
-        self.report({"INFO"}, _("This Feature is Exclusive for Patreon Supporters"))
+        self.report({"INFO"}, _rpt("This Feature is Exclusive for Patreon Supporters"))
         return {"FINISHED"}
 
 
 class TP3D_OT_color_mountain(bpy.types.Operator):
     bl_idname = "tp3d.color_mountain"
     bl_label = _("Color Mountains")
-    bl_description = _("Color Mountains above a certain Threshold")
+    bl_description = _tip("Color Mountains above a certain Threshold")
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -1200,7 +1200,7 @@ class TP3D_OT_undo_mountain_texture(bpy.types.Operator):
 
     bl_idname = "tp3d.undo_mountain_texture"
     bl_label = _("Undo Texture Mountain Color")
-    bl_description = _(
+    bl_description = _tip(
         "Undo the most recent Color Mountains texture bake for the selected object"
     )
     bl_options = {"REGISTER"}
@@ -1238,7 +1238,7 @@ class TP3D_OT_undo_mountain_texture(bpy.types.Operator):
 class TP3D_OT_contour_lines(bpy.types.Operator):
     bl_idname = "tp3d.contour_lines"
     bl_label = _("Contour Lines")
-    bl_description = _("Generate contour lines on the map")
+    bl_description = _tip("Generate contour lines on the map")
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -1380,7 +1380,7 @@ class TP3D_OT_popup_merge(bpy.types.Operator):
 class TP3D_OT_import_text(bpy.types.Operator):
     bl_idname = "tp3d.import_text"
     bl_label = _("Import Text")
-    bl_description = _("Import Text to place it on your Map")
+    bl_description = _tip("Import Text to place it on your Map")
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -1446,7 +1446,7 @@ class TP3D_OT_popup_text(bpy.types.Operator):
     text: StringProperty(name=_("Name"), default="Text")  # type: ignore
     textFont: StringProperty(
         name=_("Font"),
-        description=_("Select a .ttf or .otf file"),
+        description=_tip("Select a .ttf or .otf file"),
         default="",
         subtype="FILE_PATH",
         update=on_font_change,
@@ -1615,7 +1615,7 @@ class TP3D_OT_popup_text(bpy.types.Operator):
 
         if obj is None:
             self.report(
-                {"WARNING"}, _("Failed to create text object, no active object")
+                {"WARNING"}, _rpt("Failed to create text object, no active object")
             )
             return {"CANCELLED"}
 
@@ -1671,7 +1671,7 @@ class TP3D_OT_popup_text(bpy.types.Operator):
 class TP3D_OT_import_svg(bpy.types.Operator):
     bl_idname = "tp3d.import_svg"
     bl_label = _("Import SVG")
-    bl_description = _("Import an SVG file onto the map")
+    bl_description = _tip("Import an SVG file onto the map")
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -1723,7 +1723,7 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
 
     operation: bpy.props.EnumProperty(
         name=_("Type"),
-        description=_("Choose how the SVG should be used"),
+        description=_tip("Choose how the SVG should be used"),
         items=[
             ("paint", _("Paint on Surface"), _("Paints the SVG onto the surface")),
             (
@@ -1871,13 +1871,13 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
         svg.data.materials.clear()
 
         if svg is None:
-            self.report({"WARNING"}, _("No Valid object selected"))
+            self.report({"WARNING"}, _rpt("No Valid object selected"))
             utils.show_message_box(_("No valid Map selected"))
             return {"CANCELLED"}
 
         obj = context.active_object
         if not obj or obj == 0:
-            self.report({"WARNING"}, _("No object selected"))
+            self.report({"WARNING"}, _rpt("No object selected"))
             return {"CANCELLED"}
 
         if "highestZ" in map:
@@ -1923,7 +1923,7 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
 class TP3D_OT_import_pin(bpy.types.Operator):
     bl_idname = "tp3d.import_pin"
     bl_label = _("Import Pin")
-    bl_description = _("Place a Pin on your Map interactively")
+    bl_description = _tip("Place a Pin on your Map interactively")
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -2053,7 +2053,7 @@ class TP3D_OT_popup_pin(bpy.types.Operator):
         )
         obj = context.active_object
         if not obj:
-            self.report({"WARNING"}, _("Failed to create pin object"))
+            self.report({"WARNING"}, _rpt("Failed to create pin object"))
             return {"CANCELLED"}
         obj.name = "Pin_Placement"
         mat = bpy.data.materials.get("TRAIL")
@@ -2097,7 +2097,7 @@ class TP3D_OT_popup_pin(bpy.types.Operator):
 class TP3D_OT_install_three_mf(bpy.types.Operator):
     bl_idname = "tp3d.install_three_mf"
     bl_label = _("Install 3MF Extension")
-    bl_description = _(
+    bl_description = _tip(
         "Automatically downloads and enables the 3MF extension by Clonephaze"
     )
 
@@ -2144,13 +2144,14 @@ def _redraw_all_areas():
 class TP3D_OT_pick_gpx_file(bpy.types.Operator):
     bl_idname = "tp3d.pick_gpx_file"
     bl_label = _("Select a GPX File")
-    bl_description = _("Use the selected GPX file")
+    bl_description = _tip("Use the selected GPX file")
 
     filepath: StringProperty(subtype="FILE_PATH")  # type: ignore
     filter_glob: StringProperty(default="*.gpx;*.igc", options={"HIDDEN"})  # type: ignore
 
     def execute(self, context):
         from .props import update_map_estimate
+
         tp3d = context.scene.tp3d
         tp3d.file_path = self.filepath
 
@@ -2182,7 +2183,7 @@ class TP3D_OT_pick_gpx_file(bpy.types.Operator):
 class TP3D_OT_pick_font_file(bpy.types.Operator):
     bl_idname = "tp3d.pick_font_file"
     bl_label = _("Use Font File")
-    bl_description = _("Use the selected font file")
+    bl_description = _tip("Use the selected font file")
 
     filepath: StringProperty(subtype="FILE_PATH")  # type: ignore
     filter_glob: StringProperty(
@@ -2201,7 +2202,7 @@ class TP3D_OT_pick_font_file(bpy.types.Operator):
 class TP3D_OT_pick_svg_file(bpy.types.Operator):
     bl_idname = "tp3d.pick_svg_file"
     bl_label = _("Use SVG File")
-    bl_description = _("Use the selected SVG file")
+    bl_description = _tip("Use the selected SVG file")
 
     filepath: StringProperty(subtype="FILE_PATH")  # type: ignore
     filter_glob: StringProperty(default="*.svg", options={"HIDDEN"})  # type: ignore
@@ -2218,7 +2219,7 @@ class TP3D_OT_pick_svg_file(bpy.types.Operator):
 class TP3D_OT_pick_dem_path(bpy.types.Operator):
     bl_idname = "tp3d.pick_dem_path"
     bl_label = _("Use DEM Path")
-    bl_description = _("Use the selected DEM GeoTIFF file or folder")
+    bl_description = _tip("Use the selected DEM GeoTIFF file or folder")
 
     directory: StringProperty(subtype="DIR_PATH")  # type: ignore
     files: CollectionProperty(type=bpy.types.OperatorFileListElement)  # type: ignore
@@ -2246,7 +2247,7 @@ class TP3D_OT_pick_dem_path(bpy.types.Operator):
 class TP3D_OT_pick_svg_shape_file(bpy.types.Operator):
     bl_idname = "tp3d.pick_svg_shape_file"
     bl_label = _("Use SVG File")
-    bl_description = _("Use the selected SVG file as the map's outline shape")
+    bl_description = _tip("Use the selected SVG file as the map's outline shape")
 
     filepath: StringProperty(subtype="FILE_PATH")  # type: ignore
     filter_glob: StringProperty(default="*.svg", options={"HIDDEN"})  # type: ignore
@@ -2263,7 +2264,7 @@ class TP3D_OT_pick_svg_shape_file(bpy.types.Operator):
 class TP3D_OT_pick_geojson_shape_file(bpy.types.Operator):
     bl_idname = "tp3d.pick_geojson_shape_file"
     bl_label = _("Use GeoJSON File")
-    bl_description = _("Use the selected GeoJSON file as the map's outline shape")
+    bl_description = _tip("Use the selected GeoJSON file as the map's outline shape")
 
     filepath: StringProperty(subtype="FILE_PATH")  # type: ignore
     filter_glob: StringProperty(default="*.geojson;*.json", options={"HIDDEN"})  # type: ignore
@@ -2280,7 +2281,7 @@ class TP3D_OT_pick_geojson_shape_file(bpy.types.Operator):
 class TP3D_OT_check_update(bpy.types.Operator):
     bl_idname = "tp3d.check_update"
     bl_label = _("Check for Updates")
-    bl_description = _("Check for the latest version of TrailPrint3D")
+    bl_description = _tip("Check for the latest version of TrailPrint3D")
 
     def execute(self, context):
         from . import temp, updater
@@ -2296,7 +2297,7 @@ class TP3D_OT_check_update(bpy.types.Operator):
 class TP3D_OT_open_premium_update(bpy.types.Operator):
     bl_idname = "tp3d.open_premium_update"
     bl_label = _("Get Update")
-    bl_description = _(
+    bl_description = _tip(
         "Open the Patreon post (or page) for the latest TrailPrint3D Premium update"
     )
 
@@ -2310,7 +2311,7 @@ class TP3D_OT_open_premium_update(bpy.types.Operator):
 class TP3D_OT_dismiss_update(bpy.types.Operator):
     bl_idname = "tp3d.dismiss_update"
     bl_label = _("Dismiss Update Notice")
-    bl_description = _(
+    bl_description = _tip(
         "Hide this update notice — it will reappear once a newer version is released"
     )
 
@@ -2324,7 +2325,7 @@ class TP3D_OT_dismiss_update(bpy.types.Operator):
 class TP3D_OT_install_update(bpy.types.Operator):
     bl_idname = "tp3d.install_update"
     bl_label = _("Install Update")
-    bl_description = _(
+    bl_description = _tip(
         "Download and install the latest TrailPrint3D version from GitHub. Blender must be restarted afterward"
     )
 
@@ -2335,15 +2336,15 @@ class TP3D_OT_install_update(bpy.types.Operator):
             return {"CANCELLED"}
         from . import updater
 
-        self.report({"INFO"}, _("Downloading update, please wait..."))
+        self.report({"INFO"}, _rpt("Downloading update, please wait..."))
         success, err = updater.download_and_install()
         if success:
             updater.status = "installed"
             self.report(
-                {"INFO"}, _("Update installed. Please restart Blender to apply.")
+                {"INFO"}, _rpt("Update installed. Please restart Blender to apply.")
             )
         else:
-            self.report({"ERROR"}, _("Update failed: {err}").format(err=err))
+            self.report({"ERROR"}, _rpt("Update failed: {err}").format(err=err))
         return {"FINISHED"}
 
 
@@ -2544,7 +2545,7 @@ def _generate_trails(context, gpx_paths, overlay, progress_start, progress_end):
 class TP3D_OT_puzzle_configurator(bpy.types.Operator):
     bl_idname = "tp3d.puzzle_configurator"
     bl_label = _("Jigsaw Puzzle Generator")
-    bl_description = _(
+    bl_description = _tip(
         "Open an interactive map — draw a rectangle and choose rows/columns, then Send to Blender to generate an interlocking jigsaw puzzle map"
     )
     bl_options = {"REGISTER", "UNDO"}
@@ -2599,7 +2600,8 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
             traceback.print_exc()
             _progress.WarningsOverlay.add_warning(
-                _("Generator encountered an error, see console for details."), "error"
+                _rpt("Generator encountered an error, see console for details."),
+                "error",
             )
             print(f"Puzzle generator: {exc}")
         finally:
@@ -2659,7 +2661,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         wm.modal_handler_add(self)
         self.report(
             {"INFO"},
-            _("Generator open in browser."),
+            _rpt("Generator open in browser."),
         )
         return {"RUNNING_MODAL"}
 
@@ -2704,7 +2706,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         if props.elementMode != "PAINT":
             props.elementMode = "PAINT"
             _progress.WarningsOverlay.add_warning(
-                _(
+                _rpt(
                     'Puzzles only support "Paint on Map" element mode — switched automatically.'
                 ),
                 "warn",
@@ -2719,7 +2721,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             # the regular merge_with_map path puzzles are actually built for.
             props.singleColorMode = False
             _progress.WarningsOverlay.add_warning(
-                _(
+                _rpt(
                     "Single Extruder Mode isn't supported in puzzles — disabled automatically."
                 ),
                 "warn",
@@ -2757,7 +2759,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
         if not bbox or not pieces:
             _progress.WarningsOverlay.add_warning(
-                _("Nothing to generate — draw an area to generate first."), "warn"
+                _rpt("Nothing to generate — draw an area to generate first."), "warn"
             )
             raise GenerationError
 
@@ -3020,7 +3022,9 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             if frame_terrain_requested
             else None,
             keep_terrain_obj=frame_terrain_requested,
-            overlay=overlay, progress_start=0.75, progress_end=0.85,
+            overlay=overlay,
+            progress_start=0.75,
+            progress_end=0.85,
         )
 
         if trails:
@@ -3106,8 +3110,10 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             bpy.data.objects.remove(bpy.data.objects[blank_name], do_unlink=True)
 
         finished_objs = piece_objs + ([holder_obj] if holder_obj is not None else [])
-        bpy.context.scene.tp3d["o_time"] = f"Script ran for {time.time() - start_time:.0f} seconds"
-        export.save_history_thumbnail(data.get('history_id'), finished_objs)
+        bpy.context.scene.tp3d["o_time"] = (
+            f"Script ran for {time.time() - start_time:.0f} seconds"
+        )
+        export.save_history_thumbnail(data.get("history_id"), finished_objs)
         # Re-zoom LAST, after the thumbnail render -- customThumbnail swaps in
         # its own temp top-down camera view for the screenshot and then tries
         # to restore the previous one, but a direct RegionView3D.view_matrix
@@ -3147,7 +3153,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 class TP3D_OT_map_generator(bpy.types.Operator):
     bl_idname = "tp3d.map_generator"
     bl_label = _("Map Generator")
-    bl_description = _(
+    bl_description = _tip(
         "Open an interactive map — draw a rectangle, square, circle, or octagon area (or import an SVG shape), then Send to Blender to generate a single map tile"
     )
     bl_options = {"REGISTER", "UNDO"}
@@ -3206,7 +3212,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
             traceback.print_exc()
             _progress.WarningsOverlay.add_warning(
-                _("Generator encountered an error, see console for details."), "error"
+                _rpt("Generator encountered an error, see console for details."),
+                "error",
             )
             print(f"Map generator: {exc}")
         finally:
@@ -3260,7 +3267,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
-        self.report({"INFO"}, _("Generator open in browser."))
+        self.report({"INFO"}, _rpt("Generator open in browser."))
         return {"RUNNING_MODAL"}
 
     def _apply_result(self, context, data):
@@ -3302,7 +3309,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
         if not bounds and not gpx_paths and not geojson_paths:
             _progress.WarningsOverlay.add_warning(
-                _("Nothing to generate — draw an area to generate first."), "warn"
+                _rpt("Nothing to generate — draw an area to generate first."), "warn"
             )
             raise GenerationError
 
@@ -3313,13 +3320,13 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             trails = _generate_trails(context, gpx_paths, overlay, 0.1, 0.95)
             if props.singleColorMode:
                 _progress.WarningsOverlay.add_warning(
-                    _(
+                    _rpt(
                         "Single Extruder Mode is not applied automatically due to performance reasons."
                     ),
                     "warn",
                 )
                 _progress.WarningsOverlay.add_warning(
-                    _("Use 'Merge with Map' to apply it manually."), "warn"
+                    _rpt("Use 'Merge with Map' to apply it manually."), "warn"
                 )
             _total_time = time.time() - start_time
             bpy.context.scene.tp3d["o_time"] = _(
@@ -3361,7 +3368,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             except Exception as exc:
                 print(f"Could not parse GeoJSON: {exc}")
                 _progress.WarningsOverlay.add_warning(
-                    _("Could not parse GeoJSON, see console for details."), "error"
+                    _rpt("Could not parse GeoJSON, see console for details."), "error"
                 )
                 raise GenerationError
 
@@ -3376,7 +3383,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             if blank is None:
                 print("GeoJSON boundary produced an empty/degenerate shape.")
                 _progress.WarningsOverlay.add_warning(
-                    _("GeoJSON boundary produced an empty/degenerate shape."), "error"
+                    _rpt("GeoJSON boundary produced an empty/degenerate shape."), "error"
                 )
                 raise GenerationError
         else:
@@ -3408,7 +3415,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 if blank is None:
                     print("Failed to create circle shape.")
                     _progress.WarningsOverlay.add_warning(
-                        _("Failed to create circle shape."), "error"
+                        _rpt("Failed to create circle shape."), "error"
                     )
                     raise GenerationError
                 blank["Shape"] = "CIRCLE"
@@ -3417,7 +3424,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 if blank is None:
                     print("Failed to create octagon shape.")
                     _progress.WarningsOverlay.add_warning(
-                        _("Failed to create octagon shape."), "error"
+                        _rpt("Failed to create octagon shape."), "error"
                     )
                     raise GenerationError
                 blank["Shape"] = "OCTAGON"
@@ -3426,7 +3433,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 if not svg_path:
                     print("No SVG file selected.")
                     _progress.WarningsOverlay.add_warning(
-                        _("No SVG file selected."), "error"
+                        _rpt("No SVG file selected."), "error"
                     )
                     raise GenerationError
                 # Same helper (and the same uniform, aspect-preserving
@@ -3438,7 +3445,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 if blank is None:
                     print("SVG file produced an empty/degenerate shape.")
                     _progress.WarningsOverlay.add_warning(
-                        _("SVG file produced an empty/degenerate shape."), "error"
+                        _rpt("SVG file produced an empty/degenerate shape."), "error"
                     )
                     raise GenerationError
                 blank["Shape"] = "SVG"
@@ -3456,7 +3463,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 if blank is None:
                     print("Failed to create square shape.")
                     _progress.WarningsOverlay.add_warning(
-                        _("Failed to create square shape."), "error"
+                        _rpt("Failed to create square shape."), "error"
                     )
                     raise GenerationError
                 blank["Shape"] = "SQUARE"
@@ -3465,7 +3472,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 if blank is None:
                     print("Failed to create rectangle shape.")
                     _progress.WarningsOverlay.add_warning(
-                        _("Failed to create rectangle shape."), "error"
+                        _rpt("Failed to create rectangle shape."), "error"
                     )
                     raise GenerationError
                 blank["Shape"] = "SQUARE"
@@ -3580,7 +3587,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 class TP3D_OT_special_collection(bpy.types.Operator):
     bl_idname = "tp3d.special_collection"
     bl_label = _("Update")
-    bl_description = _("Update the Special Collection")
+    bl_description = _tip("Update the Special Collection")
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -3593,7 +3600,7 @@ class TP3D_OT_special_collection(bpy.types.Operator):
 class TP3D_OT_append_collection(bpy.types.Operator):
     bl_idname = "tp3d.append_collection"
     bl_label = _("Import")
-    bl_description = _("Import the object from the Collection")
+    bl_description = _tip("Import the object from the Collection")
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -3632,7 +3639,7 @@ class TP3D_OT_append_collection(bpy.types.Operator):
 
         gen = utils._rg_validate_inputs(flags)
         if gen is None:
-            self.report({"WARNING"}, _("Invalid input properties"))
+            self.report({"WARNING"}, _rpt("Invalid input properties"))
             return {"CANCELLED"}
 
         utils._rg_load_coordinates(gen)
@@ -3698,7 +3705,7 @@ class TP3D_OT_append_collection(bpy.types.Operator):
 class TP3D_OT_append_collection_blank(bpy.types.Operator):
     bl_idname = "tp3d.append_collection_blank"
     bl_label = _("Import Blank")
-    bl_description = _("Import the collection without generating the map")
+    bl_description = _tip("Import the collection without generating the map")
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):

@@ -3,7 +3,8 @@ import threading
 from typing import Any, cast
 
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 
 from ... import constants as const
 from ... import progress as _progress
@@ -499,7 +500,7 @@ def _rg_build_terrain_elements(
                     f"INFO: MAP IS TOO BIG FOR {key.upper()} (< {max_size} km required)"
                 )
                 _progress.WarningsOverlay.add_warning(
-                    f"Map too big for {phase} layer.", "warn"
+                    _rpt("Map too big for {phase} layer.").format(phase=phase), "warn"
                 )
 
     # --------------------------------------------------
@@ -533,7 +534,7 @@ def _rg_build_terrain_elements(
                 f"(< {const.COASTLINE_WATERPOLY_MAXSIZE}km required)"
             )
             _progress.WarningsOverlay.add_warning(
-                "Map too big for Ocean/Coastline layer.", "warn"
+                _rpt("Map too big for Ocean/Coastline layer."), "warn"
             )
         elif isinstance(terrain["ocean"], _ColoringTextureResult):
             terrain["_osm_polygons"][terrain["ocean"].kind] = terrain["ocean"].polygon
@@ -583,7 +584,7 @@ def _rg_build_terrain_elements(
             _ov.set_fetch_done("buildings", success=buildings is not None)
         else:
             print("INFO: MAP IS TOO BIG FOR BUILDINGS (< 10Km Map size Required)")
-            _progress.WarningsOverlay.add_warning("Map too big for Buildings.", "warn")
+            _progress.WarningsOverlay.add_warning(_rpt("Map too big for Buildings."), "warn")
 
     # --------------------------------------------------
     # Roads — own creation function + clipping + material post-processing.
@@ -665,11 +666,11 @@ def _rg_build_terrain_elements(
                 _ov.set_fetch_done("roads", success=True)
             else:
                 print("INFO: No road data returned, skipping road processing.")
-                _progress.WarningsOverlay.add_warning("No road data returned.", "warn")
+                _progress.WarningsOverlay.add_warning(_rpt("No road data returned."), "warn")
                 _ov.set_fetch_done("roads", success=False)
         else:
             print("INFO: MAP IS TOO BIG FOR STREETS (< 100Km Map size Required)")
-            _progress.WarningsOverlay.add_warning("Map too big for Roads.", "warn")
+            _progress.WarningsOverlay.add_warning(_rpt("Map too big for Roads."), "warn")
 
     gen.runtime.elements = terrain
 

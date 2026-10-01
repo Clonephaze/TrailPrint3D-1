@@ -2,7 +2,7 @@ import math
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
 from mathutils import Vector  # type: ignore
 
 from . import geometry2d as g2d  # deferred-safe: pure-Python, no bpy-time side effects
@@ -75,7 +75,7 @@ def create_curve_from_coordinates(gen: GenerationContext, coordinates):
     curve_object.data.bevel_depth = pathThickness / 2  # Set the thickness of the curve
     curve_object.data.bevel_resolution = 4  # Set the resolution for smoothness
 
-    mod = curve_object.modifiers.new(name=(_("Remesh")), type="REMESH")
+    mod = curve_object.modifiers.new(name="Remesh", type="REMESH")
     mod.mode = "VOXEL"
     mod.voxel_size = 0.05 * pathThickness * 10 / 2
     mod.adaptivity = 0.0

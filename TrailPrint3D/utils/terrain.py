@@ -7,7 +7,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 from mathutils import Vector  # type: ignore
 from shapely import clip_by_rect
 from shapely.geometry import LineString, Point, Polygon, box
@@ -502,11 +503,9 @@ def coloring_main(
                 print(f"OSM tile ({kind}): loaded from {src} (on-demand)")
 
         except (OSError, ValueError, KeyError) as e:
-            show_message_box(
-                f"Something went wrong with fetching OSM data: {e}"
-            )
+            print(f"Error fetching OSM data: {e}")
             _progress.WarningsOverlay.add_warning(
-                f"Something went wrong with fetching OSM data: {e}", "error"
+                _rpt("Error fetching OSM data, see console for details"), "error"
             )
             continue
 
@@ -631,13 +630,12 @@ def coloring_main(
     else:
         if total_fetched == 0:
             _progress.WarningsOverlay.add_warning(
-                f"No {kind.capitalize()} elements returned from API.", "warn"
+                _rpt("Failed to fetch any elements from the API."), "warn"
             )
             _api_empty = True
         elif waterCreated == 0:
             _progress.WarningsOverlay.add_warning(
-                f"All {kind.capitalize()} elements are below the area threshold.",
-                "warn",
+                _rpt("All selected elements are below the area threshold."), "warn",
             )
             _api_empty = True
 
@@ -740,8 +738,7 @@ def coloring_main(
         if _api_empty:
             return _COLORING_EMPTY
         _progress.WarningsOverlay.add_warning(
-            f"All {kind.capitalize()} objects were filtered out due to their size",
-            "warn",
+            _rpt("All selected objects were filtered out due to their size"), "warn",
         )
         return _COLORING_FILTERED
 
@@ -1215,7 +1212,7 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
     if terrain_obj.active_material:
         mat = terrain_obj.active_material
     else:
-        mat = bpy.data.materials.new(name=(_("TerrainColor")))
+        mat = bpy.data.materials.new(name="TerrainColor")
         terrain_obj.data.materials.append(mat)
 
     if mat.name not in [m.name for m in map_mesh.materials if m is not None]:
@@ -1341,7 +1338,7 @@ def plateInsert(plate, map):
     plate.select_set(True)
     bpy.context.view_layer.objects.active = plate
 
-    mod = plate.modifiers.new(name=_("Boolean"), type="BOOLEAN")
+    mod = plate.modifiers.new(name="Boolean", type="BOOLEAN")
     mod.operation = "DIFFERENCE"
     mod.solver = "MANIFOLD"
     mod.object = cutter
@@ -1791,7 +1788,7 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
 
     if not raw_chains:
         _progress.WarningsOverlay.add_warning(
-            "No coastline data found for this area — ocean layer skipped.", "warn"
+            _rpt("(No ocean data found for this area — ocean layer skipped)."), "warn"
         )
         return None
 
@@ -1838,7 +1835,7 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
         _ct_polys = _smoothed_ocean_polys(open_chains, closed_loops, bbox_bl, rdp_eps)
         if not _ct_polys:
             _progress.WarningsOverlay.add_warning(
-                "Could not build ocean polygon — ocean layer skipped.", "warn"
+                _rpt("Could not build ocean polygon — ocean layer skipped."), "warn"
             )
             return None
         return _ColoringTextureResult(kind="OCEAN", polygon=union_all(_ct_polys))
@@ -1854,7 +1851,7 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
 
     if ocean_obj is None:
         _progress.WarningsOverlay.add_warning(
-            "Could not build ocean polygon — ocean layer skipped.", "warn"
+            _rpt("Could not build ocean polygon — ocean layer skipped."), "warn"
         )
         return None
 
@@ -1899,6 +1896,7 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
     PAINT/texture mode, a merged-into-tile mesh object for single color mode,
     or None if no water was found / the dataset couldn't be prepared.
     """
+    from .. import constants as _const  # deferred to avoid circular import at load time
     from . import geometry2d as _g2d
     from .mesh_ops import (
         merge_objects,
@@ -1907,7 +1905,6 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
     from .osm.water_polygons import (
         query_ocean_polygon,
     )  # deferred to avoid circular import at load time
-    from .. import constants as _const  # deferred to avoid circular import at load time
 
     _t_ocean = time.time()
 
@@ -1925,7 +1922,7 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
 
     if poly is None or poly.is_empty:
         _progress.WarningsOverlay.add_warning(
-            "No ocean found in this area (water-polygon dataset).", "warn"
+            _rpt("No ocean found in this area (water-polygon dataset)."), "warn"
         )
         return None
 
@@ -1975,7 +1972,7 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
     ocean_polys = _taubin_smooth_ocean_polys(ocean_polys, bbox_bl)
     if not ocean_polys:
         _progress.WarningsOverlay.add_warning(
-            "Could not build ocean polygon — ocean layer skipped.", "warn"
+            _rpt("Could not build ocean polygon — ocean layer skipped."), "warn"
         )
         return None
 
@@ -1993,14 +1990,14 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
             face_meshes.append(m)
     if not face_meshes:
         _progress.WarningsOverlay.add_warning(
-            "Could not build ocean polygon — ocean layer skipped.", "warn"
+            _rpt("Could not build ocean polygon — ocean layer skipped."), "warn"
         )
         return None
 
     ocean_obj = merge_objects(face_meshes) if len(face_meshes) > 1 else face_meshes[0]
     if not ocean_obj or len(ocean_obj.data.vertices) == 0:
         _progress.WarningsOverlay.add_warning(
-            "Could not build ocean polygon — ocean layer skipped.", "warn"
+            _rpt("Could not build ocean polygon — ocean layer skipped."), "warn"
         )
         return None
 
@@ -2083,7 +2080,7 @@ def exaggeratedLayers(objs):
         plane.location.z += 0.1 + layerThickness / 2
 
         # Add Array modifier in Z direction
-        array_mod = plane.modifiers.new(name=(_("ArrayZ")), type="ARRAY")
+        array_mod = plane.modifiers.new(name="ArrayZ", type="ARRAY")
         array_mod.relative_offset_displace = (0, 0, 0)  # disable relative offset
         array_mod.constant_offset_displace = (0, 0, layerThickness)  # fixed step in Z
         array_mod.use_relative_offset = False
@@ -2095,7 +2092,7 @@ def exaggeratedLayers(objs):
         bpy.ops.object.modifier_apply(modifier=array_mod.name)
 
         # Add Boolean modifier with INTERSECT mode
-        bool_mod = plane.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
+        bool_mod = plane.modifiers.new(name="Boolean", type="BOOLEAN")
         bool_mod.operation = "INTERSECT"
         bool_mod.solver = "FLOAT"  # or 'EXACT'
         bool_mod.use_self = False
@@ -2107,7 +2104,7 @@ def exaggeratedLayers(objs):
         bpy.ops.object.modifier_apply(modifier=bool_mod.name)
 
         # Add Solidify modifier for thickness
-        solidify_mod = plane.modifiers.new(name=(_("Solidify")), type="SOLIDIFY")
+        solidify_mod = plane.modifiers.new(name="Solidify", type="SOLIDIFY")
         solidify_mod.thickness = layerThickness
         solidify_mod.offset = 0
 
@@ -2247,14 +2244,14 @@ def contourLines(objs):
                 ).format(maxSlices=CL_MAX_SLICES)
             )
 
-        array_mod = plane.modifiers.new(name=(_("ArrayZ")), type="ARRAY")
+        array_mod = plane.modifiers.new(name="ArrayZ", type="ARRAY")
         array_mod.relative_offset_displace = (0, 0, 0)
         array_mod.constant_offset_displace = (0, 0, cl_distance_eff)
         array_mod.use_relative_offset = False
         array_mod.use_constant_offset = True
         array_mod.count = slice_count
 
-        solidify_mod = plane.modifiers.new(name=(_("Solidify")), type="SOLIDIFY")
+        solidify_mod = plane.modifiers.new(name="Solidify", type="SOLIDIFY")
         solidify_mod.thickness = cl_thickness
 
         bpy.context.view_layer.objects.active = plane
@@ -2268,7 +2265,7 @@ def contourLines(objs):
         cutter = bpy.context.active_object
         cutter.name = "CuttingPlaneCutter"
 
-        bool_mod = plane.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
+        bool_mod = plane.modifiers.new(name="Boolean", type="BOOLEAN")
         bool_mod.operation = "INTERSECT"
         bool_mod.solver = "MANIFOLD"
         bool_mod.use_self = False

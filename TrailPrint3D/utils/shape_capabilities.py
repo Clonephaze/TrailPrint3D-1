@@ -5,7 +5,7 @@ callbacks, and the generation dispatch all read from here. Adding a new
 shape or layout is a change in one place only.
 """
 
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
 
 from . import temp
 

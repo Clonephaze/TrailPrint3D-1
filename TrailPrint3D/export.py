@@ -5,7 +5,8 @@
 
 
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 from mathutils import Vector  # type: ignore
 
 from . import addon_preferences, temp
@@ -26,27 +27,31 @@ def _sanitize_filename(name):
 
 def export_to_STL(zobj, force="STL"):
 
-    exportPath = bpy.context.scene.tp3d.get('export_path', None)
+    exportPath = bpy.context.scene.tp3d.get("export_path", None)
     if not exportPath:
         exportPath = addon_preferences.get_prefs().default_export_folder
     if not exportPath:
-        _progress.WarningsOverlay.add_warning(_("Export folder not set"), "error")
+        _progress.WarningsOverlay.add_warning(_rpt("Export folder not set"), "error")
         return
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     zobj.select_set(True)
     bpy.context.view_layer.objects.active = zobj
 
     if zobj.material_slots and force != "STL":
-        bpy.ops.wm.obj_export(filepath=exportPath + _sanitize_filename(zobj.name) + ".obj",
+        bpy.ops.wm.obj_export(
+            filepath=exportPath + _sanitize_filename(zobj.name) + ".obj",
             export_selected_objects=True,
             export_triangulated_mesh=True,
             apply_modifiers=True,
             export_materials=True,
             forward_axis="Y",
             up_axis="Z",
-            )
+        )
     else:
-        bpy.ops.wm.stl_export(filepath=exportPath + _sanitize_filename(zobj.name) + ".stl", export_selected_objects=True)
+        bpy.ops.wm.stl_export(
+            filepath=exportPath + _sanitize_filename(zobj.name) + ".stl",
+            export_selected_objects=True,
+        )
 
     zobj.select_set(False)  # Select the object
 
@@ -54,48 +59,52 @@ def export_to_STL(zobj, force="STL"):
 def export_selected_to_STL(force="STL"):
     from .utils import show_message_box
 
-    exportPath = bpy.context.scene.tp3d.get('export_path', None)
+    exportPath = bpy.context.scene.tp3d.get("export_path", None)
     if not exportPath:
         exportPath = addon_preferences.get_prefs().default_export_folder
     if not exportPath:
-        _progress.WarningsOverlay.add_warning(_("Export folder not set"), "error")
-        return {'FINISHED'}
+        _progress.WarningsOverlay.add_warning(_rpt("Export folder not set"), "error")
+        return {"FINISHED"}
     selected_objects = bpy.context.selected_objects
     active_obj = bpy.context.active_object
 
     if not selected_objects:
-            show_message_box("No objects selected")
-            return{'FINISHED'}
+        show_message_box("No objects selected")
+        return {"FINISHED"}
 
     for zobj in selected_objects:
-        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.object.select_all(action="DESELECT")
         zobj.select_set(True)
         bpy.context.view_layer.objects.active = zobj
 
         if (zobj.material_slots or force == "OBJ") and force != "STL":
-            bpy.ops.wm.obj_export(filepath=exportPath + _sanitize_filename(zobj.name) + ".obj",
+            bpy.ops.wm.obj_export(
+                filepath=exportPath + _sanitize_filename(zobj.name) + ".obj",
                 export_selected_objects=True,
                 export_triangulated_mesh=True,
                 apply_modifiers=True,
                 export_materials=True,
                 forward_axis="Y",
                 up_axis="Z",
-                )
-            #show_message_box("File Exported as OBJ because it contains Materials","INFO","OBJ File Exported")
+            )
+            # show_message_box("File Exported as OBJ because it contains Materials","INFO","OBJ File Exported")
         else:
-            bpy.ops.wm.stl_export(filepath=exportPath + _sanitize_filename(zobj.name) + ".stl", export_selected_objects=True)
+            bpy.ops.wm.stl_export(
+                filepath=exportPath + _sanitize_filename(zobj.name) + ".stl",
+                export_selected_objects=True,
+            )
 
-
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     for zobj in selected_objects:
         zobj.select_set(True)
     bpy.context.view_layer.objects.active = active_obj
 
-
     active_obj = bpy.context.active_object
 
 
-def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bool = False):
+def export_selected_to_3mf(
+    filename: str = "", is_auto: bool = False, manual: bool = False
+):
     import os
     import tempfile
 
@@ -103,17 +112,17 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
 
     from .utils import show_message_box
 
-    exportPath = bpy.context.scene.tp3d.get('export_path', "")
+    exportPath = bpy.context.scene.tp3d.get("export_path", "")
     if not exportPath:
         exportPath = addon_preferences.get_prefs().default_export_folder
     if not exportPath:
-        _progress.WarningsOverlay.add_warning(_("Export folder not set"), "error")
-        return {'FINISHED'}
+        _progress.WarningsOverlay.add_warning(_rpt("Export folder not set"), "error")
+        return {"FINISHED"}
 
     selected_objects = bpy.context.selected_objects
     if not selected_objects:
         show_message_box("No objects selected")
-        return {'FINISHED'}
+        return {"FINISHED"}
 
     # 1. Duplicate all selected objects + children (preserve hierarchy)
     all_to_export = list(selected_objects)
@@ -143,11 +152,11 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
 
     # Convert curves to mesh
     for obj in duplicates:
-        if obj.type == 'CURVE':
-            bpy.ops.object.select_all(action='DESELECT')
+        if obj.type == "CURVE":
+            bpy.ops.object.select_all(action="DESELECT")
             obj.select_set(True)
             bpy.context.view_layer.objects.active = obj
-            bpy.ops.object.convert(target='MESH')
+            bpy.ops.object.convert(target="MESH")
 
     # With texture-mode paint export, companion objects (text/plate/shell, and
     # the trail when it's excluded from the baked texture) have no paint data
@@ -166,9 +175,11 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
         )
 
         map_dup = next((d for d in duplicates if d.get("Object type") == "MAP"), None)
-        if map_dup is not None and map_dup.type == 'MESH':
+        if map_dup is not None and map_dup.type == "MESH":
             try:
-                palette = ast.literal_eval(map_dup.data.get("3mf_paint_extruder_colors", "{}"))
+                palette = ast.literal_eval(
+                    map_dup.data.get("3mf_paint_extruder_colors", "{}")
+                )
             except (ValueError, SyntaxError):
                 palette = {}
             if palette:
@@ -176,18 +187,37 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
                 # different trail curves can carry different materials (e.g. a
                 # red vs. a yellow trail), so that one must be read from each
                 # object's own material rather than assumed to be constant.
-                _fixed_companion_material = {"TEXT": "WHITE", "PLATE": "BLACK", "SHELL": "BLACK", "BUILDING": "WHITE"}
+                _fixed_companion_material = {
+                    "TEXT": "WHITE",
+                    "PLATE": "BLACK",
+                    "SHELL": "BLACK",
+                    "BUILDING": "WHITE",
+                }
                 _palette_dirty = False
                 for dup in duplicates:
                     obj_type = dup.get("Object type")
                     if obj_type in _fixed_companion_material:
-                        _ccol = material_to_srgb(bpy.data.materials.get(_fixed_companion_material[obj_type]))
+                        _ccol = material_to_srgb(
+                            bpy.data.materials.get(_fixed_companion_material[obj_type])
+                        )
                     elif obj_type == "TRAIL" and not tp3d.tex_include_trail:
-                        _own_mat = dup.data.materials[0] if dup.data and dup.data.materials else None
-                        _ccol = material_to_srgb(_own_mat or bpy.data.materials.get("TRAIL"))
+                        _own_mat = (
+                            dup.data.materials[0]
+                            if dup.data and dup.data.materials
+                            else None
+                        )
+                        _ccol = material_to_srgb(
+                            _own_mat or bpy.data.materials.get("TRAIL")
+                        )
                     elif obj_type == "BUILDINGS":
-                        _own_mat = dup.data.materials[0] if dup.data and dup.data.materials else None
-                        _ccol = material_to_srgb(_own_mat or bpy.data.materials.get("BUILDINGS"))
+                        _own_mat = (
+                            dup.data.materials[0]
+                            if dup.data and dup.data.materials
+                            else None
+                        )
+                        _ccol = material_to_srgb(
+                            _own_mat or bpy.data.materials.get("BUILDINGS")
+                        )
                     else:
                         continue
                     _chex = _srgb_to_hex(*_ccol)
@@ -201,7 +231,7 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
     # ------------------------------------------------------------------
     #  New grouping logic based on tp3d.keep_positions
     # ------------------------------------------------------------------
-    temp_empties = []          # we'll delete these later
+    temp_empties = []  # we'll delete these later
     if bpy.context.scene.tp3d.keep_positions:
         # Group ALL objects under one root, preserve world transforms
         root_empty = bpy.data.objects.new("TP3D_Group", None)
@@ -213,9 +243,11 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
         for obj in top_level:
             obj.parent = root_empty
             # Adjust inverse matrix so world transform stays unchanged
-            obj.matrix_parent_inverse = root_empty.matrix_world.inverted() @ obj.matrix_world
+            obj.matrix_parent_inverse = (
+                root_empty.matrix_world.inverted() @ obj.matrix_world
+            )
 
-        export_roots = [root_empty]   # only one root object to export
+        export_roots = [root_empty]  # only one root object to export
 
     else:
         # Original behaviour: center, group by "ExportGroup" custom property
@@ -240,8 +272,7 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
                 export_roots.append(members[0])
                 continue
             empty = bpy.data.objects.new(
-                GROUP_NAMES[idx] if idx < len(GROUP_NAMES) else f"Group_{g_id}",
-                None
+                GROUP_NAMES[idx] if idx < len(GROUP_NAMES) else f"Group_{g_id}", None
             )
             bpy.context.collection.objects.link(empty)
             temp_empties.append(empty)
@@ -263,7 +294,7 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
 
     _3mf_api = get_threemf_api()
     if _3mf_api is None:
-        _progress.WarningsOverlay.add_warning(_("3MF Addon not installed"), "error")
+        _progress.WarningsOverlay.add_warning(_rpt("3MF Addon not installed"), "error")
         return
 
     try:
@@ -272,37 +303,41 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
         _on_progress = None
         if is_auto:
             _overlay = _progress.ProgressOverlay.get()
+
             def _on_progress_cb(percent: int, message: str) -> None:
                 _overlay.update(0.97 + (percent / 100.0) * 0.03, "3MF Export", message)
+
             _on_progress = _on_progress_cb
 
         export_kwargs = {
-            'filepath': full_path,
-            'objects': export_roots,
-            'use_mesh_modifiers': True,
-            'global_scale': 0.001,
-            'coordinate_precision': 4,
-            'thumbnail_mode': "NONE" if bpy.app.background else "CUSTOM",
-            'thumbnail_image': thumbnail_path if not bpy.app.background else "",
-            'thumbnail_resolution': 256,
-            'use_orca_format': "PAINT" if _is_texture_mode else "AUTO",
-            'progress_mode': "NONE" if is_auto else "AUTO",
-            'on_progress': _on_progress,
+            "filepath": full_path,
+            "objects": export_roots,
+            "use_mesh_modifiers": True,
+            "global_scale": 0.001,
+            "coordinate_precision": 4,
+            "thumbnail_mode": "NONE" if bpy.app.background else "CUSTOM",
+            "thumbnail_image": thumbnail_path if not bpy.app.background else "",
+            "thumbnail_resolution": 256,
+            "use_orca_format": "PAINT" if _is_texture_mode else "AUTO",
+            "progress_mode": "NONE" if is_auto else "AUTO",
+            "on_progress": _on_progress,
         }
         if has_threemf_capability("slicer_profile"):
             export_kwargs["slicer_profile"] = tp3d.slicer_profile_name
         else:
-            _progress.WarningsOverlay.add_warning(_("3MF Addon update available"), "warn")
+            _progress.WarningsOverlay.add_warning(
+                _rpt("3MF Addon update available"), "warn"
+            )
 
         result = _3mf_api.export_3mf(**export_kwargs)
         if result.status != "FINISHED":
             print("Export Error:\n" + "\n".join(result.warnings))
             raise Exception(_("3MF export failed"))  # noqa: TRY002
         if not manual:
-            _progress.WarningsOverlay.add_warning(_("Exported as 3mf"), "ok")
+            _progress.WarningsOverlay.add_warning(_rpt("Exported as 3mf"), "ok")
     except Exception as e:
         print(f"Export Error: {e}")
-        _progress.WarningsOverlay.add_warning(_("Exporting as 3mf Failed"), "error")
+        _progress.WarningsOverlay.add_warning(_rpt("Exporting as 3mf Failed"), "error")
 
     # 5. Cleanup (delete duplicates and temporary empties)
     for obj in duplicates + temp_empties:
@@ -312,7 +347,8 @@ def export_selected_to_3mf(filename: str = "", is_auto: bool = False, manual: bo
             col.objects.unlink(obj)
         bpy.data.objects.remove(obj)
 
-    return {'FINISHED'}
+    return {"FINISHED"}
+
 
 def customThumbnail(objects, output_path, resolution=256):
     scene = bpy.context.scene
@@ -325,9 +361,9 @@ def customThumbnail(objects, output_path, resolution=256):
     scene.render.resolution_percentage = 100
 
     # 2. Find 3D View (Crucial for saving state)
-    area = next((a for a in bpy.context.screen.areas if a.type == 'VIEW_3D'), None)
+    area = next((a for a in bpy.context.screen.areas if a.type == "VIEW_3D"), None)
     if not area:
-        return # Safety exit
+        return  # Safety exit
 
     space = area.spaces.active
     rv3d = space.region_3d
@@ -336,12 +372,12 @@ def customThumbnail(objects, output_path, resolution=256):
     old_camera = scene.camera
     old_shading = space.shading.type
     old_overlay = space.overlay.show_overlays
-    old_view_matrix = rv3d.view_matrix.copy() # Saves rotation/zoom
+    old_view_matrix = rv3d.view_matrix.copy()  # Saves rotation/zoom
     old_perspective = rv3d.view_perspective
 
     # 4. Setup Temporary Camera
     tmp_cam_data = bpy.data.cameras.new("TempTopCam")
-    tmp_cam_data.type = 'ORTHO'
+    tmp_cam_data.type = "ORTHO"
     tmp_cam_obj = bpy.data.objects.new("TempTopCam", tmp_cam_data)
     scene.collection.objects.link(tmp_cam_obj)
 
@@ -351,18 +387,18 @@ def customThumbnail(objects, output_path, resolution=256):
     scene.camera = tmp_cam_obj
 
     # 5. Set Viewport for Render
-    space.shading.type = 'MATERIAL'
+    space.shading.type = "MATERIAL"
     space.overlay.show_overlays = False
 
     # 6. Selection & Framing
-    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.object.select_all(action="DESELECT")
     for obj in objects:
         obj.select_set(True)
 
     # 7. Execute Render with Override
     with bpy.context.temp_override(area=area, region=area.regions[-1]):
         # Snap view to the temp camera
-        rv3d.view_perspective = 'CAMERA'
+        rv3d.view_perspective = "CAMERA"
 
         # Zoom camera to fit objects
         bpy.ops.view3d.camera_to_view_selected()
@@ -446,11 +482,13 @@ def get_selection_center(objects):
 
     min_z = min(c.z for c in all_coords)
 
-    center = Vector((
-        (min_x + max_x) / 2,
-        (min_y + max_y) / 2,
-        min_z,
-    ))
+    center = Vector(
+        (
+            (min_x + max_x) / 2,
+            (min_y + max_y) / 2,
+            min_z,
+        )
+    )
 
     return center
 
@@ -459,4 +497,3 @@ def is_3mf_extension_installed():
     is_en = is_threemf_available()
     temp.has3mf = is_en
     return is_en
-

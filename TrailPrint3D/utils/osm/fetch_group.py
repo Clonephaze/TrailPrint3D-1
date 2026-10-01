@@ -4,6 +4,7 @@ import os
 import time
 
 import bpy  # type: ignore
+from bpy.app.translations import pgettext_rpt as _rpt
 
 from ... import constants as const
 from ... import progress as _progress
@@ -408,7 +409,7 @@ def fetch_osm_combined(
 
     if data is None:
         _progress.WarningsOverlay.add_warning(
-            f"failed to fetch {missing} elements from Overpass API", "error"
+            _rpt("Failed to fetch elements from Overpass API"), "error"
         )
         return result  # return whatever cache hits we already have
 

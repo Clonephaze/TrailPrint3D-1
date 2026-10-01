@@ -5,7 +5,8 @@ import os
 import time
 
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 
 from ... import constants as const
 from ... import progress as _progress
@@ -330,7 +331,7 @@ def fetch_osm_data(
     )
     if data is None:
         _progress.WarningsOverlay.add_warning(
-            f"failed to fetch {kind} elements from Overpass API", "error"
+            _rpt("Failed to fetch {kind} elements from Overpass API").format(kind=kind), "error"
         )
         return None
 

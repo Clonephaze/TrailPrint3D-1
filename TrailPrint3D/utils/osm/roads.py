@@ -6,6 +6,7 @@ import bmesh  # type: ignore
 import bpy  # type: ignore
 import numpy as np  # type: ignore
 from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_rpt as _rpt
 from shapely import make_valid
 
 from ...progress import WarningsOverlay as warning
@@ -86,11 +87,6 @@ class RoadConfig:
             # exempt -- it behaves like the sparse arterial tiers (long, few
             # segments).
             _too_dense_for_full_depth = {"service", "footway", "pedestrian", "cycle_bridle", "path"}
-            if any(tier_active[t] for t in _too_dense_for_full_depth):
-                warning.add_warning(
-                    "[TP3D roads] full_depth mode: excluding service/footway/pedestrian/"
-                    "cycle_bridle/path tiers (too dense to remesh cleanly as a standalone piece)"
-                )
             for t in _too_dense_for_full_depth:
                 tier_active[t] = False
 
@@ -904,7 +900,7 @@ def create_roads(
 
     if width_was_adjusted:
         _progress.WarningsOverlay.add_warning(
-            (_("Some roads were too thin and made thicker")), "warn"
+            _rpt("Some roads were too thin and made thicker"), "warn"
         )
 
     print(

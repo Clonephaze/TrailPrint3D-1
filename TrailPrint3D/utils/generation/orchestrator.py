@@ -1,6 +1,7 @@
 import time
 
 import bpy
+from bpy.app.translations import pgettext_rpt as _rpt
 
 from ... import progress as _progress
 from ..dataclasses import GenerationContext, GenerationError, ValidationError
@@ -263,7 +264,7 @@ def runGeneration(type, locked_scale=None):
         overlay.add_completed_step(f"Done  —  {_m:02d}:{_s:02d} total")
     except ValidationError as e:
         print(f"Validation Failed: {e}")
-        _progress.WarningsOverlay.add_warning(f"Error: {e}")
+        _progress.WarningsOverlay.add_warning(_rpt("Validation Error: see console for details"))
 
     except GenerationError as e:
         print(f"Generation phase failed: {e}")
@@ -275,7 +276,7 @@ def runGeneration(type, locked_scale=None):
         traceback.print_exc()
         print(f"Generation failed: {e}")
         _progress.WarningsOverlay.add_warning(
-            "Generation failed, check console for details"
+            _rpt("Generation failed, check console for details")
         )
 
     finally:

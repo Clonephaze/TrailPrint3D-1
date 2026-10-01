@@ -2,7 +2,7 @@ import math
 
 import bpy  # type: ignore
 import numpy as np  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
 
 from .. import constants as const
 

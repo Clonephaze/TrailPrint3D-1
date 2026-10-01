@@ -7,9 +7,8 @@ import textwrap
 from math import ceil
 
 import bpy  # type: ignore
-from bpy.app.translations import (  # type: ignore
-    pgettext as _,  # For Translation of Text Required
-)
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_tip as _tip
 
 from . import addon_preferences, temp, updater
 from . import constants as const
@@ -948,7 +947,7 @@ class TP3D_PT_generate(bpy.types.Panel):
         row.prop(
             props,
             "general_settings_expanded",
-            text="General Settings",
+            text=_("General Settings"),
             emboss=False,
             icon="TRIA_DOWN" if props.general_settings_expanded else "TRIA_RIGHT",
         )
@@ -1458,7 +1457,7 @@ class TP3D_PT_advanced(bpy.types.Panel):
 class TP3D_OT_show_custom_props_popup(bpy.types.Operator):
     bl_idname = "tp3d.show_custom_props_popup"
     bl_label = _("Generation Settings")
-    bl_description = _(
+    bl_description = _tip(
         "Show what Settings were used to Generate this Object (With Map object Selected)"
     )
     bl_options = {"REGISTER"}

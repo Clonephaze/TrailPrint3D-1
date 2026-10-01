@@ -3,7 +3,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
 
 
 def _parse_points(points, point_type):

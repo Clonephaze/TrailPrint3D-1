@@ -3,7 +3,7 @@ import time
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _  # type: ignore
+from bpy.app.translations import pgettext_iface as _  # type: ignore
 from mathutils import Matrix, Vector, bvhtree  # type: ignore
 
 
@@ -348,7 +348,7 @@ def boolean_operation(obj_a, obj_b, operation="DIFFERENCE", solver="MANIFOLD"):
         return None
 
     # Add Boolean modifier to obj_a
-    mod = obj_a.modifiers.new(name=_("BooleanManifold"), type="BOOLEAN")
+    mod = obj_a.modifiers.new(name="BooleanManifold", type="BOOLEAN")
     mod.object = obj_b
     mod.operation = operation
     mod.solver = solver
@@ -805,7 +805,7 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
         element.select_set(True)
         bpy.context.view_layer.objects.active = element
 
-        bool_mod = element.modifiers.new(name=(_("__auto_boolean__")), type="BOOLEAN")
+        bool_mod = element.modifiers.new(name="__auto_boolean__", type="BOOLEAN")
         bool_mod.operation = "INTERSECT"
         bool_mod.object = dup
         # EXACT (not MANIFOLD): buildings/roads footprints can be non-manifold
@@ -957,7 +957,7 @@ def intersect_alltrails_with_existing_box(cutobject):
 
         merged_object = bpy.context.active_object
 
-        bool_mod = cube.modifiers.new(name=(_("Intersect")), type="BOOLEAN")
+        bool_mod = cube.modifiers.new(name="Intersect", type="BOOLEAN")
         bool_mod.operation = "INTERSECT"
         bool_mod.object = merged_object
         bpy.context.view_layer.objects.active = cube
@@ -1106,7 +1106,7 @@ def intersect_trail_with_existing_box(cutobject, trail):
 
         merged_object = bpy.context.active_object
 
-        bool_mod = cube.modifiers.new(name=(_("Intersect")), type="BOOLEAN")
+        bool_mod = cube.modifiers.new(name="Intersect", type="BOOLEAN")
         bool_mod.operation = "INTERSECT"
         bool_mod.object = merged_object
         bpy.context.view_layer.objects.active = cube
@@ -2635,7 +2635,7 @@ def single_color_mode_mesh_wireframe(original, map, tolerance=None):
         _extrude_height = 50.0
 
     # Apply Wireframe modifier with -tolerance as thickness
-    wire = obj.modifiers.new(name=(_("Wireframe")), type="WIREFRAME")
+    wire = obj.modifiers.new(name="Wireframe", type="WIREFRAME")
     wire.thickness = -tolerance
     wire.offset = 0
     wire.use_replace = True
@@ -2677,7 +2677,7 @@ def single_color_mode_mesh_wireframe(original, map, tolerance=None):
     loose_parts = list(bpy.context.selected_objects)
 
     for part in loose_parts:
-        boolean = map.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
+        boolean = map.modifiers.new(name="Boolean", type="BOOLEAN")
         boolean.operation = "DIFFERENCE"
         boolean.object = part
         boolean.solver = "MANIFOLD"
@@ -2713,12 +2713,12 @@ def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
 
     if tolerance > 0:
         # Solidify to create the tolerance thickness
-        solid = obj.modifiers.new(name=(_("Solidify")), type="SOLIDIFY")
+        solid = obj.modifiers.new(name="Solidify", type="SOLIDIFY")
         solid.offset = 1.0
         solid.thickness = -tolerance / 2
         applyModifier(obj, solid)
 
-    remesh = obj.modifiers.new(name=(_("Remesh")), type="REMESH")
+    remesh = obj.modifiers.new(name="Remesh", type="REMESH")
     remesh.mode = "VOXEL"
     remesh.voxel_size = voxelSize2
     remesh.use_smooth_shade = False
@@ -2771,7 +2771,7 @@ def remeshClearing(obj, voxelSize2, tolerance, map_obj=None):
 
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
-    bool_mod = obj.modifiers.new(name=(_("BoolCube")), type="BOOLEAN")
+    bool_mod = obj.modifiers.new(name="BoolCube", type="BOOLEAN")
     bool_mod.operation = "DIFFERENCE"
     bool_mod.object = cube_obj
     bool_mod.solver = "MANIFOLD"
@@ -2965,7 +2965,7 @@ def single_color_mode_mesh_remesh(
         bpy.ops.object.mode_set(mode="OBJECT")
 
     # Boolean subtract from map
-    boolean = map.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
+    boolean = map.modifiers.new(name="Boolean", type="BOOLEAN")
     boolean.operation = "DIFFERENCE"
     boolean.object = obj
     boolean.solver = "MANIFOLD"
@@ -3068,7 +3068,7 @@ def separate_mode_recess_cutter(original, map, tolerance=None):
     bm.free()
     cutter.data.update()
 
-    boolean = map.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
+    boolean = map.modifiers.new(name="Boolean", type="BOOLEAN")
     boolean.operation = "DIFFERENCE"
     boolean.object = cutter
     boolean.solver = "MANIFOLD"
@@ -3129,7 +3129,7 @@ def separate_mode_recess_cutter_from_prism(prism, original, map):
     bm.free()
     cutter.data.update()
 
-    boolean = map.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
+    boolean = map.modifiers.new(name="Boolean", type="BOOLEAN")
     boolean.operation = "DIFFERENCE"
     boolean.object = cutter
     boolean.solver = "MANIFOLD"
@@ -3191,7 +3191,7 @@ def merge_with_map(
     recalculateNormals(mergeobject)
 
     # Add boolean modifier
-    bool_mod = mergeobject.modifiers.new(name=(_("Boolean")), type="BOOLEAN")
+    bool_mod = mergeobject.modifiers.new(name="Boolean", type="BOOLEAN")
     bool_mod.object = mapobject
     bool_mod.operation = "INTERSECT"
     bool_mod.solver = "MANIFOLD"

@@ -3,7 +3,7 @@ import textwrap
 
 import bpy  # type: ignore
 from bpy.app.translations import (  # type: ignore
-    pgettext as _,  # For Translation of Text Required
+    pgettext_iface as _,  # For Translation of Text Required
 )
 
 

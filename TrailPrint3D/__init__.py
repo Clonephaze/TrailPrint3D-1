@@ -24,7 +24,7 @@ try:
 except ImportError:
     picker_server = None
 from bpy.app.handlers import persistent
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
 
 from . import export, operators, panels
 

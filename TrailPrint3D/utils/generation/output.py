@@ -2,7 +2,8 @@ import time
 from typing import Any
 
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 from bpy.types import Object
 
 from ...progress import ProgressOverlay as _progress
@@ -325,7 +326,7 @@ def _rg_export(gen: GenerationContext):
 
     if gen.runtime.buggyData != 0:
         _progress.WarningsOverlay.add_warning(
-            "API might have faulty DATA. Maybe try diffrent Resolution or API", "warn"
+            _rpt("API might have faulty DATA. Maybe try diffrent Resolution or API"), "warn"
         )
 
     zoom_camera_to_objects([gen.runtime.mapObject])

@@ -4,7 +4,8 @@ import time
 
 import bpy  # type: ignore
 import numpy as np  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 
 from ... import addon_preferences
 from ... import progress as _progress
@@ -328,7 +329,7 @@ def _rg_load_coordinates(gen: GenerationContext):
     except Exception:  # noqa: BLE001 — GPX/IGC parsing can raise many unpredictable types
         # show_message_box(f"Something went Wrong reading the GPX. Type {type}")
         _progress.WarningsOverlay.add_warning(
-            "Something went Wrong reading the GPX file", "error"
+            _rpt("Something went Wrong reading the GPX file"), "error"
         )
 
     coordinates = [item for sublist in separate_paths for item in sublist]

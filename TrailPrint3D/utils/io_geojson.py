@@ -10,7 +10,8 @@ import json
 import math
 
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 
 from . import geometry2d as g2d
 
@@ -360,9 +361,9 @@ def build_tile_from_polygon(
             progress as _progress,  # deferred to avoid circular import at load time
         )
 
+        print(f"Warning: large map area of ~{map_km:.0f} km")
         _progress.WarningsOverlay.add_warning(
-            f"This boundary spans ~{map_km:.0f} km — fetching roads/water/forest over "
-            "an area this large can take a while (or time out on the Overpass API).",
+            _rpt("This boundary spans a large area, fetching roads/water/forest over an area this large can take a while (or time out on the Overpass API)."),
             "warn",
         )
 

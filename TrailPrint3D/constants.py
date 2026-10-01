@@ -10,7 +10,7 @@ from collections import defaultdict
 
 import bpy
 from bpy.app.translations import (  # type: ignore
-    pgettext as _,  # For Translation of Text Required
+    pgettext_iface as _,  # For Translation of Text Required
 )
 
 ADDON_NAME = "TrailPrint3D"

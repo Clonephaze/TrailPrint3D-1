@@ -11,7 +11,7 @@ import math
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _  # type: ignore
+from bpy.app.translations import pgettext_iface as _  # type: ignore
 from mathutils import Vector
 from shapely import wkt
 from shapely.affinity import rotate as shp_rotate
@@ -342,7 +342,7 @@ def _boolean_difference(target, cutter):
     bpy.ops.object.select_all(action="DESELECT")
     target.select_set(True)
     bpy.context.view_layer.objects.active = target
-    mod = target.modifiers.new(name=_("Boolean"), type="BOOLEAN")
+    mod = target.modifiers.new(name="Boolean", type="BOOLEAN")
     mod.operation = "DIFFERENCE"
     mod.solver = "MANIFOLD"
     mod.object = cutter

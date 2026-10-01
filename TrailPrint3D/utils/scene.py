@@ -4,7 +4,7 @@ import webbrowser
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
 from mathutils import Vector, bvhtree  # type: ignore
 
 
