@@ -957,6 +957,11 @@ class TP3D_PT_advanced(bpy.types.Panel):
                     text=_("Sliding Puzzle Generator"),
                     icon="LOCKED",
                 )
+            box.operator(
+                "tp3d.medal_holder_generator",
+                text=_("Medal Holder Generator"),
+                icon="MESH_CIRCLE",
+            )
 
             box.separator(factor=0.5)
             col = box.column(align=True)
@@ -1414,6 +1419,13 @@ class TP3D_MT_generators_menu(bpy.types.Menu):
             layout.operator(
                 "tp3d.terrain_dummy", text=_("Sliding Puzzle Generator"), icon="LOCKED"
             )
+        layout.separator()
+        layout.label(text=_("-- Experimental --"))
+        layout.operator(
+            "tp3d.medal_holder_generator",
+            text=_("Medal Holder Generator"),
+            icon="MESH_CIRCLE",
+        )
 
 
 def draw_tp3d_viewport_menu(self, context):

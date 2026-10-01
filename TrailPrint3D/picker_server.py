@@ -55,6 +55,36 @@ _pending_advanced_settings: 'queue.Queue[tuple]' = queue.Queue()
 _pending_prefetch: 'queue.Queue[dict]' = queue.Queue()
 _prefetch_job: dict = {'status': 'idle', 'message': '', 'result': None}
 
+# 3D-preview pages (medalHolderGenerator.html): POST /request_model_preview
+# queues the page's current parameters; the calling operator's modal() builds
+# the model on the main thread (drain_latest_model_preview), writes it to
+# _MODEL_PREVIEW_PATH as GLB and bumps _model_preview_job['version'], which
+# the page polls via GET /model_preview_status before fetching
+# GET /model_preview.glb. Same key-wise-update-only rule as _prefetch_job.
+_pending_model_previews: 'queue.Queue[dict]' = queue.Queue()
+_model_preview_job: dict = {'status': 'idle', 'version': 0, 'message': ''}
+_MODEL_PREVIEW_PATH = pathlib.Path(tempfile.gettempdir()) / 'trailprint_model_preview.glb'
+
+
+def drain_latest_model_preview() -> dict | None:
+    """Pop every queued preview request and return only the newest -- older
+    ones are already stale by the time the main thread gets to them."""
+    latest = None
+    while True:
+        try:
+            latest = _pending_model_previews.get_nowait()
+        except queue.Empty:
+            break
+    return latest
+
+
+def model_preview_job() -> dict:
+    return _model_preview_job
+
+
+def model_preview_path() -> pathlib.Path:
+    return _MODEL_PREVIEW_PATH
+
 
 def drain_pending_prefetch() -> list:
     """Pop every prefetch request payload queued since the last call."""
@@ -538,6 +568,28 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == '/model_preview_status':
+            body = json.dumps(_model_preview_job).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == '/model_preview.glb' or self.path.startswith('/model_preview.glb?'):
+            try:
+                body = _MODEL_PREVIEW_PATH.read_bytes()
+            except OSError:
+                self.send_response(404)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header('Content-Type', 'model/gltf-binary')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == '/get_existing_maps':
             body = self.existing_maps_json
             self.send_response(200)
@@ -687,6 +739,22 @@ class _Handler(BaseHTTPRequestHandler):
             if isinstance(payload, dict) and not prefetch_is_running():
                 _prefetch_job.update(status='queued', message='Queued…', result=None)
                 _pending_prefetch.put(payload)
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', '2')
+            self.end_headers()
+            self.wfile.write(b'ok')
+            return
+        if self.path == '/request_model_preview':
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict):
+                _model_preview_job.update(status='queued', message='')
+                _pending_model_previews.put(payload)
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
             self.send_header('Content-Length', '2')
@@ -994,6 +1062,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     the OSM and WorldCover chip/card sets.
     """
     global _active_server, _pending_toggles, _pending_settings, _pending_advanced_settings, _pending_prefetch
+    global _pending_model_previews
     if _active_server is not None:
         try:
             _active_server.shutdown()
@@ -1004,6 +1073,8 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     _pending_settings = queue.Queue()
     _pending_advanced_settings = queue.Queue()
     _pending_prefetch = queue.Queue()
+    _pending_model_previews = queue.Queue()
+    _model_preview_job.update(status='idle', message='', seq=None)
     # An in-flight worker from a previous session keeps a reference to the
     # OLD job dict only if it was handed the dict itself -- it's handed the
     # live one, so replace contents instead of rebinding (see prefetch_job()).

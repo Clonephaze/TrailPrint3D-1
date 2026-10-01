@@ -3574,6 +3574,133 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class TP3D_OT_medal_holder_generator(bpy.types.Operator):
+    bl_idname = "tp3d.medal_holder_generator"
+    bl_label = "Medal Holder Generator"
+    bl_description = (
+        "Open the medal holder configurator — pick a shape and sizes with a live 3D preview, "
+        "then Send to Blender to create the plate"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    _timer = None
+    _result_path: str = ""
+    _server = None
+
+    def modal(self, context, event):
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        from . import picker_server as mp
+
+        request = mp.drain_latest_model_preview()
+        if request is not None:
+            self._build_preview(context, request)
+
+        rp = pathlib.Path(self._result_path)
+        if not (rp.exists() and rp.stat().st_size > 0):
+            return {'PASS_THROUGH'}
+
+        try:
+            data = json.loads(rp.read_text(encoding='utf-8'))
+            self._apply_result(context, data)
+        except Exception as exc:  # noqa: BLE001 - Wide exception catch for medal holder result application
+            import traceback
+            traceback.print_exc()
+            self.report({'ERROR'}, f"Medal holder generator: {exc}")
+        finally:
+            try:
+                rp.unlink()
+            except OSError:
+                pass
+            self._cleanup(context)
+
+        return {'FINISHED'}
+
+    def _build_preview(self, context, request):
+        from . import picker_server as mp
+        from .utils import medal_holder
+
+        # 'seq' is the page's own request counter -- echoed back so it can
+        # tell "my latest request is built" apart from "an older one just
+        # finished while my newer one is still queued".
+        seq = request.get('seq')
+        job = mp.model_preview_job()
+        job.update(status='running', message='')
+        try:
+            params = medal_holder.sanitize_params(request)
+            medal_holder.write_preview_glb(params, str(mp.model_preview_path()), context.scene.collection)
+        except Exception as exc:  # noqa: BLE001 - surfaced to the page instead of killing the modal
+            import traceback
+            traceback.print_exc()
+            job.update(status='error', message=str(exc), seq=seq)
+            return
+        job.update(status='done', version=job.get('version', 0) + 1, message='', seq=seq,
+                   **medal_holder.preview_info(params))
+
+    def invoke(self, context, event):
+        import tempfile
+
+        from . import picker_server as mp
+
+        self._result_path = str(
+            pathlib.Path(tempfile.gettempdir()) / 'trailprint_medalholder.json'
+        )
+        rp = pathlib.Path(self._result_path)
+        if rp.exists():
+            rp.unlink()
+
+        html_path = pathlib.Path(__file__).parent / 'medalHolderGenerator.html'
+        tp3d = context.scene.tp3d
+        self._server = mp.start_picker(
+            self._result_path,
+            html_path=html_path,
+            # The page's magnet-hole fields start from the scene's own
+            # Magnet Diameter/Height, same as the map tiles' Magnet Holes.
+            settings_state={'magnetDiameter': tp3d.magnetDiameter, 'magnetHeight': tp3d.magnetHeight},
+        )
+
+        wm = context.window_manager
+        # Shorter than the map pickers' 0.5 s -- this timer also drives the
+        # live preview, so it's what the user feels as input lag.
+        self._timer = wm.event_timer_add(0.1, window=context.window)
+        wm.modal_handler_add(self)
+        self.report({'INFO'}, "Medal holder generator open — adjust the model then click Send to Blender")
+        return {'RUNNING_MODAL'}
+
+    def _apply_result(self, context, data):
+        from .utils import medal_holder
+
+        params = medal_holder.sanitize_params(data)
+        name = str(data.get('name') or '').strip()[:60] or "MedalHolder"
+        plate, texts = medal_holder.build_objects(params, context.collection, name=name)
+        medal_holder.assign_scene_materials(plate, texts)
+
+        for obj in context.selected_objects:
+            obj.select_set(False)
+        cursor = context.scene.cursor.location.copy()
+        for obj in [plate] + [obj for _slot, obj in texts]:
+            obj.location = cursor
+            obj["Object type"] = "MEDAL_HOLDER"
+            obj["Addon"] = const.ADDON_NAME
+            obj["Version"] = const.ADDON_VERSION
+            obj.select_set(True)
+        context.view_layer.objects.active = plate
+        self.report({'INFO'}, f"Created medal holder \"{plate.name}\"")
+
+    def _cleanup(self, context):
+        wm = context.window_manager
+        if self._timer:
+            wm.event_timer_remove(self._timer)
+            self._timer = None
+        if self._server:
+            threading.Thread(target=self._server.shutdown, daemon=True).start()
+            self._server = None
+
+    def execute(self, context):
+        return {'FINISHED'}
+
+
 class TP3D_OT_special_collection(bpy.types.Operator):
     bl_idname = "tp3d.special_collection"
     bl_label = "Update"

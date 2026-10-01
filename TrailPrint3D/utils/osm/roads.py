@@ -50,7 +50,6 @@ ALLEY_SERVICE_TYPES: frozenset[str] = frozenset(
     {"alley", "driveway", "parking_aisle", "drive-through"}
 )
 
-_ROAD_SIMPLIFY_TOL = 0.5
 
 
 # ---------------------------------------------------------------------------
