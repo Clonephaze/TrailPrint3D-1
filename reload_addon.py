@@ -72,12 +72,14 @@ importlib.reload(T.utils.io_geojson)
 _imp("utils.geotiff")
 importlib.reload(T.utils.geotiff)
 
-# medal_holder.py (Medal Holder Generator) is likewise only imported from
-# inside operator methods. It imports geometry2d/mesh_ops/primitives at module
-# scope, so it must come after those above. medalHolderGenerator.html itself
-# needs no reload -- picker_server.py re-reads it from disk on every request.
-_imp("utils.medal_holder")
-importlib.reload(T.utils.medal_holder)
+# accessories sub-package: accessories/medal_holder.py (Medal Holder
+# Generator) is likewise only imported from inside operator methods. It
+# imports geometry2d/mesh_ops/primitives at module scope, so it must come
+# after those above. generators/medalHolderGenerator.html itself needs no
+# reload -- picker_server.py re-reads it from disk on every request.
+_imp("utils.accessories.medal_holder")
+importlib.reload(T.utils.accessories.medal_holder)
+importlib.reload(T.utils.accessories)
 
 # osm sub-package: its submodules are only pulled in via deferred (function-
 # scope) imports, so reloading TrailPrint3D.utils.osm alone (its empty

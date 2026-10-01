@@ -172,7 +172,7 @@ def refresh_state_snapshots(element_states: dict | None = None, settings_state: 
         _Handler.element_source = element_source
 
 
-_HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'multitile_generator.html'
+_HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'generators' / 'multitile_generator.html'
 
 # Markup shared by every picker page (puzzleGenerator.html,
 # premium/puzzleGenerator_pe.html, premium/multitile_generator.html) --

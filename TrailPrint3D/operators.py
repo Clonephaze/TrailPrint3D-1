@@ -2603,7 +2603,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # actual generation code only exists in the Premium build's own
         # picker page, not this one, so there's nothing to unlock by
         # tampering with a served free page.
-        html_filename = 'premium/puzzleGenerator_pe.html' if temp.PREMIUMVERSION else 'puzzleGenerator.html'
+        html_filename = 'premium/generators/puzzleGenerator_pe.html' if temp.PREMIUMVERSION else 'generators/puzzleGenerator.html'
         html_path = pathlib.Path(__file__).parent / html_filename
         self._server = mp.start_picker(
             self._result_path,
@@ -3136,7 +3136,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # element is capped to a single file (see map_generator.html);
         # premium/map_generator_pe.html is the Premium counterpart with a
         # multi-file GPX input (see its gpxInput element).
-        html_filename = 'premium/map_generator_pe.html' if temp.PREMIUMVERSION else 'map_generator.html'
+        html_filename = 'premium/generators/map_generator_pe.html' if temp.PREMIUMVERSION else 'generators/map_generator.html'
         html_path = pathlib.Path(__file__).parent / html_filename
         self._server = mp.start_picker(
             self._result_path,
@@ -3619,7 +3619,7 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
 
     def _build_preview(self, context, request):
         from . import picker_server as mp
-        from .utils import medal_holder
+        from .utils.accessories import medal_holder
 
         # 'seq' is the page's own request counter -- echoed back so it can
         # tell "my latest request is built" apart from "an older one just
@@ -3650,7 +3650,7 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
         if rp.exists():
             rp.unlink()
 
-        html_path = pathlib.Path(__file__).parent / 'medalHolderGenerator.html'
+        html_path = pathlib.Path(__file__).parent / 'generators' / 'medalHolderGenerator.html'
         tp3d = context.scene.tp3d
         self._server = mp.start_picker(
             self._result_path,
@@ -3669,7 +3669,7 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def _apply_result(self, context, data):
-        from .utils import medal_holder
+        from .utils.accessories import medal_holder
 
         params = medal_holder.sanitize_params(data)
         name = str(data.get('name') or '').strip()[:60] or "MedalHolder"

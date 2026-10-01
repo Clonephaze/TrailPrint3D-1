@@ -6,7 +6,7 @@ This is a **Blender 5.1+ Python addon** using the Blender Extensions platform. A
 
 ## Terminology
 
-When the user says **"generators"**, they usually mean the HTML configurator pages as a group — `map_generator.html`, `premium/map_generator_pe.html`, `puzzleGenerator.html`, `premium/puzzleGenerator_pe.html`, `premium/multitile_generator.html`, `premium/slidingPuzzleGenerator.html` — the browser-based picker UIs served by `picker_server.py`. All six share the same served-page machinery (`__PORT__`, `__COMMON_CSS__`, `__SETTINGS_MODAL_JS__`, etc. tokens substituted in `picker_server.py`'s `do_GET`), so a change to that shared plumbing (or to "every generator") applies to all six, not just the four puzzle/multitile ones. Default to that reading unless the surrounding request is clearly about the Blender-side mesh-generation pipeline instead (`utils/generation.py`, `runGeneration()`).
+When the user says **"generators"**, they usually mean the HTML configurator pages as a group — `generators/map_generator.html`, `premium/generators/map_generator_pe.html`, `generators/puzzleGenerator.html`, `premium/generators/puzzleGenerator_pe.html`, `premium/generators/multitile_generator.html`, `premium/generators/slidingPuzzleGenerator.html` (plus `generators/medalHolderGenerator.html`) — the browser-based picker UIs served by `picker_server.py`. All six share the same served-page machinery (`__PORT__`, `__COMMON_CSS__`, `__SETTINGS_MODAL_JS__`, etc. tokens substituted in `picker_server.py`'s `do_GET`), so a change to that shared plumbing (or to "every generator") applies to all six, not just the four puzzle/multitile ones. Default to that reading unless the surrounding request is clearly about the Blender-side mesh-generation pipeline instead (`utils/generation.py`, `runGeneration()`).
 
 ---
 
@@ -30,11 +30,16 @@ TrailPrint3D/                 - Blender addon package (installed as a Blender ex
   threemf_discovery.py         - discovery helper for the bundled 3MF Import/Export addon
   translation.py               - translations_dict (DE/ZH UI strings)
   updater.py                   - GitHub/Patreon release checker + auto-download
-  puzzleGenerator.html         - free Puzzle Configurator (browser UI)
+  generators/                  - free generator pages (browser UIs served by picker_server.py)
+    map_generator.html          - free Map Generator
+    puzzleGenerator.html        - free Puzzle Configurator
+    medalHolderGenerator.html   - Medal Holder Generator (3D-preview page)
   assets/                      - .blend asset libraries (connectors, holder, other) + progress-overlay SVG icons
   wheels/                      - bundled Shapely wheels (per-platform)
   utils/
     __init__.py                - re-exports from submodules (wildcards OK here, see §10)
+    accessories/
+      medal_holder.py           - Medal Holder mesh builder (backs generators/medalHolderGenerator.html)
     elevation.py                - elevation API helpers
     generation.py                - runGeneration() orchestration
     geo.py                       - coordinate math
@@ -55,9 +60,11 @@ premium/                       - Premium-only source, absent from the free build
   __init__.py
   operators_pe.py               - premium bpy.types.Operator subclasses
   utils_pe.py                   - premium-only utility functions
-  multitile_generator.html      - premium multi-tile map generator (browser UI)
-  puzzleGenerator_pe.html       - premium Jigsaw Puzzle Configurator (hex/radial piece shapes, multi-GPX)
-  slidingPuzzleGenerator.html   - premium Sliding Puzzle Configurator (square rounded-corner tiles, stepped-base retention)
+  generators/                   - premium generator pages (browser UIs)
+    map_generator_pe.html        - premium Map Generator (multi-GPX)
+    multitile_generator.html     - premium multi-tile map generator
+    puzzleGenerator_pe.html      - premium Jigsaw Puzzle Configurator (hex/radial piece shapes, multi-GPX)
+    slidingPuzzleGenerator.html  - premium Sliding Puzzle Configurator (square rounded-corner tiles, stepped-base retention)
   assets/                       - premium-only .blend asset libraries (puzzles.blend)
 
 tests/                         - standalone test suite, run inside Blender's own Python (not pytest)

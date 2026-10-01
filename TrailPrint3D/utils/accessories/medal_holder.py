@@ -14,9 +14,9 @@ import struct
 import bpy  # type: ignore
 from shapely.geometry import LineString, Point
 
-from . import geometry2d as g2d
-from .mesh_ops import _extrude_flat_polygon, applyModifier
-from .primitives import circle_polygon, hexagon_polygon, octagon_polygon, rectangle_polygon
+from .. import geometry2d as g2d
+from ..mesh_ops import _extrude_flat_polygon, applyModifier
+from ..primitives import circle_polygon, hexagon_polygon, octagon_polygon, rectangle_polygon
 
 SHAPES = ('ROUND', 'HEXAGON', 'OCTAGON', 'SQUARE')
 
@@ -121,7 +121,7 @@ def _sanitize_text(raw):
 
     # Only fonts Blender itself listed for the page -- the path comes from
     # the browser, so it's never trusted as an arbitrary file to open.
-    from . import font_list
+    from .. import font_list
     font = str(raw.get('font') or '')
     if font and font not in {f['path'] for f in font_list.list_fonts()}:
         font = ''
@@ -204,7 +204,7 @@ def _fit_text(p, slot, w, h, size):
 
 
 def _load_font(path):
-    from .text_objects import default_font_path
+    from ..text_objects import default_font_path
     for candidate in (path, default_font_path()):
         if candidate:
             try:
@@ -557,7 +557,7 @@ def _prism_object(name, geom, bottom_z, top_z, collection):
 def _ensure_material(name, rgba):
     mat = bpy.data.materials.get(name)
     if mat is None:
-        from .primitives import _setup_material
+        from ..primitives import _setup_material
         _setup_material(name, rgba)
         mat = bpy.data.materials.get(name)
     return mat
