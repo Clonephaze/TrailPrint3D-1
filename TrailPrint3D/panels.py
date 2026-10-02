@@ -394,14 +394,14 @@ def _draw_shape_box(layout, props):
 
 
 def _draw_shape_extras(box, props):
-    from .utils.shape_capabilities import PLATE_MODES_BY_SHAPE, TEXT_LAYOUTS_BY_SHAPE
+    from .utils.shape_capabilities import PLATE_MODES_BY_SHAPE, valid_layouts
 
     se_active = props.shapeExtrasActive
     se_expanded = props.shapeExtrasExpanded
     valid_plates = PLATE_MODES_BY_SHAPE.get(props.shape, ("NONE",))
-    valid_layouts = TEXT_LAYOUTS_BY_SHAPE.get(props.shape, ("NONE",))
     has_plate_option = len(valid_plates) > 1
-    has_text_option = len(valid_layouts) > 1
+    layouts = valid_layouts(props.shape, props.plateMode)
+    has_text_option = len(layouts) > 1
     if not (has_plate_option or has_text_option):
         return
 
@@ -418,26 +418,24 @@ def _draw_shape_extras(box, props):
             body.prop(props, "plateBevel")
             body.prop(props, "plateInsertValue")
         elif props.plateMode == "SHELL":
-            body.prop(props, "plateThickness")
+            body.prop(props, "plateThickness", text=_("Shell Extra Height"))
             body.prop(props, "shellWallThickness")
-            body.prop(props, "plateBevel")
 
     def _draw_text_group(extras, props):
         box = _create_box_with_header(extras, props, _("Text Layout"), icon="FONT_DATA")
 
-        valid_layouts = TEXT_LAYOUTS_BY_SHAPE.get(props.shape, ("NONE",))
 
-        if len(valid_layouts) == 4:
+        if len(layouts) == 4:
             holder = box.grid_flow(
                 row_major=True, columns=2, even_columns=True, align=True
             )
         else:
             holder = box.row(align=True)
 
-        for layout_id in valid_layouts:
+        for layout_id in layouts:
             holder.prop_enum(props, "textLayout", layout_id)
 
-        if props.textLayout in {"OUTER_EDGE", "CURVED"}:
+        if props.textLayout in {"OUTER_EDGE", "CURVED", "FRONT_FACE"}:
             box.prop(props, "textPlacement")
 
         if props.textLayout == "NONE":

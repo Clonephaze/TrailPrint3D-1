@@ -41,9 +41,36 @@ _BOX_SHAPES = {"SQUARE", "ELLIPSE"}
 # desired edge-offset into a circumradius scale factor.
 _INRADIUS_COS = {
     "HEXAGON": math.cos(math.pi / 6),  # 30°
-    "OCTAGON": math.cos(math.pi / 4),  # 45°
+    "OCTAGON": math.cos(math.pi / 8),  # 45°
     "CIRCLE": 1.0,  # inradius == radius
 }
+
+
+def measured_inradius(poly, shape=None):
+    """Real distance from centre to *this polygon's own* nearest edge,
+    measured from its actual bounds rather than a nominal size/outerBorderSize
+    setting — same math _expand_outline already uses to grow a plate, just
+    read back instead of applied. For a radial shape (HEXAGON/OCTAGON/CIRCLE)
+    that's the bounding-box circumradius corrected by the shape's own apothem
+    (so e.g. a hexagon's flat-edge distance, not its vertex distance); for
+    anything else the circumradius itself is already the edge distance along
+    an axis-aligned direction, which is all SQUARE/ELLIPSE's field angles
+    (0/90/180/270) ever need.
+
+    This is what lets text-layout anchoring (text_layouts.py) place text
+    correctly on *either* a Solid Plate or a Shell: both store their real
+    outline as WKT (`plate_wkt` / `shell_outer_wkt`), and this reads whichever
+    is actually there instead of assuming the Solid-Plate-only
+    outerBorderSize formula applies.
+    """
+    if poly is None or poly.is_empty:
+        return 0.0
+    minx, miny, maxx, maxy = poly.bounds
+    cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+    R = max(maxx - cx, maxy - cy)
+    if shape in _INRADIUS_COS:
+        return R * _INRADIUS_COS[shape]
+    return R
 
 
 def _expand_outline(poly, grow, shape=None):

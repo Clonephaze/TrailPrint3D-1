@@ -14,18 +14,24 @@ from . import temp
 TEXT_LAYOUTS_BY_SHAPE = {
     "HEXAGON": ("NONE", "ON_MAP", "OUTER_EDGE", "FRONT_FACE"),
     "OCTAGON": ("NONE", "OUTER_EDGE", "FRONT_FACE"),
-    "CIRCLE":  ("NONE", "CURVED"),
-    "SQUARE":  ("NONE", "OUTER_EDGE", "FRONT_FACE"),
+    "CIRCLE": ("NONE", "CURVED"),
+    "SQUARE": ("NONE", "OUTER_EDGE", "FRONT_FACE"),
     "ELLIPSE": ("NONE",),
-    "HEART":   ("NONE",),
+    "HEART": ("NONE",),
     "GEOJSON": ("NONE",),
-    "SVG":     ("NONE",),
+    "SVG": ("NONE",),
 }
 
 # Layouts that require a physical plate to sit on. Selecting one of these
 # auto-upgrades plateMode from NONE to SOLID_PLATE.
 LAYOUTS_REQUIRING_PLATE = frozenset({"OUTER_EDGE", "FRONT_FACE", "CURVED"})
 
+# Layouts each plate mode can actually host.
+_LAYOUTS_BY_PLATE_MODE = {
+    "NONE": frozenset({"NONE", "ON_MAP"}),
+    "SOLID_PLATE": frozenset({"NONE", "ON_MAP", "OUTER_EDGE", "FRONT_FACE", "CURVED"}),
+    "SHELL": frozenset({"NONE", "ON_MAP", "FRONT_FACE"}),
+}
 # Per base shape: which plate/shell modes are offered.
 PLATE_MODES_BY_SHAPE = {
     "HEXAGON": ("NONE", "SOLID_PLATE", "SHELL"),
@@ -53,12 +59,18 @@ _PLATE_LABELS = {
 }
 
 
+def valid_layouts(shape, plate_mode):
+    shape_layouts = TEXT_LAYOUTS_BY_SHAPE.get(shape, ("NONE",))
+    allowed = _LAYOUTS_BY_PLATE_MODE.get(plate_mode, _LAYOUTS_BY_PLATE_MODE["NONE"])
+    return tuple(l for l in shape_layouts if l in allowed)
+
+
 def text_layout_items(self, context):
-    """EnumProperty items callback — depends on self.shape."""
     shape = self.shape or "HEXAGON"
-    valid = TEXT_LAYOUTS_BY_SHAPE.get(shape, ("NONE",))
+    plate_mode = getattr(self, "plateMode", "NONE") or "NONE"
     return [
-        (ident, _LAYOUT_LABELS[ident][0], _LAYOUT_LABELS[ident][1]) for ident in valid
+        (ident, _LAYOUT_LABELS[ident][0], _LAYOUT_LABELS[ident][1])
+        for ident in valid_layouts(shape, plate_mode)
     ]
 
 

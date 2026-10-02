@@ -130,6 +130,61 @@ _PROP_TO_ICON = {
 # ---------------------------------------------------------------------------
 
 
+def _ring_radii(map_obj, plate_obj, shape):
+    """(inner, outer) distances for text placement: the map's own edge and
+    the plate/shell's own edge, both measured from their real stored
+    outlines — not the Solid-Plate-only outerBorderSize formula.
+
+    This is the actual fix for Shell + text: a Shell's real footprint comes
+    from `tolerance + shellWallThickness`, nothing to do with
+    outerBorderSize, so the old `size`/`outer_size = size * (1 +
+    outerBorderSize/100)` calc only ever happened to work for Solid Plate.
+    Reading back `plate_obj["shell_outer_wkt"]` / `["plate_wkt"]` (both
+    already stored — see plate.py's create_generic_plate and
+    elements.py's _stamp_shell_wkt) means whichever one actually built this
+    object is the one that gets measured, and it also fixes Octagon's
+    apothem, which this previously hardcoded to 1.0 instead of its real
+    cos(45°) (see measured_inradius).
+
+    Falls back to the old scene-setting formula if the WKT isn't there for
+    some reason (e.g. a legacy object from before this was stored), so this
+    never raises on an object that predates the WKT metadata.
+    """
+    from shapely import wkt as _wkt
+
+    from .plate import measured_inradius
+
+    tp3d = bpy.context.scene.tp3d
+    size = tp3d.objSize
+    fallback_outer = size * (1 + tp3d.outerBorderSize / 100)
+
+    inner = None
+    if map_obj is not None and "map_polygon_wkt" in map_obj:
+        try:
+            inner = measured_inradius(_wkt.loads(map_obj["map_polygon_wkt"]), shape)
+        except Exception as exc:
+            print(f"[TrailPrint3D] text ring inner-radius fallback: {exc!r}")
+
+    outer = None
+    outer_wkt_str = (
+        plate_obj.get("shell_outer_wkt") or plate_obj.get("plate_wkt")
+        if plate_obj
+        else None
+    )
+    if outer_wkt_str:
+        try:
+            outer = measured_inradius(_wkt.loads(outer_wkt_str), shape)
+        except Exception as exc:
+            print(f"[TrailPrint3D] text ring outer-radius fallback: {exc!r}")
+
+    if inner is None:
+        inner = size / 2
+    if outer is None:
+        outer = fallback_outer / 2
+
+    return inner, outer
+
+
 def _field_values():
     tp3d = bpy.context.scene.tp3d
     return {
@@ -419,6 +474,133 @@ def _inset_into_plate(
     return text_obj
 
 
+def _inset_into_side_wall(plate_obj, text_objs, icons, margin=0.1, modelname=""):
+    """Radial counterpart to _inset_into_plate.
+
+    Carves each text/icon shape into the plate/shell's SIDE wall -- radially
+    outward from the plate's vertical center axis, not vertically down. Same
+    pattern as the Z version (merge sources, build a cutter that overshoots
+    past the surface, boolean DIFFERENCE), but the embed axis is the radial
+    unit vector at each vertex, so extending the cutter is a per-vertex
+    radial rescale rather than one global Z remap.
+    """
+    import bmesh
+
+    if plate_obj is None or not text_objs:
+        return None
+
+    bpy.context.view_layer.update()
+
+    center = plate_obj.matrix_world.translation.copy()
+    center.z = 0.0  # radial math is horizontal only
+
+    sources = []
+    for obj in list(text_objs.values()) + list(icons.values()):
+        if obj is None:
+            continue
+        try:
+            _ = obj.name
+        except (ReferenceError, RuntimeError):
+            continue
+        if obj.type == "MESH":
+            sources.append(obj)
+
+    if not sources:
+        return None
+
+    # --- Merge every text/icon mesh into one bmesh, in world space ---
+    merged = bmesh.new()
+    for src in sources:
+        tmp = bmesh.new()
+        tmp.from_mesh(src.data)
+        bmesh.ops.transform(tmp, matrix=src.matrix_world, verts=tmp.verts[:])
+        scratch = bpy.data.meshes.new("_tp3d_merge_scratch")
+        tmp.to_mesh(scratch)
+        tmp.free()
+        merged.from_mesh(scratch)
+        bpy.data.meshes.remove(scratch)
+
+    if not merged.verts:
+        merged.free()
+        return None
+
+    # Radial span of the merged text -- apply_front_face_layout should have
+    # placed the text so its front face sits right at the wall's outer
+    # radius, so r_max is the wall surface for these fields' angular range.
+    radial_r = [math.hypot(v.co.x - center.x, v.co.y - center.y) for v in merged.verts]
+    r_min, r_max = min(radial_r), max(radial_r)
+    r_extent = r_max - r_min
+    if r_extent < 1e-6:
+        merged.free()
+        return None
+
+    # --- Text mesh: the visible fill in the groove, at original position ---
+    text_mesh = bpy.data.meshes.new("_InsetSideText")
+    merged.to_mesh(text_mesh)
+    merged.free()
+
+    text_obj = bpy.data.objects.new(modelname + "_Text", text_mesh)
+    bpy.context.collection.objects.link(text_obj)
+    _white = bpy.data.materials.get("WHITE")
+    if _white is not None:
+        text_obj.data.materials.clear()
+        text_obj.data.materials.append(_white)
+    text_obj["Object type"] = "TEXT"
+    text_obj["ExportGroup"] = plate_obj.get("ExportGroup", 0)
+
+    # --- Cutter: same shape, front pushed radially outward by margin.
+    # Rescale around r_min so the base stays put and only the front grows
+    # outward -- a uniform outward translate would move the base too and
+    # make the cut shallower than intended.
+    cutter_bm = bmesh.new()
+    cutter_bm.from_mesh(text_mesh)
+    stretch = (r_extent + margin) / r_extent
+    for v in cutter_bm.verts:
+        dx = v.co.x - center.x
+        dy = v.co.y - center.y
+        r = math.hypot(dx, dy)
+        if r < 1e-9:
+            continue
+        new_r = r_min + (r - r_min) * stretch
+        s = new_r / r
+        v.co.x = center.x + dx * s
+        v.co.y = center.y + dy * s
+    cutter_mesh = bpy.data.meshes.new("_InsetSideCutter")
+    cutter_bm.to_mesh(cutter_mesh)
+    cutter_bm.free()
+    cutter_obj = bpy.data.objects.new("_InsetSideCutter", cutter_mesh)
+    bpy.context.collection.objects.link(cutter_obj)
+
+    # --- Boolean DIFFERENCE against the plate/shell ---
+    bpy.ops.object.select_all(action="DESELECT")
+    plate_obj.select_set(True)
+    bpy.context.view_layer.objects.active = plate_obj
+    mod = plate_obj.modifiers.new(name="InsetSideBoolean", type="BOOLEAN")
+    mod.operation = "DIFFERENCE"
+    mod.object = cutter_obj
+    mod.solver = "EXACT"
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    if any(m.name == mod.name for m in plate_obj.modifiers):
+        print("[inset-side] solver refused — cleaning up.")
+        bpy.ops.object.modifier_remove(modifier=mod.name)
+        bpy.data.objects.remove(cutter_obj, do_unlink=True)
+        bpy.data.objects.remove(text_obj, do_unlink=True)
+        return None
+    bpy.data.objects.remove(cutter_obj, do_unlink=True)
+
+    for src in sources:
+        try:
+            bpy.data.objects.remove(src, do_unlink=True)
+        except (ReferenceError, RuntimeError):
+            pass
+
+    print(
+        f"[inset-side] carved radially, r_min={r_min:.2f} r_max={r_max:.2f} "
+        f"margin={margin:.2f}"
+    )
+    return text_obj
+
+
 def _import_transform_map_object():
     # Deferred to avoid circular import at load time.
     from . import transform_MapObject  # type: ignore
@@ -441,17 +623,17 @@ def apply_outer_edge_layout(map_obj, plate_obj, shape, inset=False, inset_depth=
     tp3d = bpy.context.scene.tp3d
     transform_MapObject = _import_transform_map_object()
 
-    size = tp3d.objSize
-    outer_size = size * (1 + tp3d.outerBorderSize / 100)
-    dist = (outer_size - size) / 4 + size / 2
-    apothem = math.cos(math.radians(30)) if shape == "HEXAGON" else 1.0
+    inner, outer = _ring_radii(map_obj, plate_obj, shape)
+    dist = (inner + outer) / 2
 
     text_objs = {}
     for field_name, base_angle, flip in fields:
         angle = base_angle + tp3d.text_angle_preset
         rot_z = math.radians(angle + 90) + (math.pi if flip else 0)
-        x = math.cos(math.radians(angle)) * (dist * apothem)
-        y = math.sin(math.radians(angle)) * (dist * apothem)
+        angle_rad = math.radians(angle)
+        r_at_angle = _polygon_radius_at_angle(dist, shape, angle_rad)
+        x = math.cos(angle_rad) * r_at_angle
+        y = math.sin(angle_rad) * r_at_angle
         text_objs[field_name] = _create_text(
             field_name,
             field_name.split("_")[1].capitalize(),
@@ -487,7 +669,25 @@ def apply_outer_edge_layout(map_obj, plate_obj, shape, inset=False, inset_depth=
     return _finalize(text_objs, icons, plate_obj, tp3d.modelname)
 
 
-def apply_front_face_layout(map_obj, plate_obj, shape):
+def _polygon_radius_at_angle(inradius, shape, angle_rad):
+    """Distance from center to a regular polygon's boundary at angle_rad.
+
+    inradius is the edge-midpoint distance (what _ring_radii returns).
+    Assumes the primitive's first vertex lies on the +X axis, matching
+    Blender's primitive_circle_add -- corners at k * (2π/n).
+    """
+    n_lookup = {"HEXAGON": 6, "OCTAGON": 8}
+    n = n_lookup.get(shape)
+    if n is None:
+        return inradius
+
+    half_step = math.pi / n
+    circumradius = inradius / math.cos(half_step)
+    deviation = (angle_rad % (2 * half_step)) - half_step
+    return circumradius * math.cos(half_step) / math.cos(deviation)
+
+
+def apply_front_face_layout(map_obj, plate_obj, shape, inset):
     fields = FRONT_FACE_FIELDS.get(shape)
     if not fields:
         return None
@@ -495,26 +695,36 @@ def apply_front_face_layout(map_obj, plate_obj, shape):
     tp3d = bpy.context.scene.tp3d
     transform_MapObject = _import_transform_map_object()
 
-    size = tp3d.objSize
-    outer_size = size * (1 + tp3d.outerBorderSize / 100)
-    dist = outer_size / 2
-    apothem = math.cos(math.radians(30)) if shape == "HEXAGON" else 1.0
-    z_pos = tp3d.minThickness / 2 - tp3d.plateThickness / 2
+    _inner, outer = _ring_radii(map_obj, plate_obj, shape)
+
+    bpy.context.view_layer.update()
+
+    _inset = 0.4
+    mw = plate_obj.matrix_world
+    zs = [(mw @ v.co).z for v in plate_obj.data.vertices]
+    z_min, z_max = min(zs), max(zs)
+    z_pos = z_min + (z_max - z_min) * 0.5
 
     text_objs = {}
+
     for field_name, base_angle in fields:
         angle = base_angle + tp3d.text_angle_preset
+        angle_rad = math.radians(angle)
+        r_at_angle = _polygon_radius_at_angle(outer, shape, angle_rad)
+        dist = (r_at_angle - _inset) if inset else (r_at_angle + _inset)
         rot_z = math.radians(angle + 90)
-        x = math.cos(math.radians(angle)) * (dist * apothem)
-        y = math.sin(math.radians(angle)) * (dist * apothem)
-        text_objs[field_name] = create_text(
+        x = math.cos(angle_rad) * dist
+        y = math.sin(angle_rad) * dist
+        obj = create_text(
             field_name,
             field_name.split("_")[1].capitalize(),
             (x, y, z_pos),
             1,
             (math.radians(90), 0, rot_z),
-            0.4,
+            _inset,
         )
+        obj.location.z = z_pos
+        text_objs[field_name] = obj
 
     _scale_to_mm(text_objs)
     active = set(text_objs.keys())
@@ -529,6 +739,11 @@ def apply_front_face_layout(map_obj, plate_obj, shape):
         )
 
     icons = _attach_icons(text_objs, plate_obj, active)
+
+    if inset:
+        return _inset_into_side_wall(
+            plate_obj, text_objs, icons, modelname=tp3d.modelname
+        )
 
     if any(ic is not None for ic in icons.values()):
         bpy.ops.object.select_all(action="DESELECT")
@@ -550,9 +765,8 @@ def apply_curved_ring_layout(map_obj, plate_obj, shape, inset=False, inset_depth
     tp3d = bpy.context.scene.tp3d
     transform_MapObject = _import_transform_map_object()
 
-    size = tp3d.objSize
-    outer_size = size * (1 + tp3d.outerBorderSize / 100)
-    text_radius = (size / 2 + outer_size / 2) / 2
+    inner, outer = _ring_radii(map_obj, plate_obj, shape)
+    text_radius = (inner + outer) / 2
 
     # --- 1. Create all labels flat at origin, no rotation ---
     text_objs = {}
@@ -732,7 +946,7 @@ def apply_text_layout(map_obj, plate_obj, layout, shape, inset=False, inset_dept
         # Not supported: front-face extrusion runs along the plate's
         # outward normal (horizontal), so an inset would need a radial
         # carve, not a vertical one. Falls back to raised.
-        return apply_front_face_layout(map_obj, plate_obj, shape)
+        return apply_front_face_layout(map_obj, plate_obj, shape, inset)
     if layout == "CURVED":
         return apply_curved_ring_layout(map_obj, plate_obj, shape, inset, inset_depth)
     if layout == "ON_MAP":

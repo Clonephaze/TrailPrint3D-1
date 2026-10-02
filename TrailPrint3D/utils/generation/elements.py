@@ -19,40 +19,26 @@ _puzzle_roads_data: tuple | None = None
 
 
 def _stamp_shell_wkt(shell_obj, map_obj):
-    """Attach canonical 2D outlines to a shell for downstream tools.
-
-    Pure metadata — never touches geometry. The shell itself still comes from
-    build_map_shell's terrain-following extraction; the WKT is just the map's
-    own outline plus the nominal buffer boundaries, so post-processing can
-    reason about the shell without re-deriving them.
-    """
-    from shapely import wkt
+    from shapely.geometry import MultiPoint
 
     if shell_obj is None or map_obj is None:
         return
-    if "map_polygon_wkt" not in map_obj:
-        return
-    try:
-        map_poly = wkt.loads(map_obj["map_polygon_wkt"])
-    except Exception as exc:
-        print(f"[TrailPrint3D] shell WKT stamp skipped: {exc!r}")
-        return
 
-    tp3d = bpy.context.scene.tp3d
-    tol = tp3d.tolerance
-    wall = tp3d.shellWallThickness
+    mw = shell_obj.matrix_world
+    outer_pts = [((mw @ v.co).x, (mw @ v.co).y) for v in shell_obj.data.vertices]
+    outer_hull = MultiPoint(outer_pts).convex_hull
 
-    outer_poly = _expand_outline(map_poly, tol + wall)
-    inner_poly = _expand_outline(map_poly, tol)
+    mw_m = map_obj.matrix_world
+    inner_pts = [((mw_m @ v.co).x, (mw_m @ v.co).y) for v in map_obj.data.vertices]
+    inner_hull = MultiPoint(inner_pts).convex_hull
 
     shell_obj["shell_mode"] = "SHELL"
-    shell_obj["shell_map_wkt"] = map_poly.wkt
-    if outer_poly is not None and not outer_poly.is_empty:
-        shell_obj["shell_outer_wkt"] = outer_poly.wkt
-        shell_obj.data["shell_outer_wkt"] = outer_poly.wkt
-    if inner_poly is not None and not inner_poly.is_empty:
-        shell_obj["shell_inner_wkt"] = inner_poly.wkt
-        shell_obj.data["shell_inner_wkt"] = inner_poly.wkt
+    shell_obj["shell_map_wkt"] = inner_hull.wkt
+    shell_obj["shell_outer_wkt"] = outer_hull.wkt
+    shell_obj["shell_inner_wkt"] = inner_hull.wkt
+    if shell_obj.data is not None:
+        shell_obj.data["shell_outer_wkt"] = outer_hull.wkt
+        shell_obj.data["shell_inner_wkt"] = inner_hull.wkt
 
 
 def _raise_overlays_with_plate(gen, plate_thickness):
@@ -131,16 +117,20 @@ def _rg_create_text_and_overlays(gen: GenerationContext):
             plateobj.location.z += gen.settings.plateThickness
 
     elif plate_mode == "SHELL" and temp.PREMIUMVERSION:
-        shellobj = build_map_shell(...)
+        shellobj = build_map_shell(
+            map_obj,
+            gen.settings.tolerance,
+            wall=gen.settings.shellWallThickness,
+            bottom_wall=gen.settings.plateThickness,
+        )
         if shellobj is not None:
+            shellobj.data.materials.clear()
+            shellobj.data.materials.append(bpy.data.materials.get("BLACK"))
             _stamp_shell_wkt(shellobj, map_obj)
-            tp3d = bpy.context.scene.tp3d
-            transform_MapObject(
-                shellobj,
-                tp3d.o_centerx + gen.settings.xTerrainOffset,
-                tp3d.o_centery + gen.settings.yTerrainOffset,
-            )
-            set_origin_to_3d_cursor(shellobj)
+            bpy.ops.object.select_all(action="DESELECT")
+            shellobj.select_set(True)
+            bpy.context.view_layer.objects.active = shellobj
+            bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="MEDIAN")
             shellobj.location.z += gen.settings.plateThickness
 
     # --- 2. Raise map/trail/elements with the plate ---------------------
@@ -151,11 +141,19 @@ def _rg_create_text_and_overlays(gen: GenerationContext):
     if text_layout != "NONE":
         inset = gen.settings.textPlacement
         textobj = apply_text_layout(
-            map_obj, plateobj or shellobj, text_layout, shape,
+            map_obj,
+            plateobj or shellobj,
+            text_layout,
+            shape,
             inset=inset,
             inset_depth=gen.settings.plateInsertValue or 0.8,
         )
-        if textobj is not None and not inset and (plateobj is not None or shellobj is not None):
+        if (
+            textobj is not None
+            and not inset
+            and text_layout in {"OUTER_EDGE", "CURVED"}
+            and plate_mode == "SOLID_PLATE"
+        ):
             textobj.location.z += gen.settings.plateThickness + 0.002
 
     # --- 4. Plate insert -------------------------------------------------
@@ -584,7 +582,9 @@ def _rg_build_terrain_elements(
             _ov.set_fetch_done("buildings", success=buildings is not None)
         else:
             print("INFO: MAP IS TOO BIG FOR BUILDINGS (< 10Km Map size Required)")
-            _progress.WarningsOverlay.add_warning(_rpt("Map too big for Buildings."), "warn")
+            _progress.WarningsOverlay.add_warning(
+                _rpt("Map too big for Buildings."), "warn"
+            )
 
     # --------------------------------------------------
     # Roads — own creation function + clipping + material post-processing.
@@ -666,11 +666,15 @@ def _rg_build_terrain_elements(
                 _ov.set_fetch_done("roads", success=True)
             else:
                 print("INFO: No road data returned, skipping road processing.")
-                _progress.WarningsOverlay.add_warning(_rpt("No road data returned."), "warn")
+                _progress.WarningsOverlay.add_warning(
+                    _rpt("No road data returned."), "warn"
+                )
                 _ov.set_fetch_done("roads", success=False)
         else:
             print("INFO: MAP IS TOO BIG FOR STREETS (< 100Km Map size Required)")
-            _progress.WarningsOverlay.add_warning(_rpt("Map too big for Roads."), "warn")
+            _progress.WarningsOverlay.add_warning(
+                _rpt("Map too big for Roads."), "warn"
+            )
 
     gen.runtime.elements = terrain
 

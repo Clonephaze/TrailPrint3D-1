@@ -24,6 +24,7 @@ from .utils.shape_capabilities import (
     TEXT_LAYOUTS_BY_SHAPE,
     plate_mode_items,
     text_layout_items,
+    valid_layouts,
 )
 
 
@@ -265,6 +266,10 @@ def plate_mode_update(self, context):
         )
         return
 
+    if self.textLayout not in valid_layouts(self.shape, self.plateMode):
+        self.textLayout = "NONE"
+        self.textLayoutCache = "NONE"
+    
     if self.plateMode == "NONE" and self.textLayout in LAYOUTS_REQUIRING_PLATE:
         # Layout needs a plate to sit on — drop back to no text.
         self.textLayout = "NONE"
@@ -974,10 +979,10 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default="NONE",
     )  # type: ignore
     shellWallThickness: FloatProperty(
-        name=_("Shell Wall Thickness"),
+        name=_("Shell Width"),
         default=2.0,
         min=0.1,
-        description=_tip("Thickness of the Shell extra's side walls"),
+        description=_tip("Width of the Shell extra's side walls"),
     )  # type: ignore
 
     tileSpacing: FloatProperty(
