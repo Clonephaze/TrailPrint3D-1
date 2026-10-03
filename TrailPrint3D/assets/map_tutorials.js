@@ -245,7 +245,8 @@ function tp3dMapGenerateSteps(withGpx) {
             placement: 'right',
             title: 'Import a GPX file',
             text: 'Click <b>Import GPX</b> and pick the GPX file of your route.<br><br>' +
-                  'No GPX file at hand? Use our sample route instead.',
+                  'No GPX file at hand? Use our sample route instead.<br><br>' +
+                  'We picked the <b>hexagon</b> shape for this tutorial.',
             buttons: [{ label: 'Use sample GPX file', onClick: tp3dLoadSampleGpx }],
             waitFor: tp3dTutorial.waitUntil(tp3dHasGpx),
             waitText: 'Import a GPX file'
@@ -332,7 +333,8 @@ function tp3dMapGenerateSteps(withGpx) {
             onEnter: tp3dHoldLayersOpen,
             onExit: tp3dReleaseLayersOpen
         },
-        {
+        // Already shown at the end of the first tutorial -- left out of the GPX one.
+        withGpx ? null : {
             target: '#send',
             placement: 'right',
             title: 'Generate your map',
@@ -601,15 +603,6 @@ function tp3dMapTutorialShapes() {
             title: 'Remove an imported file',
             text: 'To go back to a normal shape, click <b>Clear SVG Shape</b> or pick another shape. ' +
                   'An imported GeoJSON has a <b>Clear GeoJSON</b> button in the same place.'
-        },
-        {
-            target: '#send',
-            placement: 'right',
-            title: 'Generate your map',
-            text: 'Click <b>Send to Blender</b> to generate your shaped map.',
-            waitFor: tp3dTutorial.waitForClick('#send'),
-            waitText: 'Click Send to Blender',
-            skippable: true
         }
     ];
 }
@@ -634,6 +627,15 @@ var TP3D_PREFETCH_ROADS = {
 function tp3dZoomToMunich() {
     placeShapeAroundBounds(L.latLngBounds(TP3D_MUNICH_ALTSTADT_BOUNDS), 0.8);
     if (typeof rectLayer !== 'undefined' && rectLayer) map.fitBounds(rectLayer.getBounds(), { padding: [40, 40] });
+}
+
+// Zooms onto the drawn area's top-left quarter, so single prefetched
+// elements are big enough to click.
+function tp3dZoomToTopLeftQuarter() {
+    var b = typeof rectLayer !== 'undefined' && rectLayer ? rectLayer.getBounds()
+        : L.latLngBounds(TP3D_MUNICH_ALTSTADT_BOUNDS);
+    var c = b.getCenter();
+    map.fitBounds(L.latLngBounds([c.lat, b.getWest()], [b.getNorth(), c.lng]), { padding: [20, 20] });
 }
 
 // Switches every OSM element off (through the chips' own toggle, so Blender
@@ -815,6 +817,7 @@ function tp3dMapTutorialPrefetch() {
             // Not an action step: the user can try it as often as they like
             // and moves on with Next.
             interactive: true,
+            onEnter: tp3dZoomToTopLeftQuarter,
             demo: tp3dDemoClickPrefetched
         },
         {
@@ -858,7 +861,13 @@ tp3dTutorialMenu({
             id: 'map-generate-gpx',
             title: 'Generate Map with GPX file',
             description: 'Import a recorded route and print it on the terrain.',
-            prepare: tp3dResetMapGenerator,
+            // Hexagon picked before the import, so the shape the import
+            // places around the trail is already a hexagon.
+            prepare: function() {
+                tp3dResetMapGenerator();
+                var hexBtn = document.querySelector('.shape-btn[data-shape="hexagon"]');
+                if (hexBtn) hexBtn.click();
+            },
             steps: tp3dMapTutorialGpx
         },
         {

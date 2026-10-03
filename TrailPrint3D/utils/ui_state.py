@@ -177,9 +177,9 @@ _ELEMENT_COMPOSITE_FLAGS = {
 }
 
 # The N-panel's own master checkbox for each composite -- generation and
-# prefetch only use a composite's sub-flags while this is on too (e.g.
-# props.any_road_active), so the picker treats it as part of the category's
-# on/off state and switches it on whenever the picker turns the category on.
+# prefetch only use a composite's sub-flags while this is on (e.g.
+# props.any_road_active), so the picker's on/off for the category IS this
+# checkbox; the sub-flags only pick what's included.
 _COMPOSITE_MASTER_FLAGS = {"water": "show_water", "roads": "show_roads"}
 
 
@@ -236,13 +236,11 @@ def build_element_toggle_states(tp3d=None):
         return states
     for key, attr in _ELEMENT_SINGLE_FLAGS.items():
         states[key] = bool(getattr(tp3d, attr))
-    for key, (subflags, _) in _ELEMENT_COMPOSITE_FLAGS.items():
-        states[key] = bool(getattr(tp3d, _COMPOSITE_MASTER_FLAGS[key])) and any(
-            getattr(tp3d, f) for f in subflags
-        )
-    from ..props import any_road_active
-
-    states["roads"] = any_road_active(tp3d)
+    # Composites follow their N-panel master checkbox alone -- the sub-flags
+    # only pick what's included, so unticking all of them leaves the
+    # category on (just with nothing in it), same as in the N-panel.
+    for key, attr in _COMPOSITE_MASTER_FLAGS.items():
+        states[key] = bool(getattr(tp3d, attr))
     return states
 
 
@@ -255,13 +253,13 @@ def apply_element_toggle(tp3d, key):
 
     'elevation' has no toggle and is ignored. For the single-flag
     categories this just inverts the one BoolProperty. For the composites
-    (water, roads), toggling OFF remembers the exact sub-flag combination in
-    a scene custom property before zeroing them, and toggling back ON
-    restores that same combination -- so a mix fine-tuned in the N-panel
-    (e.g. only Tracks + Footways) survives a quick off/on from the picker
-    instead of resetting to some fixed default. First-ever toggle-ON with
-    nothing remembered (and nothing already set) falls back to enabling
-    just the category's single most common sub-flag.
+    (water, roads), the toggle flips the N-panel master checkbox
+    (_COMPOSITE_MASTER_FLAGS) and leaves the sub-flags alone, so a mix
+    fine-tuned in the N-panel (e.g. only Tracks + Footways) survives a quick
+    off/on from the picker. Toggling OFF also remembers that mix in a scene
+    custom property; toggling ON with no sub-flag ticked restores it, or --
+    with nothing remembered either -- ticks just the category's single most
+    common sub-flag.
 
     ESA WorldCover (tp3d.elementSource == "WORLDCOVER") has none of the OSM
     composites -- every _LANDCOVER_SINGLE_FLAGS category is a plain
@@ -288,12 +286,13 @@ def apply_element_toggle(tp3d, key):
     remember_key = f"_toggle_remember_{key}"
     master = _COMPOSITE_MASTER_FLAGS[key]
     any_sub = any(_get_composite_flag(tp3d, key, f) for f in subflags)
-    if getattr(tp3d, master) and any_sub:
-        tp3d[remember_key] = [bool(_get_composite_flag(tp3d, key, f)) for f in subflags]
-        for f in subflags:
-            _set_composite_flag(tp3d, key, f, False)
+    if getattr(tp3d, master):
+        # Off = the master only; the sub-flags stay as they are (generation
+        # ignores them while the master is off), so the N-panel keeps them.
+        if any_sub:
+            tp3d[remember_key] = [bool(_get_composite_flag(tp3d, key, f)) for f in subflags]
+        setattr(tp3d, master, False)
     else:
-        # Off only via the N-panel master: keep the sub-flags already chosen.
         setattr(tp3d, master, True)
         if any_sub:
             return

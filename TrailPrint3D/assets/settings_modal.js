@@ -414,6 +414,9 @@ function tp3dBuildCheckboxField(field, compositeKey) {
     input.disabled = locked;
     if (locked) label.classList.add('locked');
     input.addEventListener('change', function() {
+        // Keep the page's copy current too -- the chip flyouts and the
+        // tutorials read sub-flags from it.
+        ADVANCED_SETTINGS_STATE[field.key] = input.checked;
         tp3dSendAdvancedUpdate(field.key, input.checked);
     });
     label.appendChild(input);
