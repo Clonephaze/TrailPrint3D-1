@@ -31,6 +31,7 @@ class TP3D_OT_run_generation(bpy.types.Operator):
     bl_idname = "tp3d.run_generation"
     bl_label = _("Generate")
     bl_description = _tip("Generate the Path and the Map with current Settings")
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
