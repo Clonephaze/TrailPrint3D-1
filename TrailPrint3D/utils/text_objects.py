@@ -32,6 +32,16 @@ def update_text_object(obj_name, new_text):
         text_obj.data.body = new_text
 
 
+def default_font_path():
+    """The font text objects use when none is chosen (Arial Black where the
+    OS ships it). "" means none known -- callers fall back to Blender's own."""
+    if platform.system() == "Windows":
+        return "C:/WINDOWS/FONTS/ariblk.ttf"
+    if platform.system() == "Darwin":
+        return "/System/Library/Fonts/Supplemental/Arial Black.ttf"
+    return ""
+
+
 def create_text(
     name,
     text,
@@ -48,12 +58,7 @@ def create_text(
     textFont = font_path or bpy.context.scene.tp3d.textFont
 
     if textFont == "":
-        if platform.system() == "Windows":
-            textFont = "C:/WINDOWS/FONTS/ariblk.ttf"
-        elif platform.system() == "Darwin":
-            textFont = "/System/Library/Fonts/Supplemental/Arial Black.ttf"
-        else:
-            textFont = ""
+        textFont = default_font_path()
 
     txt_data.body = text
     txt_data.extrude = extrude

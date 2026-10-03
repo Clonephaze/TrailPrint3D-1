@@ -100,9 +100,9 @@ def build_fetch_items(map_km=None):
                 or tp3d.col_wMinorActive
                 or tp3d.col_wMajorActive
             ) and map_km <= const.WATER_MAXSIZE
-            active = water_feats or (
+            active = tp3d.show_water and (water_feats or (
                 tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE
-            )
+            ))
             max_size = None
         elif key == "roads":
             from ..props import get_road_active
@@ -112,7 +112,9 @@ def build_fetch_items(map_km=None):
             from .osm.roads import TIER_TAGS
 
             _allowed = allowed_road_tiers(map_km)
-            active = any(get_road_active(tp3d, t) and t in _allowed for t in TIER_TAGS)
+            active = tp3d.show_roads and any(
+                get_road_active(tp3d, t) and t in _allowed for t in TIER_TAGS
+            )
             max_size = None  # mapsize already folded into `active` via allowed_road_tiers
         else:
             active = bool(flag and getattr(tp3d, flag, 0) == 1)
@@ -174,6 +176,12 @@ _ELEMENT_COMPOSITE_FLAGS = {
     ),
 }
 
+# The N-panel's own master checkbox for each composite -- generation and
+# prefetch only use a composite's sub-flags while this is on (e.g.
+# props.any_road_active), so the picker's on/off for the category IS this
+# checkbox; the sub-flags only pick what's included.
+_COMPOSITE_MASTER_FLAGS = {"water": "show_water", "roads": "show_roads"}
+
 
 def _road_subflags():
     """Road tier ids in display order -- the 'roads' composite's sub-flags.
@@ -228,11 +236,11 @@ def build_element_toggle_states(tp3d=None):
         return states
     for key, attr in _ELEMENT_SINGLE_FLAGS.items():
         states[key] = bool(getattr(tp3d, attr))
-    for key, (subflags, _) in _ELEMENT_COMPOSITE_FLAGS.items():
-        states[key] = any(getattr(tp3d, f) for f in subflags)
-    from ..props import any_road_active
-
-    states["roads"] = any_road_active(tp3d)
+    # Composites follow their N-panel master checkbox alone -- the sub-flags
+    # only pick what's included, so unticking all of them leaves the
+    # category on (just with nothing in it), same as in the N-panel.
+    for key, attr in _COMPOSITE_MASTER_FLAGS.items():
+        states[key] = bool(getattr(tp3d, attr))
     return states
 
 
@@ -245,13 +253,13 @@ def apply_element_toggle(tp3d, key):
 
     'elevation' has no toggle and is ignored. For the single-flag
     categories this just inverts the one BoolProperty. For the composites
-    (water, roads), toggling OFF remembers the exact sub-flag combination in
-    a scene custom property before zeroing them, and toggling back ON
-    restores that same combination -- so a mix fine-tuned in the N-panel
-    (e.g. only Tracks + Footways) survives a quick off/on from the picker
-    instead of resetting to some fixed default. First-ever toggle-ON with
-    nothing remembered (and nothing already set) falls back to enabling
-    just the category's single most common sub-flag.
+    (water, roads), the toggle flips the N-panel master checkbox
+    (_COMPOSITE_MASTER_FLAGS) and leaves the sub-flags alone, so a mix
+    fine-tuned in the N-panel (e.g. only Tracks + Footways) survives a quick
+    off/on from the picker. Toggling OFF also remembers that mix in a scene
+    custom property; toggling ON with no sub-flag ticked restores it, or --
+    with nothing remembered either -- ticks just the category's single most
+    common sub-flag.
 
     ESA WorldCover (tp3d.elementSource == "WORLDCOVER") has none of the OSM
     composites -- every _LANDCOVER_SINGLE_FLAGS category is a plain
@@ -276,11 +284,18 @@ def apply_element_toggle(tp3d, key):
         return  # 'elevation' or an unrecognized key -- nothing to toggle
 
     remember_key = f"_toggle_remember_{key}"
-    if any(_get_composite_flag(tp3d, key, f) for f in subflags):
-        tp3d[remember_key] = [bool(_get_composite_flag(tp3d, key, f)) for f in subflags]
-        for f in subflags:
-            _set_composite_flag(tp3d, key, f, False)
+    master = _COMPOSITE_MASTER_FLAGS[key]
+    any_sub = any(_get_composite_flag(tp3d, key, f) for f in subflags)
+    if getattr(tp3d, master):
+        # Off = the master only; the sub-flags stay as they are (generation
+        # ignores them while the master is off), so the N-panel keeps them.
+        if any_sub:
+            tp3d[remember_key] = [bool(_get_composite_flag(tp3d, key, f)) for f in subflags]
+        setattr(tp3d, master, False)
     else:
+        setattr(tp3d, master, True)
+        if any_sub:
+            return
         remembered = tp3d.get(remember_key)
         if remembered and any(remembered):
             for f, v in zip(subflags, remembered):
@@ -311,6 +326,28 @@ _SETTINGS_ROW_FIELDS = {
     "singleColorMode": ("singleColorMode", bool),
     "singleColorModeHeight": ("singleColorModeHeight", float),
     "singleColorModeTolerance": ("tolerance", float),
+    # Map generator pages' Shape Extras "Text Settings" popup
+    # (assets/shape_extras.js) -- mirrors panels.py's Shape Extras box.
+    "textFont": ("textFont", str),
+    "textSize": ("textSize", int),
+    "textSizeTitle": ("textSizeTitle", int),
+    "titlefield": ("titlefield", str),
+    "textfield1": ("textfield1", str),
+    "textfield2": ("textfield2", str),
+    "textfield3": ("textfield3", str),
+    "textfield4": ("textfield4", str),
+    "textfield5": ("textfield5", str),
+    "titleIcon": ("titleIcon", str),
+    "iconText1": ("iconText1", str),
+    "iconText2": ("iconText2", str),
+    "iconText3": ("iconText3", str),
+    "iconText4": ("iconText4", str),
+    "iconText5": ("iconText5", str),
+    "plateThickness": ("plateThickness", float),
+    "outerBorderSize": ("outerBorderSize", int),
+    "plateInsertValue": ("plateInsertValue", float),
+    "plateBevel": ("plateBevel", float),
+    "handleStyle": ("handleStyle", str),
 }
 
 
@@ -411,6 +448,13 @@ _ADVANCED_SETTINGS_FIELDS = [
         "group": "Water",
     },
     {"key": "elORdpEpsilon", "attr": "el_oRdpEpsilon", "type": float, "group": "Water"},
+    {
+        "key": "colWFlattenTop",
+        "attr": "col_wFlattenTop",
+        "type": bool,
+        "group": "Water",
+    },
+    {"key": "colWInsert", "attr": "col_wInsert", "type": float, "group": "Water"},
     {"key": "colFArea", "attr": "col_fArea", "type": float, "group": "Forest"},
     {"key": "colScrArea", "attr": "col_scrArea", "type": float, "group": "Scree"},
     {"key": "colCArea", "attr": "col_cArea", "type": float, "group": "City Boundaries"},
@@ -535,6 +579,10 @@ def build_advanced_settings_state(tp3d=None):
         tp3d = bpy.context.scene.tp3d
     state = {f["key"]: _read_advanced_field(tp3d, f) for f in _ADVANCED_SETTINGS_FIELDS}
     state["_compositeRemembered"] = build_composite_remembered_state(tp3d)
+    # Same reserved-key idea: the N-panel's per-category master checkbox
+    # (see _COMPOSITE_MASTER_FLAGS), which the page's tp3dCompositeIsActive
+    # needs to agree with build_element_toggle_states.
+    state["_compositeMaster"] = {k: bool(getattr(tp3d, a)) for k, a in _COMPOSITE_MASTER_FLAGS.items()}
     return state
 
 

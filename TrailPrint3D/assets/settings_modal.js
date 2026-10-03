@@ -220,7 +220,8 @@ var COMPOSITE_ELEMENTS = {
             { key: 'colWStreamWidth', label: 'River Width', step: 0.1, min: 0.1, max: 100 },
             { key: 'elOMinIslandArea', label: 'Min Island Area', step: 0.5, min: 0 },
             { key: 'elORdpEpsilon', label: 'Coastline Simplify', step: 0.01, min: 0, max: 2 }
-        ]
+        ],
+        extraFields: tp3dBuildWaterFlattenFields
     },
     roads: {
         checkboxes: [
@@ -238,7 +239,7 @@ var COMPOSITE_ELEMENTS = {
         numberFields: [
             { key: 'elSMultiplier', label: 'Width Multiplier', step: 0.1, min: 0 },
             { key: 'elSHeight', label: 'Height', step: 0.05, min: 0 },
-            { key: 'elSCutTolerance', label: 'Cut Tolerance', step: 0.05, min: 0 }
+            { key: 'elSCutTolerance', label: 'Cut Tolerance', step: 0.05, min: 0, singleExtruderOnly: true }
         ]
     }
 };
@@ -375,7 +376,23 @@ function tp3dBuildNumberField(field) {
     });
     wrap.appendChild(tp3dWithPreview(label, field.preview, field.previewCaption));
     wrap.appendChild(input);
+    if (field.singleExtruderOnly) {
+        wrap.setAttribute('data-single-extruder-only', '');
+        tp3dApplySingleExtruderLock(wrap);
+    }
     return wrap;
+}
+
+// Fields flagged singleExtruderOnly (e.g. the Roads cut tolerance, which
+// panels.py hides in Paint mode) are greyed out rather than hidden while
+// elementMode isn't SINGLECOLORMODE_REMESH.
+function tp3dApplySingleExtruderLock(wrap) {
+    var locked = SETTINGS_STATE.elementMode !== 'SINGLECOLORMODE_REMESH';
+    wrap.classList.toggle('locked', locked);
+    wrap.querySelector('input').disabled = locked;
+}
+function tp3dRefreshSingleExtruderFields() {
+    document.querySelectorAll('[data-single-extruder-only]').forEach(tp3dApplySingleExtruderLock);
 }
 
 // *compositeKey*, when given, marks this checkbox as one of a composite
@@ -397,6 +414,9 @@ function tp3dBuildCheckboxField(field, compositeKey) {
     input.disabled = locked;
     if (locked) label.classList.add('locked');
     input.addEventListener('change', function() {
+        // Keep the page's copy current too -- the chip flyouts and the
+        // tutorials read sub-flags from it.
+        ADVANCED_SETTINGS_STATE[field.key] = input.checked;
         tp3dSendAdvancedUpdate(field.key, input.checked);
     });
     label.appendChild(input);
@@ -464,10 +484,72 @@ function tp3dBuildCompositeElementCard(key) {
     card.appendChild(checklist);
 
     def.numberFields.forEach(function(field) { card.appendChild(tp3dBuildNumberField(field)); });
+    if (def.extraFields) card.appendChild(def.extraFields());
 
     tp3dRepaintElementToggle(key);
     return card;
 }
+
+// Water card's Flatten Water Surface checkbox + Insert (mm) field --
+// Insert only applies while col_wFlattenTop is on, so it's greyed out
+// (disabled) rather than hidden while flattening is off.
+function tp3dBuildWaterFlattenFields() {
+    var wrap = document.createElement('div');
+    var flatten = tp3dBuildCheckboxField({
+        key: 'colWFlattenTop',
+        label: 'Flatten Water Surface',
+        title: "Flatten each water body's surface to its own median height instead of following every terrain bump"
+    });
+    var insert = tp3dBuildNumberField({
+        key: 'colWInsert',
+        label: 'Insert (mm)',
+        step: 0.1,
+        min: 0,
+        title: 'Sink the water this many mm lower in Z'
+    });
+    var insertInput = insert.querySelector('input');
+    // Mirrors panels.py's INFO label: generation caps Insert to Extra Map
+    // Height - TP3D_WATER_INSERT_MARGIN (terrain.effective_water_insert).
+    var note = document.createElement('div');
+    note.className = 'card-field';
+    note.style.color = '#e0b050';
+    function refresh() {
+        var flat = !!ADVANCED_SETTINGS_STATE.colWFlattenTop;
+        insertInput.disabled = !flat;
+        insert.classList.toggle('locked', !flat);
+        var minT = parseFloat(MAP_TAB_CONTROL_VALUES.minThickness != null
+            ? MAP_TAB_CONTROL_VALUES.minThickness : SETTINGS_STATE.minThickness);
+        var cap = Math.max(0, minT - TP3D_WATER_INSERT_MARGIN);
+        var over = flat && !isNaN(cap) && parseFloat(insertInput.value) > cap;
+        note.textContent = over
+            ? 'ⓘ Deeper than Extra Map Height allows — capped to ' + tp3dRoundForDisplay(cap, 2) + ' mm'
+            : '';
+        note.style.display = over ? '' : 'none';
+    }
+    var checkbox = flatten.querySelector('input[type="checkbox"]');
+    checkbox.addEventListener('change', function() {
+        ADVANCED_SETTINGS_STATE.colWFlattenTop = checkbox.checked;
+        refresh();
+    });
+    tp3dWaterInsertNoteRefresh = refresh;
+    var checklist = document.createElement('div');
+    checklist.className = 'card-checklist';
+    checklist.appendChild(flatten);
+    wrap.appendChild(checklist);
+    wrap.appendChild(insert);
+    wrap.appendChild(note);
+    refresh();
+    return wrap;
+}
+var TP3D_WATER_INSERT_MARGIN = 0.5; // constants.WATER_INSERT_MARGIN
+// The Elements tab gets rebuilt in place (tp3dRebuildElementsTab), so one
+// document listener calls whichever Water card is current instead of each
+// build adding its own. Any field change counts -- Insert here, or Extra Map
+// Height on the Map tab.
+var tp3dWaterInsertNoteRefresh = null;
+document.addEventListener('change', function() {
+    if (tp3dWaterInsertNoteRefresh) tp3dWaterInsertNoteRefresh();
+});
 
 function tp3dSendMapField(field, value) {
     fetch('http://127.0.0.1:' + PORT + '/' + field.endpoint, {
@@ -691,15 +773,18 @@ function tp3dBuildElementSourceSwitch() {
 // 'elementMode' key (now part of _SETTINGS_ROW_FIELDS, same whitelist
 // elementSource itself uses) -- no poll-and-resync needed here the way the
 // source switch needs one: unlike elementSource, changing elementMode
-// doesn't change which fields/cards the rest of this tab shows, so there's
-// nothing else on this page that needs to react to it.
+// doesn't change which fields/cards the rest of this tab shows -- it only
+// greys singleExtruderOnly fields in or out (tp3dRefreshSingleExtruderFields).
+// Visual example behind the row's "?" button (also highlighted by the
+// "Add Colors to the map" tutorial, assets/map_tutorials.js).
+var ELEMENT_MODE_PREVIEW = 'https://trailprint3d.com/images/howto/PaintVsSingleExtruder.webp';
 function tp3dBuildElementModeSwitch() {
     var row = document.createElement('div');
     row.className = 'adv-field-row element-mode-row';
 
     var label = document.createElement('label');
     label.textContent = 'Paint or Single Extruder Mode';
-    row.appendChild(label);
+    row.appendChild(tp3dWithPreview(label, ELEMENT_MODE_PREVIEW));
 
     var isWorldCover = tp3dIsWorldCover();
     var wrap = document.createElement('div');
@@ -715,6 +800,7 @@ function tp3dBuildElementModeSwitch() {
             if (SETTINGS_STATE.elementMode === opt[0]) return;
             SETTINGS_STATE.elementMode = opt[0];
             wrap.querySelectorAll('button').forEach(function(b) { b.classList.toggle('active', b === btn); });
+            tp3dRefreshSingleExtruderFields();
             tp3dSendMapField({ key: 'elementMode', endpoint: 'update_setting' }, opt[0]);
         });
         wrap.appendChild(btn);

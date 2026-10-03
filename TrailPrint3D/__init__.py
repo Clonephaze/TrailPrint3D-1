@@ -80,6 +80,7 @@ classes = [
     operators.TP3D_OT_dismiss_update,
     operators.TP3D_OT_puzzle_configurator,
     operators.TP3D_OT_map_generator,
+    operators.TP3D_OT_medal_holder_generator,
     operators.TP3D_OT_special_collection,
     operators.TP3D_OT_append_collection,
     operators.TP3D_OT_append_collection_blank,

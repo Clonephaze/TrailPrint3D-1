@@ -21,6 +21,10 @@ ENABLE_UPDATE_CHECKER = True
 
 R = 6371.0  # Earth radius in kilometers
 
+# Water Insert is capped to Extra Map Height minus this (mm), so sunk water
+# never reaches the bottom of the map
+WATER_INSERT_MARGIN = 0.5
+
 # -- Element size limits --
 
 WATER_MAXSIZE = 500
@@ -148,6 +152,13 @@ generation_history_dir = os.path.join(bpy.utils.user_resource('CONFIG'), "TP3D-h
 # finished, which is usually well after that picker session's own server
 # already shut down.
 generation_history_thumbnails_dir = os.path.join(generation_history_dir, "thumbnails")
+
+# Which picker-page tutorials (assets/tutorial.js) the user has completed --
+# a JSON object of {tutorial id: true}, see picker_server.py's
+# /get_tutorial_progress & /complete_tutorial. Kept here rather than in the
+# browser's own storage because each picker window gets a fresh, throwaway
+# browser profile.
+tutorial_progress_path = os.path.join(generation_history_dir, "tutorials_completed.json")
 
 
 def _ensure_dirs():

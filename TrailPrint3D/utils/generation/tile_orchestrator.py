@@ -11,10 +11,12 @@ from ..ui_state import build_fetch_items
 from .elements import (
     _rg_apply_single_color_mode,
     _rg_build_terrain_elements,
+    _rg_create_text_and_overlays,
 )
 from .input import _rg_validate_inputs
 from .output import (
     _rg_apply_texture,
+    _rg_assign_extra_materials,
     _rg_assign_materials,
     _rg_finalize_metadata,
     _rg_set_material_preview,
@@ -73,6 +75,9 @@ def _rtg_apply_elevation(
     )
     from ..geo import (
         convert_to_geo,  # deferred to avoid circular import at load time
+    )
+    from ..mesh_ops import (
+        recalculateNormals,  # deferred to avoid circular import at load time
     )
 
     tp3d = bpy.context.scene.tp3d
@@ -230,6 +235,13 @@ def _rtg_apply_elevation(
                 ),
                 "warn",
             )
+
+    # extrude_region_move on the open terrain surface leaves the solid inside
+    # out: the terrain faces point down and the dissolved bottom n-gon points
+    # up. Everything after this that picks "top" faces by normal.z (water
+    # flattening, WorldCover painting) would otherwise grab the bottom face --
+    # water flattening then drags bottom vertices up into a step.
+    recalculateNormals(zobj)
 
     return lowestZ, highestZ, additionalExtrusion, len(tileVerts)
 
@@ -525,6 +537,67 @@ def _rtg_process_tile(
     zobj["highestZ"] += additionalExtrusion
 
     return lowestZ, highestZ, additionalExtrusion
+
+
+def _rtg_add_shape_extras(gen: GenerationContext, map_obj, riders=()):
+    """Add the Shape Extras (text/plate/shell, per gen.settings.shape) to an
+    already finished map-generator tile.
+
+    runGeneration builds these right after the terrain and BEFORE its
+    elements, so everything after it is simply built on the map's final
+    (plate-raised) height. The map generator can't do the same: its tile
+    only gets its final outline after runTileGeneration + the imported
+    trail merge + the shapeRotation cut (operators.py), and a plate insert
+    or shell needs that final outline. So this runs last instead, and lifts
+    *riders* -- every other object generated on top of this tile (trail
+    pieces, separate element meshes) -- together with the map whenever a
+    plate raises it by plateThickness.
+
+    The text builders (text_objects.py) place everything around the scene's
+    o_centerx/o_centery plus xTerrainOffset -- runGeneration's own trail
+    center and map offset. Those are pointed at this tile's own center (and
+    the offset zeroed) for the duration, then restored.
+    """
+    shape = gen.settings.shape
+    if not shape.endswith((" TEXT", " SHELL")):
+        return
+
+    tp3d = bpy.context.scene.tp3d
+    saved = {k: getattr(tp3d, k) for k in ("o_centerx", "o_centery", "xTerrainOffset", "yTerrainOffset")}
+    saved_cursor = bpy.context.scene.cursor.location.copy()
+    saved_curves = gen.runtime.curveObjs
+    map_z = map_obj.location.z
+    try:
+        tp3d.o_centerx = map_obj.location.x
+        tp3d.o_centery = map_obj.location.y
+        tp3d.xTerrainOffset = 0
+        tp3d.yTerrainOffset = 0
+        gen.settings.xTerrainOffset = 0
+        gen.settings.yTerrainOffset = 0
+        bpy.context.scene.cursor.location = (map_obj.location.x, map_obj.location.y, 0)
+        gen.runtime.mapObject = map_obj
+        # Riders are lifted below instead -- _rg_create_text_and_overlays
+        # would otherwise lift runTileGeneration's own curveObjs a second time.
+        gen.runtime.curveObjs = None
+        _rg_create_text_and_overlays(gen)
+    finally:
+        for k, v in saved.items():
+            setattr(tp3d, k, v)
+        bpy.context.scene.cursor.location = saved_cursor
+        # _rg_export still selects these for the export that follows.
+        gen.runtime.curveObjs = saved_curves
+
+    lift = map_obj.location.z - map_z
+    if lift:
+        extras = {gen.runtime.textObj, gen.runtime.plateObj, gen.runtime.shellObj, map_obj}
+        for obj in riders:
+            try:
+                if obj not in extras and obj.name in bpy.data.objects:
+                    obj.location.z += lift
+            except ReferenceError:
+                pass
+
+    _rg_assign_extra_materials(gen)
 
 
 def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_osm=None):

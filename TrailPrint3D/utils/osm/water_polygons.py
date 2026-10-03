@@ -259,11 +259,6 @@ def _load_water_index():
     return _WATER_INDEX
 
 
-def reset_water_index_cache():
-    """Drop the in-memory (polygons, STRtree) cache. Mainly for tests / after
-    a manual re-download of the dataset."""
-    global _WATER_INDEX
-    _WATER_INDEX = None
 
 
 def _forward_3857(lat, lon):

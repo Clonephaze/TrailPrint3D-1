@@ -30,7 +30,7 @@ from .generation.input import (
 from .generation.orchestrator import _GEN_FLAGS, runGeneration
 from .generation.output import _rg_assign_materials, _rg_export
 from .generation.terrain_gen import _rg_create_map_object
-from .generation.tile_orchestrator import generateJustTrail, runTileGeneration
+from .generation.tile_orchestrator import _rtg_add_shape_extras, generateJustTrail, runTileGeneration
 from .geo import *
 from .geometry2d import *
 from .io_gpx import *

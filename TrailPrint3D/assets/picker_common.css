@@ -247,6 +247,8 @@ body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #eee; ma
 .element-card .card-field { display: flex; flex-direction: column; gap: 2px; font-size: 10px; color: #aaa; width: 100%; }
 .element-card .card-field input[type=number] { width: 100%; background: #2a2a2a; color: #eee; border: 1px solid #444;
     border-radius: 4px; padding: 3px 5px; font-size: 11px; }
+.element-card .card-field.locked { color: #666; cursor: not-allowed; }
+.element-card .card-field.locked input[type=number] { color: #666; background: #222; border-color: #333; cursor: not-allowed; }
 .element-card .card-checklist { display: flex; flex-direction: column; gap: 3px; width: 100%; margin: 2px 0; }
 .element-card .card-checklist label { display: flex; align-items: center; gap: 5px; font-size: 11px;
     color: #ccc; cursor: pointer; }
@@ -335,8 +337,8 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
 #drawActions .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
 .shape-btn.active { background: #007bff; border-color: #007bff; }
 /* left/z-index/look shared by every page; each page's own <style> adds just
-   a `top` offset (170px on rectangle-only puzzle pages, 338px on pages with
-   an extra #shapeToggle row above it). */
+   a `top` offset (170px -- right below #drawActions -- on every page now that
+   #shapeToggle lives in the sidebar). */
 #drawModeToggle { position: absolute; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 6px;
     background: rgba(26,26,26,0.85); border: 1px solid #444; border-radius: 4px; padding: 6px; }
 #drawModeToggle .shape-btn.icon-btn { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
@@ -378,6 +380,32 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
     color: #ccc; font-size: 11px; font-weight: bold; line-height: 1; padding: 0; cursor: pointer; transition: all 0.15s; }
 #gpxList .gpx-remove-btn:hover, #geojsonList .gpx-remove-btn:hover, #svgShapeList .gpx-remove-btn:hover { background: #e74c3c; border-color: #e74c3c; color: #fff; }
 
+/* Shape Extras dropdown + Text Settings popup (assets/shape_extras.js) --
+   map generator pages only. */
+#shapeExtrasSection { display: flex; flex-direction: column; gap: 8px; }
+/* Import GeoJSON / Import SVG Shape while that import is the selected shape
+   -- same blue as .shape-btn.active. */
+.import-shape-active { background: #007bff !important; box-shadow: 0 0 0 2px #007bff; }
+#shapeExtrasSection select, #shapeExtrasModal select, #shapeExtrasModal input[type=text] {
+    background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px 6px;
+    font-size: 12px; font-family: inherit; min-width: 0; }
+#shapeExtrasSection select { width: 100%; }
+.btn-shape-extras { padding: 10px 20px; background: #333; color: #eee; border: 1px solid #444;
+    border-radius: 4px; cursor: pointer; font-weight: bold; }
+.btn-shape-extras:hover { background: #444; border-color: #007bff; }
+#shapeExtrasModal .tp3d-modal-box { width: 340px; }
+#shapeExtrasModal .field-row input[type=number] { width: 70px; }
+#shapeExtrasModal .field-row input[type=text] { flex: 1; }
+#shapeExtrasModal .se-font-select { flex: 1; min-width: 0; }
+#shapeExtrasModal .se-section-label { font-size: 12px; font-weight: bold; color: #ccc; margin-top: 4px; }
+#shapeExtrasModal .se-hint { font-size: 11px; color: #888; line-height: 1.4; }
+#shapeExtrasModal .se-text-row { display: flex; gap: 6px; }
+#shapeExtrasModal .se-text-row select, #shapeExtrasModal .se-icon-locked { width: 40%; flex-shrink: 0; }
+#shapeExtrasModal .se-text-row input[type=text] { flex: 1; }
+#shapeExtrasModal .se-icon-locked { background: #2a2a2a; color: #666; border: 1px solid #333; border-radius: 4px;
+    font-size: 11px; cursor: not-allowed; }
+#shapeExtrasModal .se-handle-switch { display: flex; gap: 4px; }
+
 /* "Prefetch Elements" (assets/prefetch_layer.js) -- map generator pages only. */
 #prefetchInfo { display: none; font-size: 11px; color: #ccc; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; }
 #prefetchInfo .prefetch-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; line-height: 1.9; }
@@ -411,3 +439,98 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
 @keyframes prefetch-spin { to { transform: rotate(360deg); } }
 #prefetchInfo .prefetch-subrow { padding-left: 16px; font-size: 10.5px; line-height: 1.7; }
 #prefetchInfo .prefetch-subrow .prefetch-swatch { width: 7px; height: 7px; }
+
+/* Guided tutorials (assets/tutorial.js). The sidebar header's own Tutorial
+   button sits next to the TrailPrint3D title. */
+.sidebar-title-row { display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    font-weight: bold; font-size: 14px; margin-bottom: 10px; }
+.tutorial-btn { flex-shrink: 0; white-space: nowrap; background: none; border: 1px solid #444; border-radius: 4px;
+    padding: 3px 8px; color: #aaa; font-size: 11px; font-weight: normal; font-family: inherit; cursor: pointer; }
+.tutorial-btn:hover { background: rgba(255,255,255,0.08); border-color: #007bff; color: #eee; }
+.tp3d-tut-menu .tp3d-modal-box { width: 360px; }
+.tp3d-tut-menu-intro { font-size: 12px; color: #aaa; }
+.tp3d-tut-menu-item { display: flex; flex-direction: column; gap: 3px; text-align: left; width: 100%;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 6px; padding: 10px 12px; color: #eee;
+    font-family: inherit; cursor: pointer; }
+.tp3d-tut-menu-item:hover:not(:disabled) { border-color: #007bff; background: #303030; }
+.tp3d-tut-menu-item:disabled { cursor: not-allowed; opacity: 0.55; }
+.tp3d-tut-menu-name { font-size: 13px; font-weight: bold; display: flex; align-items: center; gap: 8px; }
+.tp3d-tut-menu-desc { font-size: 11px; color: #aaa; line-height: 1.4; }
+.tp3d-tut-menu-titlewrap { display: flex; align-items: center; gap: 10px; }
+.tp3d-tut-menu-progress { font-size: 11px; font-weight: bold; color: #aaa; background: rgba(255,255,255,0.08);
+    border-radius: 10px; padding: 2px 8px; }
+.tp3d-tut-menu-progress.all-done { color: #4caf50; background: rgba(76,175,80,0.14); }
+.tp3d-tut-menu-num { color: #888; font-weight: bold; min-width: 14px; }
+.tp3d-tut-menu-check { display: none; color: #4caf50; font-size: 13px; }
+/* Completed tutorial: green shade, same green as the enabled element chips. */
+.tp3d-tut-menu-item.done { background: rgba(76,175,80,0.14); border-color: rgba(76,175,80,0.6); }
+.tp3d-tut-menu-item.done:hover:not(:disabled) { background: rgba(76,175,80,0.22); border-color: #4caf50; }
+.tp3d-tut-menu-item.done .tp3d-tut-menu-num { color: #4caf50; }
+.tp3d-tut-menu-item.done .tp3d-tut-menu-check { display: inline; }
+.tp3d-tut-menu-soon { font-size: 10px; font-weight: normal; color: #aaa; background: rgba(255,255,255,0.08);
+    border-radius: 3px; padding: 1px 5px; }
+/* Above every modal (3000) so a tutorial can focus things inside them too.
+   The root itself never takes clicks -- only the four shades around the
+   focus box, the optional blocker over it, and the popup do. */
+#tp3dTutorial { display: none; position: fixed; inset: 0; z-index: 4000; pointer-events: none; }
+#tp3dTutorial.active { display: block; }
+.tp3d-tut-shade { position: fixed; background: rgba(0,0,0,0.62); pointer-events: auto;
+    transition: all 0.2s ease; }
+.tp3d-tut-blocker { position: fixed; pointer-events: auto; }
+.tp3d-tut-ring { position: fixed; border: 2px solid #007bff; border-radius: 6px; pointer-events: none;
+    box-shadow: 0 0 0 3px rgba(0,123,255,0.25), 0 0 18px rgba(0,123,255,0.45); transition: all 0.2s ease; }
+.tp3d-tut-pop { position: fixed; width: 300px; max-width: calc(100vw - 20px); pointer-events: auto;
+    background: #222; border: 1px solid #555; border-radius: 8px; padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    transition: left 0.2s ease, top 0.2s ease; }
+.tp3d-tut-pop.nudge { animation: tp3d-tut-nudge 0.35s ease; }
+@keyframes tp3d-tut-nudge { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+.tp3d-tut-head { display: flex; align-items: center; justify-content: space-between; }
+.tp3d-tut-count { font-size: 11px; color: #888; }
+.tp3d-tut-title { font-size: 14px; font-weight: bold; color: #eee; }
+.tp3d-tut-text { font-size: 12px; color: #ccc; line-height: 1.5; }
+.tp3d-tut-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.tp3d-tut-spacer { flex: 1; }
+.tp3d-tut-btn { background: #007bff; border: 1px solid #007bff; border-radius: 4px; color: #fff;
+    padding: 5px 14px; font-size: 12px; font-weight: bold; font-family: inherit; cursor: pointer; }
+.tp3d-tut-btn:hover { background: #1a88ff; }
+.tp3d-tut-btn.secondary { background: none; border-color: #444; color: #aaa; font-weight: normal; }
+.tp3d-tut-btn.secondary:hover { border-color: #007bff; color: #eee; }
+.tp3d-tut-wait { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #4da3ff; }
+.tp3d-tut-pulse { width: 8px; height: 8px; border-radius: 50%; background: #4da3ff;
+    animation: tp3d-tut-pulse 1.2s ease-in-out infinite; }
+@keyframes tp3d-tut-pulse { 50% { opacity: 0.25; transform: scale(0.7); } }
+/* Side-by-side comparison inside a popup (e.g. OSM vs ESA): image on top,
+   name, then a few short lines per column. */
+.tp3d-tut-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tp3d-tut-compare-col { font-size: 11.5px; line-height: 1.45; color: #ccc; }
+.tp3d-tut-compare-col img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+    border-radius: 4px; border: 1px solid #444; margin-bottom: 6px; background: #1a1a1a; }
+.tp3d-tut-compare-col b { color: #eee; font-size: 12.5px; }
+.tp3d-tut-note { margin-top: 10px; font-size: 11px; color: #888; }
+.tp3d-tut-list { margin: 0; padding-left: 16px; }
+.tp3d-tut-list li { margin-bottom: 3px; }
+/* Step `arrow`: the outer box is rotated to face the target, the inner one
+   bobs along its own x axis -- i.e. always toward the target. */
+.tp3d-tut-arrow { position: fixed; width: 48px; height: 48px; pointer-events: none;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6)); }
+.tp3d-tut-arrow-bob { width: 100%; height: 100%; animation: tp3d-tut-bob 0.9s ease-in-out infinite; }
+.tp3d-tut-arrow-bob svg { display: block; }
+@keyframes tp3d-tut-bob { 50% { transform: translateX(-9px); } }
+/* Step `demo`: a sample cursor driven frame by frame from tutorial.js
+   (left/top stay 0, position comes from transform). The dot marks "button
+   held down" while dragging; the ripple marks the moment of the press. */
+.tp3d-tut-cursor, .tp3d-tut-cursor-dot, .tp3d-tut-ripple { position: fixed; left: 0; top: 0;
+    pointer-events: none; display: none; }
+.tp3d-tut-cursor { width: 26px; height: 26px; transform-origin: 0 0; margin: -2px 0 0 -2px;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6)); }
+.tp3d-tut-cursor svg { display: block; }
+.tp3d-tut-cursor-dot { width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+    background: rgba(0,123,255,0.45); border: 2px solid rgba(255,255,255,0.85); }
+/* Ghost box for demos -- colored via `color` (demoGhostColor) so one rule
+   serves any color: solid outline plus a translucent fill of the same. */
+.tp3d-tut-ghost { position: fixed; pointer-events: none; display: none; color: #E97826;
+    border: 3px solid currentColor; }
+.tp3d-tut-ghost::before { content: ''; position: absolute; inset: 0; background: currentColor; opacity: 0.2; }
+.tp3d-tut-ripple { width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%;
+    border: 3px solid #4da3ff; }

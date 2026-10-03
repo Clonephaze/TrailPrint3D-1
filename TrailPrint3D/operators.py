@@ -2639,9 +2639,9 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # picker page, not this one, so there's nothing to unlock by
         # tampering with a served free page.
         html_filename = (
-            "premium/puzzleGenerator_pe.html"
+            "premium/generators/puzzleGenerator_pe.html"
             if temp.PREMIUMVERSION
-            else "puzzleGenerator.html"
+            else "generators/puzzleGenerator.html"
         )
         html_path = pathlib.Path(__file__).parent / html_filename
         self._server = mp.start_picker(
@@ -3169,6 +3169,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         "square": "SQUARE",
         "circle": "CIRCLE",
         "octagon": "OCTAGON",
+        "hexagon": "HEXAGON",
         "svg": "SVG",
     }
 
@@ -3247,9 +3248,9 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # premium/map_generator_pe.html is the Premium counterpart with a
         # multi-file GPX input (see its gpxInput element).
         html_filename = (
-            "premium/map_generator_pe.html"
+            "premium/generators/map_generator_pe.html"
             if temp.PREMIUMVERSION
-            else "map_generator.html"
+            else "generators/map_generator.html"
         )
         html_path = pathlib.Path(__file__).parent / html_filename
         self._server = mp.start_picker(
@@ -3298,6 +3299,69 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             exclusions.clear_excluded()
             overlay.finish()
             _progress.WarningsOverlay.get().show()
+
+    @staticmethod
+    def _apply_shape_extra(props, data):
+        """The picker's Shape Extras dropdown (assets/shape_extras.js) --
+        called after props.shape is set, since shapeTextStyle's item list
+        depends on it. Anything the shape doesn't offer (or Shell on a free
+        build) falls back to None, same as props.shape_update."""
+        from . import temp
+        from .props import SHAPE_TEXT_STYLES
+
+        shape_extra = data.get('shape_extra') or 'NONE'
+        valid_extras = {ident for ident, _label, _desc in SHAPE_TEXT_STYLES.get(props.shape, [])}
+        if shape_extra not in valid_extras or (shape_extra == 'SHELL' and not temp.PREMIUMVERSION):
+            shape_extra = 'NONE'
+        if valid_extras:
+            props.shapeTextStyle = shape_extra
+
+    @staticmethod
+    def _apply_trail_stats(props, gpx_paths, gpx_names):
+        """Fill in what the Shape Extras text codes read ({name}, {length},
+        {elevation}, {duration}, {date}, {speed} -- see
+        text_objects.replaceShapeText). runGeneration gets these from its
+        own GPX load (input._rg_compute_trail_stats + the file-name default
+        for modelname), which this picker's tile flow never runs -- without
+        this they'd show the last sidebar-generated trail's values and
+        "Terrain". Several GPX files are summed, like one long trail."""
+        import os
+
+        from .utils.geo import (
+            calculate_date,
+            calculate_total_elevation,
+            calculate_total_length,
+            calculate_total_time,
+        )
+        from .utils.io_gpx import read_gpx_file
+
+        if not props.trailName and gpx_names:
+            props.modelname = os.path.splitext(os.path.basename(gpx_names[0]))[0]
+
+        per_file = []
+        saved_path = props.file_path
+        try:
+            for path in gpx_paths:
+                props.file_path = path
+                try:
+                    per_file.append([pt for seg in read_gpx_file() for pt in seg])
+                except Exception:  # noqa: BLE001 - GPX parsing can raise many types; stats are best-effort
+                    continue
+        finally:
+            props.file_path = saved_path
+        per_file = [pts for pts in per_file if len(pts) >= 2]
+        if not per_file:
+            return
+
+        length = sum(calculate_total_length(pts) for pts in per_file)
+        elevation = sum(calculate_total_elevation(pts) for pts in per_file)
+        hours = sum(calculate_total_time(pts) or 0 for pts in per_file)
+        props.total_length = length
+        props.total_elevation = elevation
+        props.total_time = hours
+        props.sTime_str = f"{int(hours)}h {int((hours - int(hours)) * 60)}m"
+        props.average_speed = length / hours if hours > 0 else 0
+        props.trail_date = calculate_date(per_file[0])
 
     def _apply_result_body(self, context, data):
         props = context.scene.tp3d
@@ -3354,6 +3418,12 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             # Blank) in sync too, mirroring the Multi Tile Generator picker.
             props.rectangleHeight = _picked_size
 
+        # Only the drawn-shape branch below sets this True -- an imported
+        # GeoJSON boundary is already a specific, user-supplied outline, not
+        # one of the regular shapes shapeRotation is meant to spin, so it's
+        # left untouched here regardless of shapeRotation.
+        needs_shape_cut = False
+
         # A GeoJSON boundary (if any) always wins over a drawn shape -- this
         # picker only ever produces one tile, so the two are mutually
         # exclusive rather than combined the way the Multi Tile Generator's
@@ -3387,9 +3457,15 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                     _rpt("GeoJSON boundary produced an empty/degenerate shape."), "error"
                 )
                 raise GenerationError
+            # Keeps the sidebar's own Shape field in sync with what this tile
+            # actually is, same as the SVG branch below does.
+            props.shape = "GEOJSON"
+            props.customFilePath = geojson_paths[0]
+            self._apply_shape_extra(props, data)
         else:
             shape_name = data.get("type", "rectangle")
             props.shape = self._TYPE_MAP.get(shape_name, "SQUARE")
+            self._apply_shape_extra(props, data)
 
             south, north = bounds["south"], bounds["north"]
             west, east = bounds["west"], bounds["east"]
@@ -3411,6 +3487,24 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
             diameter = max(tile_w, tile_h)
 
+            # When shapeRotation != 0, generate over a larger (padded) area
+            # than what was actually drawn, so real terrain/OSM content
+            # exists to reveal at the rotated shape's corners -- then cut
+            # down to the TRUE (unpadded) shape, rotated, in one boolean
+            # pass once generation finishes (see needs_shape_cut below,
+            # after runTileGeneration/GPX merge). A rotated rectangle's own
+            # axis-aligned bounding box grows by up to sqrt(2)x at 45
+            # degrees; circle is rotation-invariant so it's never padded/cut.
+            needs_shape_cut = props.shapeRotation != 0 and shape_name != "circle"
+            if needs_shape_cut:
+                _rot_rad = math.radians(props.shapeRotation)
+                _cos, _sin = abs(math.cos(_rot_rad)), abs(math.sin(_rot_rad))
+                gen_diameter = diameter * (_cos + _sin)
+                gen_tile_w = tile_w * _cos + tile_h * _sin
+                gen_tile_h = tile_w * _sin + tile_h * _cos
+            else:
+                gen_diameter, gen_tile_w, gen_tile_h = diameter, tile_w, tile_h
+
             if shape_name == "circle":
                 blank = utils.create_circle(diameter / 2, props.num_subdivisions)
                 if blank is None:
@@ -3421,7 +3515,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                     raise GenerationError
                 blank["Shape"] = "CIRCLE"
             elif shape_name == "octagon":
-                blank = utils.create_octagon(diameter / 2, props.num_subdivisions)
+                blank = utils.create_octagon(gen_diameter / 2, props.num_subdivisions)
                 if blank is None:
                     print("Failed to create octagon shape.")
                     _progress.WarningsOverlay.add_warning(
@@ -3429,6 +3523,15 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                     )
                     raise GenerationError
                 blank["Shape"] = "OCTAGON"
+            elif shape_name == "hexagon":
+                blank = utils.create_hexagon(gen_diameter / 2, props.num_subdivisions)
+                if blank is None:
+                    print("Failed to create hexagon shape.")
+                    _progress.WarningsOverlay.add_warning(
+                        _rpt("Failed to create hexagon shape."), "error"
+                    )
+                    raise GenerationError
+                blank["Shape"] = "HEXAGON"
             elif shape_name == "svg":
                 svg_path = data.get("svg_path")
                 if not svg_path:
@@ -3441,7 +3544,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 # target_size scaling) the sidebar's Shape="SVG" option uses
                 # -- see primitives.create_custom_svg/polygon_from_svg.
                 blank = utils.create_custom_svg(
-                    svg_path, diameter, props.num_subdivisions
+                    svg_path, gen_diameter, props.num_subdivisions
                 )
                 if blank is None:
                     print("SVG file produced an empty/degenerate shape.")
@@ -3459,7 +3562,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 # Rectangle (see map_generator.html's effectiveBounds), this just
                 # doesn't additionally trust that to already be exact.
                 blank = utils.create_rectangle(
-                    diameter, diameter, props.num_subdivisions
+                    gen_diameter, gen_diameter, props.num_subdivisions
                 )
                 if blank is None:
                     print("Failed to create square shape.")
@@ -3469,7 +3572,9 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                     raise GenerationError
                 blank["Shape"] = "SQUARE"
             else:
-                blank = utils.create_rectangle(tile_w, tile_h, props.num_subdivisions)
+                blank = utils.create_rectangle(
+                    gen_tile_w, gen_tile_h, props.num_subdivisions
+                )
                 if blank is None:
                     print("Failed to create rectangle shape.")
                     _progress.WarningsOverlay.add_warning(
@@ -3546,12 +3651,16 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         bpy.ops.object.select_all(action="DESELECT")
         blank.select_set(True)
         bpy.context.view_layer.objects.active = blank
+        # Everything generated from here on (element meshes, trail pieces)
+        # sits on this tile -- the Shape Extras step below lifts it together
+        # with the map when a plate raises the map.
+        objs_before = set(bpy.data.objects)
         # skip_bottom_recess: this blank is always a fresh single tile with
         # additionalExtrusion locked to its OWN lowest point (set just
         # above, either from the elevation-preview loop or, for a GeoJSON
         # boundary, internally by build_tile_from_polygon), not an older
         # neighbor's -- there's no seam to protect.
-        utils.runTileGeneration(manage_overlay=False, skip_bottom_recess=True)
+        tile_gen = utils.runTileGeneration(manage_overlay=False, skip_bottom_recess=True)
 
         if gpx_paths:
             from .utils.osm import gen as _osm_gen
@@ -3563,14 +3672,103 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             if not bpy.app.debug:
                 utils.remove_objects(trails)
 
+        # shapeRotation only rotates the SHAPE (the tile's outer cut), not the
+        # terrain/elements inside it -- elevation (elevation.get_tile_elevation)
+        # samples real-world data at each vertex's own position and road/water
+        # clipping (roads.py's map_footprint intersection) clips at the map's
+        # current boundary, so actually rotating the blank before/during
+        # generation would rotate (and, for elevation, distort) the content
+        # itself, not just its outline. Instead, the blank above was built
+        # OVERSIZED (needs_shape_cut's gen_diameter/gen_tile_w/gen_tile_h) and
+        # left unrotated all the way through generation, so terrain/elements
+        # come out normally oriented; here, once everything is finished and
+        # merged, it's trimmed down with a single boolean INTERSECT against a
+        # tall prism of the TRUE (unpadded) shape rotated by shapeRotation --
+        # same "flat cookie-cutter prism, boolean INTERSECT" technique
+        # elements.py's _build_outline_cutter uses to trim trail tubes to the
+        # map boundary.
+        if needs_shape_cut:
+            from shapely.affinity import rotate as _shp_rotate
+
+            from .utils import geometry2d as _g2d
+            from .utils.mesh_ops import _clean_solid_mesh, _extrude_flat_polygon, boolean_operation
+            from .utils.primitives import hexagon_polygon, octagon_polygon, polygon_from_svg, rectangle_polygon
+
+            if shape_name == "octagon":
+                true_poly = octagon_polygon(diameter / 2)
+            elif shape_name == "hexagon":
+                true_poly = hexagon_polygon(diameter / 2)
+            elif shape_name == "svg":
+                true_poly = polygon_from_svg(data.get("svg_path"), diameter)
+            elif shape_name == "square":
+                true_poly = rectangle_polygon(diameter, diameter)
+            else:
+                true_poly = rectangle_polygon(tile_w, tile_h)
+            rotated_poly = _shp_rotate(true_poly, props.shapeRotation, origin=(0, 0))
+
+            verts, faces = [], []
+            _extrude_flat_polygon(_g2d, rotated_poly, -1e4, 1e4, verts, faces)
+            if verts:
+                cutter_mesh = bpy.data.meshes.new("ShapeRotationCutter")
+                cutter_mesh.from_pydata(verts, [], faces)
+                cutter_mesh.update()
+                _clean_solid_mesh(cutter_mesh)
+                cutter_obj = bpy.data.objects.new("ShapeRotationCutter", cutter_mesh)
+                bpy.context.collection.objects.link(cutter_obj)
+                cutter_obj.location = (center_x, center_y, 0)
+                boolean_operation(blank, cutter_obj, "INTERSECT")
+                bpy.data.objects.remove(cutter_obj, do_unlink=True)
+
+        # Shape Extras (text/plate/shell) -- only now, once the tile has its
+        # final outline (see _rtg_add_shape_extras for why this can't run
+        # inside runTileGeneration the way runGeneration does it).
+        if tile_gen is not None:
+            overlay.update(0.99, "Shape Overlays", "Adding text and plate elements…")
+            riders = [
+                o for o in bpy.data.objects if o not in objs_before and o is not blank
+            ]
+            try:
+                if tile_gen.settings.shape.endswith(" TEXT") and gpx_paths:
+                    self._apply_trail_stats(
+                        props, gpx_paths, data.get("gpx_names") or []
+                    )
+                utils._rtg_add_shape_extras(tile_gen, blank, riders)
+            except Exception:  # noqa: BLE001 - the tile itself is done; still export it
+                import traceback
+
+                traceback.print_exc()
+                _progress.WarningsOverlay.add_warning(
+                    _rpt("Shape Extras failed, check console for details"), "error"
+                )
+
+        # The map picker always produces a single, finished map tile (never
+        # a multi-tile result awaiting manual arrangement/export like the
+        # puzzle generator's blank), so it's safe to export it here -- after
+        # any imported GPX trail above has already been merged in, so the
+        # exported file reflects the final result. _rg_export itself still
+        # honors the "Don't automatically export" preference.
+        if tile_gen is not None:
+            bpy.ops.object.select_all(action="DESELECT")
+            blank.select_set(True)
+            bpy.context.view_layer.objects.active = blank
+            utils._rg_export(tile_gen)
+
+        _total_time = time.time() - start_time
+        bpy.context.scene.tp3d["o_time"] = _(
+            "Script ran for {total_time:.0f} seconds"
+        ).format(total_time=_total_time)
+        export.save_history_thumbnail(data.get("history_id"), [blank])
+        # Re-zoom LAST, after the thumbnail render -- customThumbnail swaps
+        # in its own temp top-down camera view for the screenshot and then
+        # tries to restore the previous one, but a direct RegionView3D.view_matrix
+        # assignment isn't reliable enough to trust as the final on-screen
+        # state, so explicitly re-focus on the actual finished map afterward
+        # rather than before it (a zoom done before the thumbnail render
+        # could otherwise get clobbered by that restore).
         try:
             utils.zoom_camera_to_selected(blank)
         except (ReferenceError, AttributeError):
             pass
-
-        bpy.context.scene.tp3d["o_time"] = (
-            f"Script ran for {time.time() - start_time:.0f} seconds"
-        )
 
     def _cleanup(self, context):
         wm = context.window_manager
@@ -3583,6 +3781,133 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
     def execute(self, context):
         return {"FINISHED"}
+
+
+class TP3D_OT_medal_holder_generator(bpy.types.Operator):
+    bl_idname = "tp3d.medal_holder_generator"
+    bl_label = "Medal Holder Generator"
+    bl_description = (
+        "Open the medal holder configurator — pick a shape and sizes with a live 3D preview, "
+        "then Send to Blender to create the plate"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    _timer = None
+    _result_path: str = ""
+    _server = None
+
+    def modal(self, context, event):
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        from . import picker_server as mp
+
+        request = mp.drain_latest_model_preview()
+        if request is not None:
+            self._build_preview(context, request)
+
+        rp = pathlib.Path(self._result_path)
+        if not (rp.exists() and rp.stat().st_size > 0):
+            return {'PASS_THROUGH'}
+
+        try:
+            data = json.loads(rp.read_text(encoding='utf-8'))
+            self._apply_result(context, data)
+        except Exception as exc:  # noqa: BLE001 - Wide exception catch for medal holder result application
+            import traceback
+            traceback.print_exc()
+            self.report({'ERROR'}, f"Medal holder generator: {exc}")
+        finally:
+            try:
+                rp.unlink()
+            except OSError:
+                pass
+            self._cleanup(context)
+
+        return {'FINISHED'}
+
+    def _build_preview(self, context, request):
+        from . import picker_server as mp
+        from .utils.accessories import medal_holder
+
+        # 'seq' is the page's own request counter -- echoed back so it can
+        # tell "my latest request is built" apart from "an older one just
+        # finished while my newer one is still queued".
+        seq = request.get('seq')
+        job = mp.model_preview_job()
+        job.update(status='running', message='')
+        try:
+            params = medal_holder.sanitize_params(request)
+            medal_holder.write_preview_glb(params, str(mp.model_preview_path()), context.scene.collection)
+        except Exception as exc:  # noqa: BLE001 - surfaced to the page instead of killing the modal
+            import traceback
+            traceback.print_exc()
+            job.update(status='error', message=str(exc), seq=seq)
+            return
+        job.update(status='done', version=job.get('version', 0) + 1, message='', seq=seq,
+                   **medal_holder.preview_info(params))
+
+    def invoke(self, context, event):
+        import tempfile
+
+        from . import picker_server as mp
+
+        self._result_path = str(
+            pathlib.Path(tempfile.gettempdir()) / 'trailprint_medalholder.json'
+        )
+        rp = pathlib.Path(self._result_path)
+        if rp.exists():
+            rp.unlink()
+
+        html_path = pathlib.Path(__file__).parent / 'generators' / 'medalHolderGenerator.html'
+        tp3d = context.scene.tp3d
+        self._server = mp.start_picker(
+            self._result_path,
+            html_path=html_path,
+            # The page's magnet-hole fields start from the scene's own
+            # Magnet Diameter/Height, same as the map tiles' Magnet Holes.
+            settings_state={'magnetDiameter': tp3d.magnetDiameter, 'magnetHeight': tp3d.magnetHeight},
+        )
+
+        wm = context.window_manager
+        # Shorter than the map pickers' 0.5 s -- this timer also drives the
+        # live preview, so it's what the user feels as input lag.
+        self._timer = wm.event_timer_add(0.1, window=context.window)
+        wm.modal_handler_add(self)
+        self.report({'INFO'}, "Medal holder generator open — adjust the model then click Send to Blender")
+        return {'RUNNING_MODAL'}
+
+    def _apply_result(self, context, data):
+        from .utils.accessories import medal_holder
+
+        params = medal_holder.sanitize_params(data)
+        name = str(data.get('name') or '').strip()[:60] or "MedalHolder"
+        plate, texts = medal_holder.build_objects(params, context.collection, name=name)
+        medal_holder.assign_scene_materials(plate, texts)
+
+        for obj in context.selected_objects:
+            obj.select_set(False)
+        cursor = context.scene.cursor.location.copy()
+        for obj in [plate] + [obj for _slot, obj in texts]:
+            obj.location = cursor
+            obj["Object type"] = "MEDAL_HOLDER"
+            obj["Addon"] = const.ADDON_NAME
+            obj["Version"] = const.ADDON_VERSION
+            obj.select_set(True)
+        context.view_layer.objects.active = plate
+        self.report({'INFO'}, f"Created medal holder \"{plate.name}\"")
+
+    def _cleanup(self, context):
+        wm = context.window_manager
+        if self._timer:
+            wm.event_timer_remove(self._timer)
+            self._timer = None
+        if self._server:
+            threading.Thread(target=self._server.shutdown, daemon=True).start()
+            self._server = None
+
+    def execute(self, context):
+        return {'FINISHED'}
 
 
 class TP3D_OT_special_collection(bpy.types.Operator):

@@ -679,6 +679,16 @@ def _draw_element_box(layout, props):
                     if props.col_wFlattenTop:
                         flatten_row.enabled = _elem_scm
                         flatten_row.prop(props, "col_wInsert")
+                        _insert_cap = max(
+                            0.0, props.minThickness - const.WATER_INSERT_MARGIN
+                        )
+                        if props.col_wInsert > _insert_cap:
+                            col.label(
+                                text=_(
+                                    "Insert is capped to {:.1f}mm (Extra Map Height - {}mm)"
+                                ).format(_insert_cap, const.WATER_INSERT_MARGIN),
+                                icon="INFO",
+                            )
 
         def _create_element_category(
             box,
@@ -1554,6 +1564,13 @@ class TP3D_MT_generators_menu(bpy.types.Menu):
             layout.operator(
                 "tp3d.terrain_dummy", text=_("Sliding Puzzle Generator"), icon="LOCKED"
             )
+        layout.separator()
+        layout.label(text=_("-- Experimental --"))
+        layout.operator(
+            "tp3d.medal_holder_generator",
+            text=_("Medal Holder Generator"),
+            icon="MESH_CIRCLE",
+        )
 
 
 def draw_tp3d_viewport_menu(self, context):

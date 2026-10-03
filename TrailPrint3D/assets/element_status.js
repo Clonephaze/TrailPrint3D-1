@@ -78,11 +78,17 @@ var TP3D_COMPOSITE_FLAGS = {
 // is just another single-flag category (see _LANDCOVER_SINGLE_FLAGS in
 // utils/ui_state.py), so the lookup must never apply here even though the
 // key string is shared between the two orders above.
+// A composite is on exactly when the N-panel's own master checkbox is
+// (show_water/show_roads, sent as ADVANCED_SETTINGS_STATE._compositeMaster,
+// see utils.build_element_toggle_states) -- its sub-flags only pick what's
+// included, so unticking all of them leaves the category on.
+function tp3dCompositeAnySubflag(key) {
+    return TP3D_COMPOSITE_FLAGS[key].subflags.some(function(f) { return !!ADVANCED_SETTINGS_STATE[f]; });
+}
 function tp3dCompositeIsActive(key) {
     if (tp3dIsWorldCover()) return false;
-    var def = TP3D_COMPOSITE_FLAGS[key];
-    return !!def && typeof ADVANCED_SETTINGS_STATE !== 'undefined'
-        && def.subflags.some(function(f) { return !!ADVANCED_SETTINGS_STATE[f]; });
+    if (!TP3D_COMPOSITE_FLAGS[key] || typeof ADVANCED_SETTINGS_STATE === 'undefined') return false;
+    return !!(ADVANCED_SETTINGS_STATE._compositeMaster || {})[key];
 }
 
 // Repaints every element with data-element-toggle="key" (this strip's chip
@@ -125,10 +131,11 @@ function tp3dRepaintCompositeCheckboxes(key) {
 }
 
 // Predicts what utils.apply_element_toggle will do server-side for a
-// composite category -- same remember-on-off / restore-on-on logic, kept
-// in ADVANCED_SETTINGS_STATE._compositeRemembered so a fresh page load and
-// a same-session chip click agree -- and applies it optimistically to
-// ADVANCED_SETTINGS_STATE + the modal's checkboxes.
+// composite category -- flip the master, remember the sub-flags on off,
+// fill them in on on if none are ticked -- kept in
+// ADVANCED_SETTINGS_STATE._compositeMaster/_compositeRemembered so a fresh
+// page load and a same-session chip click agree, and applies it
+// optimistically to ADVANCED_SETTINGS_STATE + the modal's checkboxes.
 function tp3dToggleElement(key) {
     TP3D_ELEMENT_STATE[key] = !TP3D_ELEMENT_STATE[key];
     tp3dRepaintElementToggle(key);
@@ -136,18 +143,25 @@ function tp3dToggleElement(key) {
     var def = tp3dIsWorldCover() ? null : TP3D_COMPOSITE_FLAGS[key];
     if (def && typeof ADVANCED_SETTINGS_STATE !== 'undefined') {
         ADVANCED_SETTINGS_STATE._compositeRemembered = ADVANCED_SETTINGS_STATE._compositeRemembered || {};
+        ADVANCED_SETTINGS_STATE._compositeMaster = ADVANCED_SETTINGS_STATE._compositeMaster || {};
+        var anySub = tp3dCompositeAnySubflag(key);
         if (tp3dCompositeIsActive(key)) {
-            var snapshot = {};
-            def.subflags.forEach(function(f) { snapshot[f] = !!ADVANCED_SETTINGS_STATE[f]; });
-            ADVANCED_SETTINGS_STATE._compositeRemembered[key] = snapshot;
-            def.subflags.forEach(function(f) { ADVANCED_SETTINGS_STATE[f] = false; });
+            if (anySub) {
+                var snapshot = {};
+                def.subflags.forEach(function(f) { snapshot[f] = !!ADVANCED_SETTINGS_STATE[f]; });
+                ADVANCED_SETTINGS_STATE._compositeRemembered[key] = snapshot;
+            }
+            ADVANCED_SETTINGS_STATE._compositeMaster[key] = false;
         } else {
-            var remembered = ADVANCED_SETTINGS_STATE._compositeRemembered[key] || {};
-            var hasRemembered = def.subflags.some(function(f) { return !!remembered[f]; });
-            if (hasRemembered) {
-                def.subflags.forEach(function(f) { ADVANCED_SETTINGS_STATE[f] = !!remembered[f]; });
-            } else {
-                ADVANCED_SETTINGS_STATE[def.bootstrap] = true;
+            ADVANCED_SETTINGS_STATE._compositeMaster[key] = true;
+            if (!anySub) {
+                var remembered = ADVANCED_SETTINGS_STATE._compositeRemembered[key] || {};
+                var hasRemembered = def.subflags.some(function(f) { return !!remembered[f]; });
+                if (hasRemembered) {
+                    def.subflags.forEach(function(f) { ADVANCED_SETTINGS_STATE[f] = !!remembered[f]; });
+                } else {
+                    ADVANCED_SETTINGS_STATE[def.bootstrap] = true;
+                }
             }
         }
         tp3dRepaintCompositeCheckboxes(key);
@@ -298,11 +312,9 @@ function tp3dAttachSubFlyout(wrap, chip, key) {
             input.disabled = !active;
             if (!active) label.classList.add('locked');
             input.addEventListener('change', function() {
+                // Only picks what's included -- the element stays on even with
+                // every sub-category unticked (tp3dCompositeIsActive).
                 ADVANCED_SETTINGS_STATE[field.key] = input.checked;
-                // Unticking the last sub-category turns the whole element off
-                // (and ticking one back on turns it on), mirroring the chip.
-                TP3D_ELEMENT_STATE[key] = tp3dCompositeIsActive(key);
-                tp3dRepaintElementToggle(key);
                 if (typeof tp3dSendAdvancedUpdate === 'function') tp3dSendAdvancedUpdate(field.key, input.checked);
             });
             label.appendChild(input);

@@ -1216,7 +1216,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_("Flatten Water Surface"),
         default=True,
         description=_tip(
-            "Flatten each water body's top surface to its own median height, giving it a flat bottom instead of following every terrain bump. Only applies in Separate Objects and Single-Color mode -- has no effect in Paint on Map mode"
+            "Flatten each water body's surface to its own median height instead of following every terrain bump. In Paint on Map mode (faces or texture) the terrain itself is flattened under the water"
         ),
     )  # type: ignore
     col_wInsert: FloatProperty(
@@ -1224,7 +1224,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=0,
         min=0.0,
         description=_tip(
-            "Sink the water piece this many mm lower in Z (its cutout in the terrain goes the same amount deeper, thickness unchanged). Only applies in Separate Objects and Single-Color mode"
+            "Sink the water this many mm lower in Z. In Single-Color mode the water piece and its cutout go deeper (thickness unchanged); in Paint on Map mode the flattened water is recessed into a pocket with vertical, land-coloured walls"
         ),
     )  # type: ignore
     col_wBodiesActive: BoolProperty(

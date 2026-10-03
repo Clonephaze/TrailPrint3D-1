@@ -259,6 +259,24 @@ def subtract(geom, neg_geom):
     return geom.difference(neg_geom)
 
 
+def _taubin_ring_pinned(pts, pinned_mask, factor=0.5, mu=-0.5, steps=5):
+    """Taubin-smooth a closed ring (first == last), holding pinned vertices
+    fixed throughout. With no pinned vertices this reproduces
+    shapelysmooth.taubin_smooth exactly: each step is a *factor* Laplacian
+    pass followed by a *mu* pass, neighbours wrapping around the ring.
+    Returns a list of (x, y) tuples, closed like the input.
+    """
+    ring = np.asarray(pts[:-1], dtype=np.float64)
+    free = ~np.asarray(pinned_mask[:-1], dtype=bool)
+    for _ in range(steps):
+        for weight in (factor, mu):
+            avg = (np.roll(ring, 1, axis=0) + np.roll(ring, -1, axis=0)) * 0.5
+            ring[free] += weight * (avg[free] - ring[free])
+    out = [tuple(p) for p in ring.tolist()]
+    out.append(out[0])
+    return out
+
+
 def _smooth_polygon_taubin_pinned(
     geom, is_pinned, pin_target_points=None, debug_name="smooth", **taubin_kwargs
 ):
@@ -274,11 +292,9 @@ def _smooth_polygon_taubin_pinned(
     corners). DEBUG only: dumped once as reference markers so you can see
     where boundary vertices are supposed to land.
     debug_name -- label prefix for the DEBUG markers (e.g. the element kind).
-    taubin_kwargs -- passed straight through to shapelysmooth.taubin_smooth
-    (factor, mu, steps).
+    taubin_kwargs -- Taubin parameters (factor, mu, steps), same meaning and
+    defaults as shapelysmooth.taubin_smooth.
     """
-    from shapelysmooth import taubin_smooth
-
     _require_shapely()
 
     if bpy.app.debug and pin_target_points:
@@ -326,9 +342,11 @@ def _smooth_polygon_taubin_pinned(
             )
             _debug_vert_counter[0] += len(pts) - 1
 
-        smoothed = taubin_smooth(pts, **taubin_kwargs)
-
-        result = [pts[i] if pinned_mask[i] else smoothed[i] for i in range(len(pts))]
+        # Pinned vertices must stay fixed on EVERY iteration, not just be
+        # snapped back afterwards: otherwise they drift with the ring during
+        # smoothing, drag their free neighbours along, and restoring them at
+        # the end leaves a thin spike along the map edge.
+        result = _taubin_ring_pinned(pts, pinned_mask, **taubin_kwargs)
         result[-1] = result[0]  # guard against float drift breaking closure
         return result
 
@@ -1433,11 +1451,3 @@ def group_boundary_loops(edges):
 
     return loops
 
-
-def get_map_polygon(obj) -> Polygon | MultiPolygon | None:
-    """Retrieve the original 2D Shapely polygon stored on a map object."""
-    from shapely import wkt
-
-    if obj and "map_polygon_wkt" in obj:
-        return wkt.loads(obj["map_polygon_wkt"])
-    return None
