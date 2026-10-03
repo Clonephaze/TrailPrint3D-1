@@ -600,17 +600,6 @@ def get_geotiff_footprint(filepath):
     return _footprint_from_header(read_geotiff(filepath, header_only=True))
 
 
-def get_geotiff_bounds(filepath):
-    """Return the lat/lon coverage extent of a GeoTIFF DEM as {"north","south","east","west"}
-    -- the axis-aligned bounding box of get_geotiff_footprint()'s four true corners. Used
-    for tile lookups (sample_tile_index), where a cheap "is this point roughly in this
-    tile" test is enough; see get_geotiff_footprint's own docstring for why the overlay
-    drawn on a picker map uses the actual (possibly slightly rotated) corners instead.
-    """
-    corners = get_geotiff_footprint(filepath)
-    lats = [lat for lat, _lon in corners]
-    lons = [lon for _lat, lon in corners]
-    return {"north": max(lats), "south": min(lats), "east": max(lons), "west": min(lons)}
 
 
 def build_tile_index(folder):
