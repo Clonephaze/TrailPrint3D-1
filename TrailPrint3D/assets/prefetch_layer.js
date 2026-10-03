@@ -63,15 +63,14 @@ var prefetchTip = document.createElement('div');
 prefetchTip.id = 'prefetchTip';
 map.getContainer().appendChild(prefetchTip);
 
-// The Prefetch/Reset buttons live at the right end of the element status bar.
+// The Prefetch button lives at the right end of the element status bar.
 // tp3dRenderElementStatus only removes .element-chip-wrap nodes, so they survive a
 // re-render (same reason the Settings gear does).
 (function buildPrefetchBar() {
     var bar = document.createElement('div');
     bar.className = 'prefetch-bar';
     bar.innerHTML =
-        '<button type="button" id="prefetchBtn" class="prefetch-bar-btn" title="Fetch and cache the enabled map elements for the drawn area, then show them on the map. Click an element to leave it out.">Prefetch Elements</button>'
-        + '<button type="button" id="resetPrefetch" class="prefetch-bar-btn" title="Enable every disabled element again" style="display:none">Reset</button>';
+        '<button type="button" id="prefetchBtn" class="prefetch-bar-btn" title="Fetch and cache the enabled map elements for the drawn area, then show them on the map. Click an element to leave it out.">Prefetch Elements</button>';
     document.getElementById('elementStatus').appendChild(bar);
 })();
 
@@ -315,7 +314,6 @@ function prefetchLegendRow(kind, sub, label, color, indent) {
 // click the count to switch every element of it off/on for generation. Kinds
 // with sub-categories (Roads) get an indented row per sub-category below.
 function renderPrefetchInfo() {
-    document.getElementById('resetPrefetch').style.display = Object.keys(prefetchExcluded).length ? '' : 'none';
     var info = document.getElementById('prefetchInfo');
     var kinds = Object.keys(prefetchKindCounts);
     if (!kinds.length) { info.style.display = 'none'; info.innerHTML = ''; return; }
@@ -510,17 +508,6 @@ document.getElementById('clearPrefetch').addEventListener('click', function() {
     clearPrefetch();
     prefetchPersist();
 });
-
-// Reset: switch every disabled element back on.
-function prefetchReset() {
-    var ids = Object.keys(prefetchExcluded);
-    prefetchExcluded = {};
-    ids.forEach(prefetchRestyle);
-    renderPrefetchInfo();
-    prefetchPersist();
-}
-
-document.getElementById('resetPrefetch').addEventListener('click', prefetchReset);
 
 // ---- Shift/Alt+drag region toggle ---------------------------------------------
 // Hold Shift OR Alt and drag a box over the map to bulk-toggle every

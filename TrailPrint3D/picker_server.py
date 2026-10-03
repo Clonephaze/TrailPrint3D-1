@@ -190,6 +190,8 @@ _RECT_EDITOR_JS_PATH = _ASSETS_DIR / 'rect_editor.js'
 _PREFETCH_JS_PATH = _ASSETS_DIR / 'prefetch_layer.js'
 _SHAPE_EXTRAS_JS_PATH = _ASSETS_DIR / 'shape_extras.js'
 _HISTORY_PANEL_JS_PATH = _ASSETS_DIR / 'history_panel.js'
+_TUTORIAL_JS_PATH = _ASSETS_DIR / 'tutorial.js'
+_MAP_TUTORIALS_JS_PATH = _ASSETS_DIR / 'map_tutorials.js'
 
 _element_icons_js_cache: str | None = None
 
@@ -287,6 +289,47 @@ def _write_history(path: pathlib.Path, entries: list) -> None:
         path.write_text(json.dumps(entries), encoding='utf-8')
     except OSError as e:
         print(f"[TP3D picker] Failed to write history {path}: {e}")
+
+
+_TUTORIAL_PROGRESS_PATH = pathlib.Path(const.tutorial_progress_path)
+
+# Sample files bundled with the addon (e.g. sample GPX tracks for tutorials),
+# served read-only by GET /get_sample_file?name=<file name>.
+_SAMPLE_FILES_DIR = pathlib.Path(__file__).parent / 'sample_files'
+_SAMPLE_FILE_TYPES = {'.gpx': 'application/gpx+xml', '.geojson': 'application/geo+json',
+                      '.json': 'application/json', '.svg': 'image/svg+xml'}
+
+
+def _sample_file_path(name: str) -> pathlib.Path | None:
+    """The bundled sample file called *name*, or None if there isn't one.
+    Only plain file names directly inside sample_files/ resolve -- anything
+    with a directory part is rejected, so this can't read outside it."""
+    if not name or pathlib.Path(name).name != name:
+        return None
+    path = _SAMPLE_FILES_DIR / name
+    return path if path.is_file() else None
+
+
+def _read_tutorial_progress() -> dict:
+    """{tutorial id: True} for every tutorial the user has completed (see
+    assets/tutorial.js). Shared by every picker page, so a tutorial shared
+    by a free/premium page pair counts as done in both."""
+    try:
+        data = json.loads(_TUTORIAL_PROGRESS_PATH.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _mark_tutorial_complete(tutorial_id: str) -> dict:
+    progress = _read_tutorial_progress()
+    progress[tutorial_id] = True
+    try:
+        _TUTORIAL_PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _TUTORIAL_PROGRESS_PATH.write_text(json.dumps(progress), encoding='utf-8')
+    except OSError as e:
+        print(f"[TP3D picker] Failed to write tutorial progress {_TUTORIAL_PROGRESS_PATH}: {e}")
+    return progress
 
 
 def _delete_history_render(entry_id: str) -> None:
@@ -627,6 +670,37 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path.startswith('/get_sample_file?'):
+            # Lets a page load a bundled sample (e.g. the GPX tutorial's
+            # "Use sample GPX file" button, assets/map_tutorials.js) --
+            # browser pages can't read the addon folder directly.
+            from urllib.parse import parse_qs, urlparse
+            query = parse_qs(urlparse(self.path).query)
+            sample_path = _sample_file_path(query.get('name', [''])[0])
+            if sample_path is None:
+                self.send_response(404)
+                self.end_headers()
+                return
+            try:
+                body = sample_path.read_bytes()
+            except OSError:
+                self.send_response(404)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header('Content-Type', _SAMPLE_FILE_TYPES.get(sample_path.suffix.lower(), 'application/octet-stream'))
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == '/get_tutorial_progress':
+            body = json.dumps(_read_tutorial_progress()).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith('/get_history_render?'):
             from urllib.parse import parse_qs, urlparse
             query = parse_qs(urlparse(self.path).query)
@@ -698,6 +772,8 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__RECT_EDITOR_JS__', _RECT_EDITOR_JS_PATH.read_text(encoding='utf-8'))
             .replace('__PREFETCH_JS__', _PREFETCH_JS_PATH.read_text(encoding='utf-8'))
             .replace('__SHAPE_EXTRAS_JS__', _SHAPE_EXTRAS_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__TUTORIAL_JS__', _TUTORIAL_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__MAP_TUTORIALS_JS__', _MAP_TUTORIALS_JS_PATH.read_text(encoding='utf-8'))
             .encode('utf-8')
         )
         self.send_response(200)
@@ -810,6 +886,27 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', '2')
             self.end_headers()
             self.wfile.write(b'ok')
+            return
+        if self.path == '/complete_tutorial':
+            # assets/tutorial.js's menu -- a tutorial was run to its last
+            # step. Sent with fetch keepalive, since a tutorial's last step
+            # can be the very "Send to Blender" click that closes the window.
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            try:
+                tutorial_id = json.loads(body).get('id')
+            except (json.JSONDecodeError, AttributeError):
+                tutorial_id = None
+            if isinstance(tutorial_id, str) and tutorial_id:
+                progress = _mark_tutorial_complete(tutorial_id)
+            else:
+                progress = _read_tutorial_progress()
+            resp = json.dumps(progress).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp)))
+            self.end_headers()
+            self.wfile.write(resp)
             return
         if self.path == '/save_history_entry':
             # assets/history_panel.js's tp3dPushHistory -- called by each

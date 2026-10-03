@@ -239,7 +239,7 @@ var COMPOSITE_ELEMENTS = {
         numberFields: [
             { key: 'elSMultiplier', label: 'Width Multiplier', step: 0.1, min: 0 },
             { key: 'elSHeight', label: 'Height', step: 0.05, min: 0 },
-            { key: 'elSCutTolerance', label: 'Cut Tolerance', step: 0.05, min: 0 }
+            { key: 'elSCutTolerance', label: 'Cut Tolerance', step: 0.05, min: 0, singleExtruderOnly: true }
         ]
     }
 };
@@ -376,7 +376,23 @@ function tp3dBuildNumberField(field) {
     });
     wrap.appendChild(tp3dWithPreview(label, field.preview, field.previewCaption));
     wrap.appendChild(input);
+    if (field.singleExtruderOnly) {
+        wrap.setAttribute('data-single-extruder-only', '');
+        tp3dApplySingleExtruderLock(wrap);
+    }
     return wrap;
+}
+
+// Fields flagged singleExtruderOnly (e.g. the Roads cut tolerance, which
+// panels.py hides in Paint mode) are greyed out rather than hidden while
+// elementMode isn't SINGLECOLORMODE_REMESH.
+function tp3dApplySingleExtruderLock(wrap) {
+    var locked = SETTINGS_STATE.elementMode !== 'SINGLECOLORMODE_REMESH';
+    wrap.classList.toggle('locked', locked);
+    wrap.querySelector('input').disabled = locked;
+}
+function tp3dRefreshSingleExtruderFields() {
+    document.querySelectorAll('[data-single-extruder-only]').forEach(tp3dApplySingleExtruderLock);
 }
 
 // *compositeKey*, when given, marks this checkbox as one of a composite
@@ -472,8 +488,8 @@ function tp3dBuildCompositeElementCard(key) {
 }
 
 // Water card's Flatten Water Surface checkbox + Insert (mm) field --
-// mirrors panels.py's flatten_row, where Insert only shows while
-// col_wFlattenTop is on.
+// Insert only applies while col_wFlattenTop is on, so it's greyed out
+// (disabled) rather than hidden while flattening is off.
 function tp3dBuildWaterFlattenFields() {
     var wrap = document.createElement('div');
     var flatten = tp3dBuildCheckboxField({
@@ -496,7 +512,8 @@ function tp3dBuildWaterFlattenFields() {
     note.style.color = '#e0b050';
     function refresh() {
         var flat = !!ADVANCED_SETTINGS_STATE.colWFlattenTop;
-        insert.style.display = flat ? '' : 'none';
+        insertInput.disabled = !flat;
+        insert.classList.toggle('locked', !flat);
         var minT = parseFloat(MAP_TAB_CONTROL_VALUES.minThickness != null
             ? MAP_TAB_CONTROL_VALUES.minThickness : SETTINGS_STATE.minThickness);
         var cap = Math.max(0, minT - TP3D_WATER_INSERT_MARGIN);
@@ -753,15 +770,18 @@ function tp3dBuildElementSourceSwitch() {
 // 'elementMode' key (now part of _SETTINGS_ROW_FIELDS, same whitelist
 // elementSource itself uses) -- no poll-and-resync needed here the way the
 // source switch needs one: unlike elementSource, changing elementMode
-// doesn't change which fields/cards the rest of this tab shows, so there's
-// nothing else on this page that needs to react to it.
+// doesn't change which fields/cards the rest of this tab shows -- it only
+// greys singleExtruderOnly fields in or out (tp3dRefreshSingleExtruderFields).
+// Visual example behind the row's "?" button (also highlighted by the
+// "Add Colors to the map" tutorial, assets/map_tutorials.js).
+var ELEMENT_MODE_PREVIEW = 'https://trailprint3d.com/images/howto/PaintVsSingleExtruder.webp';
 function tp3dBuildElementModeSwitch() {
     var row = document.createElement('div');
     row.className = 'adv-field-row element-mode-row';
 
     var label = document.createElement('label');
     label.textContent = 'Paint or Single Extruder Mode';
-    row.appendChild(label);
+    row.appendChild(tp3dWithPreview(label, ELEMENT_MODE_PREVIEW));
 
     var isWorldCover = tp3dIsWorldCover();
     var wrap = document.createElement('div');
@@ -777,6 +797,7 @@ function tp3dBuildElementModeSwitch() {
             if (SETTINGS_STATE.elementMode === opt[0]) return;
             SETTINGS_STATE.elementMode = opt[0];
             wrap.querySelectorAll('button').forEach(function(b) { b.classList.toggle('active', b === btn); });
+            tp3dRefreshSingleExtruderFields();
             tp3dSendMapField({ key: 'elementMode', endpoint: 'update_setting' }, opt[0]);
         });
         wrap.appendChild(btn);

@@ -105,8 +105,8 @@
             </div>
         </div>
         <div>
-            <div style="font-size: 12px; margin-bottom: 4px; color: #aaa;">Resolution: <span id="resolutionValue" style="color: #fff; font-weight: bold;">4</span></div>
-            <input type="range" id="resolutionSlider" min="1" max="10" step="1" value="4" title="Terrain mesh resolution" style="width: 100%; accent-color: #007bff;">
+            <div style="font-size: 12px; margin-bottom: 4px; color: #aaa;">Resolution: <span id="resolutionValue" style="color: #fff; font-weight: bold;">8</span></div>
+            <input type="range" id="resolutionSlider" min="1" max="10" step="1" value="8" title="Terrain mesh resolution" style="width: 100%; accent-color: #007bff;">
         </div>
         <hr class="sidebar-divider">
         <!-- Moved into the Settings popup's "Puzzle" tab at page load (see
@@ -1266,7 +1266,7 @@
                 width: parseFloat(document.getElementById('widthInput').value) || 0,
                 rows: parseInt(document.getElementById('rowsInput').value) || 1,
                 cols: parseInt(document.getElementById('colsInput').value) || 1,
-                resolution: parseInt(document.getElementById('resolutionSlider').value) || 4,
+                resolution: parseInt(document.getElementById('resolutionSlider').value) || 8,
                 puzzleSeed: document.getElementById('puzzleSeedInput').value || '',
                 puzzleCornerRadius: parseFloat(document.getElementById('puzzleCornerRadiusInput').value) || 0,
                 tolerance: tp3dPuzzleToleranceValue(),

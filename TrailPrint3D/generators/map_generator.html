@@ -32,10 +32,13 @@
 </head>
 <body>
     <div id="sidebar">
-        <div style="font-weight: bold; font-size: 14px; margin-bottom: 10px;"><a href="https://trailprint3d.com" target="_blank" rel="noopener" title="Open trailprint3d.com" style="color: inherit; text-decoration: none;">TrailPrint3D</a></div>
+        <div class="sidebar-title-row">
+            <a href="https://trailprint3d.com" target="_blank" rel="noopener" title="Open trailprint3d.com" style="color: inherit; text-decoration: none;">TrailPrint3D</a>
+            <button id="tutorialBtn" class="tutorial-btn" type="button" title="Step-by-step tutorials">Tutorial</button>
+        </div>
         <div>
-            <div style="font-size: 12px; margin-bottom: 4px; color: #aaa;">Resolution: <span id="resolutionValue" style="color: #fff; font-weight: bold;">4</span></div>
-            <input type="range" id="resolutionSlider" min="1" max="10" step="1" value="4" style="width: 100%; accent-color: #007bff;">
+            <div style="font-size: 12px; margin-bottom: 4px; color: #aaa;">Resolution: <span id="resolutionValue" style="color: #fff; font-weight: bold;">8</span></div>
+            <input type="range" id="resolutionSlider" min="1" max="10" step="1" value="8" style="width: 100%; accent-color: #007bff;">
         </div>
         <div class="field-row">
             <label for="objSizeInput">Size (mm)</label>
@@ -1092,7 +1095,7 @@
                 geojson_paths: geojsonPaths,
                 svg_path: svgShapePath,
                 excluded_ids: tp3dPrefetchExcludedIds(),
-                resolution: parseInt(document.getElementById('resolutionSlider').value) || 4,
+                resolution: parseInt(document.getElementById('resolutionSlider').value) || 8,
                 objSize: parseFloat(document.getElementById('objSizeInput').value) || 100
             };
 
@@ -1141,6 +1144,12 @@
         restoreState();
         loadExistingMaps();
         loadExistingTrails();
+
+        // Tutorial engine + this page's tutorials (assets/tutorial.js and
+        // assets/map_tutorials.js) -- last, since the steps hook into `map`
+        // and the handlers set up above.
+        __TUTORIAL_JS__
+        __MAP_TUTORIALS_JS__
     </script>
 </body>
 </html>

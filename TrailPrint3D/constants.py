@@ -90,6 +90,13 @@ generation_history_dir = os.path.join(bpy.utils.user_resource('CONFIG'), "TP3D-h
 # already shut down.
 generation_history_thumbnails_dir = os.path.join(generation_history_dir, "thumbnails")
 
+# Which picker-page tutorials (assets/tutorial.js) the user has completed --
+# a JSON object of {tutorial id: true}, see picker_server.py's
+# /get_tutorial_progress & /complete_tutorial. Kept here rather than in the
+# browser's own storage because each picker window gets a fresh, throwaway
+# browser profile.
+tutorial_progress_path = os.path.join(generation_history_dir, "tutorials_completed.json")
+
 
 def _ensure_dirs():
     """Create addon cache/preset directories. Call from register() only."""

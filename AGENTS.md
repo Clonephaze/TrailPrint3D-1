@@ -35,6 +35,10 @@ TrailPrint3D/                 - Blender addon package (installed as a Blender ex
     puzzleGenerator.html        - free Puzzle Configurator
     medalHolderGenerator.html   - Medal Holder Generator (3D-preview page)
   assets/                      - .blend asset libraries (connectors, holder, other) + progress-overlay SVG icons
+  sample_files/                - bundled sample files, e.g. GPX tracks (for tutorials and example generations)
+    BetweenLakes.gpx            - Lake Como to Lake Ceresio route (komoot export)
+    germany.json                - Germany country border as GeoJSON (Natural Earth admin-0)
+    star.svg                    - five-pointed star, sample SVG map shape (made for TrailPrint3D)
   wheels/                      - bundled Shapely wheels (per-platform)
   utils/
     __init__.py                - re-exports from submodules (wildcards OK here, see §10)

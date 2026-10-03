@@ -78,11 +78,20 @@ var TP3D_COMPOSITE_FLAGS = {
 // is just another single-flag category (see _LANDCOVER_SINGLE_FLAGS in
 // utils/ui_state.py), so the lookup must never apply here even though the
 // key string is shared between the two orders above.
+// Also requires the N-panel's own master checkbox (show_water/show_roads, sent
+// as ADVANCED_SETTINGS_STATE._compositeMaster) -- generation and prefetch skip
+// the category without it, whatever its sub-flags say.
+function tp3dCompositeMasterOn(key) {
+    var master = (ADVANCED_SETTINGS_STATE._compositeMaster || {})[key];
+    return master === undefined || !!master;
+}
+function tp3dCompositeAnySubflag(key) {
+    return TP3D_COMPOSITE_FLAGS[key].subflags.some(function(f) { return !!ADVANCED_SETTINGS_STATE[f]; });
+}
 function tp3dCompositeIsActive(key) {
     if (tp3dIsWorldCover()) return false;
-    var def = TP3D_COMPOSITE_FLAGS[key];
-    return !!def && typeof ADVANCED_SETTINGS_STATE !== 'undefined'
-        && def.subflags.some(function(f) { return !!ADVANCED_SETTINGS_STATE[f]; });
+    return !!TP3D_COMPOSITE_FLAGS[key] && typeof ADVANCED_SETTINGS_STATE !== 'undefined'
+        && tp3dCompositeMasterOn(key) && tp3dCompositeAnySubflag(key);
 }
 
 // Repaints every element with data-element-toggle="key" (this strip's chip
@@ -141,7 +150,12 @@ function tp3dToggleElement(key) {
             def.subflags.forEach(function(f) { snapshot[f] = !!ADVANCED_SETTINGS_STATE[f]; });
             ADVANCED_SETTINGS_STATE._compositeRemembered[key] = snapshot;
             def.subflags.forEach(function(f) { ADVANCED_SETTINGS_STATE[f] = false; });
+        } else if (!tp3dCompositeMasterOn(key) && tp3dCompositeAnySubflag(key)) {
+            // Off only via the N-panel master: switching it on keeps the
+            // sub-flags already chosen there.
+            ADVANCED_SETTINGS_STATE._compositeMaster[key] = true;
         } else {
+            if (ADVANCED_SETTINGS_STATE._compositeMaster) ADVANCED_SETTINGS_STATE._compositeMaster[key] = true;
             var remembered = ADVANCED_SETTINGS_STATE._compositeRemembered[key] || {};
             var hasRemembered = def.subflags.some(function(f) { return !!remembered[f]; });
             if (hasRemembered) {

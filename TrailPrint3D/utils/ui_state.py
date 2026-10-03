@@ -100,9 +100,9 @@ def build_fetch_items(map_km=None):
                 or tp3d.col_wMinorActive
                 or tp3d.col_wMajorActive
             ) and map_km <= const.WATER_MAXSIZE
-            active = water_feats or (
+            active = tp3d.show_water and (water_feats or (
                 tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE
-            )
+            ))
             max_size = None
         elif key == "roads":
             from ..props import get_road_active
@@ -112,7 +112,9 @@ def build_fetch_items(map_km=None):
             from .osm.roads import TIER_TAGS
 
             _allowed = allowed_road_tiers(map_km)
-            active = any(get_road_active(tp3d, t) and t in _allowed for t in TIER_TAGS)
+            active = tp3d.show_roads and any(
+                get_road_active(tp3d, t) and t in _allowed for t in TIER_TAGS
+            )
             max_size = None  # mapsize already folded into `active` via allowed_road_tiers
         else:
             active = bool(flag and getattr(tp3d, flag, 0) == 1)
@@ -174,6 +176,12 @@ _ELEMENT_COMPOSITE_FLAGS = {
     ),
 }
 
+# The N-panel's own master checkbox for each composite -- generation and
+# prefetch only use a composite's sub-flags while this is on too (e.g.
+# props.any_road_active), so the picker treats it as part of the category's
+# on/off state and switches it on whenever the picker turns the category on.
+_COMPOSITE_MASTER_FLAGS = {"water": "show_water", "roads": "show_roads"}
+
 
 def _road_subflags():
     """Road tier ids in display order -- the 'roads' composite's sub-flags.
@@ -229,7 +237,9 @@ def build_element_toggle_states(tp3d=None):
     for key, attr in _ELEMENT_SINGLE_FLAGS.items():
         states[key] = bool(getattr(tp3d, attr))
     for key, (subflags, _) in _ELEMENT_COMPOSITE_FLAGS.items():
-        states[key] = any(getattr(tp3d, f) for f in subflags)
+        states[key] = bool(getattr(tp3d, _COMPOSITE_MASTER_FLAGS[key])) and any(
+            getattr(tp3d, f) for f in subflags
+        )
     from ..props import any_road_active
 
     states["roads"] = any_road_active(tp3d)
@@ -276,11 +286,17 @@ def apply_element_toggle(tp3d, key):
         return  # 'elevation' or an unrecognized key -- nothing to toggle
 
     remember_key = f"_toggle_remember_{key}"
-    if any(_get_composite_flag(tp3d, key, f) for f in subflags):
+    master = _COMPOSITE_MASTER_FLAGS[key]
+    any_sub = any(_get_composite_flag(tp3d, key, f) for f in subflags)
+    if getattr(tp3d, master) and any_sub:
         tp3d[remember_key] = [bool(_get_composite_flag(tp3d, key, f)) for f in subflags]
         for f in subflags:
             _set_composite_flag(tp3d, key, f, False)
     else:
+        # Off only via the N-panel master: keep the sub-flags already chosen.
+        setattr(tp3d, master, True)
+        if any_sub:
+            return
         remembered = tp3d.get(remember_key)
         if remembered and any(remembered):
             for f, v in zip(subflags, remembered):
@@ -564,6 +580,10 @@ def build_advanced_settings_state(tp3d=None):
         tp3d = bpy.context.scene.tp3d
     state = {f["key"]: _read_advanced_field(tp3d, f) for f in _ADVANCED_SETTINGS_FIELDS}
     state["_compositeRemembered"] = build_composite_remembered_state(tp3d)
+    # Same reserved-key idea: the N-panel's per-category master checkbox
+    # (see _COMPOSITE_MASTER_FLAGS), which the page's tp3dCompositeIsActive
+    # needs to agree with build_element_toggle_states.
+    state["_compositeMaster"] = {k: bool(getattr(tp3d, a)) for k, a in _COMPOSITE_MASTER_FLAGS.items()}
     return state
 
 
