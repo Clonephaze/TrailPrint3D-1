@@ -151,7 +151,7 @@ def smooth_terrain_top_z(x, y, z, iterations=2):
     # Box-blur via edge-padded shifts: pad the grid by 1 cell (replicating
     # the border) so every cell's 8 neighbours are defined, then average
     # the 9 shifted copies of the grid.
-    for _ in range(iterations):
+    for _each in range(iterations):
         padded = np.pad(grid, 1, mode="edge")
         acc = np.zeros_like(grid)
         for dy in (-1, 0, 1):
@@ -330,9 +330,6 @@ def coloring_main(
         build_osm_nodes,
         extract_multipolygon_bodies,
     )
-    from .scene import (
-        show_message_box,  # deferred to avoid circular import at load time
-    )
 
     _t_color = time.time()  # master timer: whole coloring_main
     _t_tiles_total = 0.0  # accumulated OSM fetch + Shapely ring building
@@ -426,6 +423,8 @@ def coloring_main(
     _dbg_filtered_small = []  # polygons dropped for being below col_Area (debug only)
 
     scaleHor = gen.runtime.sScaleHor
+    if scaleHor is None:
+        raise ValueError(_rpt("scaleHor is not set"))
     streamWidthMultiplier = bpy.context.scene.tp3d.col_wStreamWidth
     half_width = 1.0 * scaleHor * 0.02 * streamWidthMultiplier
 
@@ -485,9 +484,14 @@ def coloring_main(
         data = []
         try:
             if prefetched_tiles is not None:
-                if tile_result is None:
+                if (
+                    tile_result is None
+                    or not isinstance(tile_result, tuple)
+                    or len(tile_result) != 2
+                ):
                     continue
-                resp, from_cache = tile_result
+                resp = tile_result[0]
+                from_cache = tile_result[1]
                 if not resp:
                     continue
                 src = "cache" if from_cache else "Overpass"
@@ -1372,7 +1376,7 @@ def _snap_shoreline_verts(mw, top_faces, polygon):
         f: _xy_area(f) for v in best for f in v.link_faces if f in top_set
     }
     snapped = {}
-    for v, (_, x, y, k) in sorted(best.items(), key=lambda it: it[1][0]):
+    for v, (_unused, x, y, k) in sorted(best.items(), key=lambda it: it[1][0]):
         faces = [f for f in v.link_faces if f in top_set]
         old = v.co.copy()
         w = mw @ v.co
@@ -1562,9 +1566,14 @@ def effective_water_insert(tp3d):
     if tp3d.col_wInsert > cap:
         print(f"  [water insert] {tp3d.col_wInsert}mm capped to {cap}mm (Extra Map Height {tp3d.minThickness}mm)")
         # add_warning collapses duplicates, so calling this per water body/tile is fine
+        water_insert = tp3d.col_wInsert
+        extra_map_height = _const.WATER_INSERT_MARGIN
         _progress.WarningsOverlay.add_warning(
-            f"Water Insert {tp3d.col_wInsert:g}mm is deeper than Extra Map Height allows "
-            f"-- capped to {cap:g}mm (Extra Map Height - {_const.WATER_INSERT_MARGIN:g}mm)",
+            _rpt("Water Insert {water_insert:g}mm is deeper than Extra Map Height allows -- capped to {cap:g}mm (Extra Map Height -{extra_map_height:g}mm)").format(
+                water_insert=water_insert,
+                cap=cap,
+                extra_map_height=extra_map_height,
+            ),
             "warn",
         )
     return min(tp3d.col_wInsert, cap)
@@ -1576,7 +1585,9 @@ def _flatten_painted_water(gen: GenerationContext, map_obj, polygon, mat_index=N
     re-snap any trail curve that crosses it -- the trail was raycast onto the
     terrain before the elements were built and would otherwise float above (or
     sink into) the new water level."""
-    from .mesh_ops import RaycastCurveToMesh  # deferred to avoid circular import at load time
+    from .mesh_ops import (
+        RaycastCurveToMesh,  # deferred to avoid circular import at load time
+    )
 
     insert = effective_water_insert(bpy.context.scene.tp3d)
     boxes = flatten_terrain_water(
@@ -1697,7 +1708,6 @@ def plateInsert(plate, map):
     approach only worked when normal-based bottom selection happened to
     succeed.
     """
-    from mathutils import Vector
     from shapely import wkt
     from shapely.affinity import rotate as shp_rotate
 
@@ -2202,7 +2212,6 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
     from .mesh_ops import (  # deferred to avoid circular import at load time  # deferred to avoid circular import at load time
         merge_with_map,
         projection,
-        recalculateNormals,
     )
     from .osm.gen import (
         fetch_coastline_ways,  # deferred to avoid circular import at load time
