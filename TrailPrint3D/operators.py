@@ -31,7 +31,7 @@ class TP3D_OT_run_generation(bpy.types.Operator):
     bl_idname = "tp3d.run_generation"
     bl_label = _("Generate")
     bl_description = _tip("Generate the Path and the Map with current Settings")
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
     def poll(cls, context):
@@ -965,12 +965,12 @@ class TP3D_OT_bottom_mark(bpy.types.Operator):
         # Marking a whole puzzle (dozens of pieces, two booleans each) takes
         # a while -- show how many are done instead of a frozen viewport.
         overlay = None
-        if len(targets) > 1:
+        if len(selected_objects) > 1:
             overlay = _progress.ProgressOverlay.get()
             overlay.start()
         try:
-            n_targets = len(targets)
-            for idx, zobj in enumerate(targets):
+            n_targets = len(selected_objects)
+            for idx, zobj in enumerate(selected_objects):
                 if overlay is not None:
                     if _progress.SubprocessProgress.get().is_cancel_requested():
                         break
@@ -3023,9 +3023,6 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             if frame_terrain_requested
             else None,
             keep_terrain_obj=frame_terrain_requested,
-            overlay=overlay,
-            progress_start=0.75,
-            progress_end=0.85,
         )
 
         if trails:
@@ -3313,19 +3310,20 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         from . import temp
         from .utils.shape_capabilities import PLATE_MODES_BY_SHAPE, valid_layouts
 
-        plate_mode = data.get('plate_mode') or 'NONE'
-        valid_plates = PLATE_MODES_BY_SHAPE.get(props.shape, ('NONE',))
-        if plate_mode not in valid_plates or (plate_mode == 'SHELL' and not temp.PREMIUMVERSION):
-            plate_mode = 'NONE'
+        plate_mode = data.get("plate_mode") or "NONE"
+        valid_plates = PLATE_MODES_BY_SHAPE.get(props.shape, ("NONE",))
+        if plate_mode not in valid_plates or (
+            plate_mode == "SHELL" and not temp.PREMIUMVERSION
+        ):
+            plate_mode = "NONE"
         props.plateMode = plate_mode
 
-        text_layout = data.get('text_layout') or 'NONE'
+        text_layout = data.get("text_layout") or "NONE"
         if text_layout not in valid_layouts(props.shape, props.plateMode):
-            text_layout = 'NONE'
+            text_layout = "NONE"
         props.textLayout = text_layout
 
-        props.shapeExtrasActive = plate_mode != 'NONE' or text_layout != 'NONE'
-
+        props.shapeExtrasActive = plate_mode != "NONE" or text_layout != "NONE"
 
     @staticmethod
     def _apply_trail_stats(props, gpx_paths, gpx_names):
@@ -3357,7 +3355,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 try:
                     per_file.append([pt for seg in read_gpx_file() for pt in seg])
                 except Exception:  # noqa: BLE001 - GPX parsing can raise many types; stats are best-effort
-                    continue
+                    print("Failed to fetch stats from GPX/IGC file.")
         finally:
             props.file_path = saved_path
         per_file = [pts for pts in per_file if len(pts) >= 2]
@@ -3465,7 +3463,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             if blank is None:
                 print("GeoJSON boundary produced an empty/degenerate shape.")
                 _progress.WarningsOverlay.add_warning(
-                    _rpt("GeoJSON boundary produced an empty/degenerate shape."), "error"
+                    _rpt("GeoJSON boundary produced an empty/degenerate shape."),
+                    "error",
                 )
                 raise GenerationError
             # Keeps the sidebar's own Shape field in sync with what this tile
@@ -3671,7 +3670,9 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # above, either from the elevation-preview loop or, for a GeoJSON
         # boundary, internally by build_tile_from_polygon), not an older
         # neighbor's -- there's no seam to protect.
-        tile_gen = utils.runTileGeneration(manage_overlay=False, skip_bottom_recess=True)
+        tile_gen = utils.runTileGeneration(
+            manage_overlay=False, skip_bottom_recess=True
+        )
 
         if gpx_paths:
             from .utils.osm import gen as _osm_gen
@@ -3702,8 +3703,41 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             from shapely.affinity import rotate as _shp_rotate
 
             from .utils import geometry2d as _g2d
-            from .utils.mesh_ops import _clean_solid_mesh, _extrude_flat_polygon, boolean_operation
-            from .utils.primitives import hexagon_polygon, octagon_polygon, polygon_from_svg, rectangle_polygon
+            from .utils.mesh_ops import (
+                _clean_solid_mesh,
+                _extrude_flat_polygon,
+                boolean_operation,
+            )
+            from .utils.primitives import (
+                hexagon_polygon,
+                octagon_polygon,
+                polygon_from_svg,
+                rectangle_polygon,
+            )
+
+            shape_name = data.get("type", "rectangle")
+            props.shape = self._TYPE_MAP.get(shape_name, "SQUARE")
+            self._apply_shape_extra(props, data)
+
+            south, north = bounds["south"], bounds["north"]
+            west, east = bounds["west"], bounds["east"]
+
+            overlay.update(0.02, "Creating base tile…", "Building terrain…")
+            # sScaleHor must be set BEFORE the convert_to_blender_coordinates
+            # calls below, since that function reads it -- derive the scale from
+            # the unscaled convert_to_neutral_coordinates extent first, then set
+            # sScaleHor, and only then compute actual placement.
+            nx1, ny1, _unused = utils.convert_to_neutral_coordinates(south, west, 0, 0)
+            nx2, ny2, _unused = utils.convert_to_neutral_coordinates(north, east, 0, 0)
+            neutral_extent = max(abs(nx2 - nx1), abs(ny2 - ny1))
+            fixed_scale = props.objSize / neutral_extent if neutral_extent > 0 else 1.0
+            bpy.context.scene.tp3d["sScaleHor"] = fixed_scale
+
+            x1, y1, _unused = utils.convert_to_blender_coordinates(south, west, 0, 0)
+            x2, y2, _unused = utils.convert_to_blender_coordinates(north, east, 0, 0)
+            tile_w, tile_h = abs(x2 - x1), abs(y2 - y1)
+            center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+            diameter = max(tile_w, tile_h)
 
             if shape_name == "octagon":
                 true_poly = octagon_polygon(diameter / 2)
@@ -3801,15 +3835,15 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
         "Open the medal holder configurator — pick a shape and sizes with a live 3D preview, "
         "then Send to Blender to create the plate"
     )
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {"REGISTER", "UNDO"}
 
     _timer = None
     _result_path: str = ""
     _server = None
 
     def modal(self, context, event):
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
+        if event.type != "TIMER":
+            return {"PASS_THROUGH"}
 
         from . import picker_server as mp
 
@@ -3819,15 +3853,16 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
 
         rp = pathlib.Path(self._result_path)
         if not (rp.exists() and rp.stat().st_size > 0):
-            return {'PASS_THROUGH'}
+            return {"PASS_THROUGH"}
 
         try:
-            data = json.loads(rp.read_text(encoding='utf-8'))
+            data = json.loads(rp.read_text(encoding="utf-8"))
             self._apply_result(context, data)
-        except Exception as exc:  # noqa: BLE001 - Wide exception catch for medal holder result application
+        except Exception:  # noqa: BLE001 - Wide exception catch for medal holder result application
             import traceback
+
             traceback.print_exc()
-            self.report({'ERROR'}, f"Medal holder generator: {exc}")
+            self.report({"ERROR"}, _rpt("There was an error, see console for details."))
         finally:
             try:
                 rp.unlink()
@@ -3835,7 +3870,7 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
                 pass
             self._cleanup(context)
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
     def _build_preview(self, context, request):
         from . import picker_server as mp
@@ -3844,19 +3879,27 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
         # 'seq' is the page's own request counter -- echoed back so it can
         # tell "my latest request is built" apart from "an older one just
         # finished while my newer one is still queued".
-        seq = request.get('seq')
+        seq = request.get("seq")
         job = mp.model_preview_job()
-        job.update(status='running', message='')
+        job.update(status="running", message="")
         try:
             params = medal_holder.sanitize_params(request)
-            medal_holder.write_preview_glb(params, str(mp.model_preview_path()), context.scene.collection)
+            medal_holder.write_preview_glb(
+                params, str(mp.model_preview_path()), context.scene.collection
+            )
         except Exception as exc:  # noqa: BLE001 - surfaced to the page instead of killing the modal
             import traceback
+
             traceback.print_exc()
-            job.update(status='error', message=str(exc), seq=seq)
+            job.update(status="error", message=str(exc), seq=seq)
             return
-        job.update(status='done', version=job.get('version', 0) + 1, message='', seq=seq,
-                   **medal_holder.preview_info(params))
+        job.update(
+            status="done",
+            version=job.get("version", 0) + 1,
+            message="",
+            seq=seq,
+            **medal_holder.preview_info(params),
+        )
 
     def invoke(self, context, event):
         import tempfile
@@ -3864,20 +3907,25 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
         from . import picker_server as mp
 
         self._result_path = str(
-            pathlib.Path(tempfile.gettempdir()) / 'trailprint_medalholder.json'
+            pathlib.Path(tempfile.gettempdir()) / "trailprint_medalholder.json"
         )
         rp = pathlib.Path(self._result_path)
         if rp.exists():
             rp.unlink()
 
-        html_path = pathlib.Path(__file__).parent / 'generators' / 'medalHolderGenerator.html'
+        html_path = (
+            pathlib.Path(__file__).parent / "generators" / "medalHolderGenerator.html"
+        )
         tp3d = context.scene.tp3d
         self._server = mp.start_picker(
             self._result_path,
             html_path=html_path,
             # The page's magnet-hole fields start from the scene's own
             # Magnet Diameter/Height, same as the map tiles' Magnet Holes.
-            settings_state={'magnetDiameter': tp3d.magnetDiameter, 'magnetHeight': tp3d.magnetHeight},
+            settings_state={
+                "magnetDiameter": tp3d.magnetDiameter,
+                "magnetHeight": tp3d.magnetHeight,
+            },
         )
 
         wm = context.window_manager
@@ -3885,14 +3933,19 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
         # live preview, so it's what the user feels as input lag.
         self._timer = wm.event_timer_add(0.1, window=context.window)
         wm.modal_handler_add(self)
-        self.report({'INFO'}, "Medal holder generator open — adjust the model then click Send to Blender")
-        return {'RUNNING_MODAL'}
+        self.report(
+            {"INFO"},
+            _rpt(
+                "Medal holder generator open — adjust the model then click Send to Blender"
+            ),
+        )
+        return {"RUNNING_MODAL"}
 
     def _apply_result(self, context, data):
         from .utils.accessories import medal_holder
 
         params = medal_holder.sanitize_params(data)
-        name = str(data.get('name') or '').strip()[:60] or "MedalHolder"
+        name = str(data.get("name") or "").strip()[:60] or "MedalHolder"
         plate, texts = medal_holder.build_objects(params, context.collection, name=name)
         medal_holder.assign_scene_materials(plate, texts)
 
@@ -3906,7 +3959,9 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
             obj["Version"] = const.ADDON_VERSION
             obj.select_set(True)
         context.view_layer.objects.active = plate
-        self.report({'INFO'}, f"Created medal holder \"{plate.name}\"")
+        self.report(
+            {"INFO"}, _rpt('Created medal holder "{name}"').format(name=plate.name)
+        )
 
     def _cleanup(self, context):
         wm = context.window_manager
@@ -3918,7 +3973,7 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
             self._server = None
 
     def execute(self, context):
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class TP3D_OT_special_collection(bpy.types.Operator):
