@@ -160,6 +160,10 @@ def _rg_create_text_and_overlays(gen: GenerationContext):
     if plateobj is not None:
         plateInsert(plateobj, map_obj)
 
+    gen.runtime.textObj = textobj
+    gen.runtime.plateObj = plateobj
+    gen.runtime.shellObj = shellobj
+
 
 def _rg_build_terrain_elements(
     gen: GenerationContext,

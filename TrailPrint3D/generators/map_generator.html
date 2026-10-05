@@ -315,7 +315,8 @@
                 baseLayer: activeBaseLayerName,
                 settingsTab: TP3D_SETTINGS_TAB,
                 shape: currentShape,
-                shapeExtra: shapeExtra,
+                plateMode: plateMode,
+                textLayout: textLayout,
                 drawMode: drawMode,
                 shapeCenter: shapeCenter,
                 resolution: document.getElementById('resolutionSlider').value,
@@ -401,7 +402,8 @@
                     }
                     // Re-validated against the restored shape by
                     // tp3dRefreshShapeExtras (via updateStatus below).
-                    if (s.shapeExtra) shapeExtra = s.shapeExtra;
+                    if (s.plateMode) plateMode = s.plateMode;
+                    if (s.textLayout) textLayout = s.textLayout;
                     if (s.drawMode) {
                         drawMode = s.drawMode;
                         document.querySelectorAll('.draw-mode-btn').forEach(function(b) {
@@ -631,7 +633,7 @@
 
         function updateStatus() {
             // Runs after every shape/GeoJSON/SVG change, so the Shape Extras
-            // dropdown piggybacks on it to follow the current shape.
+            // option groups piggyback on it to follow the current shape.
             tp3dRefreshShapeExtras();
             var nGpx = gpxPaths.length;
             var nGeojson = geojsonPaths.length;
@@ -1118,7 +1120,8 @@
                 payload.type = currentShape;
             }
             // Also for a GeoJSON boundary (no drawn area) -- it takes extras too.
-            payload.shape_extra = shapeExtra;
+            payload.plate_mode = plateMode;
+            payload.text_layout = textLayout;
 
             document.getElementById('send').disabled = true;
             document.getElementById('status').textContent = 'Sending to Blender...';

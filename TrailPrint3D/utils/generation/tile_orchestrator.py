@@ -540,8 +540,8 @@ def _rtg_process_tile(
 
 
 def _rtg_add_shape_extras(gen: GenerationContext, map_obj, riders=()):
-    """Add the Shape Extras (text/plate/shell, per gen.settings.shape) to an
-    already finished map-generator tile.
+    """Add the Shape Extras (text/plate/shell, gated on gen.settings.shapeExtrasActive)
+    to an already finished map-generator tile.
 
     runGeneration builds these right after the terrain and BEFORE its
     elements, so everything after it is simply built on the map's final
@@ -558,8 +558,7 @@ def _rtg_add_shape_extras(gen: GenerationContext, map_obj, riders=()):
     center and map offset. Those are pointed at this tile's own center (and
     the offset zeroed) for the duration, then restored.
     """
-    shape = gen.settings.shape
-    if not shape.endswith((" TEXT", " SHELL")):
+    if not gen.settings.shapeExtrasActive:
         return
 
     tp3d = bpy.context.scene.tp3d

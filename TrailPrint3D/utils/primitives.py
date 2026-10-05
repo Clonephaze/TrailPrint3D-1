@@ -193,6 +193,7 @@ def heart_polygon(size: float, steps: int = 200):
             / 16
         )
         pts.append((x, y))
+    pts.reverse()
     return g2d.Polygon(pts)
 
 

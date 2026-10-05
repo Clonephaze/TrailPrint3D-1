@@ -3302,19 +3302,30 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
     @staticmethod
     def _apply_shape_extra(props, data):
-        """The picker's Shape Extras dropdown (assets/shape_extras.js) --
-        called after props.shape is set, since shapeTextStyle's item list
-        depends on it. Anything the shape doesn't offer (or Shell on a free
-        build) falls back to None, same as props.shape_update."""
+        """The picker's Plate/Shell + Text Layout dropdowns (assets/
+        shape_extras.js) -- called after props.shape is set, since both item
+        lists depend on it. Anything the shape (or current plate mode)
+        doesn't offer -- or Shell on a free build -- falls back to None, same
+        as props.plate_mode_update/text_layout_update. Setting plateMode/
+        textLayout runs those update callbacks, so cache-syncing is handled
+        there; shapeExtrasActive is inferred since the web picker has no
+        separate master toggle."""
         from . import temp
-        from .props import SHAPE_TEXT_STYLES
+        from .utils.shape_capabilities import PLATE_MODES_BY_SHAPE, valid_layouts
 
-        shape_extra = data.get('shape_extra') or 'NONE'
-        valid_extras = {ident for ident, _label, _desc in SHAPE_TEXT_STYLES.get(props.shape, [])}
-        if shape_extra not in valid_extras or (shape_extra == 'SHELL' and not temp.PREMIUMVERSION):
-            shape_extra = 'NONE'
-        if valid_extras:
-            props.shapeTextStyle = shape_extra
+        plate_mode = data.get('plate_mode') or 'NONE'
+        valid_plates = PLATE_MODES_BY_SHAPE.get(props.shape, ('NONE',))
+        if plate_mode not in valid_plates or (plate_mode == 'SHELL' and not temp.PREMIUMVERSION):
+            plate_mode = 'NONE'
+        props.plateMode = plate_mode
+
+        text_layout = data.get('text_layout') or 'NONE'
+        if text_layout not in valid_layouts(props.shape, props.plateMode):
+            text_layout = 'NONE'
+        props.textLayout = text_layout
+
+        props.shapeExtrasActive = plate_mode != 'NONE' or text_layout != 'NONE'
+
 
     @staticmethod
     def _apply_trail_stats(props, gpx_paths, gpx_names):
