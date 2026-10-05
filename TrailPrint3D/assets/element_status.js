@@ -98,6 +98,7 @@ function tp3dRepaintElementToggle(key) {
     document.querySelectorAll('[data-element-toggle="' + key + '"]').forEach(function(el) {
         el.classList.toggle('enabled', enabled);
         el.classList.toggle('disabled', !enabled);
+        el.setAttribute('aria-pressed', String(enabled));
     });
 }
 
@@ -294,13 +295,21 @@ function tp3dRenderElementStatus() {
 // keeps them in sync with chip toggles and the modal.
 function tp3dAttachSubFlyout(wrap, chip, key) {
     if (tp3dIsWorldCover() || !TP3D_COMPOSITE_FLAGS[key]) return;
-    var flyout = null, hideTimer = null;
+    var flyout = null, hideTimer = null, pinned = false;
+    var trigger = chip;
+    trigger.classList.add('element-flyout-trigger');
+    trigger.title = chip.textContent.trim() + ' (click to toggle; hover or press Arrow Down for settings)';
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.setAttribute('aria-controls', 'element-flyout-' + key);
 
     function build() {
         var def = typeof COMPOSITE_ELEMENTS !== 'undefined' ? COMPOSITE_ELEMENTS[key] : null;
         if (!def || typeof ADVANCED_SETTINGS_STATE === 'undefined') return null;
         var el = document.createElement('div');
         el.className = 'element-flyout';
+        el.id = 'element-flyout-' + key;
+        el.setAttribute('role', 'group');
+        el.setAttribute('aria-label', chip.textContent.trim() + ' categories');
         var remembered = (ADVANCED_SETTINGS_STATE._compositeRemembered || {})[key] || {};
         var active = tp3dCompositeIsActive(key);
         def.checkboxes.forEach(function(field) {
@@ -327,18 +336,55 @@ function tp3dAttachSubFlyout(wrap, chip, key) {
 
     function show() {
         clearTimeout(hideTimer);
-        if (flyout) flyout.remove();
+        if (flyout && flyout.isConnected) return;
         flyout = build();
         if (!flyout) return;
         var r = chip.getBoundingClientRect();
-        flyout.style.left = r.left + 'px';
-        flyout.style.top = r.bottom + 'px';
+        var bounds = flyout.getBoundingClientRect();
+        flyout.style.left = Math.max(8, Math.min(r.left, innerWidth - bounds.width - 8)) + 'px';
+        flyout.style.top = Math.max(8, Math.min(r.bottom, innerHeight - bounds.height - 8)) + 'px';
+        trigger.setAttribute('aria-expanded', 'true');
+    }
+    function close() {
+        clearTimeout(hideTimer);
+        var current = flyout;
+        flyout = null;
+        pinned = false;
+        trigger.setAttribute('aria-expanded', 'false');
+        if (current) current.remove();
     }
     function hide() {
         clearTimeout(hideTimer);
-        hideTimer = setTimeout(function() { if (flyout) { flyout.remove(); flyout = null; } }, 150);
+        hideTimer = setTimeout(function() {
+            if (!pinned && !wrap.contains(document.activeElement)) close();
+        }, 150);
     }
     wrap.addEventListener('mouseenter', show);
     wrap.addEventListener('mouseleave', hide);
+    trigger.addEventListener('keydown', function(event) {
+        if (event.key !== 'ArrowDown') return;
+        event.preventDefault();
+        pinned = true;
+        show();
+        var input = flyout && flyout.querySelector('input:not(:disabled)');
+        if (input) input.focus();
+    });
+    wrap.addEventListener('keydown', function(event) {
+        if (event.key !== 'Escape' || !flyout) return;
+        event.preventDefault();
+        close();
+        trigger.focus();
+    });
+    wrap.addEventListener('focusout', function(event) {
+        if (!wrap.contains(event.relatedTarget)) close();
+    });
+    wrap.addEventListener('tp3d-close-flyout', close);
 }
+document.addEventListener('pointerdown', function(event) {
+    document.querySelectorAll('.element-flyout').forEach(function(flyout) {
+        if (!flyout.parentElement.contains(event.target)) {
+            flyout.parentElement.dispatchEvent(new Event('tp3d-close-flyout'));
+        }
+    });
+});
 tp3dRenderElementStatus();

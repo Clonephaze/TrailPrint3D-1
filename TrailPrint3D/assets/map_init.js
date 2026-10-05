@@ -7,6 +7,7 @@
 // file) IS read immediately at load time, so every including page must place
 // its own __DEM_BOUNDS_JS__ placeholder before __MAP_INIT_JS__.
 var map = L.map('map', { doubleClickZoom: false }).setView([46.57, 7.98], 11);
+new ResizeObserver(function() { map.invalidateSize({ pan: false }); }).observe(map.getContainer());
 
 // The draw/shape/mode toggle panels, coord search box and legend are plain
 // DOM children of the #map container (positioned absolutely on top of it)

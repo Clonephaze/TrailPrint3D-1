@@ -200,7 +200,7 @@ function tp3dSampleFileLoader(fileName, inputId, mimeType, what) {
             .catch(function() {
                 button.disabled = false;
                 button.textContent = label;
-                alert('Could not load the sample ' + what + '.');
+                tp3dAlert('Could not load the sample ' + what + '.');
             });
     };
 }

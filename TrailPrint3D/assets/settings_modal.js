@@ -36,54 +36,8 @@
 // of this UI instead of a jarring browser-native alert() box. Lazily builds
 // and appends its DOM the first time it's called, then just updates and
 // re-shows the same modal on every later call.
-var _tp3dAlertModal = null;
-function tp3dAlert(message, title) {
-    if (!_tp3dAlertModal) {
-        var modal = document.createElement('div');
-        modal.className = 'tp3d-modal';
-
-        var box = document.createElement('div');
-        box.className = 'tp3d-modal-box';
-        box.style.width = '320px';
-        modal.appendChild(box);
-
-        var header = document.createElement('div');
-        header.className = 'modal-header';
-        var titleEl = document.createElement('span');
-        var closeBtn = document.createElement('button');
-        closeBtn.type = 'button';
-        closeBtn.className = 'tp3d-modal-close-btn';
-        closeBtn.title = 'Close';
-        closeBtn.textContent = '✕';
-        header.appendChild(titleEl);
-        header.appendChild(closeBtn);
-        box.appendChild(header);
-
-        var body = document.createElement('div');
-        body.style.cssText = 'font-size:13px; color:#ccc; line-height:1.4; white-space:pre-wrap;';
-        box.appendChild(body);
-
-        var okBtn = document.createElement('button');
-        okBtn.type = 'button';
-        okBtn.className = 'btn-send';
-        okBtn.style.width = '100%';
-        okBtn.textContent = 'OK';
-        box.appendChild(okBtn);
-
-        function close() { modal.classList.remove('open'); }
-        closeBtn.addEventListener('click', close);
-        okBtn.addEventListener('click', close);
-        // Clicking the dimmed backdrop (i.e. anywhere that isn't the box
-        // itself) closes it too, matching the Settings popup's own feel.
-        modal.addEventListener('click', function(e) { if (e.target === modal) close(); });
-
-        document.body.appendChild(modal);
-        _tp3dAlertModal = { modal: modal, titleEl: titleEl, bodyEl: body };
-    }
-    _tp3dAlertModal.titleEl.textContent = title || 'Notice';
-    _tp3dAlertModal.bodyEl.textContent = message;
-    _tp3dAlertModal.modal.classList.add('open');
-}
+// tp3dAlert and dialog focus management live in picker_ui.js so the
+// 3D-preview generator uses the same notice and keyboard behavior.
 
 var TP3D_SETTINGS_TAB = 'elements';
 
@@ -367,6 +321,8 @@ function tp3dBuildNumberField(field) {
     label.textContent = field.label;
     var input = document.createElement('input');
     input.type = 'number';
+    input.id = 'advanced-' + field.key;
+    label.htmlFor = input.id;
     if (field.step != null) input.step = field.step;
     if (field.min != null) input.min = field.min;
     if (field.max != null) input.max = field.max;
@@ -429,7 +385,9 @@ function tp3dBuildSimpleElementCard(key) {
     var card = document.createElement('div');
     card.className = 'element-card';
 
-    var icon = document.createElement('span');
+    var icon = document.createElement('button');
+    icon.type = 'button';
+    icon.setAttribute('aria-label', meta.label);
     icon.className = 'card-icon';
     icon.setAttribute('data-element-toggle', key);
     icon.innerHTML = ELEMENT_ICONS[key] || '';
@@ -465,7 +423,9 @@ function tp3dBuildCompositeElementCard(key) {
 
     var head = document.createElement('div');
     head.className = 'card-head';
-    var icon = document.createElement('span');
+    var icon = document.createElement('button');
+    icon.type = 'button';
+    icon.setAttribute('aria-label', meta.label);
     icon.className = 'card-icon';
     icon.setAttribute('data-element-toggle', key);
     icon.innerHTML = ELEMENT_ICONS[key] || '';
@@ -511,8 +471,7 @@ function tp3dBuildWaterFlattenFields() {
     // Mirrors panels.py's INFO label: generation caps Insert to Extra Map
     // Height - TP3D_WATER_INSERT_MARGIN (terrain.effective_water_insert).
     var note = document.createElement('div');
-    note.className = 'card-field';
-    note.style.color = '#e0b050';
+    note.className = 'card-field warning-text';
     function refresh() {
         var flat = !!ADVANCED_SETTINGS_STATE.colWFlattenTop;
         insertInput.disabled = !flat;
@@ -577,12 +536,14 @@ function tp3dBuildRangeField(field, stateObj) {
     range.max = field.max;
     range.step = field.step || 1;
     range.value = Math.min(initial, field.max);
+    range.setAttribute('aria-label', field.label);
 
     var number = document.createElement('input');
     number.type = 'number';
     number.min = field.min;
     number.step = field.step || 1;
     number.value = initial;
+    number.setAttribute('aria-label', field.label + ' value');
 
     range.addEventListener('input', function() {
         number.value = range.value;
@@ -656,6 +617,8 @@ function tp3dBuildFieldRow(field) {
 
     var input = document.createElement('input');
     input.type = field.type;
+    input.id = 'setting-' + field.key;
+    label.htmlFor = input.id;
     // Lets a picker page find this field's input to push a value into it
     // (e.g. multitile's Dovetail toggle raising Extra Map Height).
     input.dataset.settingKey = field.key;
@@ -679,6 +642,7 @@ function tp3dBuildFieldRow(field) {
         var compState = comp.source === 'SETTINGS_STATE' ? SETTINGS_STATE : ADVANCED_SETTINGS_STATE;
         companionInput = document.createElement('input');
         companionInput.type = 'number';
+        companionInput.setAttribute('aria-label', comp.title || field.label + ' strength');
         companionInput.title = comp.title || '';
         if (comp.step != null) companionInput.step = comp.step;
         if (comp.min != null) companionInput.min = comp.min;
@@ -851,7 +815,7 @@ function tp3dBuildOsmSmoothingToggle() {
     strengthWrap.style.display = isOn ? '' : 'none';
     // Explicit width: inside the content-sized .adv-field-controls, the
     // class's own flex:1 + min-width:0 would otherwise let the range collapse.
-    strengthWrap.style.width = '180px';
+    strengthWrap.classList.add('smoothing-strength');
 
     var range = document.createElement('input');
     range.type = 'range';
@@ -1004,9 +968,7 @@ function tp3dBuildPuzzleTab() {
     var tabBar = document.createElement('div');
     tabBar.className = 'settings-modal-tabs';
     var panelHost = document.createElement('div');
-    panelHost.style.flex = '1';
-    panelHost.style.minHeight = '0';
-    panelHost.style.display = 'flex';
+    panelHost.className = 'settings-panel-host';
     left.appendChild(tabBar);
     left.appendChild(panelHost);
     body.appendChild(left);
@@ -1029,12 +991,16 @@ function tp3dBuildPuzzleTab() {
     }
     var panels = {};
     var tabBtns = {};
+    tabBar.setAttribute('role', 'tablist');
+    tabBar.setAttribute('aria-label', 'Settings categories');
 
     function activateTab(id) {
         if (!tabBtns[id]) return;
         TP3D_SETTINGS_TAB = id;
         TABS.forEach(function(tab) {
             tabBtns[tab.id].classList.toggle('active', tab.id === id);
+            tabBtns[tab.id].setAttribute('aria-selected', String(tab.id === id));
+            tabBtns[tab.id].tabIndex = tab.id === id ? 0 : -1;
             panels[tab.id].classList.toggle('active', tab.id === id);
         });
     }
@@ -1046,6 +1012,9 @@ function tp3dBuildPuzzleTab() {
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'settings-modal-tab-btn';
+        btn.id = 'settings-tab-' + tab.id;
+        btn.setAttribute('role', 'tab');
+        btn.setAttribute('aria-controls', 'settings-panel-' + tab.id);
         var arrow = document.createElement('span');
         arrow.className = 'tab-arrow';
         arrow.textContent = '▶';
@@ -1055,12 +1024,26 @@ function tp3dBuildPuzzleTab() {
             activateTab(tab.id);
             saveState(); // persists TP3D_SETTINGS_TAB via the page's own state blob
         });
+        btn.addEventListener('keydown', function(event) {
+            var index = TABS.indexOf(tab);
+            if (event.key === 'ArrowRight') index = (index + 1) % TABS.length;
+            else if (event.key === 'ArrowLeft') index = (index + TABS.length - 1) % TABS.length;
+            else if (event.key === 'Home') index = 0;
+            else if (event.key === 'End') index = TABS.length - 1;
+            else return;
+            event.preventDefault();
+            activateTab(TABS[index].id);
+            tabBtns[TABS[index].id].focus();
+            saveState();
+        });
         tabBar.appendChild(btn);
         tabBtns[tab.id] = btn;
 
         var panel = document.createElement('div');
         panel.className = 'settings-modal-tab-panel';
-        panel.style.width = '100%';
+        panel.id = 'settings-panel-' + tab.id;
+        panel.setAttribute('role', 'tabpanel');
+        panel.setAttribute('aria-labelledby', btn.id);
         panel.appendChild(tab.build());
         panelHost.appendChild(panel);
         panels[tab.id] = panel;

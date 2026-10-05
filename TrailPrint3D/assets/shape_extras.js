@@ -146,7 +146,7 @@ function tp3dBuildShapeExtrasSection() {
     section.innerHTML = '';
 
     var plateLabel = document.createElement('div');
-    plateLabel.style.cssText = 'font-size:12px; color:#aaa;';
+    plateLabel.className = 'section-label';
     plateLabel.textContent = 'Plate / Shell';
     section.appendChild(plateLabel);
 
@@ -163,7 +163,7 @@ function tp3dBuildShapeExtrasSection() {
     section.appendChild(plateSettings);
 
     var layoutLabel = document.createElement('div');
-    layoutLabel.style.cssText = 'font-size:12px; color:#aaa;';
+    layoutLabel.className = 'section-label';
     layoutLabel.textContent = 'Text Layout';
     section.appendChild(layoutLabel);
 
