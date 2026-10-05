@@ -12,11 +12,17 @@ import math
 import struct
 
 import bpy  # type: ignore
+from bpy.app.translations import pgettext_rpt as _rpt
 from shapely.geometry import LineString, Point
 
 from .. import geometry2d as g2d
 from ..mesh_ops import _extrude_flat_polygon, applyModifier
-from ..primitives import circle_polygon, hexagon_polygon, octagon_polygon, rectangle_polygon
+from ..primitives import (
+    circle_polygon,
+    hexagon_polygon,
+    octagon_polygon,
+    rectangle_polygon,
+)
 
 SHAPES = ('ROUND', 'HEXAGON', 'OCTAGON', 'SQUARE')
 
@@ -605,6 +611,8 @@ def build_object(p, collection, name='MedalHolder'):
         _subtract_object(plate, cutter, "DovetailCutout")
 
     layout = mount_layout(p)
+    if layout is None:
+        raise ValueError(_rpt("Invalid mount layout"))
     if layout['magnets']:
         holes = [Point(x, y).buffer(p['magnetDiameter'] / 2, quad_segs=24) for x, y in layout['magnets']]
         _subtract(plate, _union(holes), -1.0, p['magnetDepth'], collection, "MagnetHoles")
@@ -752,6 +760,8 @@ def preview_info(p):
 def _mount_summary(p):
     """How many magnets/keyholes were asked for vs. actually fit."""
     layout = mount_layout(p)
+    if layout is None:
+        raise ValueError(_rpt("Invalid mount layout"))
     return {
         'magnetsWanted': len(_magnet_angles(p['shape'])) if p['magnets'] else 0,
         'magnets': len(layout['magnets']),

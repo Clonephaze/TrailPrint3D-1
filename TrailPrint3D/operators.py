@@ -3830,10 +3830,9 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
 class TP3D_OT_medal_holder_generator(bpy.types.Operator):
     bl_idname = "tp3d.medal_holder_generator"
-    bl_label = "Medal Holder Generator"
+    bl_label = _("Medal Holder Generator")
     bl_description = (
-        "Open the medal holder configurator — pick a shape and sizes with a live 3D preview, "
-        "then Send to Blender to create the plate"
+        _tip("Open the medal holder configurator — pick a shape and sizes with a live 3D preview, then Send to Blender to create the plate")
     )
     bl_options = {"REGISTER", "UNDO"}
 
