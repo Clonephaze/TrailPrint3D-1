@@ -19,29 +19,54 @@ R = 6371.0  # Earth radius in kilometers
 # never reaches the bottom of the map
 WATER_INSERT_MARGIN = 0.5
 
-WATER_MAXSIZE = 500
-SMALL_RIVERS_MAXSIZE = 50  # small/minor waterways drop out above this; big (wikidata) rivers + ponds still apply up to WATER_MAXSIZE
-FOREST_MAXSIZE = 150
-SCREE_MAXSIZE = 300
-CITY_MAXSIZE = 50
-GREENSPACE_MAXSIZE = 50
-FARMLAND_MAXSIZE = 200
-GLACIER_MAXSIZE = 1000
-BUILDINGS_MAXSIZE = 30
-ROADS_MAXSIZE = 500                  # dense + sparse road tiers dropped entirely above this mapsize
-COASTLINE_MAXSIZE = 350
-# Above COASTLINE_MAXSIZE, ocean is built from the prebuilt global OSMData
-# water-polygon dataset (STRtree query, no Overpass fetch) instead of being
-# skipped outright. The dataset itself is only meant for zoom 0-9 (i.e. large
-# / low-detail views), which is exactly the map-size regime this covers, so
-# there's no strong reason to cap it the way the Overpass path is capped --
-# leave generous headroom and tighten later if profiling on a real huge map
-# says otherwise.
-COASTLINE_WATERPOLY_MAXSIZE = 20000
-STREETS_PRIMARY_THRESHOLD = 40       # dense-tier roads (residential/service/footway/pedestrian/cycle_bridle/path)
-                                      # dropped above this mapsize to avoid width-scaled roads fusing
-                                      # into solid blocks on zoomed-out maps; sparse tiers (highways/
-                                      # major/minor/track) are unaffected until ROADS_MAXSIZE
+# OSM map-size limits (km). These are only the defaults -- the live values are
+# user-adjustable in the Add-on Preferences (addon_preferences.py), which push
+# them into _osm_size_limits via sync_osm_size_limits(). Callers keep reading
+# them as plain const.FOREST_MAXSIZE etc.; the module __getattr__ below serves
+# them from that dict, so worker threads never have to touch bpy.context.
+OSM_SIZE_LIMIT_DEFAULTS = {
+    "WATER_MAXSIZE": 500,
+    "SMALL_RIVERS_MAXSIZE": 50,  # small/minor waterways drop out above this; big (wikidata) rivers + ponds still apply up to WATER_MAXSIZE
+    "FOREST_MAXSIZE": 150,
+    "SCREE_MAXSIZE": 300,
+    "CITY_MAXSIZE": 50,
+    "GREENSPACE_MAXSIZE": 50,
+    "FARMLAND_MAXSIZE": 200,
+    "GLACIER_MAXSIZE": 1000,
+    "BUILDINGS_MAXSIZE": 30,
+    "ROADS_MAXSIZE": 500,                  # dense + sparse road tiers dropped entirely above this mapsize
+    "COASTLINE_MAXSIZE": 350,
+    # Above COASTLINE_MAXSIZE, ocean is built from the prebuilt global OSMData
+    # water-polygon dataset (STRtree query, no Overpass fetch) instead of being
+    # skipped outright. The dataset itself is only meant for zoom 0-9 (i.e. large
+    # / low-detail views), which is exactly the map-size regime this covers, so
+    # there's no strong reason to cap it the way the Overpass path is capped --
+    # leave generous headroom and tighten later if profiling on a real huge map
+    # says otherwise.
+    "COASTLINE_WATERPOLY_MAXSIZE": 20000,
+    "STREETS_PRIMARY_THRESHOLD": 40,       # dense-tier roads (residential/service/footway/pedestrian/cycle_bridle/path)
+                                            # dropped above this mapsize to avoid width-scaled roads fusing
+                                            # into solid blocks on zoomed-out maps; sparse tiers (highways/
+                                            # major/minor/track) are unaffected until ROADS_MAXSIZE
+}
+
+_osm_size_limits = dict(OSM_SIZE_LIMIT_DEFAULTS)
+
+
+def set_osm_size_limit(name, value):
+    """Override one OSM size limit (called from the Add-on Preferences)."""
+    if name not in OSM_SIZE_LIMIT_DEFAULTS:
+        raise KeyError(name)
+    _osm_size_limits[name] = value
+
+
+def __getattr__(name):
+    # PEP 562 module __getattr__ -- only reached for names not defined above,
+    # i.e. the OSM size limits.
+    try:
+        return _osm_size_limits[name]
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
 
 
 

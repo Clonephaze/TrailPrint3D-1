@@ -78,6 +78,7 @@ classes = [
     operators.TP3D_OT_install_update,
     operators.TP3D_OT_open_premium_update,
     operators.TP3D_OT_dismiss_update,
+    operators.TP3D_OT_reset_osm_size_limits,
     operators.TP3D_OT_remake_buildings,
     operators.TP3D_OT_remake_roads,
     operators.TP3D_OT_puzzle_configurator,
@@ -155,6 +156,7 @@ def register():
             temp.PREMIUMVERSION = False
 
     bpy.utils.register_class(addon_preferences.TP3D_AddonPreferences)
+    _sync_osm_size_limits()
     # TP3D_RoadTypeItem must be registered before TP3D_PG_properties -- the
     # latter's road_types = CollectionProperty(type=TP3D_RoadTypeItem) needs
     # that type to already be a registered RNA struct.
@@ -192,7 +194,20 @@ def register():
     export.is_3mf_extension_installed()
 
 
+def _sync_osm_size_limits():
+    """Load the user's OSM map-size limits from the Add-on Preferences into
+    constants.py. Falls back to the built-in defaults (already in place) if
+    the preferences aren't reachable, e.g. when loaded outside the addon
+    system by a test script."""
+    try:
+        addon_preferences.sync_osm_size_limits(addon_preferences.get_prefs())
+    except (KeyError, AttributeError) as e:
+        print(f"TrailPrint3D: using default OSM size limits ({e})")
+
+
 def _load_collections_deferred():
+    # Re-sync in case the stored preferences weren't attached yet in register()
+    _sync_osm_size_limits()
     try:
         # Repairs the *already open* session too, not just future file loads
         # (load_post only fires on the next file-open) -- covers an addon

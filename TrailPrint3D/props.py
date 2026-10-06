@@ -1162,8 +1162,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_fActive: BoolProperty(
         name=_("Include Forests"),
         default=False,
-        description=_("Skipped automatically above %skm map size")
-        % const.FOREST_MAXSIZE,
+        description=_(
+            "Skipped automatically on large maps (size limit set in the Add-on Preferences)"
+        ),
     )  # type: ignore
     col_fArea: FloatProperty(
         name=_("Threshold"),
@@ -1175,8 +1176,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_("Include Scree"),
         default=False,
         description=_(
-            _("Rocky/stony terrain. Skipped automatically above %skm map size")
-            % const.SCREE_MAXSIZE
+            "Rocky/stony terrain. Skipped automatically on large maps (size limit set in the Add-on Preferences)"
         ),
     )  # type: ignore
     col_scrArea: FloatProperty(
@@ -1188,7 +1188,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_cActive: BoolProperty(
         name=_("Include City Boundaries"),
         default=False,
-        description=_("Skipped automatically above %skm map size") % const.CITY_MAXSIZE,
+        description=_(
+            "Skipped automatically on large maps (size limit set in the Add-on Preferences)"
+        ),
     )  # type: ignore
     col_cArea: FloatProperty(
         name=_("Threshold"),
@@ -1200,10 +1202,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_("Include Greenspaces"),
         default=False,
         description=_(
-            _(
-                "Parks, gardens, grass and other urban green areas. Skipped automatically above %skm map size"
-            )
-            % const.GREENSPACE_MAXSIZE
+            "Parks, gardens, grass and other urban green areas. Skipped automatically on large maps (size limit set in the Add-on Preferences)"
         ),
     )  # type: ignore
     col_grArea: FloatProperty(
@@ -1216,10 +1215,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_("Include Farmland"),
         default=False,
         description=_(
-            _(
-                "Fetches landuse=farmland and landuse=farmyard. Skipped automatically above %skm map size"
-            )
-            % const.FARMLAND_MAXSIZE
+            "Fetches landuse=farmland and landuse=farmyard. Skipped automatically on large maps (size limit set in the Add-on Preferences)"
         ),
     )  # type: ignore
     col_faArea: FloatProperty(
@@ -1232,7 +1228,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_("Include Glaciers"),
         default=False,
         description=_(
-            _("Skipped automatically above %skm map size") % const.GLACIER_MAXSIZE
+            "Skipped automatically on large maps (size limit set in the Add-on Preferences)"
         ),
     )  # type: ignore
     col_glArea: FloatProperty(
@@ -1308,7 +1304,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_("Include Buildings"),
         default=False,
         description=_(
-            f"Skipped automatically above {const.BUILDINGS_MAXSIZE}km map size"
+            "Skipped automatically on large maps (size limit set in the Add-on Preferences)"
         ),
     )  # type: ignore
     el_bHeightMultiplier: FloatProperty(

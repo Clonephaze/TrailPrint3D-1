@@ -106,7 +106,7 @@ def plan_prefetch(tp3d, payload):
     """
     from ...props import any_road_active, get_road_active
     from ..geo import haversine
-    from ..ui_state import COLORING_ELEMENTS
+    from ..ui_state import coloring_elements
     from .fetch_utils import OsmFetchSettings
     from .roads import TIER_TAGS
 
@@ -163,7 +163,7 @@ def plan_prefetch(tp3d, payload):
         else:
             kinds.append(kind)
 
-    for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS:
+    for key, flag_attr, max_size, _, _ in coloring_elements():
         enabled = flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1
         if key == "water":
             enabled = enabled and tp3d.show_water

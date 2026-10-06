@@ -14,54 +14,57 @@ from .. import constants as const
 # Coloring-element definitions — used by both the OSM prefetch helper and the
 # main terrain-element builder.  Tuple layout:
 #   (result_key, active_flag_attr, max_size_const, phase_label, fetch_message)
+# Built per call rather than at import time -- the size limits are user-
+# adjustable in the Add-on Preferences.
 # ---------------------------------------------------------------------------
-COLORING_ELEMENTS = [
-    (
-        "forest",
-        "col_fActive",
-        const.FOREST_MAXSIZE,
-        "Forest",
-        "Fetching forest data\u2026",
-    ),
-    (
-        "water",
-        lambda t: (
-            t.col_wBodiesActive or t.col_wMinorActive or t.col_wMajorActive
+def coloring_elements():
+    return [
+        (
+            "forest",
+            "col_fActive",
+            const.FOREST_MAXSIZE,
+            "Forest",
+            "Fetching forest data\u2026",
         ),
-        const.WATER_MAXSIZE,
-        "Water",
-        "Fetching water data\u2026",
-    ),
-    (
-        "scree",
-        "col_scrActive",
-        const.SCREE_MAXSIZE,
-        "Scree",
-        "Fetching scree data\u2026",
-    ),
-    ("city", "col_cActive", const.CITY_MAXSIZE, "City", "Fetching city data\u2026"),
-    (
-        "greenspace",
-        "col_grActive",
-        const.GREENSPACE_MAXSIZE,
-        "Greenspace",
-        "Fetching greenspace data\u2026",
-    ),
-    (
-        "farmland",
-        "col_faActive",
-        const.FARMLAND_MAXSIZE,
-        "Farmland",
-        "Fetching farmland data\u2026",
-    ),
-    (
-        "glacier",
-        "col_glActive",
-        const.GLACIER_MAXSIZE,
-        "Glacier",
-        "Fetching glacier data\u2026",
-    ),
-]
+        (
+            "water",
+            lambda t: (
+                t.col_wBodiesActive or t.col_wMinorActive or t.col_wMajorActive
+            ),
+            const.WATER_MAXSIZE,
+            "Water",
+            "Fetching water data\u2026",
+        ),
+        (
+            "scree",
+            "col_scrActive",
+            const.SCREE_MAXSIZE,
+            "Scree",
+            "Fetching scree data\u2026",
+        ),
+        ("city", "col_cActive", const.CITY_MAXSIZE, "City", "Fetching city data\u2026"),
+        (
+            "greenspace",
+            "col_grActive",
+            const.GREENSPACE_MAXSIZE,
+            "Greenspace",
+            "Fetching greenspace data\u2026",
+        ),
+        (
+            "farmland",
+            "col_faActive",
+            const.FARMLAND_MAXSIZE,
+            "Farmland",
+            "Fetching farmland data\u2026",
+        ),
+        (
+            "glacier",
+            "col_glActive",
+            const.GLACIER_MAXSIZE,
+            "Glacier",
+            "Fetching glacier data\u2026",
+        ),
+    ]
 
 # ---------------------------------------------------------------------------
 # Shared helper: build the fetch-item list for the progress chip strip
