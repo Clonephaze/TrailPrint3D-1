@@ -8,11 +8,21 @@
 import importlib
 import sys
 
-# Blender 4.2+ extensions are namespaced under bl_ext; legacy addons are not.
-_EXT_PKG = "bl_ext.user_default.TrailPrint3D"
-_LEG_PKG = "TrailPrint3D"
-_pkg = _EXT_PKG if _EXT_PKG in sys.modules else _LEG_PKG
-if _pkg not in sys.modules:
+# Blender 4.2+ extensions are namespaced under bl_ext.<repo>.<dir name>; legacy
+# addons are top-level. The dir name varies by install: "trailprint3d" (the
+# manifest id, e.g. a dev symlink into the repo) or "TrailPrint3D", and the repo
+# may not be user_default -- so match any loaded package by name, ignoring case.
+def _find_pkg():
+    for name in sorted(sys.modules):
+        parts = name.split(".")
+        if parts[-1].lower() != "trailprint3d":
+            continue
+        if len(parts) == 1 or (len(parts) == 3 and parts[0] == "bl_ext"):
+            return name
+    return None
+
+_pkg = _find_pkg()
+if _pkg is None:
     raise RuntimeError("TrailPrint3D is not loaded — enable the addon first, then reload.")
 
 T = sys.modules[_pkg]
