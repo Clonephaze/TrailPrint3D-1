@@ -10,6 +10,7 @@ Requires odfpy (for writing the .ods report)
 """
 
 import ast
+import re
 from pathlib import Path
 
 from odf.opendocument import OpenDocumentSpreadsheet
@@ -85,6 +86,9 @@ INTERNAL_NAME_CALL_SUFFIXES = (
     "collections.new",
     "textures.new",
     "images.new",
+    "curves.new",
+    "build_tile_from_polygon"
+    "build_objects",
 )
 
 # --- Heuristic patterns for "incorrectly wrapped" (extend as you find more) --
@@ -95,6 +99,66 @@ INCORRECTLY_WRAPPED_LITERAL_PATTERNS = (
     # URLs are language-independent.
     ("url", lambda s: s.startswith(("http://", "https://"))),
 )
+
+
+# --- Consolidation detection ------------------------------------------------
+#
+# Strings that differ only in trailing punctuation, casing, or whitespace are
+# candidates for consolidation: they currently cost one translation slot per
+# variant per language, but users read them as "the same string, just
+# typeset differently". Normalizing both and comparing catches them.
+#
+# The normalization is deliberately conservative. It does NOT collapse:
+#   - format placeholders (%s, {name}, %.1f, ...)
+#   - parenthetical qualifiers ("(mm)" vs "(m)")
+#   - content words of any kind
+# so strings that are genuinely different stay distinguishable, and the
+# "Near-duplicate" sheet only shows real consolidation opportunities.
+_TRAILING_PUNCT_RE = re.compile(r"[\s\.\!\?\:\;\,…]+$")
+
+
+def _normalize_for_grouping(s):
+    """Return the consolidation key for *s*, or "" if not groupable."""
+    if s is None:
+        return ""
+    n = s.strip().lower()
+    n = re.sub(r"\s+", " ", n)
+    n = _TRAILING_PUNCT_RE.sub("", n)
+    return n
+
+
+def compute_consolidation_groups(master):
+    """Return a list of consolidation groups, most impactful first.
+
+    Each group is a dict:
+        key:        normalized form that all members share
+        members:    [(string, count), ...], sorted by count desc
+        canonical:  the highest-count member (the one to standardize on)
+        savings:    how many translation slots would be freed by merging
+    """
+    groups = {}
+    for s, info in master.items():
+        key = _normalize_for_grouping(s)
+        if not key:
+            continue
+        groups.setdefault(key, []).append((s, info["count"]))
+
+    candidates = []
+    for key, members in groups.items():
+        if len(members) < 2:
+            continue
+        members.sort(key=lambda t: -t[1])
+        candidates.append(
+            {
+                "key": key,
+                "members": members,
+                "canonical": members[0][0],
+                "savings": len(members) - 1,
+            }
+        )
+    # Most impactful first (biggest savings), then alphabetical for stability
+    candidates.sort(key=lambda g: (-g["savings"], g["key"]))
+    return candidates
 
 
 def iter_py_files():
@@ -519,6 +583,7 @@ def write_ods_report(data, out_path):
     doc.automaticstyles.addElement(alt_style)
 
     # 1. Overview Sheet
+    total_savings = sum(g["savings"] for g in data["consolidation_groups"])
     overview_data = [
         ["Metric", "Count"],
         ["Tracked Strings", len(data["master"])],
@@ -528,6 +593,8 @@ def write_ods_report(data, out_path):
         overview_data.append([f"[{lang}] Dead Keys", len(data["per_lang_dead"][lang])])
     overview_data.extend(
         [
+            ["Consolidation Groups", len(data["consolidation_groups"])],
+            ["Potential Slots Saved", total_savings],
             ["Bypasses", len(data["bypasses"])],
             ["Unwrapped", len(data["unwrapped"])],
             ["Needs Review", len(data["needs_review"])],
@@ -537,7 +604,42 @@ def write_ods_report(data, out_path):
     )
     add_ods_sheet(doc, "Overview", overview_data, header_style, alt_style)
 
-    # 2. Missing Strings Sheet
+    # 2. All Tracked Strings Sheet
+    #    Every string that appears in a pgettext call somewhere, with how
+    #    many times it's used and where the first occurrence is. Sorted by
+    #    usage count so the most reused strings float to the top.
+    tracked_data = [["String", "Count", "First File", "First Line"]]
+    for s, info in sorted(
+        data["master"].items(), key=lambda kv: (-kv[1]["count"], kv[0])
+    ):
+        tracked_data.append([s, info["count"], info["file"], info["line"]])
+    if len(tracked_data) == 1:
+        tracked_data.append(["None", "", "", ""])
+    add_ods_sheet(doc, "All Tracked Strings", tracked_data, header_style, alt_style)
+
+    # 3. Consolidation Candidates Sheet
+    #    Groups of strings that differ only in trailing punctuation, casing,
+    #    or whitespace. The canonical pick (highest count) is marked with ✓.
+    #    Merging each group to its canonical form frees len(group)-1 slots
+    #    per language.
+    consol_data = [["Group Key", "String", "Count", "Suggested Canonical"]]
+    for g in data["consolidation_groups"]:
+        for i, (s, c) in enumerate(g["members"]):
+            consol_data.append(
+                [
+                    g["key"] if i == 0 else "",
+                    s,
+                    c,
+                    "✓" if s == g["canonical"] else "",
+                ]
+            )
+        # blank separator row between groups
+        consol_data.append(["", "", "", ""])
+    if len(consol_data) == 1:
+        consol_data.append(["", "None", "", ""])
+    add_ods_sheet(doc, "Consolidation Candidates", consol_data, header_style, alt_style)
+
+    # 4. Missing Strings Sheet
     missing_data = [["Language", "String", "File", "Line"]]
     for lang in data["languages"]:
         for s in data["per_lang_missing"][lang]:
@@ -547,7 +649,7 @@ def write_ods_report(data, out_path):
         missing_data.append(["", "None", "", ""])
     add_ods_sheet(doc, "Missing Translations", missing_data, header_style, alt_style)
 
-    # 3. Dead Keys Sheet
+    # 5. Dead Keys Sheet
     dead_data = [["Language", "String"]]
     for lang in data["languages"]:
         for s in data["per_lang_dead"][lang]:
@@ -556,32 +658,32 @@ def write_ods_report(data, out_path):
         dead_data.append(["", "None"])
     add_ods_sheet(doc, "Dead Keys", dead_data, header_style, alt_style)
 
-    # 4. Bypasses Sheet
+    # 6. Bypasses Sheet
     bypass_data = [["Kind", "File", "Line", "Message"]] + data["bypasses"]
     if len(bypass_data) == 1:
         bypass_data.append(["", "None", "", ""])
     add_ods_sheet(doc, "Bypasses", bypass_data, header_style, alt_style)
 
-    # 5. Unwrapped Sheet
+    # 7. Unwrapped Sheet
     unwrapped_data = [["Keyword", "File", "Line", "String"]] + data["unwrapped"]
     if len(unwrapped_data) == 1:
         unwrapped_data.append(["", "None", "", ""])
     add_ods_sheet(doc, "Unwrapped", unwrapped_data, header_style, alt_style)
 
-    # 6. Needs Review Sheet
+    # 8. Needs Review Sheet
     review_data = [["Issue", "File", "Line", "Snippet"]] + data["needs_review"]
     if len(review_data) == 1:
         review_data.append(["", "None", "", ""])
     add_ods_sheet(doc, "Needs Review", review_data, header_style, alt_style)
 
-    # 7. Wrong Variant Sheet
+    # 9. Wrong Variant Sheet
     wrong_data = [["Context", "File", "Line", "Used", "Expected", "Snippet"]]
     wrong_data += data["wrong_variant"]
     if len(wrong_data) == 1:
         wrong_data.append(["", "None", "", "", "", ""])
     add_ods_sheet(doc, "Wrong Variant", wrong_data, header_style, alt_style)
 
-    # 8. Incorrectly Wrapped Sheet
+    # 10. Incorrectly Wrapped Sheet
     incorrect_data = [["Reason", "File", "Line", "Expression"]]
     incorrect_data += data["incorrectly_wrapped"]
     if len(incorrect_data) == 1:
@@ -621,12 +723,15 @@ def main():
             if s not in master:
                 per_lang_dead[lang].append(s)
 
+    consolidation_groups = compute_consolidation_groups(master)
+
     return {
         "master": master,
         "languages": languages,
         "translations": translations,
         "per_lang_missing": per_lang_missing,
         "per_lang_dead": per_lang_dead,
+        "consolidation_groups": consolidation_groups,
         "bypasses": bypasses,
         "unwrapped": unwrapped,
         "needs_review": needs_review,
@@ -638,6 +743,7 @@ def main():
 if __name__ == "__main__":
     result = main()
 
+    total_savings = sum(g["savings"] for g in result["consolidation_groups"])
     print(f"Tracked (unique English strings): {len(result['master'])}")
     print(f"Languages found: {result['languages']}")
     for lang in result["languages"]:
@@ -645,6 +751,11 @@ if __name__ == "__main__":
             f"  {lang}: {len(result['per_lang_missing'][lang])} missing, "
             f"{len(result['per_lang_dead'][lang])} dead keys"
         )
+    print(
+        f"Consolidation groups: {len(result['consolidation_groups'])} "
+        f"(potential savings: {total_savings} slots per language, "
+        f"{total_savings * len(result['languages'])} total)"
+    )
     print(f"Bypasses translation entirely: {len(result['bypasses'])}")
     print(f"Unwrapped but likely fine: {len(result['unwrapped'])}")
     print(f"Needs manual review: {len(result['needs_review'])}")
