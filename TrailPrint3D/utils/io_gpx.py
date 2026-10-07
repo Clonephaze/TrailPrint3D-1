@@ -344,7 +344,7 @@ def read_gpx_and_create_heightmap(length=100.0, height=20.0):
         print("No valid points or zero-length route.")
         return
 
-    curve_data = bpy.data.curves.new(name=_("RouteProfile"), type="CURVE")
+    curve_data = bpy.data.curves.new(name="RouteProfile", type="CURVE")
     curve_data.dimensions = "2D"
     curve_data.fill_mode = "BOTH"
     spline = curve_data.splines.new("POLY")

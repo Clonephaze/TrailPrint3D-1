@@ -736,14 +736,14 @@ def create_roads(
 
     # --- Input validation ------------------------------------------------
     if gen is None:
-        raise GenerationError(_("Generation context is None."))
+        raise GenerationError(_rpt("Generation context is None."))
     if gen.runtime.mapObject is None:
-        raise GenerationError(_("No map object assigned; cannot create roads."))
+        raise GenerationError(_rpt("No map object assigned; cannot create roads."))
     # Check that tile bounds are present and reasonable
     required_bounds = ["tbMinLat", "tbMinLon", "tbMaxLat", "tbMaxLon"]
     for attr in required_bounds:
         if not hasattr(gen.runtime, attr) or getattr(gen.runtime, attr) is None:
-            raise GenerationError(_("Missing tile bound: '{attr}'").format(attr=attr))
+            raise GenerationError(_rpt("Missing tile bound: '{attr}'").format(attr=attr))
 
     _t_setup = time.time()
     _ov = _progress.ProgressOverlay.get()
@@ -756,7 +756,7 @@ def create_roads(
             full_depth = gen.settings.elementMode != "PAINT"
         config = RoadConfig.from_scene(bpy.context.scene.tp3d, full_depth=full_depth)
     except Exception as e:
-        raise GenerationError(_("Failed to load road configuration: {error}").format(error=e))
+        raise GenerationError(_rpt("Failed to load road configuration: {error}").format(error=e))
 
     # --- Fetch road polylines from OSM -----------------------------------
     try:
@@ -773,10 +773,10 @@ def create_roads(
             prefetched_tiles=prefetched_tiles,
         )
     except Exception as e:
-        raise GenerationError(_("Failed to fetch road polylines from OSM: {error}").format(error=e))
+        raise GenerationError(_rpt("Failed to fetch road polylines from OSM: {error}").format(error=e))
 
     if tier_polylines is None:
-        raise GenerationError(_("No road polylines fetched (tier_polylines is None)."))
+        raise GenerationError(_rpt("No road polylines fetched (tier_polylines is None)."))
 
     # --- DEBUG: Stage 1 - raw polylines ----------------------------------
     if bpy.app.debug:
@@ -828,9 +828,9 @@ def create_roads(
     try:
         map_fp = map_footprint_polygon(gen.runtime.mapObject)
         if map_fp is None or map_fp.is_empty:
-            raise GenerationError(_("Failed to obtain valid map footprint polygon."))
+            raise GenerationError(_rpt("Failed to obtain valid map footprint polygon."))
     except Exception as e:
-        raise GenerationError(_("Map footprint computation failed: {error}").format(error=e))
+        raise GenerationError(_rpt("Map footprint computation failed: {error}").format(error=e))
 
     # --- Buffer tiers into polygons --------------------------------------
     try:
@@ -838,7 +838,7 @@ def create_roads(
             tier_polylines, half_width, map_fp
         )
     except Exception as e:
-        raise GenerationError(_("Failed to buffer road polylines into polygons: {error}").format(error=e))
+        raise GenerationError(_rpt("Failed to buffer road polylines into polygons: {error}").format(error=e))
 
     if not verts_2d or not tris:
         raise GenerationError(
@@ -849,9 +849,9 @@ def create_roads(
     try:
         roads = _build_extruded_mesh(verts_2d, tris, bottom_z, top_z)
         if roads is None:
-            raise GenerationError(_(" _build_extruded_mesh returned None."))
+            raise GenerationError(_rpt(" _build_extruded_mesh returned None."))
     except Exception as e:
-        raise GenerationError(_("Failed to build extruded road mesh: {error}").format(error=e))
+        raise GenerationError(_rpt("Failed to build extruded road mesh: {error}").format(error=e))
 
     # This is a coarse cutter mesh only -- finalize_roads() will rebuild the top
     # surface from the terrain's own grid, clipped to road_union, later.

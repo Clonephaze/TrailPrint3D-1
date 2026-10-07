@@ -95,7 +95,7 @@ class TP3D_OT_shapely_status(bpy.types.Operator):
         err = cls._get_shapely_error()
         if err:
             return (
-                f"{_('Elements and Single-color mode might not work properly.')}\n{err}"
+                f"{_('Elements and Single Extruder mode might not work properly.')}\n{err}"
             )
         return _("Shapely is loaded and operational.")
 
@@ -1872,13 +1872,12 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
         svg.data.materials.clear()
 
         if svg is None:
-            self.report({"WARNING"}, _rpt("No Valid object selected"))
-            utils.show_message_box(_("No valid Map selected"))
+            self.report({"WARNING"}, _rpt("No valid object selected"))
             return {"CANCELLED"}
 
         obj = context.active_object
         if not obj or obj == 0:
-            self.report({"WARNING"}, _rpt("No object selected"))
+            self.report({"WARNING"}, _rpt("No valid object selected"))
             return {"CANCELLED"}
 
         if "highestZ" in map:
@@ -2144,7 +2143,7 @@ def _redraw_all_areas():
 
 class TP3D_OT_pick_gpx_file(bpy.types.Operator):
     bl_idname = "tp3d.pick_gpx_file"
-    bl_label = _("Select a GPX File")
+    bl_label = _("Select a GPX file")
     bl_description = _tip("Use the selected GPX file")
 
     filepath: StringProperty(subtype="FILE_PATH")  # type: ignore
@@ -2282,7 +2281,7 @@ class TP3D_OT_pick_geojson_shape_file(bpy.types.Operator):
 class TP3D_OT_check_update(bpy.types.Operator):
     bl_idname = "tp3d.check_update"
     bl_label = _("Check for Updates")
-    bl_description = _tip("Check for the latest version of TrailPrint3D")
+    bl_description = _tip("Check for Updates")
 
     def execute(self, context):
         from . import temp, updater
@@ -2601,7 +2600,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
             traceback.print_exc()
             _progress.WarningsOverlay.add_warning(
-                _rpt("Generator encountered an error, see console for details."),
+                _rpt("There was an error, see console for details."),
                 "error",
             )
             print(f"Puzzle generator: {exc}")
@@ -2708,7 +2707,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             props.elementMode = "PAINT"
             _progress.WarningsOverlay.add_warning(
                 _rpt(
-                    'Puzzles only support "Paint on Map" element mode — switched automatically.'
+                    "Puzzles only support the \"Paint on Map\" element mode — switched automatically."
                 ),
                 "warn",
             )
@@ -2861,7 +2860,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         blank_h = tile_h + (2 * frame_margin if frame_terrain_requested else 0)
         blank = utils.create_rectangle(blank_w, blank_h, props.num_subdivisions)
         if blank is None:
-            raise RuntimeError(_("Failed to create blank rectangle"))
+            raise RuntimeError(_rpt("Failed to create {} shape.").format(_rpt("Rectangle")))
         # cut_into_puzzle_pieces names every piece "{terrain_obj.name}_piece_{row}_{col}" --
         # renaming the blank here is what gets the puzzle's chosen name onto
         # every generated piece without touching that naming logic itself.
@@ -3108,8 +3107,9 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             bpy.data.objects.remove(bpy.data.objects[blank_name], do_unlink=True)
 
         finished_objs = piece_objs + ([holder_obj] if holder_obj is not None else [])
+        total_time = time.time() - start_time
         bpy.context.scene.tp3d["o_time"] = (
-            f"Script ran for {time.time() - start_time:.0f} seconds"
+            "Script ran for {:.0f} seconds".format(total_time)
         )
         export.save_history_thumbnail(data.get("history_id"), finished_objs)
         # Re-zoom LAST, after the thumbnail render -- customThumbnail swaps in
@@ -3126,9 +3126,6 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         except (ReferenceError, AttributeError, IndexError):
             pass
 
-        bpy.context.scene.tp3d["o_time"] = (
-            f"Script ran for {time.time() - start_time:.0f} seconds"
-        )
         self.report(
             {"INFO"},
             f"Generated {len(piece_objs)} puzzle piece(s)"
@@ -3211,7 +3208,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
             traceback.print_exc()
             _progress.WarningsOverlay.add_warning(
-                _rpt("Generator encountered an error, see console for details."),
+                _rpt("There was an error, see console for details."),
                 "error",
             )
             print(f"Map generator: {exc}")
@@ -3402,10 +3399,6 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 _progress.WarningsOverlay.add_warning(
                     _rpt("Use 'Merge with Map' to apply it manually."), "warn"
                 )
-            _total_time = time.time() - start_time
-            bpy.context.scene.tp3d["o_time"] = _(
-                "Script ran for {total_time:.0f} seconds"
-            ).format(total_time=_total_time)
             self.report(
                 {"INFO"},
                 _("Generated {num_trails} trail(s)").format(num_trails=len(gpx_paths)),
@@ -3457,7 +3450,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 polygon,
                 props.objSize,
                 props.num_subdivisions,
-                name=_("GeoJSON_Boundary"),
+                name="GeoJSON_Boundary",
                 simplify_tolerance=props.geojsonSimplifyTolerance,
             )
             if blank is None:
@@ -3520,7 +3513,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 if blank is None:
                     print("Failed to create circle shape.")
                     _progress.WarningsOverlay.add_warning(
-                        _rpt("Failed to create circle shape."), "error"
+                        _rpt("Failed to create {} shape.").format(_rpt("Circle")), "error"
                     )
                     raise GenerationError
                 blank["Shape"] = "CIRCLE"
@@ -3529,7 +3522,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 if blank is None:
                     print("Failed to create octagon shape.")
                     _progress.WarningsOverlay.add_warning(
-                        _rpt("Failed to create octagon shape."), "error"
+                        _rpt("Failed to create {} shape.").format(_rpt("Octagon")), "error"
                     )
                     raise GenerationError
                 blank["Shape"] = "OCTAGON"
@@ -3538,7 +3531,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 if blank is None:
                     print("Failed to create hexagon shape.")
                     _progress.WarningsOverlay.add_warning(
-                        _rpt("Failed to create hexagon shape."), "error"
+                        _rpt("Failed to create {} shape.").format(_rpt("Hexagon")), "error"
                     )
                     raise GenerationError
                 blank["Shape"] = "HEXAGON"
@@ -3577,7 +3570,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 if blank is None:
                     print("Failed to create square shape.")
                     _progress.WarningsOverlay.add_warning(
-                        _rpt("Failed to create square shape."), "error"
+                        _rpt("Failed to create {} shape.").format(_rpt("Square")), "error"
                     )
                     raise GenerationError
                 blank["Shape"] = "SQUARE"
@@ -3588,7 +3581,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 if blank is None:
                     print("Failed to create rectangle shape.")
                     _progress.WarningsOverlay.add_warning(
-                        _rpt("Failed to create rectangle shape."), "error"
+                        _rpt("Failed to create {} shape.").format(_rpt("Rectangle")), "error"
                     )
                     raise GenerationError
                 blank["Shape"] = "SQUARE"
@@ -3800,8 +3793,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
         _total_time = time.time() - start_time
         bpy.context.scene.tp3d["o_time"] = _(
-            "Script ran for {total_time:.0f} seconds"
-        ).format(total_time=_total_time)
+            "Script ran for {:.0f} seconds"
+        ).format(_total_time)
         export.save_history_thumbnail(data.get("history_id"), [blank])
         # Re-zoom LAST, after the thumbnail render -- customThumbnail swaps
         # in its own temp top-down camera view for the screenshot and then

@@ -510,7 +510,7 @@ def _rtg_process_tile(
     overlay.update(
         base_pct + step * 0.85,
         "Coloring",
-        f"{tile_label} — applying single-color mode…",
+        f"{tile_label} — applying single extruder mode…",
     )
     _rg_apply_single_color_mode(gen)
 
@@ -735,7 +735,7 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_
             except GenerationError as e:
                 print(f"{tile_label} — generation phase failed: {e}")
                 _progress.WarningsOverlay.add_warning(
-                    _rpt("Generation Failed - See console for details")
+                    _rpt("There was an error, see console for details.")
                 )
                 continue
             except Exception as e:  # noqa: BLE001 - a single tile's bpy.ops/mesh-op failure shouldn't abort the whole batch
@@ -744,7 +744,7 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_
                 traceback.print_exc()
                 print(f"{tile_label} — unexpected failure: {e}")
                 _progress.WarningsOverlay.add_warning(
-                    _rpt("Generation Failed - See console for details"),
+                    _rpt("There was an error, see console for details."),
                     icon="error",
                 )
                 continue
@@ -789,7 +789,7 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_
         traceback.print_exc()
         print(f"Generation failed: {e}")
         _progress.WarningsOverlay.add_warning(
-            _rpt("Generation failed, check console for details")
+            _rpt("There was an error, see console for details.")
         )
         return None
     finally:

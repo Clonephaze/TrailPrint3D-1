@@ -45,7 +45,7 @@ class TP3D_AddonPreferences(bpy.types.AddonPreferences):
             layout.separator()
 
         # OpenTopography API Key
-        layout.label(text=_("OpenTopography API Key:"), icon='INTERNET')
+        layout.label(text=_("OpenTopography API Key") + ":", icon='INTERNET')
         layout.prop(self, "openTopographyApiKey", text="")
         if not self.openTopographyApiKey:
             layout.label(text=_("Required for most datasets — free at portal.opentopography.org"), icon='ERROR')

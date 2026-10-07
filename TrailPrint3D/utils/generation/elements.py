@@ -282,7 +282,7 @@ def _rg_build_terrain_elements(
     _ELEM_PHASE_START = phase_start
     _ELEM_PHASE_END = phase_end
     if map_km is None:
-        raise GenerationError(_("map_km value not set properly."))
+        raise GenerationError(_rpt("map_km value not set properly."))
     _active_elem_flags = (
         [
             flag
@@ -501,8 +501,9 @@ def _rg_build_terrain_elements(
                 print(
                     f"INFO: MAP IS TOO BIG FOR {key.upper()} (< {max_size} km required)"
                 )
+                phase_text = _rpt(phase)
                 _progress.WarningsOverlay.add_warning(
-                    _rpt("Map too big for {phase} layer.").format(phase=phase), "warn"
+                    _rpt("Map too big for {}.").format(phase_text), "warn"
                 )
 
     # --------------------------------------------------
@@ -535,8 +536,9 @@ def _rg_build_terrain_elements(
                 f"INFO: MAP IS TOO BIG FOR COASTLINE "
                 f"(< {const.COASTLINE_WATERPOLY_MAXSIZE}km required)"
             )
+            water_phase = _rpt("Ocean")
             _progress.WarningsOverlay.add_warning(
-                _rpt("Map too big for Ocean/Coastline layer."), "warn"
+                _rpt("Map too big for {}.").format(water_phase), "warn"
             )
         elif isinstance(terrain["ocean"], _ColoringTextureResult):
             terrain["_osm_polygons"][terrain["ocean"].kind] = terrain["ocean"].polygon
@@ -587,7 +589,7 @@ def _rg_build_terrain_elements(
         else:
             print("INFO: MAP IS TOO BIG FOR BUILDINGS (< 10Km Map size Required)")
             _progress.WarningsOverlay.add_warning(
-                _rpt("Map too big for Buildings."), "warn"
+                _rpt("Map too big for {}.").format(_rpt("Buildings")), "warn"
             )
 
     # --------------------------------------------------
@@ -600,7 +602,7 @@ def _rg_build_terrain_elements(
             _ov.set_fetch_progress("roads", 0.0)
             _ov.set_fetch_ready("roads")
             if gen.runtime.sScaleHor is None:
-                raise GenerationError(_("ScaleHor not Set"))
+                raise GenerationError(_rpt("ScaleHor not Set"))
             # Cache the terrain's own triangulated grid NOW, while terrain is
             # still pristine (no boolean cuts yet) -- both create_roads' own
             # cutter (so it stops exactly at the terrain surface instead of
@@ -677,7 +679,7 @@ def _rg_build_terrain_elements(
         else:
             print("INFO: MAP IS TOO BIG FOR STREETS (< 100Km Map size Required)")
             _progress.WarningsOverlay.add_warning(
-                _rpt("Map too big for Roads."), "warn"
+                _rpt("Map too big for {}.").format(_rpt("Roads")), "warn"
             )
 
     gen.runtime.elements = terrain
@@ -1086,7 +1088,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
 
         except Exception as e:
             raise GenerationError(
-                _("Failed to apply single-color mode booleans: {e}").format(e=str(e))
+                _("Failed to apply single extruder mode booleans: {e}").format(e=str(e))
             ) from e
 
     def _cut_roads_from_terrain_and_elements(

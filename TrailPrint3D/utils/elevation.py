@@ -766,7 +766,7 @@ def get_elevation_localDem(coords, lenv=0, pointsDone=0, progress_cb=None):
     try:
         dem = read_geotiff(demFilePath)
     except (GeoTiffError, OSError, struct.error, zlib.error) as e:
-        _progress.WarningsOverlay.add_warning(_rpt("There was an error, please see the console for details."), "error")
+        _progress.WarningsOverlay.add_warning(_rpt("There was an error, see console for details."), "error")
         print(f"Local DEM: {e}")
         return [0.0] * len(coords)
 

@@ -386,27 +386,27 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=True, description=_tip("Expand/Collapse General Settings")
     )  # type: ignore
     file_path: StringProperty(
-        name=_(""),
+        name="",
         description=_tip("Select a GPX file"),
         default="",
         maxlen=1024,
     )  # type: ignore
     export_path: StringProperty(
-        name=_(""),
+        name="",
         description=_tip("Where to save the exported files"),
         default="",
         maxlen=1024,
         subtype="DIR_PATH",  # Enables folder selection
     )  # type: ignore
     chain_path: StringProperty(
-        name=_(""),
+        name="",
         description=_tip("Select a folder that contains multiple GPX files"),
         default="",
         maxlen=1024,
         subtype="DIR_PATH",  # Enables folder selection
     )  # type: ignore
     trailName: StringProperty(
-        name=_(""), default="", description=_tip("Leave empty to use the Filename")
+        name="", default="", description=_tip("Leave empty to use the Filename")
     )  # type: ignore
 
     # Cached GPX trail bounding box, populated by TP3D_OT_pick_gpx_file at
@@ -464,12 +464,12 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
 
     textLayoutCache: StringProperty(default="NONE", options={"HIDDEN"})  # type: ignore
     customFilePath: bpy.props.StringProperty(
-        name=_(""),
+        name="",
         description=_tip("Path to the GeoJSON or SVG file"),
         default="",
     )
     geojson_path: bpy.props.StringProperty(
-        name=_(""),
+        name="",
         description=_tip("Path to the GeoJSON or SVG file"),
         default="",
         maxlen=1024,
@@ -676,14 +676,14 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     o_verticesPath: StringProperty(name=_("Path vertices "), default="")  # type: ignore
     o_verticesMap: StringProperty(name=_("Path Map "), default="")  # type: ignore
     o_mapScale: StringProperty(name=_("Map Scale"), default="")  # type: ignore
-    o_time: StringProperty(name=_("TimeTook"), default="")  # type: ignore
+    o_time: StringProperty(name=_("Generation Time"), default="")  # type: ignore
     o_apiCounter_OpenTopoData: StringProperty(
-        name=_("apiCounter_OpenTopodata"), default="API Limit: ---/1000 daily"
+        name=_("OpenTopodata Counter"), default="API Limit: ---/1000 daily"
     )  # type: ignore
     o_apiCounter_OpenElevation: StringProperty(
-        name=_("apiCounter_OpenElevation"), default="API Limit: ---/1000 monthly"
+        name=_("Open Elevation Counter"), default="API Limit: ---/1000 monthly"
     )  # type: ignore
-    o_mapsGenerated: StringProperty(name=_("MapsGenerated"), default="")  # type: ignore
+    o_mapsGenerated: StringProperty(name=_("Maps Generated"), default="")  # type: ignore
     o_centerx: FloatProperty(
         name=_("Center X"), default=0, description=_tip("X Center of the Path")
     )  # type: ignore
@@ -746,7 +746,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
 
     textFont: StringProperty(
-        name=_(""),
+        name="",
         description=_tip("Select a file"),
         default="",
         maxlen=1024,
@@ -767,49 +767,49 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )  # type: ignore
     textfield1: StringProperty(
-        name=_("text1"),
+        name="",
         default="{length}",
         description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
         ),
     )  # type: ignore
     textfield2: StringProperty(
-        name=_("text2"),
+        name="",
         default="{elevation}",
         description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
         ),
     )  # type: ignore
     textfield3: StringProperty(
-        name=_("text3"),
+        name="",
         default="{duration}",
         description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
         ),
     )  # type: ignore
     textfield4: StringProperty(
-        name=_("text4"),
+        name="",
         default="",
         description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
         ),
     )  # type: ignore
     textfield5: StringProperty(
-        name=_("text5"),
+        name="",
         default="",
         description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
         ),
     )  # type: ignore
     textfield6: StringProperty(
-        name=_("text6"),
+        name="",
         default="",
         description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
         ),
     )  # type: ignore
     textfield7: StringProperty(
-        name=_("text7"),
+        name="",
         default="",
         description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
@@ -818,107 +818,107 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     titleIcon: EnumProperty(
         name=_("Title Icon"),
         items=[
-            ("cycling", _("Cycling Icon"), _("Cycling Icon before the Title")),
-            ("hiking", _("Hiking Icon"), _("Hiking Icon before the Title")),
-            ("running", _("Running Icon"), _("Running Icon before the Title")),
-            ("swimming", _("Swimming Icon"), _("Swimming Icon before the Title")),
-            ("skiing", _("Skiing Icon"), _("Skiing Icon before the Title")),
+            ("cycling", _("Cycling Icon"), ""),
+            ("hiking", _("Hiking Icon"), ""),
+            ("running", _("Running Icon"), ""),
+            ("swimming", _("Swimming Icon"), ""),
+            ("skiing", _("Skiing Icon"), ""),
             (
                 "snowboarding",
                 _("Snowboarding Icon"),
-                _("Snowboarding Icon before the Title"),
+                "",
             ),
-            ("kajak", _("Kayak Icon"), _("Kayak Icon before the Title")),
-            ("no", _("No Icon"), _("No icon before the Title")),
+            ("kajak", _("Kayak Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="no",
     )  # type: ignore
     iconText1: EnumProperty(
-        name=_("Text 1Icon"),
+        name=_("Text 1 Icon"),
         items=[
-            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
-            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
-            ("time", _("Time Icon"), _("Time icon before the Text")),
-            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
-            ("date", _("Date Icon"), _("Date icon before the Text")),
-            ("no", _("No Icon"), _("No icon before the Text")),
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="distance",
     )  # type: ignore
     iconText2: EnumProperty(
         name=_("Text 2 Icon"),
         items=[
-            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
-            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
-            ("time", _("Time Icon"), _("Time icon before the Text")),
-            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
-            ("date", _("Date Icon"), _("Date icon before the Text")),
-            ("no", _("No Icon"), _("No icon before the Text")),
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="elevation",
     )  # type: ignore
     iconText3: EnumProperty(
         name=_("Text 3 Icon"),
         items=[
-            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
-            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
-            ("time", _("Time Icon"), _("Time icon before the Text")),
-            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
-            ("date", _("Date Icon"), _("Date icon before the Text")),
-            ("no", _("No Icon"), _("No icon before the Text")),
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="time",
     )  # type: ignore
     iconText4: EnumProperty(
         name=_("Text 4 Icon"),
         items=[
-            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
-            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
-            ("time", _("Time Icon"), _("Time icon before the Text")),
-            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
-            ("date", _("Date Icon"), _("Date icon before the Text")),
-            ("no", _("No Icon"), _("No icon before the Text")),
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="no",
     )  # type: ignore
     iconText5: EnumProperty(
         name=_("Text 5 Icon"),
         items=[
-            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
-            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
-            ("time", _("Time Icon"), _("Time icon before the Text")),
-            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
-            ("date", _("Date Icon"), _("Date icon before the Text")),
-            ("no", _("No Icon"), _("No icon before the Text")),
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="no",
     )  # type: ignore
     iconText6: EnumProperty(
         name=_("Text 6 Icon"),
         items=[
-            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
-            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
-            ("time", _("Time Icon"), _("Time icon before the Text")),
-            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
-            ("date", _("Date Icon"), _("Date icon before the Text")),
-            ("no", _("No Icon"), _("No icon before the Text")),
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="no",
     )  # type: ignore
     iconText7: EnumProperty(
         name=_("Text 7 Icon"),
         items=[
-            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
-            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
-            ("time", _("Time Icon"), _("Time icon before the Text")),
-            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
-            ("date", _("Date Icon"), _("Date icon before the Text")),
-            ("no", _("No Icon"), _("No icon before the Text")),
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="no",
     )  # type: ignore
     svg_path: StringProperty(
-        name=_(""),
+        name="",
         description=_tip("Select a .SVG file"),
         default="",
         maxlen=1024,
@@ -1013,7 +1013,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )  # type: ignore
 
-    rescaleMultiplier: FloatProperty(name=_("scale"), default=1, min=0, max=10000)  # type: ignore
+    rescaleMultiplier: FloatProperty(name=_("Scale"), default=1, min=0, max=10000)  # type: ignore
     thickenValue: FloatProperty(
         name=_("thickenValue"), default=1, description=_tip("Makes your Map 1mm thicker")
     )  # type: ignore
@@ -1171,7 +1171,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )  # type: ignore
     elementChoice: BoolProperty(
-        name=_(""),
+        name="",
         default=False,
         description=_tip("Enable this if you want to generate a map with elements."),
     )  # type: ignore
@@ -1198,7 +1198,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
 
     col_wArea: FloatProperty(
-        name=_(""),
+        name="",
         default=1,
         description=_tip("Water bodies smaller than the threshold won't be included"),
         min=0.0,
@@ -1251,7 +1251,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         % const.FOREST_MAXSIZE,
     )  # type: ignore
     col_fArea: FloatProperty(
-        name=_(""),
+        name="",
         default=10,
         description=_tip("Forests smaller than the threshold won't be included"),
         min=0,
@@ -1263,7 +1263,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         % const.SCREE_MAXSIZE,
     )  # type: ignore
     col_scrArea: FloatProperty(
-        name=_(""),
+        name="",
         default=1,
         description=_tip("Scree patches smaller than the threshold won't be included"),
         min=0,
@@ -1274,7 +1274,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         description=_tip("Skipped automatically above %skm map size") % const.CITY_MAXSIZE,
     )  # type: ignore
     col_cArea: FloatProperty(
-        name=_(""),
+        name="",
         default=1,
         description=_tip("Cities smaller than the threshold won't be included"),
         min=0,
@@ -1288,7 +1288,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         % const.GREENSPACE_MAXSIZE,
     )  # type: ignore
     col_grArea: FloatProperty(
-        name=_(""),
+        name="",
         default=1,
         description=_tip("Greenspaces smaller than the threshold won't be included"),
         min=0,
@@ -1302,7 +1302,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         % const.FARMLAND_MAXSIZE,
     )  # type: ignore
     col_faArea: FloatProperty(
-        name=_(""),
+        name="",
         default=1,
         description=_tip("Farmland patches smaller than the threshold won't be included"),
         min=0,
@@ -1314,7 +1314,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         % const.GLACIER_MAXSIZE,
     )  # type: ignore
     col_glArea: FloatProperty(
-        name=_(""),
+        name="",
         default=1,
         description=_tip("Glaciers smaller than the threshold won't be included"),
         min=0,
@@ -1402,7 +1402,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         soft_max=5.0,
         precision=2,
         description=_tip(
-            "Buildings whose printed footprint side is smaller than this (in model mm) are skipped. Scale-aware: a larger real-world building on a bigger-km map prints smaller, so this threshold naturally culls more on larger maps."
+            "Buildings/parts whose printed footprint side is smaller than this are skipped."
         ),
     )  # type: ignore
 
@@ -1568,7 +1568,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )
     slicer_profile_name: EnumProperty(  # type: ignore
-        name=_(""),
+        name="",
         items=_slicer_profile_items,
         description=_tip(
             "Printer/filament profile embedded in the 3MF export. Add profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced"

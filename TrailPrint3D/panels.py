@@ -131,7 +131,7 @@ def _draw_header_and_update_banner(layout, props):
         if temp.PREMIUMVERSION:
             col.operator(
                 "tp3d.open_premium_update",
-                text=_("Get Update on Patreon"),
+                text=_("Get Update"),
                 icon="URL",
             )
         else:
@@ -501,7 +501,7 @@ def _draw_scale_box(layout, props):
         help_key="TP3D_PT_help_scale",
     )
     col = box.column()
-    col.label(text=_("Scale Mode:"))
+    col.label(text=_("Scale Mode") + ":")
     row = col.row(align=True)
     row.scale_y = 1.2
     row.prop(props, "scalemode", expand=True, emboss=True)
@@ -566,8 +566,8 @@ def _draw_terrain_box(layout, props):
     col.prop(props, "minThickness")
     col.prop(props, "shapeRotation")
     row = col.row(align=True)
-    row.prop(props, "xTerrainOffset", text=_("X-Offset"))
-    row.prop(props, "yTerrainOffset", text=_("Y-Offset"))
+    row.prop(props, "xTerrainOffset", text=_("X Offset"))
+    row.prop(props, "yTerrainOffset", text=_("Y Offset"))
     smoothRow = col.row(align=True)
     smoothRow.prop(
         props,
@@ -583,7 +583,7 @@ def _draw_element_box(layout, props):
     _elem_scm = props.elementMode == "SINGLECOLORMODE_REMESH"
 
     def _draw_element_source(box, props):
-        box.label(text=_("Element Source:"))
+        box.label(text=_("Element Source") + ":")
         elementSource = box.row(align=True)
         elementSource.scale_y = 1.2
         elementSource.prop(props, "elementSource", expand=True, emboss=True)
@@ -1288,8 +1288,6 @@ def _draw_api_box(layout, props, context):
                 text=_("API key required — set it in the addon preferences"),
                 icon="ERROR",
             )
-        else:
-            col.label(text=_("API key set"), icon="CHECKMARK")
         col.operator(
             "screen.userpref_show",
             text=_("Open Preferences"),

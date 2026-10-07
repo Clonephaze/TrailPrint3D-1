@@ -509,7 +509,7 @@ def coloring_main(
         except (OSError, ValueError, KeyError) as e:
             print(f"Error fetching OSM data: {e}")
             _progress.WarningsOverlay.add_warning(
-                _rpt("Error fetching OSM data, see console for details"), "error"
+                _rpt("There was an error, see console for details."), "error"
             )
             continue
 

@@ -702,13 +702,13 @@ def _rg_build_trail_curves(gen: GenerationContext):
         )
 
     if curveObj is None and curveObjs is None:
-        raise GenerationError(_("No trail curves created"))
+        raise GenerationError(_rpt("No trail curves created"))
 
     if curveObj is not None and curveObjs is None:
         curveObjs = splitCurves(curveObj)
 
     if curveObjs is None:
-        raise GenerationError(_("Failed to split curveObj"))
+        raise GenerationError(_rpt("Failed to split curveObj"))
 
     gen.runtime.curveObjs = curveObjs
     print(f"Curve objects created: {len(curveObjs) or 'unknown'}")
@@ -728,7 +728,7 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
 
     # --- Validate input ---
     if gen.runtime.mapObject is None:
-        raise GenerationError(_("No map object assigned; cannot displace terrain."))
+        raise GenerationError(_rpt("No map object assigned; cannot displace terrain."))
     if gen.runtime.mapObject.type != "MESH":
         raise GenerationError(
             _("Map object '{map_name}' is not a mesh.").format(
@@ -747,7 +747,7 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
     mesh = gen.runtime.mapObject.data
     _total_verts = len(mesh.vertices)
     if _total_verts == 0:
-        raise GenerationError(_("Map object has no vertices."))
+        raise GenerationError(_rpt("Map object has no vertices."))
 
     print(
         _("Displacing terrain: {mesh_name} ({num_verts} vertices)").format(
@@ -773,13 +773,13 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
     # --- Mercator latitude correction ---
     try:
         if gen.runtime.sScaleHor is None:
-            raise GenerationError(_("Horizontal scale (sScaleHor) is not set."))
+            raise GenerationError(_rpt("Horizontal scale (sScaleHor) is not set."))
         lat_rad = 2.0 * np.arctan(
             np.exp(world_y / (const.R * gen.runtime.sScaleHor))
         ) - (np.pi / 2.0)
         merc = 1.0 / np.cos(lat_rad)
     except Exception as e:  # noqa: BLE001
-        raise GenerationError(_("Mercator correction failed: {error}").format(error=e))
+        raise GenerationError(_rpt("Mercator correction failed: {error}").format(error=e))
 
     # --- Compute new Z for all vertices ---
     try:
@@ -889,7 +889,7 @@ def _rg_extrude_terrain(gen: GenerationContext):
     from .. import geometry2d as g2d
 
     if gen.runtime.mapObject is None:
-        raise GenerationError(_("Map object is not set."))
+        raise GenerationError(_rpt("Map object is not set."))
     obj: bpy.types.Mesh = gen.runtime.mapObject
     if obj.mode != "OBJECT":
         bpy.ops.object.mode_set(mode="OBJECT")

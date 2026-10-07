@@ -24,7 +24,7 @@ def _rg_finalize_metadata(
 
     duration = time.time() - start_time
     tp3d = bpy.context.scene.tp3d
-    tp3d["o_time"] = _("Script ran for {} seconds").format(round(duration))
+    tp3d["o_time"] = _("Script ran for {:.0f} seconds").format(duration)
     if lowestZ is not None:
         tp3d.lowestZ = lowestZ
     if highestZ is not None:
