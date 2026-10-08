@@ -722,9 +722,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
 
     bottomMarkCutout: BoolProperty(
-        name=_("Bottom Mark Cutout"),
+        name=_("Bottom Label Cutout"),
         default=False,
-        description=_tip("Creates Bottom mark as a Cutout"),
+        description=_tip("Creates bottom label as a cutout, instead of as a text object."),
     )  # type: ignore
 
     ellipseRatio: FloatProperty(

@@ -270,6 +270,9 @@ def writeMetadata(obj, type = "MAP"):
         obj["wallThickness"] = bpy.context.scene.tp3d.shellWallThickness
         obj["xTerrainOffset"] = bpy.context.scene.tp3d.xTerrainOffset
         obj["yTerrainOffset"] = bpy.context.scene.tp3d.yTerrainOffset
+        obj["shapeRotation"] = bpy.context.scene.tp3d.shapeRotation
+        obj["Dovetail"] = False
+        obj["MagnetHoles"] = False
 
         obj["ExportGroup"] = 0  # Printed separate -- it wraps around the map, not stacked with it
 

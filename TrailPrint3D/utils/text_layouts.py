@@ -141,7 +141,7 @@ def _ring_radii(map_obj, plate_obj, shape):
     outerBorderSize/100)` calc only ever happened to work for Solid Plate.
     Reading back `plate_obj["shell_outer_wkt"]` / `["plate_wkt"]` (both
     already stored — see plate.py's create_generic_plate and
-    elements.py's _stamp_shell_wkt) means whichever one actually built this
+    outline.py's stamp_shell_outline) means whichever one actually built this
     object is the one that gets measured, and it also fixes Octagon's
     apothem, which this previously hardcoded to 1.0 instead of its real
     cos(45°) (see measured_inradius).

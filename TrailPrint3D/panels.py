@@ -1198,8 +1198,12 @@ def _draw_post_process_box(layout, props, context):
         row = col.row(align=True)
         row.prop(props, "magnetMargin", slider=True)
         row.prop(props, "magnetCount", slider=True)
-        sub.operator("tp3d.magnet_holes", text=_("Add Magnet Holes"), icon="SNAP_OFF")
-        sub.operator(
+        col.operator("tp3d.magnet_holes", text=_("Add Magnet Holes"), icon="SNAP_OFF")
+        dovetail_row = sub.row()
+        if props.shape not in {"SQUARE", "HEXAGON", "OCTAGON"}:
+            dovetail_row.enabled = False
+            sub.label(text=_("Dovetails need a Square, Hexagon, or Octagon shape"), icon="INFO")
+        dovetail_row.operator(
             "tp3d.dovetail", text=_("Add Dovetail Cutouts"), icon="SHAPEKEY_DATA"
         )
 
@@ -1207,7 +1211,7 @@ def _draw_post_process_box(layout, props, context):
         sub = layout.box()
         sub.label(text=_("Bottom Mark"), icon="SMALL_CAPS")
         col = sub.column(align=True)
-        col.operator("tp3d.bottom_mark", text=_("Add Bottom Mark"), icon="SMALL_CAPS")
+        col.operator("tp3d.bottom_mark", text=_("Add Label(s) to bottom"), icon="SMALL_CAPS")
         col.prop(props, "bottomMarkCutout")
 
     def _draw_svg_text_import_box(layout, props):

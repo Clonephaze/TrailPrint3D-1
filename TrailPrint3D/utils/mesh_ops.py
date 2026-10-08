@@ -1478,6 +1478,18 @@ def _cut_terrain_slab(terrain_obj, poly, bottom_z, top_z, name):
     return obj
 
 
+def piece_grid_label(row, col):
+    """Spreadsheet-style piece label for a 0-indexed (row, col) pair: A1, A2,
+    ..., Z1, AA1, ... -- row becomes a base-26 letter (A, B, ..., Z, AA, AB,
+    ...), col becomes a 1-indexed digit."""
+    letters = ""
+    n = row + 1
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        letters = chr(65 + rem) + letters
+    return f"{letters}{col + 1}"
+
+
 def cut_into_puzzle_pieces(
     terrain_obj,
     pieces,
@@ -1486,6 +1498,9 @@ def cut_into_puzzle_pieces(
     buildings_data=None,
     piece_bounds=None,
     keep_terrain_obj=False,
+    overlay=None,
+    progress_start=0.0,
+    progress_end=1.0,
 ):
     """Cut a single finished map tile into separate jigsaw puzzle piece objects.
 
@@ -1550,6 +1565,8 @@ def cut_into_puzzle_pieces(
     holder floor). `terrain_obj` itself is removed once every piece has been
     extracted, unless *keep_terrain_obj* is set.
     """
+    from shapely.affinity import translate as _shapely_translate
+
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
     from .scene import (
         set_origin_to_3d_cursor,  # deferred to avoid circular import at load time
@@ -1859,6 +1876,11 @@ def cut_into_puzzle_pieces(
             # PuzzleRow/PuzzleCol identically) -- BottomText reads this to size
             # its mark text differently per puzzle type.
             piece_obj["PuzzleShape"] = "JIGSAW"
+            # Own footprint (local frame) -- the bulk copy above handed every
+            # piece the WHOLE map's map_polygon_wkt.
+            piece_obj["outline_wkt"] = _shapely_translate(
+                poly, xoff=-piece_obj.location.x, yoff=-piece_obj.location.y
+            ).wkt
             piece_objs.append(piece_obj)
             seam_polys.append(seam_poly)
 

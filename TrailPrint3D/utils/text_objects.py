@@ -1,6 +1,7 @@
 ﻿import math
 import os
 import platform
+import re
 from typing import cast
 
 import bmesh  # type: ignore
@@ -347,6 +348,94 @@ def wrap_mesh_around_circle(
     obj.data.update()
 
 
+def _fit_jigsaw_mark(obj, rects, cx, cy, size):
+    """Largest scale for a text block whose padded per-line boxes all sit
+    entirely on obj's flat bottom face.
+
+    rects: one (offset_x, offset_y, half_w, half_h) per text line, in
+    unscaled text units relative to the block's center.
+
+    Probes the bottom by ray-casting straight up from below: a point counts
+    as usable only when the first hit is the flat bottom itself, so a gap
+    left by a neighbor's tab (no hit) and a beveled edge (hit higher up)
+    both reject it. Each box is tested along its border (plus its center)
+    -- the tabs/blanks intrude from the piece's outline, so a border that
+    fits means the whole box does. Candidate centers are tried around the
+    cell center (nearest first) so the mark can dodge a tab that pushes in
+    from one side, while still preferring the center when it's as good.
+
+    Returns (scale, center_x, center_y), or None if nothing fits.
+    """
+    from mathutils.bvhtree import BVHTree  # type: ignore
+
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.transform(obj.matrix_world)
+    if not bm.verts:
+        bm.free()
+        return None
+    bottom_z = min(v.co.z for v in bm.verts)
+    tree = BVHTree.FromBMesh(bm)
+    bm.free()
+
+    up = Vector((0, 0, 1))
+    ray_z = bottom_z - 1.0
+    tol = 0.05
+    pad = size * 0.03
+    samples = 24
+
+    def on_flat_bottom(x, y):
+        hit, _normal, _index, _dist = tree.ray_cast(Vector((x, y, ray_z)), up)
+        return hit is not None and hit.z <= bottom_z + tol
+
+    def box_fits(bx, by, rx, ry):
+        if not on_flat_bottom(bx, by):
+            return False
+        for k in range(samples + 1):
+            t = -1 + 2 * k / samples
+            if not (on_flat_bottom(bx + t * rx, by - ry)
+                    and on_flat_bottom(bx + t * rx, by + ry)
+                    and on_flat_bottom(bx - rx, by + t * ry)
+                    and on_flat_bottom(bx + rx, by + t * ry)):
+                return False
+        return True
+
+    def fits(px, py, s):
+        return all(
+            box_fits(px + ox * s, py + oy * s, hw * s + pad, hh * s + pad)
+            for ox, oy, hw, hh in rects
+        )
+
+    step = size * 0.04
+    offsets = sorted(
+        ((i * step, j * step) for i in range(-4, 5) for j in range(-4, 5)),
+        key=lambda o: o[0] ** 2 + o[1] ** 2,
+    )
+    block_half = max(max(abs(ox) + hw, abs(oy) + hh) for ox, oy, hw, hh in rects)
+    s_max = (size / 2) / max(block_half, 1e-6)
+
+    best_s, best_x, best_y = 0.0, cx, cy
+    for ox, oy in offsets:
+        px, py = cx + ox, cy + oy
+        # Only move off-center for a clearly bigger mark (>= 5% larger).
+        lo = best_s * 1.05
+        if lo >= s_max or (lo > 0 and not fits(px, py, lo)):
+            continue
+        hi = s_max
+        for _ in range(12):
+            mid = (lo + hi) / 2
+            if fits(px, py, mid):
+                lo = mid
+            else:
+                hi = mid
+        if lo > best_s:
+            best_s, best_x, best_y = lo, px, py
+
+    if best_s <= 0:
+        return None
+    return best_s, best_x, best_y
+
+
 def BottomText(obj):
 
     from . import transform_MapObject  # deferred to avoid circular import at load time
@@ -357,10 +446,44 @@ def BottomText(obj):
     if "objSize" not in obj:
         return
 
-        # Place text objects
-    text_size = size / 10
+    # "objSize" is only reliable as a MAP-object validity gate here, not as
+    # this object's own real size: normal generation always re-stamps it with
+    # the sidebar's global Object Size (see dovetail_cutout's own obj_size
+    # override for the multitile picker, which hits the exact same staleness),
+    # so a puzzle/multitile piece's "objSize" describes the whole map/puzzle
+    # setting, not that piece's own much smaller footprint. Deriving size from
+    # the object's own world-space bounding box is correct regardless of which
+    # generation flow produced it.
+    world_bbox = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+    xs = [v.x for v in world_bbox]
+    ys = [v.y for v in world_bbox]
+    size = max(max(xs) - min(xs), max(ys) - min(ys))
 
-    tName = create_text("t_name", "Name", (0, 0, 1.1), text_size)
+    # Jigsaw puzzle pieces (cut_into_puzzle_pieces, tagged "PuzzleShape" ==
+    # "JIGSAW") get a two-line mark ("AA" over "17") sized to the largest
+    # clean area of their own bottom face (see _fit_jigsaw_mark) -- their
+    # tabs/blanks cut into the cell unpredictably, so no fixed fraction of
+    # the piece size fits every piece. Everything else (regular maps,
+    # multitile tiles, sliding-puzzle pieces) keeps a fixed one-line size.
+    is_jigsaw = obj.get("PuzzleShape") == "JIGSAW"
+    if is_jigsaw:
+        label_match = re.match(r"^([A-Za-z]+)(\d+)$", name)
+        mark_text = f"{label_match.group(1)}\n{label_match.group(2)}" if label_match else name
+        text_size = 1.0
+    else:
+        mark_text = name
+        text_size = size / 10
+
+    # Always Arial Black, regardless of the user's selected font (not available on Linux -> scene font)
+    if platform.system() == "Windows":
+        markFont = "C:/WINDOWS/FONTS/ariblk.ttf"
+    elif platform.system() == "Darwin":
+        markFont = "/System/Library/Fonts/Supplemental/Arial Black.ttf"
+    else:
+        markFont = None
+
+    tName = create_text("t_name", "Name", (0, 0, 1.1), text_size, font_path=markFont)
+
 
     # obj.location -- for puzzle/sliding-puzzle pieces this is each piece's
     # own regularly-spaced RASTER cell center (cut_into_puzzle_pieces /
@@ -379,7 +502,12 @@ def BottomText(obj):
 
     tName.scale.x *= -1
 
-    update_text_object("t_name", name)
+
+    update_text_object("t_name", mark_text)
+    if is_jigsaw:
+        # Labels are caps + digits (no descenders), so the default line
+        # spacing leaves a gap the fit would have to work around for nothing.
+        tName.data.space_line = 0.65
 
     convert_text_to_mesh("t_name", obj.name, False)
 
@@ -435,7 +563,7 @@ def BottomText(obj):
 
     tName.name = name + "_Mark"
 
-    bpy.ops.object.select_all(action="DESELECT")
+    bpy.ops.object.select_all(action='DESELECT')
 
     tName.select_set(True)
 

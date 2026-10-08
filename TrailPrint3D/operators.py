@@ -428,126 +428,215 @@ class TP3D_OT_magnet_holes(bpy.types.Operator):
     bl_idname = "tp3d.magnet_holes"
     bl_label = _("Magnet Holes")
     bl_options = {"REGISTER", "UNDO"}
+    bl_description = _tip(
+        "Cut magnet holes into the bottom of the selected Map, Shell, or Plate"
+    )
+
+    _TYPES = {"MAP", "SHELL", "PLATE"}
+    # Material kept above each magnet so the hole never opens into the top
+    # surface, a shell's cavity or a plate's map insert.
+    _MIN_CEILING = 0.6
+
+    @classmethod
+    def poll(cls, context):
+        has_valid_obj = any(
+            o.get("Object type") in cls._TYPES for o in context.selected_objects
+        )
+        if not has_valid_obj:
+            cls.poll_message_set(_("Select at least one Map, Shell, or Plate object"))
+        return has_valid_obj
 
     def execute(self, context):
-        tp3d = context.scene.tp3d
-
-        selected_objects = context.selected_objects
-
-        if not selected_objects:
-            utils.show_message_box("No objects selected")
-            # return{'FINISHED'}
-            return {"FINISHED"}
-
-        bpy.ops.object.select_all(action="DESELECT")
-        for zobj in selected_objects:
-            zobj.select_set(False)
-
-        for zobj in selected_objects:
-            if zobj.type != "MESH":
-                continue
-
-            zobj.select_set(True)
-            bpy.context.view_layer.objects.active = zobj
-
-            obj_size = tp3d.objSize
-
-            # Check for selection and custom property
-            if zobj:
-                if "objSize" in zobj:
-                    obj_size = zobj["objSize"]
-            elif not zobj:
-                print("Select a Map.")
-                return {"FINISHED"}
-
-            if "MagnetHoles" not in zobj:
-                continue
-
-            if zobj["MagnetHoles"]:
-                continue
-
-            magnetDiameter = tp3d.magnetDiameter
-            magnetHeight = tp3d.magnetHeight
-
-            # Flip normals and Get bottom faces
-            utils.selectBottomFaces(zobj)
-
-            # get the lowest zValue of one the faces
-            zValue = 0
-
-            # Switch to Edit Mode
-            bpy.ops.object.mode_set(mode="EDIT")
-            mesh = bmesh.from_edit_mesh(zobj.data)
-
-            # Get the world matrix to convert local to global coordinates
-            world_matrix = zobj.matrix_world
-
-            # Collect global Z-values of selected faces
-            z_values = [
-                (world_matrix @ face.calc_center_median()).z
-                for face in mesh.faces
-                if face.select
-            ]
-
-            zValue = min(z_values)
-
+        if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
 
-            # Set 3D cursor to object's origin
-            bpy.context.scene.cursor.location = zobj.location
-
-            # Create 4 cylinders around the object
-            radius = obj_size / 3
-            angle_step = math.radians(90)
-            created_cylinders = []
-
-            for i in range(4):
-                angle = i * angle_step
-                offset_x = math.cos(angle) * radius
-                offset_y = math.sin(angle) * radius
-                pos = zobj.location + Vector((offset_x, offset_y, zValue))
-                pos = zobj.location + Vector((offset_x, offset_y, 0))
-
-                bpy.ops.mesh.primitive_cylinder_add(
-                    radius=magnetDiameter / 2, depth=magnetHeight * 2, location=pos
+        selected_objects = list(context.selected_objects)
+        active = context.view_layer.objects.active
+        targets = [
+            o
+            for o in selected_objects
+            if o.type == "MESH" and o.get("Object type") in self._TYPES
+        ]
+        # A map selected together with its plate/shell sits on top of it, so
+        # the holes belong in the part that touches the table.
+        if any(o.get("Object type") in {"PLATE", "SHELL"} for o in targets):
+            n_maps = sum(1 for o in targets if o.get("Object type") == "MAP")
+            targets = [o for o in targets if o.get("Object type") != "MAP"]
+            if n_maps:
+                self.report(
+                    {"INFO"},
+                    _rpt(
+                        "Skipped {count} map(s): magnet holes go into the selected plate or shell."
+                    ).format(count=n_maps),
                 )
-                cyl = bpy.context.active_object
-                created_cylinders.append(cyl)
 
-            # Merge cylinders into one object
-            bpy.ops.object.select_all(action="DESELECT")
-            for cyl in created_cylinders:
-                cyl.select_set(True)
-            bpy.context.view_layer.objects.active = created_cylinders[0]
-            bpy.ops.object.join()
-            merged_cylinders = bpy.context.active_object
+        done = 0
+        for obj in targets:
+            if obj.get("MagnetHoles"):
+                self.report(
+                    {"WARNING"},
+                    _rpt("{name} already has magnet holes.").format(name=obj.name),
+                )
+                continue
+            if self._cut_holes(context, obj):
+                done += 1
 
-            # Perform boolean difference
-            bpy.ops.object.select_all(action="DESELECT")
-            zobj.select_set(True)
-            bpy.context.view_layer.objects.active = zobj
+        bpy.ops.object.select_all(action="DESELECT")
+        for obj in selected_objects:
+            obj.select_set(True)
+        context.view_layer.objects.active = active
 
-            bool_mod = zobj.modifiers.new(name="MagnetCutout", type="BOOLEAN")
-            bool_mod.operation = "DIFFERENCE"
-            bool_mod.object = merged_cylinders
+        return {"FINISHED"} if done else {"CANCELLED"}
 
-            bpy.ops.object.modifier_apply(modifier=bool_mod.name)
+    def _cut_holes(self, context, obj):
+        from .utils import geometry2d as g2d
+        from .utils.magnet_layout import dovetail_footprints, magnet_layout
+        from .utils.mesh_ops import _extrude_flat_polygon, is_mesh_manifold
+        from .utils.outline import get_bottom_outline, rotation_of
 
-            # Cleanup - delete the merged cutter object
-            bpy.data.objects.remove(merged_cylinders, do_unlink=True)
+        tp3d = context.scene.tp3d
+        outline = get_bottom_outline(obj)
+        if outline is None:
+            self.report(
+                {"WARNING"},
+                _rpt("{name}: no usable outline found, skipped.").format(name=obj.name),
+            )
+            return False
 
-            zobj["MagnetHoles"] = True
+        # Puzzle pieces inherit the whole map's Shape, which isn't theirs.
+        is_piece = "PuzzleRow" in obj
+        shape = None if is_piece else obj.get("Shape")
+        rotation = rotation_of(obj, tp3d.shapeRotation)
+        blocked = None
+        if obj.get("Dovetail") and not is_piece and "objSize" in obj:
+            blocked = dovetail_footprints(obj["objSize"], shape, rotation)
 
-            bpy.ops.object.select_all(action="DESELECT")
-            zobj.select_set(False)
+        radius = tp3d.magnetDiameter / 2
+        centers = magnet_layout(
+            outline,
+            tp3d.magnetCount,
+            tp3d.magnetDiameter,
+            tp3d.magnetMargin,
+            blocked=blocked,
+            shape=shape,
+            rotation_deg=rotation,
+        )
+        if not centers:
+            self.report(
+                {"WARNING"},
+                _rpt(
+                    "{name}: no room for a {diameter:.1f} mm magnet with a {margin:.1f} mm margin."
+                ).format(
+                    name=obj.name,
+                    diameter=tp3d.magnetDiameter,
+                    margin=tp3d.magnetMargin,
+                ),
+            )
+            return False
+        if len(centers) < tp3d.magnetCount:
+            self.report(
+                {"WARNING"},
+                _rpt("{name}: only {placed} of {count} magnet holes fit.").format(
+                    name=obj.name, placed=len(centers), count=tp3d.magnetCount
+                ),
+            )
 
-        bpy.context.view_layer.objects.active = selected_objects[0]
-        for zobj in selected_objects:
-            zobj.select_set(True)
+        bottom_z = min(c[2] for c in obj.bound_box)
+        available = self._material_above(obj, centers, radius, bottom_z)
+        depth = min(tp3d.magnetHeight, available - self._MIN_CEILING)
+        if depth <= 0.1:
+            self.report(
+                {"WARNING"},
+                _rpt(
+                    "{name}: only {available:.1f} mm of material above the bottom, too thin for magnet holes."
+                ).format(name=obj.name, available=available),
+            )
+            return False
+        if depth < tp3d.magnetHeight - 1e-6:
+            self.report(
+                {"WARNING"},
+                _rpt(
+                    "{name}: magnet holes limited to {depth:.1f} mm deep (asked {height:.1f} mm) to keep {ceiling:.1f} mm of material above them."
+                ).format(
+                    name=obj.name,
+                    depth=depth,
+                    height=tp3d.magnetHeight,
+                    ceiling=self._MIN_CEILING,
+                ),
+            )
 
-        print("Magnet holes Added")
+        holes = [g2d.Point(x, y).buffer(radius, quad_segs=16) for x, y in centers]
+        verts, faces = [], []
+        for part in g2d.iter_polygons(g2d.union(holes)):
+            # Starts below the bottom so the boolean never sees coplanar faces.
+            _extrude_flat_polygon(g2d, part, bottom_z - 1.0, bottom_z + depth, verts, faces)
+        mesh = bpy.data.meshes.new(f"{obj.name}_MagnetCutter")
+        mesh.from_pydata(verts, [], faces)
+        mesh.update()
+        cutter = bpy.data.objects.new(mesh.name, mesh)
+        context.collection.objects.link(cutter)
+        cutter.matrix_world = obj.matrix_world.copy()
+        context.view_layer.update()
 
-        return {"FINISHED"}
+        # MANIFOLD silently no-ops on non-manifold or inconsistently wound
+        # input, so retry with EXACT if the mesh came back untouched.
+        n_verts = len(obj.data.vertices)
+        solver = "MANIFOLD" if is_mesh_manifold(obj) else "EXACT"
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        utils.boolean_operation(obj, cutter, "DIFFERENCE", solver=solver)
+        if solver == "MANIFOLD" and len(obj.data.vertices) == n_verts:
+            utils.boolean_operation(obj, cutter, "DIFFERENCE", solver="EXACT")
+        bpy.data.objects.remove(cutter, do_unlink=True)
+        bpy.data.meshes.remove(mesh)
+
+        if len(obj.data.vertices) == n_verts:
+            self.report(
+                {"ERROR"},
+                _rpt("{name}: the magnet hole cut failed.").format(name=obj.name),
+            )
+            return False
+
+        obj["MagnetHoles"] = True
+        return True
+
+    def _material_above(self, obj, centers, radius, bottom_z):
+        """Thinnest material (mm, local Z) above *bottom_z* over the holes'
+        footprints, measured by casting rays up through the object. Falls
+        back to the object's own thickness metadata when no ray hits."""
+        up = Vector((0.0, 0.0, 1.0))
+        best = None
+        for cx, cy in centers:
+            samples = [(cx, cy)] + [
+                (
+                    cx + math.cos(a) * radius * 0.9,
+                    cy + math.sin(a) * radius * 0.9,
+                )
+                for a in (k * math.pi / 4 for k in range(8))
+            ]
+            for x, y in samples:
+                # First hit is the bottom surface, second the top of the
+                # material above it (terrain, shell floor or insert floor).
+                hit, loc, _n, _i = obj.ray_cast(Vector((x, y, bottom_z - 1.0)), up)
+                if not hit:
+                    continue
+                hit, loc, _n, _i = obj.ray_cast(loc + up * 1e-3, up)
+                if not hit:
+                    continue
+                thickness = loc.z - bottom_z
+                best = thickness if best is None else min(best, thickness)
+        if best is not None:
+            return best
+
+        tp3d = bpy.context.scene.tp3d
+        obj_type = obj.get("Object type")
+        if obj_type == "SHELL":
+            return obj.get("floorThickness", tp3d.plateThickness)
+        if obj_type == "PLATE":
+            return obj.get("plateThickness", tp3d.plateThickness) - obj.get(
+                "plateInsertValue", tp3d.plateInsertValue
+            )
+        return obj.get("minThickness", tp3d.minThickness)
 
 
 def find_pin_cutout_targets(context, pin):
@@ -723,26 +812,23 @@ class TP3D_OT_dovetail(bpy.types.Operator):
     bl_label = _("Dovetail")
     bl_options = {"REGISTER", "UNDO"}
     bl_description = _tip("Add dovetail cutouts to the selected object")
+    _TYPES = {"MAP", "SHELL", "PLATE"}
+    # Only shapes that tile/stack edge-to-edge make sense to dovetail-join.
+    _SHAPES = {"SQUARE", "HEXAGON", "OCTAGON"}
 
     @classmethod
     def poll(cls, context):
+        candidates = [o for o in context.selected_objects if o.get("Object type") in cls._TYPES]
 
-        has_map_obj = any(
-            o.get("Object type") == "MAP" for o in context.selected_objects
-        )
-        has_shell_obj = any(
-            o.get("Object type") == "SHELL" for o in context.selected_objects
-        )
-        has_plate_obj = any(
-            o.get("Object type") == "PLATE" for o in context.selected_objects
-        )
-
-        has_valid_obj = has_map_obj or has_shell_obj or has_plate_obj
-
-        if not has_valid_obj:
+        if not candidates:
             cls.poll_message_set(_("Select at least one Map, Shell, or Plate object"))
+            return False
 
-        return has_valid_obj
+        if not any(o.get("Shape") in cls._SHAPES for o in candidates):
+            cls.poll_message_set(_("Dovetail cutouts are only available for Square, Hexagon, and Octagon shapes"))
+            return False
+
+        return True
 
     def execute(self, context):
 
@@ -756,25 +842,33 @@ class TP3D_OT_dovetail(bpy.types.Operator):
         for zobj in selected_objects:
             zobj.select_set(False)
 
+        from .utils.outline import get_bottom_outline, rotation_of
+
         for zobj in selected_objects:
             if zobj.type != "MESH":
                 continue
 
-            if "Dovetail" not in zobj:
+            if zobj.get("Dovetail"):
                 continue
 
-            if zobj["Dovetail"]:
+            if zobj.get("Object type") not in self._TYPES or zobj.get("Shape") not in self._SHAPES:
                 continue
 
             zobj.select_set(True)
             bpy.context.view_layer.objects.active = zobj
 
-            # Check for selection and custom property
-            if zobj and "objSize" not in zobj:
-                break
+            # Shells (and any object missing the stamped size) fall back to
+            # the outline's own bounds instead of silently skipping.
+            obj_size = zobj.get("objSize")
+            if obj_size is None:
+                outline = get_bottom_outline(zobj)
+                if outline is None:
+                    zobj.select_set(False)
+                    continue
+                minx, miny, maxx, maxy = outline.bounds
+                obj_size = max(maxx - minx, maxy - miny)
 
-            obj_size = zobj["objSize"]
-            shapeRotation = zobj["shapeRotation"]
+            shapeRotation = rotation_of(zobj, context.scene.tp3d.shapeRotation)
             dovetailSize = 15
             dovetailHeight = 3
 
@@ -799,10 +893,25 @@ class TP3D_OT_dovetail(bpy.types.Operator):
             obj_shape = zobj.get("Shape", "HEXAGON")
             created_cylinders = []
 
+            # Map objects sit with local Z=0 at their bottom, but a Plate's
+            # local Z=0 is its TOP (origin shared with the map it holds, see
+            # create_generic_plate/_build_prism) -- its bottom is negative
+            # local Z. Read the real bottom from the mesh instead of
+            # assuming the object's origin sits there.
+            bottom_local_z = min(c[2] for c in zobj.bound_box)
+
             if obj_shape == "SQUARE":
                 radius = obj_size / 2 - dovetailSize / 2
                 angle_step = math.radians(90)
                 steps = 4
+                angle_start = math.radians(shapeRotation)
+            elif obj_shape == "OCTAGON":
+                # Regular octagon (equal sides) built as a bevelled square --
+                # every edge, flat or diagonal, sits at the same apothem as a
+                # square of the same obj_size, with edge midpoints every 45deg.
+                radius = obj_size / 2 - dovetailSize / 2
+                angle_step = math.radians(45)
+                steps = 8
                 angle_start = math.radians(shapeRotation)
             else:  # HEXAGON
                 radius = obj_size / 2 * 0.866 - dovetailSize / 2
@@ -815,7 +924,7 @@ class TP3D_OT_dovetail(bpy.types.Operator):
                 offset_x = math.cos(angle) * radius
                 offset_y = math.sin(angle) * radius
                 pos = zobj.location + Vector(
-                    (offset_x, offset_y, 0 + dovetailHeight / 2)
+                    (offset_x, offset_y, bottom_local_z + dovetailHeight / 2)
                 )
                 rotation = Euler((0, 0, angle - math.radians(90)), "XYZ")
 
@@ -925,52 +1034,27 @@ class TP3D_OT_bottom_mark(bpy.types.Operator):
         for zobj in selected_objects:
             zobj.select_set(False)
 
-        generated = False
-        for zobj in selected_objects:
-            # Check for selection and custom property
-            if "BottomMark" not in zobj:
-                continue
+        targets = [
+            zobj
+            for zobj in selected_objects
+            if "BottomMark" in zobj
+            and not zobj["BottomMark"]
+            and zobj.type == "MESH"
+            and "objSize" in zobj
+        ]
 
-            if zobj["BottomMark"]:
-                continue
-
-            if zobj.type == "MESH" and "objSize" in zobj:
-                zobj.select_set(True)
-                bpy.context.view_layer.objects.active = zobj
-
-                mark = utils.BottomText(zobj)
-                generated = True
-
-                if bottomMarkCutout:
-                    mark.scale.z = 2
-
-                    utils.recalculateNormals(mark)
-                    # Add boolean modifier
-                    bool_mod = zobj.modifiers.new(name="Boolean", type="BOOLEAN")
-                    bool_mod.object = mark
-                    bool_mod.operation = "DIFFERENCE"
-                    bool_mod.solver = "EXACT"
-
-                    bpy.context.view_layer.objects.active = zobj
-                    bpy.ops.object.modifier_apply(modifier=bool_mod.name)
-
-                    bpy.data.objects.remove(mark, do_unlink=True)
-
-                bpy.ops.object.select_all(action="DESELECT")
-                zobj.select_set(False)
-
-        if not generated:
+        if not targets:
             utils.show_message_box("Not a valid Object selected")
 
         # Marking a whole puzzle (dozens of pieces, two booleans each) takes
         # a while -- show how many are done instead of a frozen viewport.
         overlay = None
-        if len(selected_objects) > 1:
+        if len(targets) > 1:
             overlay = _progress.ProgressOverlay.get()
             overlay.start()
         try:
-            n_targets = len(selected_objects)
-            for idx, zobj in enumerate(selected_objects):
+            n_targets = len(targets)
+            for idx, zobj in enumerate(targets):
                 if overlay is not None:
                     if _progress.SubprocessProgress.get().is_cancel_requested():
                         break
@@ -993,6 +1077,83 @@ class TP3D_OT_bottom_mark(bpy.types.Operator):
             zobj.select_set(True)
 
         return {"FINISHED"}
+
+    def _mark_tile(self, context, zobj, bottomMarkCutout):
+        zobj.select_set(True)
+        bpy.context.view_layer.objects.active = zobj
+
+        mark = utils.BottomText(zobj)
+
+        mark.scale.z = 2
+
+        bpy.ops.object.select_all(action="DESELECT")
+        mark.select_set(True)
+        bpy.context.view_layer.objects.active = mark
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+        utils.recalculateNormals(mark)
+
+        # Untouched copy of the tile to trim the mark against after
+        # the cut -- the tile itself no longer has any volume where
+        # the mark sits once the cut is applied.
+        trim_obj = None
+        if not bottomMarkCutout:
+            trim_obj = zobj.copy()
+            trim_obj.data = zobj.data.copy()
+            context.scene.collection.objects.link(trim_obj)
+
+        # Add boolean modifier
+        bool_mod = zobj.modifiers.new(name="Boolean", type="BOOLEAN")
+        bool_mod.object = mark
+        bool_mod.operation = "DIFFERENCE"
+        bool_mod.solver = "MANIFOLD"
+
+        bpy.context.view_layer.objects.active = zobj
+        bpy.ops.object.modifier_apply(modifier=bool_mod.name)
+
+        if bottomMarkCutout:
+            bpy.data.objects.remove(mark, do_unlink=True)
+        else:
+            # Trim the mark to the tile's original volume, so where
+            # it runs over a bevel/rounded edge it ends flush with
+            # the tile instead of poking out past it.
+            bpy.context.view_layer.objects.active = mark
+            inter_mod = mark.modifiers.new(name="Intersect", type="BOOLEAN")
+            inter_mod.object = trim_obj
+            inter_mod.operation = "INTERSECT"
+            inter_mod.solver = "MANIFOLD"
+            bpy.ops.object.modifier_apply(modifier=inter_mod.name)
+
+            trim_mesh = trim_obj.data
+            bpy.data.objects.remove(trim_obj, do_unlink=True)
+            bpy.data.meshes.remove(trim_mesh)
+
+            # Texture-painted tiles take every face's 3MF colour from
+            # the paint texture, not from materials -- point the
+            # mark's UVs at a TRAIL-coloured texel so it keeps its
+            # colour once joined.
+            from .utils.texture import material_to_srgb, paint_part_before_join
+
+            painted = paint_part_before_join(
+                zobj, mark, material_to_srgb(bpy.data.materials.get("TRAIL"))
+            )
+
+            # Fill the cutout back in with the trimmed mark and merge
+            # it into the tile -- it keeps its own TRAIL material, so
+            # it still prints as a separate color.
+            bpy.ops.object.select_all(action="DESELECT")
+            mark.select_set(True)
+            zobj.select_set(True)
+            bpy.context.view_layer.objects.active = zobj
+            bpy.ops.object.join()
+
+            if painted:
+                paint_uv = zobj.data.uv_layers.get(const._UV_LAYER_NAME)
+                if paint_uv is not None:
+                    zobj.data.uv_layers.active = paint_uv
+
+        bpy.ops.object.select_all(action="DESELECT")
+        zobj.select_set(False)
 
 
 class TP3D_OT_terrain_dummy(bpy.types.Operator):
@@ -1363,7 +1524,7 @@ class TP3D_OT_popup_merge(bpy.types.Operator):
         self.orig_distance = rv3d.view_distance
         self.orig_perspective = rv3d.view_perspective
 
-        utils.zoom_camera_to_selected(context.scene.tp3d.currentMap)
+        utils.zoom_camera_to_objects([context.scene.tp3d.currentMap])
         bpy.ops.object.select_all(action="DESELECT")
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
@@ -1648,7 +1809,7 @@ class TP3D_OT_popup_text(bpy.types.Operator):
         self.orig_distance = self.rv3d.view_distance
         self.orig_perspective = self.rv3d.view_perspective
 
-        utils.zoom_camera_to_selected(map)
+        utils.zoom_camera_to_objects([map])
         bpy.ops.object.select_all(action="DESELECT")
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
@@ -1905,7 +2066,7 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
         self.orig_distance = self.rv3d.view_distance
         self.orig_perspective = self.rv3d.view_perspective
 
-        utils.zoom_camera_to_selected(map)
+        utils.zoom_camera_to_objects([map])
         bpy.ops.object.select_all(action="DESELECT")
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
@@ -2080,7 +2241,7 @@ class TP3D_OT_popup_pin(bpy.types.Operator):
         self.orig_distance = self.rv3d.view_distance
         self.orig_perspective = self.rv3d.view_perspective
 
-        utils.zoom_camera_to_selected(map)
+        utils.zoom_camera_to_objects([map])
         bpy.ops.object.select_all(action="DESELECT")
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
@@ -3022,6 +3183,9 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             if frame_terrain_requested
             else None,
             keep_terrain_obj=frame_terrain_requested,
+            overlay=overlay,
+            progress_start=0.75,
+            progress_end=0.85,
         )
 
         if trails:
@@ -3804,7 +3968,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # rather than before it (a zoom done before the thumbnail render
         # could otherwise get clobbered by that restore).
         try:
-            utils.zoom_camera_to_selected(blank)
+            utils.zoom_camera_to_objects([blank])
         except (ReferenceError, AttributeError):
             pass
 

@@ -1735,9 +1735,10 @@ def plateInsert(plate, map):
     # The WKT is stored pre-rotation: build_mesh_from_polygon writes it
     # before _rg_create_map_object's transform_apply bakes shapeRotation
     # into the mesh data. Apply the same rotation here so the cutter's
-    # XY footprint lines up with the visible map.
+    # XY footprint lines up with the visible map -- around (0, 0), the pivot
+    # transform_apply uses (the centroid differs for off-center outlines).
     if shape_rotation:
-        poly = shp_rotate(poly, shape_rotation, origin="centroid")
+        poly = shp_rotate(poly, shape_rotation, origin=(0, 0))
 
     # Buffer outward by tolerance for a uniform clearance ring around the
     # map footprint. Mitre join keeps polygon corners crisp; the same

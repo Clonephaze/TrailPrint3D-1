@@ -18,29 +18,6 @@ from ..terrain import _ColoringTextureResult
 _puzzle_roads_data: tuple | None = None
 
 
-def _stamp_shell_wkt(shell_obj, map_obj):
-    from shapely.geometry import MultiPoint
-
-    if shell_obj is None or map_obj is None:
-        return
-
-    mw = shell_obj.matrix_world
-    outer_pts = [((mw @ v.co).x, (mw @ v.co).y) for v in shell_obj.data.vertices]
-    outer_hull = MultiPoint(outer_pts).convex_hull
-
-    mw_m = map_obj.matrix_world
-    inner_pts = [((mw_m @ v.co).x, (mw_m @ v.co).y) for v in map_obj.data.vertices]
-    inner_hull = MultiPoint(inner_pts).convex_hull
-
-    shell_obj["shell_mode"] = "SHELL"
-    shell_obj["shell_map_wkt"] = inner_hull.wkt
-    shell_obj["shell_outer_wkt"] = outer_hull.wkt
-    shell_obj["shell_inner_wkt"] = inner_hull.wkt
-    if shell_obj.data is not None:
-        shell_obj.data["shell_outer_wkt"] = outer_hull.wkt
-        shell_obj.data["shell_inner_wkt"] = inner_hull.wkt
-
-
 def _raise_overlays_with_plate(gen, plate_thickness):
     """Lift every object that sits on top of the map by the same amount
     the plate itself is lifted, so trails, roads, and elements stay
@@ -61,6 +38,7 @@ def _raise_overlays_with_plate(gen, plate_thickness):
 
 
 def _rg_create_text_and_overlays(gen: GenerationContext):
+    from ..outline import shift_outline_keys  # deferred
     from ..plate import create_generic_plate  # deferred
     from ..scene import (
         set_origin_to_3d_cursor,
@@ -126,12 +104,21 @@ def _rg_create_text_and_overlays(gen: GenerationContext):
         if shellobj is not None:
             shellobj.data.materials.clear()
             shellobj.data.materials.append(bpy.data.materials.get("BLACK"))
-            _stamp_shell_wkt(shellobj, map_obj)
             bpy.ops.object.select_all(action="DESELECT")
             shellobj.select_set(True)
             bpy.context.view_layer.objects.active = shellobj
+            old_origin = shellobj.location.copy()
             bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="MEDIAN")
+            # build_map_shell stamps its outlines in the pre-origin_set frame.
+            shift_outline_keys(
+                shellobj,
+                old_origin.x - shellobj.location.x,
+                old_origin.y - shellobj.location.y,
+            )
             shellobj.location.z += gen.settings.plateThickness
+            # build_map_shell passes plateThickness as its bottom_wall.
+            shellobj["floorThickness"] = gen.settings.plateThickness
+            shellobj["shapeRotation"] = gen.settings.shapeRotation
 
     # --- 2. Raise map/trail/elements with the plate ---------------------
     if plateobj is not None or shellobj is not None:

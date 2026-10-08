@@ -16,6 +16,7 @@ from bpy.app.translations import pgettext_rpt as _rpt
 from shapely.geometry import LineString, Point
 
 from .. import geometry2d as g2d
+from ..magnet_layout import place_on_rays
 from ..mesh_ops import _extrude_flat_polygon, applyModifier
 from ..primitives import (
     circle_polygon,
@@ -526,16 +527,12 @@ def _compute_mount_layout(p):
             blocked.append(pocket.buffer(_MOUNT_WALL))
         allowed = prep(free.difference(unary_union(blocked)))
         mr = p['magnetDiameter'] / 2
-        reach = p['objSize'] / 2
-        for a in _magnet_angles(p['shape']):
-            # As far out as it fits along its direction, for a stable spread.
-            d = reach
-            while d > 0:
-                x, y = math.cos(a) * d, math.sin(a) * d
-                if allowed.contains(Point(x, y).buffer(mr, quad_segs=16)):
-                    layout['magnets'].append((x, y))
-                    break
-                d -= 0.5
+        # As far out as it fits along each direction, for a stable spread.
+        layout['magnets'] = place_on_rays(
+            lambda x, y: allowed.contains(Point(x, y).buffer(mr, quad_segs=16)),
+            _magnet_angles(p['shape']),
+            p['objSize'] / 2,
+        )
     return layout
 
 
