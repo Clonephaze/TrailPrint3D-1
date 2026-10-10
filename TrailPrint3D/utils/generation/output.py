@@ -2,7 +2,8 @@ import time
 from typing import Any
 
 import bpy  # type: ignore
-from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 from bpy.types import Object
 
 from ...progress import ProgressOverlay as _progress
@@ -23,7 +24,7 @@ def _rg_finalize_metadata(
 
     duration = time.time() - start_time
     tp3d = bpy.context.scene.tp3d
-    tp3d["o_time"] = _("Script ran for {} seconds").format(round(duration))
+    tp3d["o_time"] = _("Script ran for {:.0f} seconds").format(duration)
     if lowestZ is not None:
         tp3d.lowestZ = lowestZ
     if highestZ is not None:
@@ -135,35 +136,15 @@ def _rg_assign_extra_materials(gen: GenerationContext):
     textobj = gen.runtime.textObj
     plateobj = gen.runtime.plateObj
     shellobj = gen.runtime.shellObj
-    shape = gen.settings.shape
 
-    if (
-        shape
-        in {
-            "HEXAGON INNER TEXT",
-            "HEXAGON OUTER TEXT",
-            "OCTAGON OUTER TEXT",
-            "HEXAGON FRONT TEXT",
-            "CIRCLE OUTER TEXT",
-        }
-        and textobj
-    ):
-        mat_name = "TRAIL" if shape == "HEXAGON INNER TEXT" else "WHITE"
+    if textobj:
+        mat_name = "TRAIL" if gen.settings.textLayout == "ON_MAP" else "WHITE"
         mat = bpy.data.materials.get(mat_name)
         textobj.data.materials.clear()
         textobj.data.materials.append(mat)
         writeMetadata(textobj, type="TEXT")
 
-    if (
-        shape
-        in {
-            "HEXAGON OUTER TEXT",
-            "OCTAGON OUTER TEXT",
-            "HEXAGON FRONT TEXT",
-            "CIRCLE OUTER TEXT",
-        }
-        and plateobj
-    ):
+    if plateobj:
         mat = bpy.data.materials.get("BLACK")
         plateobj.data.materials.clear()
         plateobj.data.materials.append(mat)
@@ -200,7 +181,6 @@ def _rg_export(gen: GenerationContext):
         zoom_camera_to_objects,  # deferred to avoid circular import at load time
     )
 
-    shape = gen.settings.shape
     elements = gen.runtime.elements
     curveObjs = gen.runtime.curveObjs
     textobj = gen.runtime.textObj
@@ -250,29 +230,10 @@ def _rg_export(gen: GenerationContext):
                 if elem_obj and elem_obj.name in bpy.data.objects:
                     elem_obj.select_set(True)
 
-        if (
-            shape
-            in {
-                "HEXAGON INNER TEXT",
-                "HEXAGON OUTER TEXT",
-                "OCTAGON OUTER TEXT",
-                "HEXAGON FRONT TEXT",
-                "CIRCLE OUTER TEXT",
-            }
-            and textobj
-        ):
+        if textobj:
             textobj.select_set(True)
 
-        if (
-            shape
-            in {
-                "HEXAGON OUTER TEXT",
-                "OCTAGON OUTER TEXT",
-                "HEXAGON FRONT TEXT",
-                "CIRCLE OUTER TEXT",
-            }
-            and plateobj
-        ):
+        if plateobj:
             plateobj.select_set(True)
 
         if shellobj:
@@ -295,29 +256,10 @@ def _rg_export(gen: GenerationContext):
                 ):
                     export_to_STL(elem_obj, exportformat)
 
-        if (
-            shape
-            in {
-                "HEXAGON INNER TEXT",
-                "HEXAGON OUTER TEXT",
-                "OCTAGON OUTER TEXT",
-                "HEXAGON FRONT TEXT",
-                "CIRCLE OUTER TEXT",
-            }
-            and textobj
-        ):
+        if textobj:
             export_to_STL(textobj, exportformat)
 
-        if (
-            shape
-            in {
-                "HEXAGON OUTER TEXT",
-                "OCTAGON OUTER TEXT",
-                "HEXAGON FRONT TEXT",
-                "CIRCLE OUTER TEXT",
-            }
-            and plateobj
-        ):
+        if plateobj:
             export_to_STL(plateobj, exportformat)
 
         if shellobj:
@@ -338,7 +280,7 @@ def _rg_export(gen: GenerationContext):
 
     if gen.runtime.buggyData != 0:
         _progress.WarningsOverlay.add_warning(
-            "API might have faulty DATA. Maybe try diffrent Resolution or API", "warn"
+            _rpt("API might have faulty DATA. Maybe try diffrent Resolution or API"), "warn"
         )
 
     zoom_camera_to_objects([gen.runtime.mapObject])

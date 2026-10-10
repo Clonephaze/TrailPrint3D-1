@@ -145,8 +145,6 @@ def loadCollections(self, context):
 
     bpy.context.scene.tp3d.specialCollectionName = first_name
 
-    print(f"First name: {first_name}")
-
 def load_myproperties_from_csv(filename):
     """
     Load all properties from a CSV file and overwrite the values in MyProperties.

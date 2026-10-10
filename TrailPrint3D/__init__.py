@@ -24,6 +24,7 @@ try:
 except ImportError:
     picker_server = None
 from bpy.app.handlers import persistent
+from bpy.app.translations import pgettext_iface as _
 
 from . import export, operators, panels
 
@@ -41,19 +42,19 @@ classes = [
     panels.TP3D_MT_generators_menu,
     operators.TP3D_OT_run_generation,
     operators.TP3D_OT_shapely_status,
+    operators.TP3D_OT_python_mismatch_status,
     operators.TP3D_OT_export_stl,
     operators.TP3D_OT_export_obj,
     operators.TP3D_OT_export_three_mf,
     operators.TP3D_OT_open_website,
     operators.TP3D_OT_join_discord,
-    operators.TP3D_OT_rescale,
-    operators.TP3D_OT_pin_coords,
+    operators.TP3D_OT_info_video,
     operators.TP3D_OT_terrain_dummy,
     operators.TP3D_OT_magnet_holes,
     operators.TP3D_OT_dovetail,
-    operators.TP3D_OT_thicken,
     operators.TP3D_OT_bottom_mark,
     operators.TP3D_OT_color_mountain,
+    operators.TP3D_OT_undo_mountain_texture,
     operators.TP3D_OT_contour_lines,
     operators.TP3D_OT_save_preset,
     operators.TP3D_OT_load_preset,
@@ -61,7 +62,6 @@ classes = [
     operators.TP3D_OT_clear_cache,
     operators.TP3D_OT_import_svg,
     operators.TP3D_OT_popup_svg,
-    operators.TP3D_OT_info_video,
     operators.TP3D_OT_popup_text,
     operators.TP3D_OT_import_text,
     operators.TP3D_OT_import_pin,
@@ -79,8 +79,6 @@ classes = [
     operators.TP3D_OT_open_premium_update,
     operators.TP3D_OT_dismiss_update,
     operators.TP3D_OT_reset_osm_size_limits,
-    operators.TP3D_OT_remake_buildings,
-    operators.TP3D_OT_remake_roads,
     operators.TP3D_OT_puzzle_configurator,
     operators.TP3D_OT_map_generator,
     operators.TP3D_OT_medal_holder_generator,
@@ -165,7 +163,7 @@ def register():
     bpy.app.translations.register(const.ADDON_NAME, translation.translations_dict)
     bpy.types.Scene.tp3d = bpy.props.PointerProperty(type=props.TP3D_PG_properties)
     bpy.types.Scene.preset_list = bpy.props.EnumProperty(
-        name="Presets",
+        name=_("(Presets)"),
         items=utils.list_files_callback,
     )
 

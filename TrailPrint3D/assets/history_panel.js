@@ -314,9 +314,14 @@ function tp3dApplyHistorySettings(entry) {
     toggleBtn.className = 'history-toggle-btn';
     toggleBtn.title = 'Generation history';
     toggleBtn.textContent = 'History';
+    toggleBtn.setAttribute('aria-controls', 'historyPanel');
+    toggleBtn.setAttribute('aria-expanded', 'false');
 
     var panel = document.createElement('div');
     panel.id = 'historyPanel';
+    panel.setAttribute('role', 'region');
+    panel.setAttribute('aria-label', 'Generation history');
+    panel.inert = true;
 
     var header = document.createElement('div');
     header.className = 'modal-header';
@@ -396,6 +401,10 @@ function tp3dApplyHistorySettings(entry) {
         var top = document.createElement('div');
         top.className = 'history-entry-top';
         row.appendChild(top);
+        var action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'history-action';
+        top.appendChild(action);
 
         // entry.render is a real top-down Blender screenshot
         // (export.save_history_thumbnail), only ever added by the server
@@ -415,7 +424,7 @@ function tp3dApplyHistorySettings(entry) {
             thumb.src = thumbSrc;
             thumb.alt = '';
             thumbWrap.appendChild(thumb);
-            top.appendChild(thumbWrap);
+            action.appendChild(thumbWrap);
         }
 
         var text = document.createElement('div');
@@ -428,7 +437,7 @@ function tp3dApplyHistorySettings(entry) {
         summary.textContent = entry.summary || '';
         text.appendChild(time);
         text.appendChild(summary);
-        top.appendChild(text);
+        action.appendChild(text);
 
         var del = document.createElement('button');
         del.type = 'button';
@@ -437,14 +446,22 @@ function tp3dApplyHistorySettings(entry) {
         del.textContent = '✕';
         del.addEventListener('click', function(e) {
             e.stopPropagation();
+            del.disabled = true;
             fetch('http://127.0.0.1:' + PORT + '/delete_history_entry', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: entry.id })
             })
-            .then(function(r) { return r.json(); })
+            .then(function(r) {
+                if (!r.ok) throw new Error('History delete HTTP ' + r.status);
+                return r.json();
+            })
             .then(renderEntries)
-            .catch(function() {});
+            .catch(function(error) {
+                console.error('[TP3D history] Delete failed:', error);
+                tp3dAlert('Could not remove this history entry. Please try again.');
+            })
+            .finally(function() { del.disabled = false; });
         });
         top.appendChild(del);
 
@@ -491,7 +508,7 @@ function tp3dApplyHistorySettings(entry) {
         container.appendChild(head);
 
         if (group.length === 1) {
-            head.addEventListener('click', function() { selectEntry(group[0]); });
+            head.querySelector('.history-action').addEventListener('click', function() { selectEntry(group[0]); });
             return container;
         }
 
@@ -503,13 +520,16 @@ function tp3dApplyHistorySettings(entry) {
         (thumbWrap || head.querySelector('.history-entry-top')).appendChild(badge);
         head.classList.add('history-group-head');
         head.title = 'Click to show all ' + group.length + ' generations of this area';
+        var headAction = head.querySelector('.history-action');
+        headAction.setAttribute('aria-expanded', 'false');
+        headAction.setAttribute('aria-label', 'Show ' + group.length + ' generations: ' + (group[0].summary || 'same area'));
 
         var members = document.createElement('div');
         members.className = 'history-group-members';
         group.forEach(function(entry) {
             var row = buildEntryRow(entry);
             row.classList.add('history-group-member');
-            row.addEventListener('click', function(e) {
+            row.querySelector('.history-action').addEventListener('click', function(e) {
                 e.stopPropagation();
                 selectEntry(entry);
             });
@@ -517,14 +537,16 @@ function tp3dApplyHistorySettings(entry) {
         });
         container.appendChild(members);
 
-        head.addEventListener('click', function() {
-            container.classList.toggle('expanded');
+        headAction.addEventListener('click', function() {
+            headAction.setAttribute('aria-expanded', String(container.classList.toggle('expanded')));
         });
 
         return container;
     }
 
     function renderEntries(entries) {
+        if (!Array.isArray(entries)) throw new Error('Invalid history response');
+        list.removeAttribute('aria-busy');
         list.innerHTML = '';
         if (!entries || !entries.length) {
             var empty = document.createElement('div');
@@ -538,27 +560,63 @@ function tp3dApplyHistorySettings(entry) {
         });
     }
 
+    var loadVersion = 0;
+    function historyMessage(message, retry) {
+        list.innerHTML = '';
+        var notice = document.createElement('div');
+        notice.className = 'history-message';
+        notice.setAttribute('role', 'status');
+        notice.textContent = message;
+        if (retry) {
+            var button = document.createElement('button');
+            button.className = 'btn-import';
+            button.textContent = 'Try again';
+            button.addEventListener('click', loadEntries);
+            notice.appendChild(button);
+        }
+        list.appendChild(notice);
+    }
     function loadEntries() {
+        var version = ++loadVersion;
+        list.setAttribute('aria-busy', 'true');
+        historyMessage('Loading generation history...');
         fetch('http://127.0.0.1:' + PORT + '/get_history', { cache: 'no-store' })
-            .then(function(r) { return r.json(); })
-            .then(renderEntries)
-            .catch(function() { renderEntries([]); });
+            .then(function(r) {
+                if (!r.ok) throw new Error('History HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function(entries) { if (version === loadVersion) renderEntries(entries); })
+            .catch(function(error) {
+                console.error('[TP3D history] Load failed:', error);
+                if (version !== loadVersion) return;
+                list.removeAttribute('aria-busy');
+                historyMessage('Could not load history. Check the Blender connection.', true);
+            });
     }
 
     function openPanel() {
         panel.classList.add('open');
         toggleBtn.classList.add('active');
+        toggleBtn.setAttribute('aria-expanded', 'true');
+        panel.inert = false;
+        closeBtn.focus();
         loadEntries();
     }
     function closePanel() {
         panel.classList.remove('open');
         toggleBtn.classList.remove('active');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        panel.inert = true;
+        toggleBtn.focus();
     }
 
     toggleBtn.addEventListener('click', function() {
         if (panel.classList.contains('open')) closePanel(); else openPanel();
     });
     closeBtn.addEventListener('click', closePanel);
+    panel.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') { event.preventDefault(); closePanel(); }
+    });
 
     document.body.appendChild(toggleBtn);
     document.body.appendChild(panel);

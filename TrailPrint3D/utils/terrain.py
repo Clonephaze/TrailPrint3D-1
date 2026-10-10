@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 from mathutils import Vector  # type: ignore
 from shapely import clip_by_rect
 from shapely.geometry import LineString, Point, Polygon, box
@@ -149,7 +151,7 @@ def smooth_terrain_top_z(x, y, z, iterations=2):
     # Box-blur via edge-padded shifts: pad the grid by 1 cell (replicating
     # the border) so every cell's 8 neighbours are defined, then average
     # the 9 shifted copies of the grid.
-    for _ in range(iterations):
+    for _each in range(iterations):
         padded = np.pad(grid, 1, mode="edge")
         acc = np.zeros_like(grid)
         for dy in (-1, 0, 1):
@@ -328,9 +330,6 @@ def coloring_main(
         build_osm_nodes,
         extract_multipolygon_bodies,
     )
-    from .scene import (
-        show_message_box,  # deferred to avoid circular import at load time
-    )
 
     _t_color = time.time()  # master timer: whole coloring_main
     _t_tiles_total = 0.0  # accumulated OSM fetch + Shapely ring building
@@ -424,6 +423,8 @@ def coloring_main(
     _dbg_filtered_small = []  # polygons dropped for being below col_Area (debug only)
 
     scaleHor = gen.runtime.sScaleHor
+    if scaleHor is None:
+        raise ValueError(_rpt("scaleHor is not set"))
     streamWidthMultiplier = bpy.context.scene.tp3d.col_wStreamWidth
     half_width = 1.0 * scaleHor * 0.02 * streamWidthMultiplier
 
@@ -483,9 +484,14 @@ def coloring_main(
         data = []
         try:
             if prefetched_tiles is not None:
-                if tile_result is None:
+                if (
+                    tile_result is None
+                    or not isinstance(tile_result, tuple)
+                    or len(tile_result) != 2
+                ):
                     continue
-                resp, from_cache = tile_result
+                resp = tile_result[0]
+                from_cache = tile_result[1]
                 if not resp:
                     continue
                 src = "cache" if from_cache else "Overpass"
@@ -501,11 +507,9 @@ def coloring_main(
                 print(f"OSM tile ({kind}): loaded from {src} (on-demand)")
 
         except (OSError, ValueError, KeyError) as e:
-            show_message_box(
-                f"Something went wrong with fetching OSM data: {e}"
-            )
+            print(f"Error fetching OSM data: {e}")
             _progress.WarningsOverlay.add_warning(
-                f"Something went wrong with fetching OSM data: {e}", "error"
+                _rpt("There was an error, see console for details."), "error"
             )
             continue
 
@@ -630,13 +634,12 @@ def coloring_main(
     else:
         if total_fetched == 0:
             _progress.WarningsOverlay.add_warning(
-                f"No {kind.capitalize()} elements returned from API.", "warn"
+                _rpt("Failed to fetch any elements from the API."), "warn"
             )
             _api_empty = True
         elif waterCreated == 0:
             _progress.WarningsOverlay.add_warning(
-                f"All {kind.capitalize()} elements are below the area threshold.",
-                "warn",
+                _rpt("All selected elements are below the area threshold."), "warn",
             )
             _api_empty = True
 
@@ -739,8 +742,7 @@ def coloring_main(
         if _api_empty:
             return _COLORING_EMPTY
         _progress.WarningsOverlay.add_warning(
-            f"All {kind.capitalize()} objects were filtered out due to their size",
-            "warn",
+            _rpt("All selected objects were filtered out due to their size"), "warn",
         )
         return _COLORING_FILTERED
 
@@ -1009,7 +1011,7 @@ def coloring_main(
     # ────────────────────────────────────────────────────────────────────────
 
     def _apply_boolean(obj, solver):
-        mod = obj.modifiers.new(name="Boolean", type="BOOLEAN")
+        mod = obj.modifiers.new(name=("Boolean"), type="BOOLEAN")
         mod.object = map
         mod.operation = "INTERSECT"
         mod.solver = solver
@@ -1374,7 +1376,7 @@ def _snap_shoreline_verts(mw, top_faces, polygon):
         f: _xy_area(f) for v in best for f in v.link_faces if f in top_set
     }
     snapped = {}
-    for v, (_, x, y, k) in sorted(best.items(), key=lambda it: it[1][0]):
+    for v, (_unused, x, y, k) in sorted(best.items(), key=lambda it: it[1][0]):
         faces = [f for f in v.link_faces if f in top_set]
         old = v.co.copy()
         w = mw @ v.co
@@ -1564,9 +1566,14 @@ def effective_water_insert(tp3d):
     if tp3d.col_wInsert > cap:
         print(f"  [water insert] {tp3d.col_wInsert}mm capped to {cap}mm (Extra Map Height {tp3d.minThickness}mm)")
         # add_warning collapses duplicates, so calling this per water body/tile is fine
+        water_insert = tp3d.col_wInsert
+        extra_map_height = _const.WATER_INSERT_MARGIN
         _progress.WarningsOverlay.add_warning(
-            f"Water Insert {tp3d.col_wInsert:g}mm is deeper than Extra Map Height allows "
-            f"-- capped to {cap:g}mm (Extra Map Height - {_const.WATER_INSERT_MARGIN:g}mm)",
+            _rpt("Water Insert {water_insert:g}mm is deeper than Extra Map Height allows -- capped to {cap:g}mm (Extra Map Height -{extra_map_height:g}mm)").format(
+                water_insert=water_insert,
+                cap=cap,
+                extra_map_height=extra_map_height,
+            ),
             "warn",
         )
     return min(tp3d.col_wInsert, cap)
@@ -1578,7 +1585,9 @@ def _flatten_painted_water(gen: GenerationContext, map_obj, polygon, mat_index=N
     re-snap any trail curve that crosses it -- the trail was raycast onto the
     terrain before the elements were built and would otherwise float above (or
     sink into) the new water level."""
-    from .mesh_ops import RaycastCurveToMesh  # deferred to avoid circular import at load time
+    from .mesh_ops import (
+        RaycastCurveToMesh,  # deferred to avoid circular import at load time
+    )
 
     insert = effective_water_insert(bpy.context.scene.tp3d)
     boxes = flatten_terrain_water(
@@ -1680,52 +1689,99 @@ def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
 
 
 def plateInsert(plate, map):
-    from shapely.affinity import scale as _shp_scale
-    from shapely.geometry import Polygon
+    """Cut a footprint-shaped cavity into the top of the plate so the map
+    sits down into it by `plateInsertValue` millimeters.
 
-    from . import geometry2d as _g2d
-    from .mesh_ops import _clean_solid_mesh, _extrude_flat_polygon  # deferred to avoid circular import at load time
+    Built from the map's stored canonical WKT outline (`map_polygon_wkt`),
+    NOT from its mesh. The mesh is a solidified heightfield: its bottom
+    follows the terrain rather than sitting on a flat plane, it's made of
+    tens of thousands of tessellation slivers, and normal-direction
+    selection can't reliably reduce it to "just the bottom faces" on any
+    mesh with a non-manifold seam -- which every SVG import has. The WKT
+    is a single clean 2D polygon that predates all of that, so the
+    cutter comes out as a clean prism every time.
 
-    bpy.ops.object.select_all(action="DESELECT")
+    The cavity is flat-bottomed rather than conforming to the map's
+    underside. That's a deliberate trade: flat cavities have predictable
+    depth, print without thin floors under terrain peaks, and -- most
+    importantly -- work on every shape, whereas the terrain-conforming
+    approach only worked when normal-based bottom selection happened to
+    succeed.
+    """
+    from shapely import wkt
+    from shapely.affinity import rotate as shp_rotate
 
-    tol = bpy.context.scene.tp3d.tolerance
-    dist = bpy.context.scene.tp3d.plateInsertValue
-    size = bpy.context.scene.tp3d.objSize
+    from . import geometry2d as g2d
+    from .mesh_ops import recalculateNormals
+    from .plate import _build_prism
 
-    plate.location.z += dist
+    tp3d = bpy.context.scene.tp3d
+    tol = tp3d.tolerance
+    dist = tp3d.plateInsertValue
+    shape_rotation = tp3d.shapeRotation
 
-    # Cut the plate by the map's OUTER outline only. The map's bottom can have
-    # holes where an element recess went all the way through it (e.g. water
-    # with an Insert in single-color mode) -- the map generator adds the plate
-    # after the elements, so a bottom-face cutter would leave uncut columns
-    # in the plate under those holes.
-    fp = _g2d.footprint_with_holes(map, down_only=True)
-    if fp is None or fp.is_empty:
-        print("[plateInsert] map has no bottom footprint -- skipping insert")
+    if dist <= 0:
         return
-    outline = _g2d.union([Polygon(p.exterior) for p in _g2d.iter_polygons(fp)])
-    # Grow by the tolerance gap about the map origin (same scale factor the
-    # map itself would need to fit loosely)
-    factor = (size + tol) / size
-    outline = _shp_scale(
-        outline, xfact=factor, yfact=factor, origin=(map.location.x, map.location.y)
+
+    if "map_polygon_wkt" not in map:
+        print("[plateInsert] map has no map_polygon_wkt -- aborting.")
+        return
+
+    poly = wkt.loads(map["map_polygon_wkt"])
+    if poly is None or poly.is_empty:
+        print("[plateInsert] map WKT is empty -- aborting.")
+        return
+
+    # The WKT is stored pre-rotation: build_mesh_from_polygon writes it
+    # before _rg_create_map_object's transform_apply bakes shapeRotation
+    # into the mesh data. Apply the same rotation here so the cutter's
+    # XY footprint lines up with the visible map -- around (0, 0), the pivot
+    # transform_apply uses (the centroid differs for off-center outlines).
+    if shape_rotation:
+        poly = shp_rotate(poly, shape_rotation, origin=(0, 0))
+
+    # Buffer outward by tolerance for a uniform clearance ring around the
+    # map footprint. Mitre join keeps polygon corners crisp; the same
+    # mitre_limit that un-spiked the plate bevel.
+    if tol > 0:
+        poly = g2d.validate(poly.buffer(tol, join_style="mitre", mitre_limit=2.0))
+        if poly is None or poly.is_empty:
+            print("[plateInsert] WKT buffer produced empty geometry -- aborting.")
+            return
+
+    # --- Cutter's Z span, in world space ---
+    # Cavity floor = plate's world top minus the requested insert depth.
+    # Cutter extends from there up past the plate top by a 1-unit margin
+    # so the boolean sees clean, non-coincident caps at both ends.
+    bpy.context.view_layer.update()
+    plate_top_z = max((plate.matrix_world @ v.co).z for v in plate.data.vertices)
+
+    cavity_floor_z = plate_top_z - dist
+    cutter_height = (plate_top_z + 1.0) - cavity_floor_z
+    print(
+        f"[plateInsert] top={plate_top_z:.2f} "
+        f"floor={cavity_floor_z:.2f} "
+        f"cutter_span=[{cavity_floor_z:.2f}, {cavity_floor_z + cutter_height:.2f}]"
     )
 
-    mw = map.matrix_world
-    bottom_z = min((mw @ v.co).z for v in map.data.vertices)
-    verts, faces = [], []
-    for poly in _g2d.iter_polygons(outline):
-        _extrude_flat_polygon(_g2d, poly, bottom_z, bottom_z + 100, verts, faces)
-    if not faces:
-        print("[plateInsert] empty insert outline -- skipping insert")
+    cutter = _build_prism(poly, cutter_height, 0.0, "_PlateInsert_Cutter")
+    if cutter is None:
+        print("[plateInsert] failed to build cutter prism -- aborting.")
         return
-    mesh = bpy.data.meshes.new(f"{map.name}_plate_insert")
-    mesh.from_pydata(verts, [], faces)
-    mesh.update()
-    _clean_solid_mesh(mesh)
-    cutter = bpy.data.objects.new(mesh.name, mesh)
-    bpy.context.collection.objects.link(cutter)
 
+    # Position the cutter's local z=0 at the cavity floor and align its
+    # XY with the map's footprint. Map and plate were both placed by the
+    # same transform_MapObject call so their origins coincide in XY.
+    cutter.location = (
+        map.location.x,
+        map.location.y,
+        cavity_floor_z,
+    )
+
+    recalculateNormals(cutter)
+
+    # --- Boolean difference ---
+    bpy.ops.object.select_all(action="DESELECT")
     plate.select_set(True)
     bpy.context.view_layer.objects.active = plate
 
@@ -1734,10 +1790,20 @@ def plateInsert(plate, map):
     mod.solver = "MANIFOLD"
     mod.object = cutter
 
-    bpy.ops.object.modifier_apply(modifier=mod.name)
+    try:
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+    except RuntimeError as exc:
+        print(f"[plateInsert] MANIFOLD solver failed: {exc!r}")
+        print("[plateInsert] retrying with EXACT solver...")
+        mod.solver = "EXACT"
+        bpy.ops.object.modifier_apply(modifier=mod.name)
 
-    bpy.data.objects.remove(cutter, do_unlink=True)
-    bpy.data.meshes.remove(mesh)
+    if not bpy.app.debug:
+        bpy.data.objects.remove(cutter, do_unlink=True)
+    else:
+        cutter.name = "_PlateInsert_Cutter_DEBUG"
+
+    recalculateNormals(plate)
 
 
 # ---------------------------------------------------------------------------
@@ -1771,6 +1837,15 @@ def _rdp_simplify(points, epsilon):
         right = _rdp_simplify(points[idx + 1 :], epsilon)
         return left[:-1] + right
     return [points[0], points[-1]]
+
+
+def _close_chain_with_bbox(chain, bbox_bl):
+    """Keep the legacy single-chain coastline helper for callers and tests."""
+    polys = _polygonize_ocean_faces([chain], [], bbox_bl)
+    if not polys:
+        return None
+    biggest = max(polys, key=lambda polygon: polygon.area)
+    return list(biggest.exterior.coords)
 
 
 def _polygonize_ocean_faces(open_chains, closed_loops, bbox_bl, rdp_eps=0.0):
@@ -2138,7 +2213,6 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
     from .mesh_ops import (  # deferred to avoid circular import at load time  # deferred to avoid circular import at load time
         merge_with_map,
         projection,
-        recalculateNormals,
     )
     from .osm.gen import (
         fetch_coastline_ways,  # deferred to avoid circular import at load time
@@ -2160,7 +2234,7 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
 
     if not raw_chains:
         _progress.WarningsOverlay.add_warning(
-            "No coastline data found for this area — ocean layer skipped.", "warn"
+            _rpt("(No ocean data found for this area — ocean layer skipped)."), "warn"
         )
         return None
 
@@ -2207,7 +2281,7 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
         _ct_polys = _smoothed_ocean_polys(open_chains, closed_loops, bbox_bl, rdp_eps)
         if not _ct_polys:
             _progress.WarningsOverlay.add_warning(
-                "Could not build ocean polygon — ocean layer skipped.", "warn"
+                _rpt("Could not build ocean polygon — ocean layer skipped."), "warn"
             )
             return None
         return _ColoringTextureResult(kind="OCEAN", polygon=union_all(_ct_polys))
@@ -2223,7 +2297,7 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
 
     if ocean_obj is None:
         _progress.WarningsOverlay.add_warning(
-            "Could not build ocean polygon — ocean layer skipped.", "warn"
+            _rpt("Could not build ocean polygon — ocean layer skipped."), "warn"
         )
         return None
 
@@ -2268,6 +2342,7 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
     PAINT/texture mode, a merged-into-tile mesh object for single color mode,
     or None if no water was found / the dataset couldn't be prepared.
     """
+    from .. import constants as _const  # deferred to avoid circular import at load time
     from . import geometry2d as _g2d
     from .mesh_ops import (
         merge_objects,
@@ -2276,7 +2351,6 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
     from .osm.water_polygons import (
         query_ocean_polygon,
     )  # deferred to avoid circular import at load time
-    from .. import constants as _const  # deferred to avoid circular import at load time
 
     _t_ocean = time.time()
 
@@ -2294,7 +2368,7 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
 
     if poly is None or poly.is_empty:
         _progress.WarningsOverlay.add_warning(
-            "No ocean found in this area (water-polygon dataset).", "warn"
+            _rpt("No ocean found in this area (water-polygon dataset)."), "warn"
         )
         return None
 
@@ -2344,7 +2418,7 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
     ocean_polys = _taubin_smooth_ocean_polys(ocean_polys, bbox_bl)
     if not ocean_polys:
         _progress.WarningsOverlay.add_warning(
-            "Could not build ocean polygon — ocean layer skipped.", "warn"
+            _rpt("Could not build ocean polygon — ocean layer skipped."), "warn"
         )
         return None
 
@@ -2362,14 +2436,14 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
             face_meshes.append(m)
     if not face_meshes:
         _progress.WarningsOverlay.add_warning(
-            "Could not build ocean polygon — ocean layer skipped.", "warn"
+            _rpt("Could not build ocean polygon — ocean layer skipped."), "warn"
         )
         return None
 
     ocean_obj = merge_objects(face_meshes) if len(face_meshes) > 1 else face_meshes[0]
     if not ocean_obj or len(ocean_obj.data.vertices) == 0:
         _progress.WarningsOverlay.add_warning(
-            "Could not build ocean polygon — ocean layer skipped.", "warn"
+            _rpt("Could not build ocean polygon — ocean layer skipped."), "warn"
         )
         return None
 
@@ -2518,22 +2592,42 @@ def _elevation_mm_per_meter(obj):
     return scale_elevation * auto_scale / 1000
 
 
+def get_effective_cl_values(obj, cl_distance, cl_offset, cl_thickness, use_real_meters):
+    """Convert cl_distance/cl_offset into model-space mm for this map object.
+    Returns (distance_eff, offset_eff, is_valid) where is_valid is False when
+    distance_eff <= cl_thickness."""
+    if use_real_meters:
+        mm_per_meter = _elevation_mm_per_meter(obj)
+        distance_eff = cl_distance * mm_per_meter
+        offset_eff = cl_offset * mm_per_meter
+    else:
+        distance_eff = cl_distance
+        offset_eff = cl_offset
+
+    is_valid = distance_eff > cl_thickness
+    return distance_eff, offset_eff, is_valid
+
+
+def get_map_z_extent(obj):
+    """World-space Z extent (max - min) of obj's bounding box."""
+    world_corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+    z_values = [c.z for c in world_corners]
+    return max(z_values) - min(z_values)
+
+
 def contourLines(objs):
-    from .mesh_ops import (
-        boolean_operation,  # deferred to avoid circular import at load time
-    )
-    from .metadata import (
-        writeMetadata,  # deferred to avoid circular import at load time
-    )
-    from .scene import (
-        show_message_box,  # deferred to avoid circular import at load time
-    )
+    from .mesh_ops import boolean_operation
+    from .metadata import writeMetadata
+    from .scene import show_message_box
 
     selected_objects = objs
     cl_thickness = bpy.context.scene.tp3d.cl_thickness
     cl_distance = bpy.context.scene.tp3d.cl_distance
     cl_offset = bpy.context.scene.tp3d.cl_offset
     cl_useRealMeters = bpy.context.scene.tp3d.cl_useRealMeters
+    # cl_max_slices = bpy.context.scene.tp3d.cl_max_slices
+
+    CL_MAX_SLICES = 200
 
     size = bpy.context.scene.tp3d.objSize
 
@@ -2541,24 +2635,19 @@ def contourLines(objs):
         show_message_box("No Object Selected. Please select a Map first")
         return {"CANCELLED"}
 
+    processed_any = False
+
     for obj in selected_objects:
         if "Object type" not in obj:
             continue
         if obj["Object type"] != "MAP":
             continue
 
-        # cl_distance/cl_offset are entered in real-world elevation meters
-        # when the toggle is on -- convert to this map's own model-space mm
-        # using the elevation scale frozen onto it at generation time.
-        if cl_useRealMeters:
-            mm_per_meter = _elevation_mm_per_meter(obj)
-            cl_distance_eff = cl_distance * mm_per_meter
-            cl_offset_eff = cl_offset * mm_per_meter
-        else:
-            cl_distance_eff = cl_distance
-            cl_offset_eff = cl_offset
+        cl_distance_eff, cl_offset_eff, is_valid = get_effective_cl_values(
+            obj, cl_distance, cl_offset, cl_thickness, cl_useRealMeters
+        )
 
-        if cl_distance_eff <= cl_thickness:
+        if not is_valid:
             distance_label = (
                 f"{cl_distance:g}m = {cl_distance_eff:.3f}mm"
                 if cl_useRealMeters
@@ -2570,8 +2659,8 @@ def contourLines(objs):
             )
             continue
 
-        objs = list(bpy.context.scene.objects)
-        for o in objs:
+        scene_objs = list(bpy.context.scene.objects)
+        for o in scene_objs:
             if (
                 "Object type" in o
                 and "PARENT" in o
@@ -2580,10 +2669,8 @@ def contourLines(objs):
             ):
                 bpy.data.objects.remove(o, do_unlink=True)
 
-        # Deselect everything
         bpy.ops.object.select_all(action="DESELECT")
 
-        # Create plane at the map object's own origin
         bpy.ops.mesh.primitive_plane_add(
             size=size + 10, enter_editmode=False, align="WORLD", location=obj.location
         )
@@ -2593,26 +2680,30 @@ def contourLines(objs):
         plane.name = "CuttingPlane"
         plane.location.z += cl_offset_eff
 
-        # Add Array modifier in Z direction
+        z_extent = get_map_z_extent(obj)
+        computed_count = math.ceil(z_extent / cl_distance_eff) + 2
+        slice_count = min(computed_count, CL_MAX_SLICES)
+        if computed_count > CL_MAX_SLICES:
+            _progress.WarningsOverlay.add_warning(
+                _(
+                    "Contour Line slice count exceeds the maximum limit, capped at {maxSlices}."
+                ).format(maxSlices=CL_MAX_SLICES)
+            )
+
         array_mod = plane.modifiers.new(name="ArrayZ", type="ARRAY")
-        array_mod.relative_offset_displace = (0, 0, 0)  # disable relative offset
-        array_mod.constant_offset_displace = (0, 0, cl_distance_eff)  # fixed step in Z
+        array_mod.relative_offset_displace = (0, 0, 0)
+        array_mod.constant_offset_displace = (0, 0, cl_distance_eff)
         array_mod.use_relative_offset = False
         array_mod.use_constant_offset = True
-        array_mod.count = 100  # you can adjust how many slices
+        array_mod.count = slice_count
 
-        # Add Solidify modifier for thickness
         solidify_mod = plane.modifiers.new(name="Solidify", type="SOLIDIFY")
         solidify_mod.thickness = cl_thickness
 
-        # Apply modifiers up to solidify
         bpy.context.view_layer.objects.active = plane
         bpy.ops.object.modifier_apply(modifier=array_mod.name)
         bpy.ops.object.modifier_apply(modifier=solidify_mod.name)
 
-        # Duplicate the still-blank stack of squares before it gets cut down
-        # to the map's shape -- this copy is used below to carve the same
-        # bands out of the map so the lines don't sit flush on top of it.
         bpy.ops.object.select_all(action="DESELECT")
         plane.select_set(True)
         bpy.context.view_layer.objects.active = plane
@@ -2620,35 +2711,37 @@ def contourLines(objs):
         cutter = bpy.context.active_object
         cutter.name = "CuttingPlaneCutter"
 
-        # Add Boolean modifier with INTERSECT mode
         bool_mod = plane.modifiers.new(name="Boolean", type="BOOLEAN")
         bool_mod.operation = "INTERSECT"
-        bool_mod.solver = "MANIFOLD"  # or 'EXACT'
+        bool_mod.solver = "MANIFOLD"
         bool_mod.use_self = False
-        bool_mod.use_hole_tolerant = True  # helps with manifold issues
+        bool_mod.use_hole_tolerant = True
         bool_mod.object = obj
 
         plane.name = obj.name + "_LINES"
 
         mat = bpy.data.materials.get("WHITE")
+        if mat is None:
+            mat = bpy.data.materials.new(name="WHITE")
+            mat.diffuse_color = (1.0, 1.0, 1.0, 1.0)
         plane.data.materials.clear()
         plane.data.materials.append(mat)
 
         writeMetadata(plane, "LINES")
         plane["PARENT"] = obj
 
-        # Apply Boolean
         bpy.context.view_layer.objects.active = plane
-
         bpy.ops.object.modifier_apply(modifier=bool_mod.name)
 
-        # Subtract the same bands from the map itself so the lines aren't
-        # duplicated (coincident) geometry sitting on top of the map surface.
         boolean_operation(obj, cutter, operation="DIFFERENCE", solver="MANIFOLD")
         bpy.data.objects.remove(cutter, do_unlink=True)
+
+        processed_any = True
 
     bpy.ops.object.select_all(action="DESELECT")
     for obj in selected_objects:
         obj.select_set(True)
     if selected_objects:
         bpy.context.view_layer.objects.active = selected_objects[0]
+
+    return {"FINISHED"} if processed_any else {"CANCELLED"}
