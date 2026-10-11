@@ -83,7 +83,8 @@ def build_fetch_items(map_km=None):
         # and generation.py's element phase skips all of the OSM defs below
         # entirely when elementSource == "WORLDCOVER" -- so none of them are
         # ever actually fetched here either, regardless of leftover OSM flags.
-        items.append({"key": "landcover", "icon": "L", "label": "Land Cover"})
+        if any_landcover_active(tp3d):
+            items.append({"key": "landcover", "icon": "L", "label": "Land Cover"})
         return items
     defs = [
         ("forest", "col_fActive", const.FOREST_MAXSIZE, "F", "Forest"),
@@ -215,6 +216,12 @@ def _set_composite_flag(tp3d, key, subflag, value):
         set_road_active(tp3d, subflag, value)
     else:
         setattr(tp3d, subflag, bool(value))
+
+
+def any_landcover_active(tp3d):
+    """At least one ESA WorldCover element is ticked -- with none, the
+    land-cover fetch would paint nothing, so it's skipped entirely."""
+    return any(getattr(tp3d, attr) for attr in _LANDCOVER_SINGLE_FLAGS.values())
 
 
 def build_element_toggle_states(tp3d=None):

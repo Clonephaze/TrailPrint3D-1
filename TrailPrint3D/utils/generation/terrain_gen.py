@@ -11,7 +11,7 @@ from mathutils import Vector  # type: ignore
 from ... import constants as const
 from ..dataclasses import GenerationContext, GenerationError
 from ..elevation import compute_and_store_tile_bounds
-from ..ui_state import coloring_elements
+from ..ui_state import any_landcover_active, coloring_elements
 
 
 def _cleanup_build_area(gen: GenerationContext):
@@ -323,16 +323,19 @@ def _rg_start_satellite_prefetch(gen: GenerationContext):
     crop (and, in debug mode, a companion true-color photo) for the map's
     tile bounds, overlapping the request with the elevation/OSM fetches.
 
-    No-op if elementSource isn't WORLDCOVER. The caller must join the thread
-    before consuming gen.fetch.satelliteResult.
+    No-op if elementSource isn't WORLDCOVER or no WorldCover element is
+    ticked. The caller must join the thread before consuming
+    gen.fetch.satelliteResult.
     """
     if gen.settings.elementSource != "WORLDCOVER":
+        return
+    tp3d = bpy.context.scene.tp3d
+    if not any_landcover_active(tp3d):
         return
 
     from ...progress import ProgressOverlay
     from ..satellite import get_cached_landcover_image, get_cached_photo_image
 
-    tp3d = bpy.context.scene.tp3d
     min_lat, max_lat = gen.runtime.tbMinLat, gen.runtime.tbMaxLat
     min_lon, max_lon = gen.runtime.tbMinLon, gen.runtime.tbMaxLon
     disable_cache = bool(tp3d.disableCache)
@@ -375,14 +378,15 @@ def _rg_create_satellite_plane(gen: GenerationContext):
     """Join the satellite prefetch thread and build the land-cover reference
     plane, painting the terrain's up-facing faces from it in PAINT mode.
 
-    No-op if elementSource isn't WORLDCOVER or the fetch produced nothing.
+    No-op if elementSource isn't WORLDCOVER, nothing was fetched (no
+    WorldCover element ticked), or the fetch produced nothing.
     """
-    if gen.settings.elementSource != "WORLDCOVER":
+    if gen.settings.elementSource != "WORLDCOVER" or gen.fetch.satelliteThread is None:
+        # Also clears a land-cover image left over from an earlier run, so
+        # texture mode's sample_landcover_classes() can't paint from it.
         from ..satellite import remove_stale_satellite_debug
 
         remove_stale_satellite_debug()
-        return
-    if gen.fetch.satelliteThread is None:
         return
 
     from ...progress import ProgressOverlay

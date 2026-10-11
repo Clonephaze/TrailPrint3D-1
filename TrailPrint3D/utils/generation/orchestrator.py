@@ -130,7 +130,7 @@ def runGeneration(type, locked_scale=None):
         # toggle) -- no point pre-fetching data for elements that won't be built below.
         if gen.settings.elementChoice:
             _rg_start_osm_prefetch(gen)
-        _rg_start_satellite_prefetch(gen)
+            _rg_start_satellite_prefetch(gen)
 
         if gen.fetch.fetchThread is not None:
             print("OSM prefetch started (overlapping elevation download)")
