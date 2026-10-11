@@ -2483,6 +2483,20 @@ class TP3D_OT_dismiss_update(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class TP3D_OT_reset_osm_size_limits(bpy.types.Operator):
+    bl_idname = "tp3d.reset_osm_size_limits"
+    bl_label = "Reset to Defaults"
+    bl_description = "Reset all OSM map size limits to their default values"
+
+    def execute(self, context):
+        prefs = addon_preferences.get_prefs()
+        for attr in addon_preferences.OSM_SIZE_LIMITS:
+            prefs.property_unset(attr)
+        # property_unset() doesn't fire the update callbacks
+        addon_preferences.sync_osm_size_limits(prefs)
+        return {'FINISHED'}
+
+
 class TP3D_OT_install_update(bpy.types.Operator):
     bl_idname = "tp3d.install_update"
     bl_label = _("Install Update")

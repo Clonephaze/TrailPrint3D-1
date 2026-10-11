@@ -11,7 +11,7 @@ from mathutils import Vector  # type: ignore
 from ... import constants as const
 from ..dataclasses import GenerationContext, GenerationError
 from ..elevation import compute_and_store_tile_bounds
-from ..ui_state import COLORING_ELEMENTS
+from ..ui_state import coloring_elements
 
 
 def _cleanup_build_area(gen: GenerationContext):
@@ -218,7 +218,7 @@ def _rg_build_osm_kind_tasks(min_lat, max_lat, min_lon, max_lon, map_km, element
     _active_kind_tasks = (
         [
             (key.upper(), _tile_tasks)
-            for key, flag_attr, max_size, _, _ in COLORING_ELEMENTS
+            for key, flag_attr, max_size, _, _ in coloring_elements()
             if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1)
             and map_km <= max_size
         ]

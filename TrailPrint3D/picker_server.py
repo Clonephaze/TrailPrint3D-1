@@ -193,6 +193,7 @@ _SHAPE_EXTRAS_JS_PATH = _ASSETS_DIR / 'shape_extras.js'
 _HISTORY_PANEL_JS_PATH = _ASSETS_DIR / 'history_panel.js'
 _TUTORIAL_JS_PATH = _ASSETS_DIR / 'tutorial.js'
 _MAP_TUTORIALS_JS_PATH = _ASSETS_DIR / 'map_tutorials.js'
+_MULTITILE_TUTORIALS_JS_PATH = _ASSETS_DIR / 'multitile_tutorials.js'
 
 _element_icons_js_cache: str | None = None
 
@@ -776,6 +777,7 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__SHAPE_EXTRAS_JS__', _SHAPE_EXTRAS_JS_PATH.read_text(encoding='utf-8'))
             .replace('__TUTORIAL_JS__', _TUTORIAL_JS_PATH.read_text(encoding='utf-8'))
             .replace('__MAP_TUTORIALS_JS__', _MAP_TUTORIALS_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__MULTITILE_TUTORIALS_JS__', _MULTITILE_TUTORIALS_JS_PATH.read_text(encoding='utf-8'))
             .encode('utf-8')
         )
         self.send_response(200)
