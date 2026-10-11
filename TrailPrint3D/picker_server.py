@@ -5,6 +5,7 @@
 # POSTs the coordinates to /confirm and writes them to a temp JSON file that
 # the Blender operator polls via a modal timer.
 import json
+import os
 import pathlib
 import queue
 import re
@@ -64,6 +65,140 @@ _prefetch_job: dict = {'status': 'idle', 'message': '', 'result': None}
 _pending_model_previews: 'queue.Queue[dict]' = queue.Queue()
 _model_preview_job: dict = {'status': 'idle', 'version': 0, 'message': ''}
 _MODEL_PREVIEW_PATH = pathlib.Path(tempfile.gettempdir()) / 'trailprint_model_preview.glb'
+
+# Every generator page's export-folder button (assets/export_folder.js).
+# 'scene' is the scene's own Export Path and 'default' the Default Export
+# Folder preference (both read from Blender in start_picker); exports use
+# 'scene' if set, else 'default' (addon_preferences.get_export_folder). A
+# pick only ever replaces 'default'. 'status' is 'picking' while the OS
+# folder dialog is open. POST /pick_export_folder runs the (blocking) dialog
+# on its own thread so this single-threaded server keeps answering the page
+# meanwhile, and queues the choice as an 'exportFolder' update on
+# _pending_settings (utils.apply_setting_update sets it on the main thread).
+# Same key-wise-update-only rule as _prefetch_job.
+_export_folder_job: dict = {'status': 'idle', 'scene': '', 'default': ''}
+
+
+def _effective_export_folder() -> str:
+    return _export_folder_job.get('scene') or _export_folder_job.get('default') or ''
+
+
+def _pick_folder_dialog(initial: str) -> str:
+    """Show the OS's own folder picker (blocking) and return the chosen
+    folder, or '' if cancelled/unavailable. Never touches bpy -- runs on a
+    worker thread. The start folder goes in via an environment variable so
+    no path ever needs quoting into a script. The dialog's process id is
+    kept in _export_folder_job['pid'] while it's open (see _raise_dialog)."""
+    title = 'Select the TrailPrint3D export folder'
+    env = dict(os.environ, TP3D_INITIAL_DIR=initial if initial and os.path.isdir(initial) else '')
+    flags = 0
+    if sys.platform == 'win32':
+        # Windows won't let a background process bring a window to the front,
+        # so the dialog used to open behind the browser now and then. Owning
+        # it by a *shown* TopMost window fixes that: owned windows always sit
+        # above their owner. The owner is fully transparent and off the
+        # taskbar, centered on screen so the dialog opens there too.
+        ps = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$owner = New-Object System.Windows.Forms.Form; "
+            "$owner.TopMost = $true; $owner.ShowInTaskbar = $false; $owner.Opacity = 0; "
+            "$owner.FormBorderStyle = 'None'; $owner.StartPosition = 'CenterScreen'; "
+            "$owner.Width = 1; $owner.Height = 1; "
+            "$owner.Show(); $owner.Activate(); "
+            "$b = New-Object System.Windows.Forms.FolderBrowserDialog; "
+            f"$b.Description = '{title}'; "
+            "$b.ShowNewFolderButton = $true; "
+            "if ($env:TP3D_INITIAL_DIR) { $b.SelectedPath = $env:TP3D_INITIAL_DIR }; "
+            "$r = $b.ShowDialog($owner); $owner.Close(); "
+            "if ($r -eq 'OK') { Write-Output $b.SelectedPath }"
+        )
+        cmd = ['powershell', '-NoProfile', '-NonInteractive', '-STA', '-Command',
+               '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; ' + ps]
+        flags = sp.CREATE_NO_WINDOW
+    elif sys.platform == 'darwin':
+        script = f'POSIX path of (choose folder with prompt "{title}"'
+        if env['TP3D_INITIAL_DIR']:
+            script += ' default location (POSIX file (system attribute "TP3D_INITIAL_DIR"))'
+        cmd = ['osascript', '-e', script + ')']
+    elif shutil.which('zenity'):
+        cmd = ['zenity', '--file-selection', '--directory', f'--title={title}']
+        if env['TP3D_INITIAL_DIR']:
+            cmd.append('--filename=' + os.path.join(env['TP3D_INITIAL_DIR'], ''))
+    elif shutil.which('kdialog'):
+        cmd = ['kdialog', '--getexistingdirectory', env['TP3D_INITIAL_DIR'] or os.path.expanduser('~'),
+               '--title', title]
+    else:
+        print("[TP3D picker] no folder dialog available (install zenity or kdialog)")
+        return ''
+    try:
+        proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.DEVNULL, env=env, creationflags=flags)
+    except OSError as e:
+        print(f"[TP3D picker] folder dialog failed: {e}")
+        return ''
+    _export_folder_job.update(pid=proc.pid)
+    try:
+        out, _unused = proc.communicate()
+    finally:
+        _export_folder_job.update(pid=None)
+    path = out.decode('utf-8', errors='replace').strip()
+    return path if path and os.path.isdir(path) else ''
+
+
+def _raise_dialog() -> None:
+    """Bring the already-open folder dialog back to the front (Windows) --
+    e.g. after the user clicked into the browser and it went behind. Called
+    when the page's button is clicked again while a dialog is still open,
+    instead of ignoring that click."""
+    pid = _export_folder_job.get('pid')
+    if not pid or sys.platform != 'win32':
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    hwnds = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def _collect(hwnd, _lparam):
+        owner_pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner_pid))
+        if owner_pid.value == pid and user32.IsWindowVisible(hwnd):
+            hwnds.append(hwnd)
+        return True
+
+    user32.EnumWindows(_collect, 0)
+    HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW = -1, 0x2, 0x1, 0x40
+    for hwnd in hwnds:
+        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+        user32.SetForegroundWindow(hwnd)
+
+
+def _run_export_folder_pick() -> None:
+    chosen = _pick_folder_dialog(_export_folder_job.get('default') or _effective_export_folder())
+    if not chosen:
+        _export_folder_job.update(status='cancelled')
+        return
+    # Trailing separator: export.py appends file names to it directly.
+    chosen = os.path.join(chosen, '')
+    _pending_settings.put(('exportFolder', chosen))
+    _export_folder_job.update(status='done', default=chosen)
+
+
+def _open_folder(path: str) -> bool:
+    """Open *path* in the OS file manager. False if it isn't a folder."""
+    if not path or not os.path.isdir(path):
+        return False
+    try:
+        if sys.platform == 'win32':
+            os.startfile(path)  # type: ignore[attr-defined]
+        elif sys.platform == 'darwin':
+            sp.Popen(['open', path])
+        else:
+            sp.Popen(['xdg-open', path])
+    except OSError as e:
+        print(f"[TP3D picker] could not open folder {path}: {e}")
+        return False
+    return True
 
 
 def drain_latest_model_preview() -> dict | None:
@@ -194,6 +329,7 @@ _HISTORY_PANEL_JS_PATH = _ASSETS_DIR / 'history_panel.js'
 _TUTORIAL_JS_PATH = _ASSETS_DIR / 'tutorial.js'
 _MAP_TUTORIALS_JS_PATH = _ASSETS_DIR / 'map_tutorials.js'
 _MULTITILE_TUTORIALS_JS_PATH = _ASSETS_DIR / 'multitile_tutorials.js'
+_EXPORT_FOLDER_JS_PATH = _ASSETS_DIR / 'export_folder.js'
 
 _element_icons_js_cache: str | None = None
 
@@ -613,6 +749,21 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == '/export_folder_status':
+            path = _effective_export_folder()
+            body = json.dumps({
+                'status': _export_folder_job.get('status'),
+                'path': path,
+                'valid': bool(path) and os.path.isdir(path),
+                # The scene's own Export Path is in effect, not the default.
+                'sceneOverride': bool(_export_folder_job.get('scene')),
+            }).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == '/model_preview_status':
             body = json.dumps(_model_preview_job).encode('utf-8')
             self.send_response(200)
@@ -778,6 +929,7 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__TUTORIAL_JS__', _TUTORIAL_JS_PATH.read_text(encoding='utf-8'))
             .replace('__MAP_TUTORIALS_JS__', _MAP_TUTORIALS_JS_PATH.read_text(encoding='utf-8'))
             .replace('__MULTITILE_TUTORIALS_JS__', _MULTITILE_TUTORIALS_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__EXPORT_FOLDER_JS__', _EXPORT_FOLDER_JS_PATH.read_text(encoding='utf-8'))
             .encode('utf-8')
         )
         self.send_response(200)
@@ -794,6 +946,27 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        if self.path in ('/pick_export_folder', '/open_export_folder'):
+            length = int(self.headers.get('Content-Length', 0))
+            self.rfile.read(length)
+            if self.path == '/open_export_folder':
+                ok = _open_folder(_effective_export_folder())
+            elif _export_folder_job.get('status') == 'picking':
+                # A dialog is already open (probably behind another window)
+                # -- show it again rather than ignoring the click.
+                _raise_dialog()
+                ok = True
+            else:
+                ok = True
+                _export_folder_job.update(status='picking')
+                threading.Thread(target=_run_export_folder_pick, daemon=True).start()
+            body = json.dumps({'ok': ok}).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == '/toggle_element':
             length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(length)
@@ -1180,6 +1353,20 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     # OLD job dict only if it was handed the dict itself -- it's handed the
     # live one, so replace contents instead of rebinding (see prefetch_job()).
     _prefetch_job.update(status='idle', message='', result=None)
+    # start_picker runs on Blender's main thread (an operator's invoke), so
+    # the export folders can be read here directly.
+    try:
+        import bpy  # type: ignore
+
+        from .addon_preferences import get_prefs
+
+        scene_folder = bpy.path.abspath(bpy.context.scene.tp3d.export_path) if bpy.context.scene.tp3d.export_path else ''
+        default_folder = get_prefs().default_export_folder
+        default_folder = bpy.path.abspath(default_folder) if default_folder else ''
+    except (AttributeError, KeyError, ImportError) as e:
+        print(f"[TP3D picker] could not read the export folder: {e}")
+        scene_folder = default_folder = ''
+    _export_folder_job.update(status='idle', scene=scene_folder, default=default_folder, pid=None)
 
     html_path = pathlib.Path(html_path) if html_path else _HTML_PATH
     # Keep the original state filename for multitile_generator.html itself (exact

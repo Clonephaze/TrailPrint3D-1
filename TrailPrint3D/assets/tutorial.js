@@ -54,7 +54,9 @@
 //                instead returns any box {left, top, width, height} for the
 //                ghost (e.g. a shape being moved). demoGhostColor sets the
 //                ghost's color (a CSS color, or a function returning one) so
-//                it can match what the page really draws.
+//                it can match what the page really draws. demoHover: true
+//                makes several points a glide with the button up followed by
+//                a click at the last point (instead of a drag).
 //   onEnter / onExit   function(api) hooks run when the step shows/leaves.
 //   buttons      Extra popup buttons: [{ label, onClick(button, api) }],
 //                shown at the left of the popup's footer -- e.g. an
@@ -329,6 +331,7 @@ var tp3dTutorial = (function() {
         if (!pts || !pts.length) { demoPts = null; demoStart = 0; hideDemo(); return; }
         demoPts = pts;
         if (!demoStart) demoStart = now;
+        if (step.demoHover && demoPts.length > 1) { updateHoverDemo(now, drag); return; }
         var move = demoPts.length > 1 ? drag : 0;
         var tPress = DEMO_APPEAR, tMove = tPress + DEMO_PRESS, tRelease = tMove + move,
             tHold = tRelease + DEMO_RELEASE, tFade = tHold + DEMO_HOLD, tEnd = tFade + DEMO_FADE + DEMO_GAP;
@@ -383,6 +386,38 @@ var tp3dTutorial = (function() {
             ripple.style.display = 'block';
             ripple.style.opacity = 0.8 * (1 - k);
             ripple.style.transform = 'translate(' + p0.x + 'px,' + p0.y + 'px) scale(' + (0.3 + 1.2 * k) + ')';
+        } else {
+            ripple.style.display = 'none';
+        }
+    }
+
+    // demoHover variant: glide with the button *up* from the first point to
+    // the last, then click there (ripple at the end, not the start) -- e.g.
+    // "go over there and click this", rather than a drag.
+    function updateHoverDemo(now, glide) {
+        var tMove = DEMO_APPEAR, tPress = tMove + glide, tRelease = tPress + DEMO_PRESS,
+            tHold = tRelease + DEMO_RELEASE, tFade = tHold + DEMO_HOLD, tEnd = tFade + DEMO_FADE + DEMO_GAP;
+        var t = now - demoStart;
+        if (t >= tEnd) { demoPts = null; demoStart = 0; hideDemo(); return; }
+
+        var p = pointAlong(demoPts, t < tMove ? 0 : t < tPress ? easeInOut((t - tMove) / glide) : 1);
+        var opacity = t < tMove ? t / DEMO_APPEAR : t < tFade ? 1 : Math.max(0, 1 - (t - tFade) / DEMO_FADE);
+        var pressed = t >= tPress && t < tRelease;
+        var scale = t < tPress ? 1 : t < tRelease ? 1 - 0.18 * ((t - tPress) / DEMO_PRESS)
+            : t < tHold ? 0.82 + 0.18 * ((t - tRelease) / DEMO_RELEASE) : 1;
+
+        cursor.style.display = 'block';
+        cursor.style.opacity = opacity;
+        cursor.style.transform = 'translate(' + p.x + 'px,' + p.y + 'px) scale(' + scale + ')';
+        cursorDot.style.display = pressed ? 'block' : 'none';
+        cursorDot.style.transform = 'translate(' + p.x + 'px,' + p.y + 'px)';
+        ghost.style.display = 'none';
+        var tr = t - tPress, end = demoPts[demoPts.length - 1];
+        if (tr >= 0 && tr < DEMO_RIPPLE) {
+            var k = tr / DEMO_RIPPLE;
+            ripple.style.display = 'block';
+            ripple.style.opacity = 0.8 * (1 - k);
+            ripple.style.transform = 'translate(' + end.x + 'px,' + end.y + 'px) scale(' + (0.3 + 1.2 * k) + ')';
         } else {
             ripple.style.display = 'none';
         }
@@ -625,6 +660,13 @@ var tp3dTutorial = (function() {
 //              entry that's listed but not available yet. Optional prepare
 //              is called right before the tutorial starts (e.g. to reset
 //              the page to a known state).
+//   offerId    optional: enables window.tp3dOfferTutorials(), which -- the
+//              first time this generator is used -- shows a one-step guide
+//              pointing out the button (a demo mouse glides over and clicks
+//              it), saying the tutorials are interactive and optional.
+//              offerId is recorded in the same progress file as finished
+//              tutorials (not counted as one), so it's only ever offered
+//              once. export_folder.js calls it once an export folder is set.
 //
 // Finishing a tutorial (running past its last step, not exiting early)
 // records its id via picker_server.py's /complete_tutorial, and completed
@@ -761,6 +803,59 @@ function tp3dTutorialMenu(opts) {
         loadProgress();
         modal.classList.add('open');
     });
+
+    // First-use offer: a one-step guide spotlighting the Tutorials button,
+    // with a demo mouse gliding over to it and clicking (demoHover). Clicking
+    // the real button opens this menu as usual and ends the guide; "Maybe
+    // later" / ✕ / Esc just dismiss it.
+    function offerSteps() {
+        return [{
+            target: btn,
+            placement: 'right',
+            title: 'Interactive tutorials',
+            text: '<b>New here?</b> There are <b>interactive tutorials</b> that walk you through the ' +
+                  'generator step by step, right on this page.<br><br>They\'re completely ' +
+                  '<b>optional</b> — click <b>Tutorials</b> to pick one, or skip them and start on your ' +
+                  'own. The button stays here at the top of the map for later.',
+            demo: function() {
+                var r = btn.getBoundingClientRect();
+                if (!r.width) return null;
+                var end = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+                return [{ x: end.x - 190, y: end.y + 230 }, end];
+            },
+            demoHover: true,
+            demoDuration: 1300,
+            // btn's own listener (above) opens the menu; this just ends the guide.
+            waitFor: function(done) {
+                function onClick() { setTimeout(done, 0); }
+                btn.addEventListener('click', onClick);
+                return function() { btn.removeEventListener('click', onClick); };
+            },
+            waitText: 'Click Tutorials',
+            buttons: [{ label: 'Maybe later', onClick: function(b, api) { api.stop(); } }]
+        }];
+    }
+
+    if (opts.offerId && hasServer) {
+        var offered = false;
+        window.tp3dOfferTutorials = function() {
+            if (offered) return;
+            offered = true;
+            fetch('http://127.0.0.1:' + PORT + '/get_tutorial_progress', { cache: 'no-store' })
+                .then(function(r) { return r.json(); })
+                .then(function(progress) {
+                    if (progress && progress[opts.offerId]) return;
+                    if (tp3dTutorial.isActive() || modal.classList.contains('open')) return;
+                    tp3dTutorial.start(offerSteps());
+                    fetch('http://127.0.0.1:' + PORT + '/complete_tutorial', {
+                        method: 'POST', keepalive: true,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: opts.offerId })
+                    }).catch(function() {});
+                })
+                .catch(function() {});
+        };
+    }
     closeBtn.addEventListener('click', close);
     modal.addEventListener('click', function(e) { if (e.target === modal) close(); });
     document.addEventListener('keydown', function(e) {

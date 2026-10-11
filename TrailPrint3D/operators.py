@@ -4058,6 +4058,9 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
 
         from . import picker_server as mp
 
+        # This page only sends the export-folder button's 'exportFolder'.
+        for key, value in mp.drain_pending_settings():
+            utils.apply_setting_update(context.scene.tp3d, key, value)
         request = mp.drain_latest_model_preview()
         if request is not None:
             self._build_preview(context, request)

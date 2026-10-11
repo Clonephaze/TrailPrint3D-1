@@ -307,7 +307,8 @@ function tp3dMultitileTutorialCreate() {
             }
         },
         {
-            target: '#send',
+            // Whichever is visible: Select Export Folder stands in for Send until a folder is set (export_folder.js).
+            target: ['#send', '.export-folder-pick'],
             placement: 'right',
             title: 'Generate your map',
             text: 'Click <b>Send to Blender</b> to generate all tiles.',
@@ -321,6 +322,7 @@ function tp3dMultitileTutorialCreate() {
 tp3dTutorialMenu({
     button: '#tutorialBtn',
     title: 'Multi-Tile Generator Tutorials',
+    offerId: 'offer-multitile-generator',
     tutorials: [
         {
             id: 'multitile-create',

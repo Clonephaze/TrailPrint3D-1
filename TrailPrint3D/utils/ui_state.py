@@ -6,6 +6,8 @@ kept separate from the generation pipeline modules since they don't run as
 part of runGeneration()'s phase sequence.
 """
 
+import os
+
 import bpy  # type: ignore
 
 from .. import constants as const
@@ -375,6 +377,26 @@ def build_settings_row_state(tp3d=None):
     return {key: getattr(tp3d, attr) for key, (attr, _) in _SETTINGS_ROW_FIELDS.items()}
 
 
+def _apply_export_folder(value):
+    """Folder chosen with a generator page's export-folder button (picker_server's
+    /pick_export_folder). Deliberately not in _SETTINGS_ROW_FIELDS: those make
+    up SETTINGS_STATE, which the history panel replays on restore -- that
+    shouldn't switch where exports go.
+
+    Sets only the Default Export Folder add-on preference, never the scene's
+    own Export Path (which, when set, still takes priority -- see
+    addon_preferences.get_export_folder). Returns False for anything that
+    isn't an existing folder.
+    """
+    from ..addon_preferences import get_prefs  # deferred to avoid circular import at load time
+
+    path = str(value or "")
+    if not path or not os.path.isdir(path):
+        return False
+    get_prefs().default_export_folder = os.path.join(path, "")  # export.py appends file names directly
+    return True
+
+
 def apply_setting_update(tp3d, key, value):
     """Apply one Settings popup Map-tab field update -- applied on Blender's
     main thread from a picker page's field edit, queued by
@@ -385,16 +407,21 @@ def apply_setting_update(tp3d, key, value):
 
     *key* is checked against the _SETTINGS_ROW_FIELDS whitelist -- silently
     ignored if unrecognized -- rather than setattr'ing whatever name the
-    page sent, since the request body is client-controlled.
+    page sent, since the request body is client-controlled. 'exportFolder'
+    is the one extra key, see _apply_export_folder.
     """
-    field = _SETTINGS_ROW_FIELDS.get(key)
-    if not field:
-        return
-    attr, caster = field
-    try:
-        setattr(tp3d, attr, caster(value))
-    except (TypeError, ValueError):
-        return
+    if key == "exportFolder":
+        if not _apply_export_folder(value):
+            return
+    else:
+        field = _SETTINGS_ROW_FIELDS.get(key)
+        if not field:
+            return
+        attr, caster = field
+        try:
+            setattr(tp3d, attr, caster(value))
+        except (TypeError, ValueError):
+            return
     # Property changes made from a modal timer don't redraw the sidebar on
     # their own -- without this it keeps showing the old value (e.g. ESA
     # WorldCover after the page switched to OSM) until the mouse hovers it.

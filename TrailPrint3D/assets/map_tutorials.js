@@ -334,7 +334,8 @@ function tp3dMapGenerateSteps(withGpx) {
         },
         // Already shown at the end of the first tutorial -- left out of the GPX one.
         withGpx ? null : {
-            target: '#send',
+            // Whichever is visible: Select Export Folder stands in for Send until a folder is set (export_folder.js).
+            target: ['#send', '.export-folder-pick'],
             placement: 'right',
             title: 'Generate your map',
             text: 'Once you\'re happy, click <b>Send to Blender</b> to generate the map.',
@@ -532,7 +533,8 @@ function tp3dMapTutorialColors() {
             skipIf: function() { return !tp3dSettingsOpen(); }
         },
         {
-            target: '#send',
+            // Whichever is visible: Select Export Folder stands in for Send until a folder is set (export_folder.js).
+            target: ['#send', '.export-folder-pick'],
             placement: 'right',
             title: 'Generate your map',
             text: 'Click <b>Send to Blender</b> to generate your colored map.',
@@ -848,6 +850,8 @@ function tp3dMapTutorialPrefetch() {
 tp3dTutorialMenu({
     button: '#tutorialBtn',
     title: 'Map Generator Tutorials',
+    // Free + premium map generator share it -- offered once for either.
+    offerId: 'offer-map-generator',
     tutorials: [
         {
             id: 'map-generate',
