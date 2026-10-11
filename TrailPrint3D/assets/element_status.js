@@ -324,6 +324,12 @@ function tp3dAttachSubFlyout(wrap, chip, key) {
                 // Only picks what's included -- the element stays on even with
                 // every sub-category unticked (tp3dCompositeIsActive).
                 ADVANCED_SETTINGS_STATE[field.key] = input.checked;
+                // The Settings modal's Elements tab is built once at page load
+                // and only shown/hidden afterwards, so its own copy of this
+                // checkbox has to be updated here or it keeps the stale value.
+                document.querySelectorAll('[data-advanced-checkbox="' + field.key + '"]').forEach(function(other) {
+                    if (other !== input) other.checked = input.checked;
+                });
                 if (typeof tp3dSendAdvancedUpdate === 'function') tp3dSendAdvancedUpdate(field.key, input.checked);
             });
             label.appendChild(input);

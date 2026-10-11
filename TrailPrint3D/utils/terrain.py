@@ -1187,6 +1187,38 @@ def _count_non_manifold(obj):
     return nm_verts, nm_edges
 
 
+def _water_geom_to_local(map_obj, geom):
+    """World-space Shapely geometry -> map_obj's local XY frame, in double precision.
+
+    Map tiles sit at absolute (scaled Mercator) positions -- for a small drawn
+    region hundreds of thousands of units from the origin, where mathutils'
+    32-bit `matrix_world @ v.co` only resolves ~0.06 units. That's coarser
+    than the shoreline/edge tolerances below (and the pocket cutter's push
+    past the map's side wall), which made the insert silently do nothing on
+    small maps with water touching the edge. Working on v.co (small local
+    values) against a locally-transformed polygon keeps it exact.
+    """
+    import numpy as np  # type: ignore
+    from shapely.affinity import affine_transform
+
+    inv = np.linalg.inv(np.array(map_obj.matrix_world, dtype=np.float64))
+    return affine_transform(
+        geom, [inv[0, 0], inv[0, 1], inv[1, 0], inv[1, 1], inv[0, 3], inv[1, 3]]
+    )
+
+
+def _local_box_to_world(map_obj, box):
+    """(minx, miny, maxx, maxy) in map_obj's local XY frame -> world, in double precision."""
+    import numpy as np  # type: ignore
+
+    m = np.array(map_obj.matrix_world, dtype=np.float64)
+    x0, y0, x1, y1 = box
+    pts = np.array([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], dtype=np.float64)
+    wx = pts[:, 0] * m[0, 0] + pts[:, 1] * m[0, 1] + m[0, 3]
+    wy = pts[:, 0] * m[1, 0] + pts[:, 1] * m[1, 1] + m[1, 3]
+    return (float(wx.min()), float(wy.min()), float(wx.max()), float(wy.max()))
+
+
 def flatten_terrain_water(map_obj, polygon=None, mat_index=None, insert=0.0, up_threshold=0.05):
     """Flatten the map's own top surface under each water body to that body's
     median height, then sink it by `insert` mm -- the PAINT-mode counterpart of
@@ -1205,18 +1237,18 @@ def flatten_terrain_water(map_obj, polygon=None, mat_index=None, insert=0.0, up_
 
     Texture mode must run before the paint-texture UVs are generated (they
     are, in _rg_apply_texture), since snapped vertices move in XY.
+
+    Works in map_obj's local frame (see _water_geom_to_local for why).
     Returns a list of world-space (minx, miny, maxx, maxy) boxes, one per
     flattened water body (empty if nothing moved).
     """
-    mw = map_obj.matrix_world
-    mw_inv = mw.inverted()
     bm = bmesh.new()
     bm.from_mesh(map_obj.data)
     bm.normal_update()
     if not bm.verts:
         bm.free()
         return []
-    bottom_z = min((mw @ v.co).z for v in bm.verts)
+    bottom_z = min(v.co.z for v in bm.verts)
     top_faces = [f for f in bm.faces if f.normal.normalized().z > up_threshold]
 
     # (verts to move, verts the median is taken from) per water body
@@ -1242,21 +1274,19 @@ def flatten_terrain_water(map_obj, polygon=None, mat_index=None, insert=0.0, up_
                             stack.append(nf)
             groups.append((verts, verts))
     elif polygon is not None and not polygon.is_empty and top_faces:
-        groups = _snap_shoreline_verts(mw, top_faces, polygon)
+        groups = _snap_shoreline_verts(top_faces, _water_geom_to_local(map_obj, polygon))
 
     boxes = []
     # Never sink a water surface through the model: keep two 0.2mm layers above the base
     floor_z = bottom_z + 0.4
     for move, ref in groups:
-        target_z = max(statistics.median((mw @ v.co).z for v in ref) - insert, floor_z)
+        target_z = max(statistics.median(v.co.z for v in ref) - insert, floor_z)
         xs, ys = [], []
         for v in move:
-            world_co = mw @ v.co
-            world_co.z = target_z
-            v.co = mw_inv @ world_co
-            xs.append(world_co.x)
-            ys.append(world_co.y)
-        boxes.append((min(xs), min(ys), max(xs), max(ys)))
+            v.co.z = target_z
+            xs.append(v.co.x)
+            ys.append(v.co.y)
+        boxes.append(_local_box_to_world(map_obj, (min(xs), min(ys), max(xs), max(ys))))
 
     if boxes:
         bm.to_mesh(map_obj.data)
@@ -1266,7 +1296,7 @@ def flatten_terrain_water(map_obj, polygon=None, mat_index=None, insert=0.0, up_
     return boxes
 
 
-def _snap_shoreline_verts(mw, top_faces, polygon):
+def _snap_shoreline_verts(top_faces, polygon):
     """For every top edge with one end inside a water part and the other
     outside, slide the end nearer to the shoreline crossing onto it (XY only).
     No faces or vertices are added; each vertex moves at most half an edge
@@ -1276,6 +1306,8 @@ def _snap_shoreline_verts(mw, top_faces, polygon):
     XY, so the map shape is untouched. Water narrower than a face (no vertex
     inside it) is left as-is.
 
+    `polygon` must already be in the mesh's local frame
+    (_water_geom_to_local) -- everything here works on v.co directly.
     Returns [(verts_to_move, verts_for_median)] per water part.
     """
     import numpy as np  # type: ignore
@@ -1286,10 +1318,9 @@ def _snap_shoreline_verts(mw, top_faces, polygon):
     parts = list(_g2d.iter_polygons(polygon))
     if not parts:
         return []
-    mw_inv = mw.inverted()
     top_set = set(top_faces)
     top_verts = list({v for f in top_faces for v in f.verts})
-    world = np.array([(mw @ v.co).xy for v in top_verts], dtype=np.float64)
+    world = np.array([(v.co.x, v.co.y) for v in top_verts], dtype=np.float64)
 
     # "Inside" includes vertices lying on the water boundary: coloring_main
     # clips the water to the map outline, so water reaching the map edge has
@@ -1330,8 +1361,8 @@ def _snap_shoreline_verts(mw, top_faces, polygon):
         eds = _outline_edges(v)
         if e not in eds or len(eds) != 2:
             return False
-        d1 = (mw @ eds[0].other_vert(v).co).xy - (mw @ v.co).xy
-        d2 = (mw @ eds[1].other_vert(v).co).xy - (mw @ v.co).xy
+        d1 = eds[0].other_vert(v).co.xy - v.co.xy
+        d2 = eds[1].other_vert(v).co.xy - v.co.xy
         if d1.length == 0 or d2.length == 0:
             return False
         return abs(d1.normalized().cross(d2.normalized())) < 1e-3
@@ -1339,7 +1370,7 @@ def _snap_shoreline_verts(mw, top_faces, polygon):
     # Crossing nearest to the inside end, against that part's own boundary
     best = {}  # vert -> (distance moved, x, y, part)
     for a, b, e, k in mixed:
-        wa, wb = (mw @ a.co), (mw @ b.co)
+        wa, wb = a.co, b.co
         hit = shapely.LineString([wa.xy, wb.xy]).intersection(parts[k].boundary)
         pts = shapely.get_coordinates(hit)
         if not len(pts):
@@ -1365,7 +1396,7 @@ def _snap_shoreline_verts(mw, top_faces, polygon):
             best[v] = (dist, float(x), float(y), k)
 
     def _xy_area(f):
-        c = [(mw @ fv.co).xy for fv in f.verts]
+        c = [fv.co.xy for fv in f.verts]
         return 0.5 * sum(
             c[i].x * c[i - 1].y - c[i - 1].x * c[i].y for i in range(len(c))
         ) * -1.0
@@ -1379,9 +1410,7 @@ def _snap_shoreline_verts(mw, top_faces, polygon):
     for v, (_unused, x, y, k) in sorted(best.items(), key=lambda it: it[1][0]):
         faces = [f for f in v.link_faces if f in top_set]
         old = v.co.copy()
-        w = mw @ v.co
-        w.x, w.y = x, y
-        v.co = mw_inv @ w
+        v.co.x, v.co.y = x, y
         if any(_xy_area(f) < 0.1 * orig_area[f] for f in faces):
             v.co = old
             continue
@@ -1411,29 +1440,34 @@ def cut_water_pocket(gen: GenerationContext, map_obj, polygon, insert, water_mat
     (`water_mat_index` given) walls are set to slot 0 (BASE), the floor to
     the water slot, and painted water faces left outside the pocket (the
     painted patch follows face centres, not the shoreline) back to BASE.
+
+    Works in map_obj's local frame, cutter included (see
+    _water_geom_to_local): built in absolute world coordinates, a small
+    map's cutter lost the precision its _EDGE_EPS push past the side wall
+    relies on, and the boolean silently cut nothing.
     """
     import numpy as np  # type: ignore
     import shapely
-    from shapely.affinity import translate as _shp_translate
 
     from . import geometry2d as _g2d
     from .mesh_ops import _clean_solid_mesh, _extrude_flat_polygon, applyModifier
 
-    parts = list(_g2d.iter_polygons(polygon))
-    if not parts or insert <= 0:
+    if insert <= 0:
+        return
+    parts = list(_g2d.iter_polygons(_water_geom_to_local(map_obj, polygon)))
+    if not parts:
         return
 
-    mw = map_obj.matrix_world
     bm = bmesh.new()
     bm.from_mesh(map_obj.data)
     bm.normal_update()
-    all_z = [(mw @ v.co).z for v in bm.verts]
+    all_z = [v.co.z for v in bm.verts]
     top_verts = list({v for f in bm.faces if f.normal.z > 0.05 for v in f.verts})
-    world = np.array([(mw @ v.co) for v in top_verts], dtype=np.float64)
+    world = np.array([tuple(v.co) for v in top_verts], dtype=np.float64)
     top_faces = [f for f in bm.faces if f.normal.z > 0.05]
     sample = top_faces[:: max(1, len(top_faces) // 2000)]
     face_size = statistics.median(
-        max(((mw @ e.verts[0].co).xy - (mw @ e.verts[1].co).xy).length for e in f.edges)
+        max((e.verts[0].co.xy - e.verts[1].co.xy).length for e in f.edges)
         for f in sample
     ) if sample else 1.0
     bm.free()
@@ -1455,9 +1489,8 @@ def cut_water_pocket(gen: GenerationContext, map_obj, polygon, insert, water_mat
     _EDGE_EPS = 0.02
     edge_zone = None
     if gen.runtime.mapOutline is not None:
-        edge_zone = _shp_translate(
-            gen.runtime.mapOutline, xoff=map_obj.location.x, yoff=map_obj.location.y
-        ).boundary.buffer(_EDGE_EPS)
+        # mapOutline is stored in the map's local frame already
+        edge_zone = gen.runtime.mapOutline.boundary.buffer(_EDGE_EPS)
 
     # Texture mode: the rasterizer paints every pixel whose centre is inside
     # the water, so blue pixels reach up to ~0.7px past the shoreline, plus up
@@ -1501,6 +1534,9 @@ def cut_water_pocket(gen: GenerationContext, map_obj, polygon, insert, water_mat
     _clean_solid_mesh(mesh)
     cutter = bpy.data.objects.new(mesh.name, mesh)
     bpy.context.collection.objects.link(cutter)
+    # Same transform as the map -> the boolean's relative transform is an
+    # exact identity, no large-offset round trip through 32-bit floats.
+    cutter.matrix_world = map_obj.matrix_world.copy()
 
     n_before = len(map_obj.data.polygons)
     backup = map_obj.data.copy()
@@ -1531,7 +1567,7 @@ def cut_water_pocket(gen: GenerationContext, map_obj, polygon, insert, water_mat
         pocket_tree = shapely.STRtree(pocket_parts)
         me = map_obj.data
         for f in me.polygons:
-            c = mw @ f.center
+            c = f.center
             nz = f.normal.z
             if nz > 0.05:
                 if shapely.contains_xy(pocket, c.x, c.y):
@@ -1541,7 +1577,7 @@ def cut_water_pocket(gen: GenerationContext, map_obj, polygon, insert, water_mat
                     # that face partly upward -- those are wall, i.e. land.
                     hit = pocket_tree.query(shapely.Point(c.x, c.y), predicate="intersects")
                     floor_z = min(pocket_floors[i] for i in hit) if len(hit) else None
-                    top_z = max((mw @ me.vertices[i].co).z for i in f.vertices)
+                    top_z = max(me.vertices[i].co.z for i in f.vertices)
                     if floor_z is not None and top_z <= floor_z + 1e-3:
                         f.material_index = water_mat_index  # pocket floor
                     else:
@@ -1618,6 +1654,29 @@ def _flatten_painted_water(gen: GenerationContext, map_obj, polygon, mat_index=N
                 break
         if crosses:
             RaycastCurveToMesh(crv, map_obj)
+
+
+def _flatten_painted_ocean(gen: GenerationContext, map_obj, polygon):
+    """Ocean counterpart of coloring_main's own WATER flatten + Insert call
+    (Paint on Map / texture mode). The ocean is built by createOcean /
+    createOceanFromWaterPolygons instead of coloring_main, so it needs its
+    own hook for the Water group's Flatten/Insert settings to reach it.
+
+    PAINT mode must call this after the ocean was painted onto map_obj (it
+    finds the ocean faces by the WATER material slot); texture mode before
+    the paint texture is generated, same as the WATER call.
+    """
+    if not bpy.context.scene.tp3d.col_wFlattenTop or polygon is None or polygon.is_empty:
+        return
+    if gen.texture.useTexture:
+        _flatten_painted_water(gen, map_obj, polygon)
+        return
+    # Lakes/rivers share this slot -- re-flattening their already-flat
+    # patches with no insert of their own is a no-op, and cut_water_pocket
+    # only recesses the ocean polygon's own parts.
+    water_idx = map_obj.data.materials.find("WATER")
+    if water_idx >= 0:
+        _flatten_painted_water(gen, map_obj, polygon, mat_index=water_idx)
 
 
 def color_map_faces_by_terrain(map_obj, terrain_obj, up_threshold=0.05):
@@ -2284,7 +2343,9 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
                 _rpt("Could not build ocean polygon — ocean layer skipped."), "warn"
             )
             return None
-        return _ColoringTextureResult(kind="OCEAN", polygon=union_all(_ct_polys))
+        _ocean_geom = union_all(_ct_polys)
+        _flatten_painted_ocean(gen, tile, _ocean_geom)
+        return _ColoringTextureResult(kind="OCEAN", polygon=_ocean_geom)
 
     ocean_obj = _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile)
     print(f"  [ocean] _build_ocean_mesh: {time.time() - _t_ocean:.3f}s")
@@ -2308,7 +2369,12 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
     ocean_obj.data.materials.append(mat)
 
     if elementMode == "PAINT":
+        from .geometry2d import footprint_with_holes  # deferred to avoid circular import at load time
+
+        # Taken before projection(), which deletes ocean_obj.
+        _ocean_geom = footprint_with_holes(ocean_obj)
         projection("paint", tile, ocean_obj)
+        _flatten_painted_ocean(gen, tile, _ocean_geom)
         return None
     elif elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
         # Only clip ocean_obj to the plate's footprint here -- do NOT cut the
@@ -2427,7 +2493,9 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
     if gen.texture.useTexture:
         # Same texture-paint short-circuit as createOcean(): hand back the
         # Shapely polygon for the rasterizer, no Blender mesh needed.
-        return _ColoringTextureResult(kind="OCEAN", polygon=union_all(ocean_polys))
+        _ocean_geom = union_all(ocean_polys)
+        _flatten_painted_ocean(gen, tile, _ocean_geom)
+        return _ColoringTextureResult(kind="OCEAN", polygon=_ocean_geom)
 
     face_meshes = []
     for part in ocean_polys:
@@ -2461,6 +2529,7 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
         from .mesh_ops import projection  # deferred, same convention as createOcean
 
         projection("paint", tile, ocean_obj)
+        _flatten_painted_ocean(gen, tile, union_all(ocean_polys))
         return None
     elif elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
         # Same ordering note as createOcean(): only clip to the plate's

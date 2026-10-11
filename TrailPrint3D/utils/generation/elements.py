@@ -1028,12 +1028,12 @@ def _rg_apply_single_color_mode(
                         message=f"Single-color: remeshing {key.capitalize()} ({_scm_done + 1}/{_n_scm})…",
                     )
 
-                # Water-only "Insert": sink the water piece rigidly (thickness
+                # Water/ocean "Insert": sink the piece rigidly (thickness
                 # unchanged) and lower its recess floor by the same amount.
                 # Applied after _scm_bottom_z is computed so the other elements'
                 # shared recess depth is not dragged down with it.
                 _bottom_z = _scm_bottom_z
-                if key == "water":
+                if key in ("water", "ocean"):
                     from ..terrain import effective_water_insert  # deferred to avoid circular import at load time
 
                     _wInsert = effective_water_insert(bpy.context.scene.tp3d)
