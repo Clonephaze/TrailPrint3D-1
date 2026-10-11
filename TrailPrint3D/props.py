@@ -5,6 +5,7 @@
 
 import bpy
 from bpy.app.translations import pgettext_iface as _  # For Translation of Text Required
+from bpy.app.translations import pgettext_tip as _tip
 from bpy.props import (
     BoolProperty,
     CollectionProperty,
@@ -17,6 +18,14 @@ from bpy.props import (
 
 from . import constants as const
 from . import temp, utils
+from .utils.shape_capabilities import (
+    LAYOUTS_REQUIRING_PLATE,
+    PLATE_MODES_BY_SHAPE,
+    TEXT_LAYOUTS_BY_SHAPE,
+    plate_mode_items,
+    text_layout_items,
+    valid_layouts,
+)
 
 
 def _slicer_profile_items(self, context) -> list[tuple[str, str, str]]:
@@ -25,7 +34,7 @@ def _slicer_profile_items(self, context) -> list[tuple[str, str, str]]:
         "Use the built-in Bambu A1 template. "
         "Add your own profiles in Preferences → Add-ons → 3MF Format → Advanced"
     )
-    items = [("NONE", "Built-in defaults", desc)]
+    items = [("NONE", "Built-in default (Bambu A1)", desc)]
 
     import importlib
 
@@ -81,52 +90,14 @@ def generation_mode_update(self, context):
     self.use_multi_generation = self.generation_mode == "MULTI"
 
 
-# Which text/plate/shell extras each base shape supports. "NONE" (plain shape,
-# no overlay) must come first in every list -- see the shapeTextStyle
-# comment for why. HEART has no entry here -- it has no extras to offer.
-_SHELL_ITEM = (
-    "SHELL",
-    _("Shell"),
-    _(
-        "Snug protective shell around the map's sides and bottom, offset by the tolerance gap with a printable wall"
-    ),
-)
+def _get_tex_use_texture(self):
+    # Runs each time the value is read; falls back to temp.has3mf
+    # only if the user hasn't explicitly set it.
+    return self.get("tex_use_texture", bool(temp.has3mf))
 
-SHAPE_TEXT_STYLES = {
-    "HEXAGON": [
-        ("NONE", _("None"), _("Plain hexagonal map, no text overlay")),
-        ("INNER TEXT", _("Text on Map Object"), _("Hexagonal map with inserted text")),
-        ("OUTER TEXT", _("Plate With Text on Top"), _("Hexagonal map with backplate and text")),
-        (
-            "FRONT TEXT",
-            _("Plate With Text on Front"),
-            _("Hexagonal map with backplate and text on the front"),
-        ),
-        _SHELL_ITEM,
-    ],
-    "OCTAGON": [
-        ("NONE", _("None"), _("Plain octagon map, no text overlay")),
-        ("OUTER TEXT", _("Plate With Text on Front"), _("Octagon map with backplate and text")),
-        _SHELL_ITEM,
-    ],
-    "CIRCLE": [
-        ("NONE", _("None"), _("Plain circular map, no text overlay")),
-        (
-            "OUTER TEXT",
-            _("Plate With Text on Front"),
-            _("Circular map with backplate and curved text"),
-        ),
-        _SHELL_ITEM,
-    ],
-    "SQUARE": [
-        ("NONE", _("None"), _("Plain rectangular map, no extras")),
-        _SHELL_ITEM,
-    ],
-    "ELLIPSE": [
-        ("NONE", _("None"), _("Plain ellipse map, no extras")),
-        _SHELL_ITEM,
-    ],
-}
+
+def _set_tex_use_texture(self, value):
+    self["tex_use_texture"] = value
 
 
 # Road type tiers shown in the Roads UIList. `road_id` is the stable lookup
@@ -163,9 +134,11 @@ ROAD_TYPE_DEFS = [
     (
         "footway",
         _("Footways/Sidewalks"),
-        "highway=footway -- pedestrian sidewalks and paths, OSM's own separate non-vehicle category "
-        "(see Key:highway on the OSM wiki). Kept separate by default since footways trace almost every "
-        "street and are usually the biggest single source of visual clutter.",
+        (
+            "highway=footway -- pedestrian sidewalks and paths, OSM's own separate non-vehicle category "
+            "(see Key:highway on the OSM wiki). Kept separate by default since footways trace almost every "
+            "street and are usually the biggest single source of visual clutter."
+        ),
     ),
     (
         "pedestrian",
@@ -182,15 +155,19 @@ ROAD_TYPE_DEFS = [
     (
         "track",
         _("Tracks"),
-        "highway=track -- unpaved access tracks/fire roads. Often the one long rural trail a user "
-        "actually wants, so this tier is exempt from the dense-road mapsize cutoff that drops "
-        "Residential/Service/Footway/Cycle-Bridle roads on larger maps (see STREETS_PRIMARY_THRESHOLD).",
+        (
+            "highway=track -- unpaved access tracks/fire roads. Often the one long rural trail a user "
+            "actually wants, so this tier is exempt from the dense-road mapsize cutoff that drops "
+            "Residential/Service/Footway/Cycle-Bridle roads on larger maps (see STREETS_PRIMARY_THRESHOLD)."
+        ),
     ),
     (
         "path",
         _("Trails/Paths"),
-        "highway=path -- generic multi-use/hiking trail, ambiguous length so kept in the normal "
-        "dense-road mapsize cutoff rather than being exempted like Tracks.",
+        (
+            "highway=path -- generic multi-use/hiking trail, ambiguous length so kept in the normal "
+            "dense-road mapsize cutoff rather than being exempted like Tracks."
+        ),
     ),
 ]
 
@@ -254,61 +231,58 @@ def any_road_active(tp3d) -> bool:
     return tp3d.show_roads and any(item.active for item in tp3d.road_types)
 
 
-def get_shape_text_style_items(self, context):
-    # Items must be a callback (not a static list) since the available
-    # styles depend on which base shape is currently selected.
-    items = SHAPE_TEXT_STYLES.get(
-        self.shape, [("NONE", _("None"), _("No text overlay available for this shape"))]
-    )
-    if not temp.PREMIUMVERSION:
-        # Shell is Premium-exclusive -- stays visible in the dropdown (so free
-        # users know it exists) but gets a lock icon and a "(Premium)" label.
-        # Blender's Enum dropdown can't disable a single item outright, so
-        # actually picking it is caught by shape_text_style_update below,
-        # which snaps the selection back to NONE.
-        items = [
-            (ident, _("%s (Premium)") % label, desc, "LOCKED", i)
-            if ident == "SHELL"
-            else (ident, label, desc, "NONE", i)
-            for i, (ident, label, desc) in enumerate(items)
-        ]
-    return items
+def shape_update(self, context):
+    """Re-validate the dependent dropdowns against the new shape's matrix.
+
+    Both textLayout and plateMode are dynamic-items EnumProperties whose
+    valid set depends on self.shape. Because Blender stores them as a bare
+    index, we must re-resolve against the cache string (captured by the
+    dedicated update callbacks) rather than re-reading the index, which
+    would silently re-interpret it against the new items list.
+    """
+    valid_layouts = TEXT_LAYOUTS_BY_SHAPE.get(self.shape, ("NONE",))
+    valid_plates = PLATE_MODES_BY_SHAPE.get(self.shape, ("NONE",))
+
+    if self.textLayoutCache in valid_layouts:
+        self.textLayout = self.textLayoutCache
+    else:
+        self.textLayout = "NONE"
+
+    if self.plateModeCache in valid_plates:
+        self.plateMode = self.plateModeCache
+    else:
+        self.plateMode = "NONE"
 
 
-def shape_text_style_update(self, context):
-    if self.shapeTextStyle == "SHELL" and not temp.PREMIUMVERSION:
-        self.shapeTextStyle = "NONE"
+def plate_mode_update(self, context):
+    self.plateModeCache = self.plateMode
+
+    if self.plateMode == "SHELL" and not temp.PREMIUMVERSION:
+        self.plateMode = "NONE"
         utils.show_message_box(
-            _("Shell is a Patreon-exclusive feature."), "INFO", _("Premium Feature")
+            _("Shell is a Patreon-exclusive feature."),
+            "INFO",
+            _("Premium Feature"),
         )
         return
-    # shapeTextStyle is a dynamic-items EnumProperty (see get_shape_text_style_items),
-    # so Blender stores it as a bare index -- the identifier it resolves to depends
-    # on whichever items list is current when read. shape_update (below) needs the
-    # identifier the user actually *picked*, independent of that reinterpretation,
-    # so mirror it into a plain string every time it's set while self.shape hasn't
-    # changed yet (i.e. here, where the items list still matches the selection).
-    self.shapeTextStyleCache = self.shapeTextStyle
+
+    if self.textLayout not in valid_layouts(self.shape, self.plateMode):
+        self.textLayout = "NONE"
+        self.textLayoutCache = "NONE"
+    
+    if self.plateMode == "NONE" and self.textLayout in LAYOUTS_REQUIRING_PLATE:
+        # Layout needs a plate to sit on — drop back to no text.
+        self.textLayout = "NONE"
+        self.textLayoutCache = "NONE"
 
 
-def shape_update(self, context):
-    # Switching self.shape changes shapeTextStyle's item list. Because that
-    # property is stored as an index, re-reading self.shapeTextStyle here would
-    # silently reinterpret the old index against the new list (e.g. index 2 means
-    # "Outer text" under Hexagon but "Shell" under Octagon) instead of reflecting
-    # what the user actually had selected. Use the cached identifier string
-    # instead: keep it if the new shape still offers that option, else fall back
-    # to None.
-    valid_styles = {
-        ident for ident, _label, _desc in SHAPE_TEXT_STYLES.get(self.shape, [])
-    }
-    cached = self.shapeTextStyleCache
-    if cached == "SHELL" and not temp.PREMIUMVERSION:
-        self.shapeTextStyle = "NONE"
-    elif cached in valid_styles:
-        self.shapeTextStyle = cached
-    else:
-        self.shapeTextStyle = "NONE"
+def text_layout_update(self, context):
+    self.textLayoutCache = self.textLayout
+
+    if self.textLayout in LAYOUTS_REQUIRING_PLATE and self.plateMode == "NONE":
+        # Auto-upgrade to a solid plate so the layout has something to sit on.
+        self.plateMode = "SOLID_PLATE"
+        self.plateModeCache = "SOLID_PLATE"
 
 
 def element_source_update(self, context):
@@ -321,48 +295,14 @@ def element_source_update(self, context):
         self.elementMode = "PAINT"
 
 
-def get_effective_shape(tp3d) -> str:
-    """The full shape identifier generation.py/metadata.py operate on
-    (e.g. "HEXAGON OUTER TEXT"), composed from the base shape dropdown and
-    the text-style dropdown. Falls back to the bare base shape if no style
-    is selected, or if the stored style isn't valid for the current base
-    shape (e.g. left over from a different shape)."""
-    base = "HEXAGON"
-    if tp3d.shape != "":
-        base = tp3d.shape
-    style = tp3d.shapeTextStyle
-    if style == "SHELL" and not temp.PREMIUMVERSION:
-        # Guards against a SHELL value left over from a Premium session/preset
-        # -- Shell is Premium-exclusive, so free builds always fall back to
-        # the bare base shape instead of acting on a stale selection.
-        return base
-    valid_styles = {ident for ident, _label, _desc in SHAPE_TEXT_STYLES.get(base, [])}
-    if style and style != "NONE" and style in valid_styles:
-        return f"{base} {style}"
-    return base
-
-
-# Effective shapes that add a backplate with an outer border around the map
-# (see the "outersize = size * (1 + outerBorderSize/100)" calc duplicated in
-# HexagonOuterText/HexagonFrontText/OctagonOuterText/MedalText in
-# text_objects.py, and the same set gating plateBevel/handleStyle in
-# panels.py's TP3D_PT_shapes). "... INNER TEXT" has no border, so it's not here.
-PLATE_SHAPES = {
-    "HEXAGON OUTER TEXT",
-    "HEXAGON FRONT TEXT",
-    "OCTAGON OUTER TEXT",
-    "CIRCLE OUTER TEXT",
-}
-
-
-def get_effective_footprint_size(tp3d):
-    """The actual outer footprint size (mm) of the generated model. Shapes
-    with a plate (see PLATE_SHAPES) are larger than objSize by the outer
-    border, so anything scaled to fit the map (e.g. an imported holder) needs
-    this instead of the bare objSize."""
-    if get_effective_shape(tp3d) in PLATE_SHAPES:
-        return tp3d.objSize * (1 + tp3d.outerBorderSize / 100)
-    return tp3d.objSize
+# def get_effective_footprint_size(tp3d):
+#     """The actual outer footprint size (mm) of the generated model. Shapes
+#     with a plate (see PLATE_SHAPES) are larger than objSize by the outer
+#     border, so anything scaled to fit the map (e.g. an imported holder) needs
+#     this instead of the bare objSize."""
+#     if get_effective_shape(tp3d) in PLATE_SHAPES:
+#         return tp3d.objSize * (1 + tp3d.outerBorderSize / 100)
+#     return tp3d.objSize
 
 
 def estimate_map_km(tp3d):
@@ -395,6 +335,38 @@ def estimate_map_km(tp3d):
     return tp3d.objSize / scale  # mm -> real-world km
 
 
+def update_map_estimate(self, context=None):
+    tp3d = getattr(context, "scene", None)
+    tp3d = tp3d.tp3d if tp3d else self
+
+    if not tp3d.cachedTrailBoundsValid:
+        tp3d.estimated_trail_km = 0.0
+        tp3d.estimated_map_km = 0.0
+        return
+
+    # 1. Trail Bounds (GPX Extent)
+    trail_coords = [
+        (tp3d.cachedTrailMinLat, tp3d.cachedTrailMinLon),
+        (tp3d.cachedTrailMaxLat, tp3d.cachedTrailMaxLon),
+    ]
+
+    # gen_type=2 fits the raw GPX bounds without applying pathScale, so the
+    # trail footprint remains stable when the fetched map coverage changes.
+    trail_scale = utils.calculate_scale(tp3d.objSize, trail_coords, gen_type=2)
+    if trail_scale and trail_scale > 0:
+        tp3d.estimated_trail_km = tp3d.objSize / trail_scale
+    else:
+        tp3d.estimated_trail_km = 0.0
+
+    # The normal factor-mode calculation applies pathScale and therefore
+    # estimates the larger terrain area that generation will fetch.
+    map_scale = utils.calculate_scale(tp3d.objSize, trail_coords, gen_type=1)
+    if map_scale and map_scale > 0:
+        tp3d.estimated_map_km = tp3d.objSize / map_scale
+    else:
+        tp3d.estimated_map_km = 0.0
+
+
 def repair_invalid_shape(scene):
     """Files/sessions saved before the "... TEXT" shape variants were split
     out into shapeTextStyle may still have `shape` stored as one of those
@@ -410,28 +382,31 @@ def repair_invalid_shape(scene):
 
 # Define a Property Group to store variables
 class TP3D_PG_properties(bpy.types.PropertyGroup):
+    general_settings_expanded: BoolProperty(
+        default=True, description=_tip("Expand/Collapse General Settings")
+    )  # type: ignore
     file_path: StringProperty(
-        name=_(""),
-        description=_("Select a GPX file"),
+        name="",
+        description=_tip("Select a GPX file"),
         default="",
         maxlen=1024,
     )  # type: ignore
     export_path: StringProperty(
-        name=_(""),
-        description=_("Where to save the exported files"),
+        name="",
+        description=_tip("Where to save the exported files"),
         default="",
         maxlen=1024,
         subtype="DIR_PATH",  # Enables folder selection
     )  # type: ignore
     chain_path: StringProperty(
-        name=_(""),
-        description=_("Select a folder that contains multiple GPX files"),
+        name="",
+        description=_tip("Select a folder that contains multiple GPX files"),
         default="",
         maxlen=1024,
         subtype="DIR_PATH",  # Enables folder selection
     )  # type: ignore
     trailName: StringProperty(
-        name=_(""), default="", description=_("Leave empty to use the Filename")
+        name="", default="", description=_tip("Leave empty to use the Filename")
     )  # type: ignore
 
     # Cached GPX trail bounding box, populated by TP3D_OT_pick_gpx_file at
@@ -444,7 +419,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     cachedTrailMaxLat: FloatProperty(default=0.0, options={"SKIP_SAVE"})  # type: ignore
     cachedTrailMinLon: FloatProperty(default=0.0, options={"SKIP_SAVE"})  # type: ignore
     cachedTrailMaxLon: FloatProperty(default=0.0, options={"SKIP_SAVE"})  # type: ignore
-
+    estimated_trail_km: FloatProperty(name=_("Estimated Trail Area"), default=0.0)
+    estimated_map_km: FloatProperty(name=_("Estimated Map Area"), default=0.0)
     shape: EnumProperty(
         name="",
         items=[
@@ -460,26 +436,52 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default="HEXAGON",
         update=shape_update,
     )  # type: ignore
-    shapeTextStyle: EnumProperty(
-        name="",
-        description=_(
-            "Add an extra (text/plate overlay or shell) to the selected shape"
-        ),
-        items=get_shape_text_style_items,
-        update=shape_text_style_update,
-        # Dynamic-items EnumProperty can't take an explicit `default=` -- see
-        # get_special_blend_items above for why. "NONE" is first in every
-        # per-shape list in SHAPE_TEXT_STYLES, so it's the default.
+    shapeExtrasActive: BoolProperty(
+        name=_("Shape Extras Active"),
+        description=_tip("Toggle the visibility of shape extras"),
+        default=False,
     )  # type: ignore
-    shapeTextStyleCache: StringProperty(default="NONE", options={"HIDDEN"})  # type: ignore
+    shapeExtrasExpanded: BoolProperty(
+        name=_("Shape Extras Expanded"),
+        description=_tip("Toggle the expansion state of shape extras"),
+        default=True,
+    )  # type: ignore
+    plateMode: EnumProperty(
+        name=_("Plate"),
+        description=_tip("Physical backplate or protective shell under the map"),
+        items=plate_mode_items,
+        update=plate_mode_update,
+    )  # type: ignore
+
+    plateModeCache: StringProperty(default="NONE", options={"HIDDEN"})  # type: ignore
+
+    textLayout: EnumProperty(
+        name=_("Text Layout"),
+        description=_tip("Where text and icons are placed"),
+        items=text_layout_items,
+        update=text_layout_update,
+    )  # type: ignore
+
+    textLayoutCache: StringProperty(default="NONE", options={"HIDDEN"})  # type: ignore
     customFilePath: bpy.props.StringProperty(
-        name="File Path",
-        description="Path to the GeoJSON or SVG file",
+        name="",
+        description=_tip("Path to the GeoJSON or SVG file"),
         default="",
+    )
+    geojson_path: bpy.props.StringProperty(
+        name="",
+        description=_tip("Path to the GeoJSON or SVG file"),
+        default="",
+        maxlen=1024,
+    )  # type: ignore
+    textPlacement: BoolProperty(
+        name=_("Inset Text"),
+        description=_tip("Carve text into the plate surface instead of raising it"),
+        default=False,
     )
 
     api: bpy.props.EnumProperty(
-        name="api",
+        name=_("API"),
         items=[
             (
                 "MAPTERHORN",
@@ -512,12 +514,14 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
 
     demFilePath: StringProperty(
-        name= _("DEM File"),
-        description= _("Path to a local GeoTIFF (.tif/.tiff) DEM file, or a folder of tiled GeoTIFFs "
-                        "covering a larger area, in WGS84 lat/lon or a WGS84/ETRS89/NAD83 UTM zone"),
+        name=_("DEM File"),
+        description=_tip(
+            "Path to a local GeoTIFF (.tif/.tiff) DEM file, or a folder of tiled GeoTIFFs "
+            "covering a larger area, in WGS84 lat/lon or a WGS84/ETRS89/NAD83 UTM zone"
+        ),
         default="",
         maxlen=1024,
-    )# type: ignore
+    )  # type: ignore
 
     openTopographyDataset: bpy.props.EnumProperty(
         name=_("Dataset"),
@@ -537,10 +541,16 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default="SRTMGL1",
     )  # type: ignore
 
-    apiRetries: IntProperty(name= _("Overpass API request retries"), default = 5, min = 1, max = 20,description = _("How many retries per request before canceling")) # type: ignore
+    apiRetries: IntProperty(
+        name=_("Overpass API request retries"),
+        default=5,
+        min=1,
+        max=20,
+        description=_tip("How many Retries per Request before canceling"),
+    )  # type: ignore
 
     dataset: EnumProperty(
-        name="Dataset",
+        name=_("Dataset"),
         items=[
             ("srtm30m", "srtm30m", "Latitudes -60 to 60"),
             ("aster30m", "aster30m", "global"),
@@ -553,7 +563,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
 
     scalemode: EnumProperty(
-        name=_(""),
+        name=_("Scale Mode"),
         items=[
             (
                 "FACTOR",
@@ -571,34 +581,43 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
             ),
         ],
         default="FACTOR",
+        update=update_map_estimate,
+        description=_tip("Choose how the map scale should be determined."),
     )  # type: ignore
     pathScale: FloatProperty(
-        name=_("Path Scale"),
+        name=_("Path Scale (%)"),
         default=0.8,
         min=0.01,
         soft_max=1.0,
-        description=_(
+        description=_tip(
             "How much of the map area the trail should occupy, as a percentage"
         ),
         subtype="FACTOR",
+        update=update_map_estimate,
     )  # type: ignore
     scaleLon1: FloatProperty(
-        name="Lon1", default=0, description=_("The Longitude of the first coordinate")
+        name=_("Lon1"),
+        default=0,
+        description=_tip("The Longitude of the first coordinate"),
     )  # type: ignore
     scaleLat1: FloatProperty(
-        name="Lat1", default=0, description=_("The Latitude of the first coordinate")
+        name=_("Lat1"), default=0, description=_tip("The Latitude of the first coordinate")
     )  # type: ignore
     scaleLon2: FloatProperty(
-        name="Lon2", default=0, description=_("The Longitude of the second coordinate")
+        name=_("Lon2"),
+        default=0,
+        description=_tip("The Longitude of the second coordinate"),
     )  # type: ignore
     scaleLat2: FloatProperty(
-        name="Lat2", default=0, description=_("The Latitude of the second coordinate")
+        name=_("Lat2"),
+        default=0,
+        description=_tip("The Latitude of the second coordinate"),
     )  # type: ignore
 
     selfHosted: StringProperty(
-        name=_("Self Hosted API"),
+        name=_("Self-Hosted API"),
         default="",
-        description=_(
+        description=_tip(
             "Has to be same API format as Opentopodata.org (https://api.opentopodata.org/v1/)"
         ),
     )  # type: ignore
@@ -606,9 +625,15 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     objSize: IntProperty(
         name=_("Object Size (mm)"),
         default=100,
-        min=5,
+        min=1,
+        soft_min=10,
+        soft_max=300,
         max=10000,
-        description=_("Size of the map in mm"),
+        step=20,
+        description=_tip(
+            "Size of the map in mm. Soft max is 300mm, but larger values can still be typed in directly."
+        ),
+        update=update_map_estimate,
     )  # type: ignore
     num_subdivisions: IntProperty(
         name=_("Resolution"),
@@ -616,7 +641,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         min=1,
         soft_max=10,
         max=50,
-        description=_(
+        description=_tip(
             "(max recommended 8) Higher Number = more detailed terrain but slower generation. The slider caps at 10, but larger values can still be typed in directly."
         ),
     )  # type: ignore
@@ -625,62 +650,81 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=1,
         min=0,
         max=10000,
-        description=_(
+        description=_tip(
             "Terrain height multiplier. 1.0 = true to scale, 2.0 = twice true height, 0.5 = half true height"
         ),
     )  # type: ignore
     pathThickness: FloatProperty(
-        name=_("Trail Width"),
+        name=_("Trail Width (mm)"),
         default=1.2,
         min=0.1,
         max=5,
-        description=_("Thickness of the path in mm"),
+        description=_tip("Thickness of the path in mm"),
     )  # type: ignore
     shapeRotation: IntProperty(
         name=_("Shape Rotation"),
         default=0,
         min=-360,
         max=360,
-        description=_("Rotate the shape around the trail/map center"),
+        description=_tip("Rotate the shape around the trail/map center"),
     )  # type: ignore
     overwritePathElevation: BoolProperty(
         name=_("Overwrite Path Elevation"),
         default=True,
-        description=_("Cast each point of the trail onto the Terrain Mesh"),
+        description=_tip("Cast each point of the trail onto the Terrain Mesh"),
     )  # type: ignore
-    o_verticesPath: StringProperty(name="Path vertices ", default="")  # type: ignore
-    o_verticesMap: StringProperty(name="Path Map ", default="")  # type: ignore
-    o_mapScale: StringProperty(name="Map Scale", default="")  # type: ignore
-    o_time: StringProperty(name="TimeTook", default="")  # type: ignore
+    o_verticesPath: StringProperty(name=_("Path vertices "), default="")  # type: ignore
+    o_verticesMap: StringProperty(name=_("Path Map "), default="")  # type: ignore
+    o_mapScale: StringProperty(name=_("Map Scale"), default="")  # type: ignore
+    o_time: StringProperty(name=_("Generation Time"), default="")  # type: ignore
     o_apiCounter_OpenTopoData: StringProperty(
-        name="apiCounter_OpenTopodata", default="API Limit: ---/1000 daily"
+        name=_("OpenTopodata Counter"), default="API Limit: ---/1000 daily"
     )  # type: ignore
     o_apiCounter_OpenElevation: StringProperty(
-        name="apiCounter_OpenElevation", default="API Limit: ---/1000 monthly"
+        name=_("Open Elevation Counter"), default="API Limit: ---/1000 monthly"
     )  # type: ignore
-    o_mapsGenerated: StringProperty(name="MapsGenerated", default="")  # type: ignore
+    o_mapsGenerated: StringProperty(name=_("Maps Generated"), default="")  # type: ignore
     o_centerx: FloatProperty(
-        name=_("Center X"), default=0, description=_("X Center of the Path")
+        name=_("Center X"), default=0, description=_tip("X Center of the Path")
     )  # type: ignore
     o_centery: FloatProperty(
-        name=_("Center Y"), default=0, description=_("Y Center of the Path")
+        name=_("Center Y"), default=0, description=_tip("Y Center of the Path")
     )  # type: ignore
 
     magnetHeight: FloatProperty(
-        name=_("Magnet Height"),
+        name=_("Depth"),
         default=2.5,
-        description=_("Height of the Holes for Magnets"),
+        min=0.1,
+        soft_max=10.0,
+        description=_tip("Depth of the Holes for Magnets"),
     )  # type: ignore
     magnetDiameter: FloatProperty(
-        name=_("Magnet Diameter"),
+        name=_("Diameter"),
         default=6.3,
-        description=_("Diameter of the Holes for Magnets"),
+        min=0.1,
+        soft_max=10.0,
+        description=_tip("Diameter of the Holes for Magnets"),
+    )  # type: ignore
+
+    magnetCount: bpy.props.IntProperty(
+        name=_("Count"),
+        description=_tip("Number of magnet holes placed around the object"),
+        default=4,
+        min=2,
+        max=8,
+    )
+    magnetMargin: FloatProperty(
+        name=_("Margin"),
+        default=3.0,
+        min=0.2,
+        soft_max=30.0,
+        description=_tip("The margin from the edge of the object"),
     )  # type: ignore
 
     bottomMarkCutout: BoolProperty(
-        name=_("Bottom Mark Cutout"),
+        name=_("Bottom Label Cutout"),
         default=False,
-        description=_("Creates Bottom mark as a Cutout"),
+        description=_tip("Creates bottom label as a cutout, instead of as a text object."),
     )  # type: ignore
 
     ellipseRatio: FloatProperty(
@@ -688,158 +732,194 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=0.75,
         soft_max=1.0,
         min=0.1,
-        description=_("0.75 means the ellipse height is 75 percent of its width"),
+        description=_tip("0.75 means the ellipse height is 75 percent of its width"),
         subtype="FACTOR",
     )  # type: ignore
     rectangleHeight: IntProperty(
-        name=_("Rectangle Height (mm)"),
+        name=_("Height (mm)"),
+        min=1,
+        soft_min=10,
+        soft_max=300,
+        max=10000,
         default=100,
-        description=_("Height of the Rectangle in mm"),
+        description=_tip("Height of the Rectangle in mm"),
     )  # type: ignore
 
     textFont: StringProperty(
-        name=_("Font"),
-        description=_("Select a file"),
+        name="",
+        description=_tip("Select a file"),
         default="",
         maxlen=1024,
     )  # type: ignore
-    textSize: IntProperty(
-        name=_("Text Size"), 
-        default=5, 
-        min=0, 
-        max=1000
-    )  # type: ignore
+    textSize: IntProperty(name=_("Font Size"), default=5, min=0, max=1000)  # type: ignore
     textSizeTitle: IntProperty(
-        name=_("Title Text Size"),
+        name=_("Title Font Size"),
         default=0,
         min=0,
         max=1000,
-        description=_("Keep 0 to use value from 'Text Size'"),
+        description=_tip("Keep 0 to use value from 'Text Size'"),
     )  # type: ignore
     titlefield: StringProperty(
         name=_("title"),
         default="{name}",
-        description=_(
+        description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
         ),
     )  # type: ignore
     textfield1: StringProperty(
-        name=_("text1"),
+        name="",
         default="{length}",
-        description=_(
+        description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
         ),
     )  # type: ignore
     textfield2: StringProperty(
-        name=_("text2"),
+        name="",
         default="{elevation}",
-        description=_(
+        description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
         ),
     )  # type: ignore
     textfield3: StringProperty(
-        name=_("text3"),
+        name="",
         default="{duration}",
-        description=_(
+        description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
         ),
     )  # type: ignore
     textfield4: StringProperty(
-        name=_("text4"),
+        name="",
         default="",
-        description=_(
+        description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
         ),
     )  # type: ignore
     textfield5: StringProperty(
-        name=_("text5"),
+        name="",
         default="",
-        description=_(
+        description=_tip(
+            "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
+        ),
+    )  # type: ignore
+    textfield6: StringProperty(
+        name="",
+        default="",
+        description=_tip(
+            "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
+        ),
+    )  # type: ignore
+    textfield7: StringProperty(
+        name="",
+        default="",
+        description=_tip(
             "Codes = | {name} | {length} | {elevation} |{date} | {speed} | {scale}"
         ),
     )  # type: ignore
     titleIcon: EnumProperty(
-        name="Title Icon",
+        name=_("Title Icon"),
         items=[
-            ("cycling", _("Cycling Icon"), _("Cycling Icon before the Title")),
-            ("hiking", _("Hiking Icon"), _("Hiking Icon before the Title")),
-            ("running", _("Running Icon"), _("Running Icon before the Title")),
-            ("swimming", _("Swimming Icon"), _("Swimming Icon before the Title")),
-            ("skiing", _("Skiing Icon"), _("Skiing Icon before the Title")),
+            ("cycling", _("Cycling Icon"), ""),
+            ("hiking", _("Hiking Icon"), ""),
+            ("running", _("Running Icon"), ""),
+            ("swimming", _("Swimming Icon"), ""),
+            ("skiing", _("Skiing Icon"), ""),
             (
                 "snowboarding",
                 _("Snowboarding Icon"),
-                _("Snowboarding Icon before the Title"),
+                "",
             ),
-            ("kajak", _("Kayak Icon"), _("Kayak Icon before the Title")),
-            ("no", _("No Icon"), _("No icon before the Title")),
+            ("kajak", _("Kayak Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="no",
     )  # type: ignore
     iconText1: EnumProperty(
-        name="Text 1Icon",
+        name=_("Text 1 Icon"),
         items=[
-            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
-            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
-            ("time", _("Time Icon"), _("Time icon before the Text")),
-            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
-            ("date", _("Date Icon"), _("Date icon before the Text")),
-            ("no", _("No Icon"), _("No icon before the Text")),
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="distance",
     )  # type: ignore
     iconText2: EnumProperty(
         name=_("Text 2 Icon"),
         items=[
-            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
-            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
-            ("time", _("Time Icon"), _("Time icon before the Text")),
-            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
-            ("date", _("Date Icon"), _("Date icon before the Text")),
-            ("no", _("No Icon"), _("No icon before the Text")),
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="elevation",
     )  # type: ignore
     iconText3: EnumProperty(
         name=_("Text 3 Icon"),
         items=[
-            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
-            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
-            ("time", _("Time Icon"), _("Time icon before the Text")),
-            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
-            ("date", _("Date Icon"), _("Date icon before the Text")),
-            ("no", _("No Icon"), _("No icon before the Text")),
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="time",
     )  # type: ignore
     iconText4: EnumProperty(
-        name="Text 4 Icon",
+        name=_("Text 4 Icon"),
         items=[
-            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
-            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
-            ("time", _("Time Icon"), _("Time icon before the Text")),
-            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
-            ("date", _("Date Icon"), _("Date icon before the Text")),
-            ("no", _("No Icon"), _("No icon before the Text")),
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="no",
     )  # type: ignore
     iconText5: EnumProperty(
-        name="Text 5 Icon",
+        name=_("Text 5 Icon"),
         items=[
-            ("distance", _("Distance Icon"), _("Distance Icon before the Text")),
-            ("elevation", _("Elevation Icon"), _("Elevation Icon before the Text")),
-            ("time", _("Time Icon"), _("Time icon before the Text")),
-            ("speed", _("Speed Icon"), _("Speed icon before the Text")),
-            ("date", _("Date Icon"), _("Date icon before the Text")),
-            ("no", _("No Icon"), _("No icon before the Text")),
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
         ],
         default="no",
     )  # type: ignore
-
+    iconText6: EnumProperty(
+        name=_("Text 6 Icon"),
+        items=[
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
+        ],
+        default="no",
+    )  # type: ignore
+    iconText7: EnumProperty(
+        name=_("Text 7 Icon"),
+        items=[
+            ("distance", _("Distance Icon"), ""),
+            ("elevation", _("Elevation Icon"), ""),
+            ("time", _("Time Icon"), ""),
+            ("speed", _("Speed Icon"), ""),
+            ("date", _("Date Icon"), ""),
+            ("no", _("No Icon"), ""),
+        ],
+        default="no",
+    )  # type: ignore
     svg_path: StringProperty(
-        name=_("SVG Path"),
-        description=_("Select a .SVG file"),
+        name="",
+        description=_tip("Select a .SVG file"),
         default="",
         maxlen=1024,
     )  # type: ignore
@@ -851,15 +931,15 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     outerBorderSize: IntProperty(
         name=_("Border Thickness (%)"),
         default=20,
-        subtype='PERCENTAGE',
+        subtype="PERCENTAGE",
         min=0,
         soft_max=100,
         max=1000,
-        description=_("How thick the border is, as a percentage of the plate size"),
+        description=_tip("How thick the border is, as a percentage of the plate size"),
     )  # type: ignore
     text_angle_preset: IntProperty(
         name=_("Text Angle"),
-        description=_("Rotate Text on Shape"),
+        description=_tip("Rotate Text on Shape"),
         default=0,
         min=0,
         max=260,
@@ -867,19 +947,19 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     plateThickness: FloatProperty(
         name=_("Plate Height (mm)"),
         default=5,
-        description=_("How tall the plate is"),
+        description=_tip("How tall the plate is"),
     )  # type: ignore
     plateInsertValue: FloatProperty(
         name=_("Map Inset Depth (mm)"),
         default=0,
-        description=_("How far down the map object should be in the plate"),
+        description=_tip("How far down the map object should be in the plate"),
     )  # type: ignore
     plateBevel: FloatProperty(
         name=_("Plate Bevel"),
         default=0.0,
         min=0.0,
         max=50.0,
-        description=_("Bevel the top and bottom edges of the plate (0 to disable)"),
+        description=_tip("Bevel the top and bottom edges of the plate (0 to disable)"),
     )  # type: ignore
     handleStyle: EnumProperty(
         name=_("Handle"),
@@ -899,16 +979,16 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default="NONE",
     )  # type: ignore
     shellWallThickness: FloatProperty(
-        name=_("Shell Wall Thickness"),
+        name=_("Shell Width"),
         default=2.0,
         min=0.1,
-        description=_("Thickness of the Shell extra's side walls"),
+        description=_tip("Width of the Shell extra's side walls"),
     )  # type: ignore
 
     tileSpacing: FloatProperty(
         name=_("Tile Spacing"),
         default=0,
-        description=_("Distance between Tiles when Extending"),
+        description=_tip("Distance between Tiles when Extending"),
     )  # type: ignore
 
     minThickness: FloatProperty(
@@ -916,22 +996,26 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=2,
         min=0.5,
         max=1000,
-        description=_("Extra height added to the map, below the terrain"),
+        description=_tip("Extra height added to the map, below the terrain"),
     )  # type: ignore
     xTerrainOffset: FloatProperty(
         name=_("Map X Offset"),
         default=0,
-        description=_("Gives the map an Offset in X-Direction from the path, positive values move it to the right"),
+        description=_tip(
+            "Gives the map an Offset in X-Direction from the path, positive values move it to the right"
+        ),
     )  # type: ignore
     yTerrainOffset: FloatProperty(
         name=_("Map Y Offset"),
         default=0,
-        description=_("Gives the map an Offset in Y-Direction from the path, positive values move it up"),
+        description=_tip(
+            "Gives the map an Offset in Y-Direction from the path, positive values move it up"
+        ),
     )  # type: ignore
 
-    rescaleMultiplier: FloatProperty(name=_("scale"), default=1, min=0, max=10000)  # type: ignore
+    rescaleMultiplier: FloatProperty(name=_("Scale"), default=1, min=0, max=10000)  # type: ignore
     thickenValue: FloatProperty(
-        name=_("thickenValue"), default=1, description=_("Makes your Map 1mm thicker")
+        name=_("thickenValue"), default=1, description=_tip("Makes your Map 1mm thicker")
     )  # type: ignore
     elevationMode: EnumProperty(
         name=_("Elevation Mode"),
@@ -940,35 +1024,32 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
                 "PROPORTIONAL",
                 _("Proportional"),
                 _(
-                    "Terrain height stays true to the model's horizontal scale, exaggerated by Elevation Exaggeration"
+                    "Terrain height stays true to real-world scale, multiplied by Elevation Scale slider below."
                 ),
             ),
             (
                 "FIXED",
                 _("Fixed Height"),
                 _(
-                    "Terrain height is normalized so the highest and lowest points span a fixed target height, independent of horizontal scale"
+                    "Terrain height is scaled so that the highest point is set to a specific height above the lowest point. Lets you set a fixed terrain height in mm."
                 ),
             ),
         ],
         default="PROPORTIONAL",
-        description=_(
-            "How the real-world elevation data is converted into terrain height on the model"
-        ),
     )  # type: ignore
     fixedHeightMM: FloatProperty(
-        name=_("Target Peak-to-Valley Height"),
+        name=_("Target Height (mm)"),
         default=10,
         min=0.1,
         max=1000,
-        description=_(
-            "Peak-to-valley terrain height in mm when Elevation Mode is Fixed Height. Elevation Exaggeration still multiplies on top of this"
+        description=_tip(
+            "Set a fixed target height for the terrain, in millimeters. The highest point of the terrain will be scaled to be this high above the lowest point."
         ),
     )  # type: ignore
     smoothTerrainTop: BoolProperty(
         name=_("Smooth Terrain"),
         default=False,
-        description=_(
+        description=_tip(
             "Smooth the Terrain. Useful if your Terrain looks blocky or has weird Grid lines"
         ),
     )  # type: ignore
@@ -977,7 +1058,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=2,
         min=1,
         max=10,
-        description=_(
+        description=_tip(
             "Number of smoothing passes applied to the terrain top surface. Higher = smoother but less detailed"
         ),
     )  # type: ignore
@@ -985,21 +1066,21 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     singleColorMode: BoolProperty(
         name=_("Single Extruder Mode Trail"),
         default=False,
-        description=_("Enable this if you don't have a Multicolor printer"),
+        description=_tip("Enable this if you don't have a Multicolor printer"),
     )  # type: ignore
     singleColorModeHeight: FloatProperty(
-        name=_("Trail Height"),
+        name=_("Height"),
         default=0.4,
         min=0.0,
         max=10.0,
-        description=_(
-            "How far the SCM trail strip rises above the terrain surface (mm). 0 = flush with terrain. Works the same as Road Height."
+        description=_tip(
+            "How far the Single Extruder Mode trail strip rises above the terrain surface (mm). 0 = flush with terrain."
         ),
     )  # type: ignore
     tolerance: FloatProperty(
-        name=_("Trail Tolerance"),
+        name=_("Tolerance"),
         default=0.2,
-        description=_(
+        description=_tip(
             "Controls the clearance around the Trail for the Single Extruder Mode"
         ),
         min=0,
@@ -1007,7 +1088,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     toleranceElements: FloatProperty(
         name=_("Element Tolerance"),
         default=0.12,
-        description=_(
+        description=_tip(
             "Controls the clearance around the Elements (Water, Forest) for the Single Extruder Mode"
         ),
         min=0,
@@ -1015,12 +1096,12 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     disableCache: BoolProperty(
         name=_("disableCache"),
         default=False,
-        description=_("Disable cache if you encounter random holes in your mesh"),
+        description=_tip("Disable cache if you encounter random holes in your mesh"),
     )  # type: ignore
     disableElevationOutlierFix: BoolProperty(
         name=_("Disable Buggy Elevation Fixes"),
         default=False,
-        description=_(
+        description=_tip(
             "Disable automatic correction of statistically outlying elevation values. Enable this if a real peak/valley is being incorrectly flattened"
         ),
     )  # type: ignore
@@ -1028,43 +1109,46 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     indipendendTiles: BoolProperty(
         name=_("IndipendendTiles"),
         default=False,
-        description=_("Tile minThickness is independent from other tiles"),
+        description=_tip("Tile minThickness is independent from other tiles"),
     )  # type: ignore
 
     elementMode: EnumProperty(
-        name="",
+        name=_("Element Mode"),
         items=[
             ("PAINT", _("Paint on Map"), _("Paint the Elements onto the map")),
             (
                 "SINGLECOLORMODE_REMESH",
                 _("Single Extruder Mode"),
-                _("Use this if you are using a single extruder printer for printing"),
+                _(
+                    "Use this if you don't have a multi-color printer. Each element will be made an individually printable object.\nTo mimic old SEPARATE mode, set tolerance to 0 and enable 'Keep Positions' in the export box."
+                ),
             ),
         ],
         default="PAINT",
     )
     tex_use_texture: BoolProperty(
         name=_("Create a texture"),
-        default=bool(temp.has3mf),
-        description="Create a texture instead of painting individual faces.",
+        description=_tip("Create a texture instead of painting individual faces."),
+        get=_get_tex_use_texture,
+        set=_set_tex_use_texture,
     )
     tex_include_roads: BoolProperty(  # type: ignore
         name=_("Roads in texture"),
         default=False,
-        description=_(
+        description=_tip(
             "Rasterize the road footprint into the paint texture (terrain under roads coloured black)"
         ),
     )
     tex_include_trail: BoolProperty(  # type: ignore
         name=_("Trail in texture"),
         default=False,
-        description=_(
+        description=_tip(
             "Rasterize the trail footprint into the paint texture (terrain under trail coloured red)"
         ),
     )
     tex_resolution: IntProperty(
         name=_("Resolution"),
-        description="Customize the image resolution used when creating the texture.",
+        description=_tip("Customize the image resolution used when creating the texture."),
         step=1024,
         min=1024,
         default=2048,
@@ -1074,7 +1158,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_("Clip Inset"),
         default=2.0,
         min=0.0,
-        description=_("Thickness of solid frame for SCM-elements"),
+        description=_tip("Thickness of solid frame for SCM-elements"),
     )  # type: ignore
     col_osmSmoothing: FloatProperty(
         name=_("Element Smoothing"),
@@ -1082,17 +1166,17 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         min=0.0,
         max=1.0,
         subtype="FACTOR",
-        description=_(
-            "Rounds element polygons, smoothing their edges and making them easier to print.",
+        description=_tip(
+            "Rounds element polygons, smoothing their edges and making them easier to print."
         ),
     )  # type: ignore
     elementChoice: BoolProperty(
-        name=_("Use Elements"),
+        name="",
         default=False,
-        description=_("Enable this if you want to generate a map with elements."),
+        description=_tip("Enable this if you want to generate a map with elements."),
     )  # type: ignore
     elementSource: EnumProperty(
-        name=_(""),
+        name=_("Element Source"),
         items=[
             (
                 "OSM",
@@ -1114,23 +1198,24 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
 
     col_wArea: FloatProperty(
-        name=_("Threshold"),
+        name="",
         default=1,
-        description=_("Water bodies smaller than the threshold won't be included"),
+        description=_tip("Water bodies smaller than the threshold won't be included"),
+        min=0.0,
     )  # type: ignore
     col_wStreamWidth: FloatProperty(
         name=_("Waterway Width Multiplier"),
         default=1.0,
         min=0.1,
         max=100.0,
-        description=_(
+        description=_tip(
             "Adjusts the thickness of all waterways, including Major Rivers."
         ),
     )  # type: ignore
     col_wFlattenTop: BoolProperty(
         name=_("Flatten Water Surface"),
         default=True,
-        description=_(
+        description=_tip(
             "Flatten each water body's surface to its own median height instead of following every terrain bump. In Paint on Map mode (faces or texture) the terrain itself is flattened under the water"
         ),
     )  # type: ignore
@@ -1138,26 +1223,26 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_("Insert"),
         default=0,
         min=0.0,
-        description=_(
+        description=_tip(
             "Sink the water this many mm lower in Z. In Single-Color mode the water piece and its cutout go deeper (thickness unchanged); in Paint on Map mode the flattened water is recessed into a pocket with vertical, land-coloured walls"
         ),
     )  # type: ignore
     col_wBodiesActive: BoolProperty(
         name=_("Water Bodies"),
         default=False,
-        description=_("Lakes, ponds, reservoirs, and wide river areas"),
+        description=_tip("Lakes, ponds, reservoirs, and wide river areas"),
     )  # type: ignore
     col_wMinorActive: BoolProperty(
         name=_("Minor Waterways"),
         default=False,
-        description=_(
+        description=_tip(
             "All linear paths including streams, canals, and ditches. Does not include Major Rivers.",
         ),
     )  # type: ignore
     col_wMajorActive: BoolProperty(
         name=_("Major Rivers"),
         default=False,
-        description=_("Major named rivers, rivers with significant waterway tags"),
+        description=_tip("Major named rivers, rivers with significant waterway tags"),
     )  # type: ignore
     col_fActive: BoolProperty(
         name=_("Include Forests"),
@@ -1167,9 +1252,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )  # type: ignore
     col_fArea: FloatProperty(
-        name=_("Threshold"),
+        name="",
         default=10,
-        description=_("Forests smaller than the threshold won't be included"),
+        description=_tip("Forests smaller than the threshold won't be included"),
         min=0,
     )  # type: ignore
     col_scrActive: BoolProperty(
@@ -1180,9 +1265,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )  # type: ignore
     col_scrArea: FloatProperty(
-        name=_("Threshold"),
+        name="",
         default=1,
-        description=_("Scree patches smaller than the threshold won't be included"),
+        description=_tip("Scree patches smaller than the threshold won't be included"),
         min=0,
     )  # type: ignore
     col_cActive: BoolProperty(
@@ -1193,9 +1278,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )  # type: ignore
     col_cArea: FloatProperty(
-        name=_("Threshold"),
+        name="",
         default=1,
-        description=_("Cities smaller than the threshold won't be included"),
+        description=_tip("Cities smaller than the threshold won't be included"),
         min=0,
     )  # type: ignore
     col_grActive: BoolProperty(
@@ -1206,9 +1291,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )  # type: ignore
     col_grArea: FloatProperty(
-        name=_("Threshold"),
+        name="",
         default=1,
-        description=_("Greenspaces smaller than the threshold won't be included"),
+        description=_tip("Greenspaces smaller than the threshold won't be included"),
         min=0,
     )  # type: ignore
     col_faActive: BoolProperty(
@@ -1219,9 +1304,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )  # type: ignore
     col_faArea: FloatProperty(
-        name=_("Threshold"),
+        name="",
         default=1,
-        description=_("Farmland patches smaller than the threshold won't be included"),
+        description=_tip("Farmland patches smaller than the threshold won't be included"),
         min=0,
     )  # type: ignore
     col_glActive: BoolProperty(
@@ -1232,15 +1317,15 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )  # type: ignore
     col_glArea: FloatProperty(
-        name=_("Threshold"),
+        name="",
         default=1,
-        description=_("Glaciers smaller than the threshold won't be included"),
+        description=_tip("Glaciers smaller than the threshold won't be included"),
         min=0,
     )  # type: ignore
     col_KeepManifold: BoolProperty(
         name=_("Keep Non-Manifold Objects"),
         default=False,
-        description=_("Keep Broken/Non-Manifold objects"),
+        description=_tip("Keep Broken/Non-Manifold objects"),
     )  # type: ignore
     # ESA WorldCover per-category color toggles -- unlike col_fActive/col_wBodiesActive/
     # etc. above (which gate whether OSM fetches a category's polygons at all, and are
@@ -1254,49 +1339,49 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_lcForestActive: BoolProperty(
         name=_("Forest"),
         default=True,
-        description=_(
+        description=_tip(
             "Tree cover and mangroves keep their forest color; disable to fall back to the base color"
         ),
     )  # type: ignore
     col_lcGreenspaceActive: BoolProperty(
         name=_("Greenspace"),
         default=False,
-        description=_(
+        description=_tip(
             "Shrubland and grassland keep their greenspace color; disable to fall back to the base color"
         ),
     )  # type: ignore
     col_lcFarmlandActive: BoolProperty(
         name=_("Farmland"),
         default=False,
-        description=_(
+        description=_tip(
             "Cropland keeps its farmland color; disable to fall back to the base color"
         ),
     )  # type: ignore
     col_lcCityActive: BoolProperty(
         name=_("City"),
         default=False,
-        description=_(
+        description=_tip(
             "Built-up areas keep their city color; disable to fall back to the base color"
         ),
     )  # type: ignore
     col_lcMountainActive: BoolProperty(
         name=_("Mountain"),
         default=True,
-        description=_(
+        description=_tip(
             "Bare/sparse vegetation and moss/lichen keep their mountain color; disable to fall back to the base color"
         ),
     )  # type: ignore
     col_lcGlacierActive: BoolProperty(
         name=_("Glacier"),
         default=False,
-        description=_(
+        description=_tip(
             "Snow and ice keep their glacier color; disable to fall back to the base color"
         ),
     )  # type: ignore
     col_lcWaterActive: BoolProperty(
         name=_("Water"),
         default=True,
-        description=_(
+        description=_tip(
             "Permanent water bodies and herbaceous wetland keep their water color; disable to fall back to the base color"
         ),
     )  # type: ignore
@@ -1312,7 +1397,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=1.0,
         min=0.01,
         soft_max=10.0,
-        description=_("Multiplies building height"),
+        description=_tip("Multiplies building height"),
     )  # type: ignore
     el_bMinPrintMM: FloatProperty(
         name=_("Min Footprint (mm)"),
@@ -1320,8 +1405,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         min=0.0,
         soft_max=5.0,
         precision=2,
-        description=_(
-            "Buildings whose printed footprint side is smaller than this (in model mm) are skipped. Scale-aware: a larger real-world building on a bigger-km map prints smaller, so this threshold naturally culls more on larger maps."
+        description=_tip(
+            "Buildings/parts whose printed footprint side is smaller than this are skipped."
         ),
     )  # type: ignore
 
@@ -1330,19 +1415,19 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=1,
         min=0.01,
         soft_max=100.0,
-        description=_("To make Roads thicker or thinner"),
+        description=_tip("To make Roads thicker or thinner"),
     )  # type: ignore
     el_sHeight: FloatProperty(
         name=_("Height"),
         default=0.4,
         min=0.0,
-        description=_("Height of road geometry above terrain"),
+        description=_tip("Height of road geometry above terrain"),
     )  # type: ignore
     el_sCutTolerance: FloatProperty(
         name=_("Tolerance"),
         default=0.2,
         min=0.0,
-        description=_(
+        description=_tip(
             "Extra clearance added around roads when cutting their footprint out of terrain/elements in Single Extruder Mode, so the printed road piece seats without an overly tight or impossible fit."
         ),
     )  # type: ignore
@@ -1350,7 +1435,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_("Depth"),
         default=0.05,
         min=0.0,
-        description=_(
+        description=_tip(
             "Extra depth added below the road's bottom face when cutting its slot in Single Extruder Mode. By default this value attempts to not cut all the way through any one element."
         ),
     )  # type: ignore
@@ -1362,14 +1447,14 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     el_oActive: BoolProperty(
         name=_("Include Ocean"),
         default=False,
-        description=_("Generate ocean surface cut along the coastline. Experimental"),
+        description=_tip("Generate ocean surface cut along the coastline. Experimental"),
     )  # type: ignore
     el_oMinIslandArea: FloatProperty(
         name=_("Min Island Area"),
         default=2.0,
         min=0.0,
         soft_max=100.0,
-        description=_(
+        description=_tip(
             "Islands smaller than this area (in map units²) are not punched out of the ocean. At a 100mm map size, 1 map unit ≈ 1mm on the print, so the default 2.0 ≈ a ~1.4×1.4mm patch. Set to 0 to punch all islands."
         ),
     )  # type: ignore
@@ -1379,7 +1464,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         min=0.0,
         soft_max=2.0,
         precision=3,
-        description=_(
+        description=_tip(
             "Douglas-Peucker simplification tolerance (map units) applied to the coastline before building the ocean. Higher = fewer points but can introduce self-intersections on convoluted coasts. Set to 0 to disable simplification. Testing aid."
         ),
     )  # type: ignore
@@ -1388,7 +1473,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=2.0,
         min=0.0,
         soft_max=100.0,
-        description=_(
+        description=_tip(
             "Land-cover regions smaller than this area (map units²) are merged into whichever neighboring class actually surrounds them, instead of showing up as an isolated fleck. At a 100mm map size, 1 map unit ≈ 1mm on the print, so the default 2.0 ≈ a ~1.4×1.4mm patch — the same convention as Min Island Area above. Set to 0 to disable and use WorldCover's raw per-pixel classification."
         ),
     )  # type: ignore
@@ -1398,33 +1483,65 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         min=0,
         max=100,
         subtype="PERCENTAGE",
-        description=_("Height Threshold to Color Mountains"),
+        description=_tip("Height Threshold to Color Mountains"),
+    )  # type: ignore
+    mountain_noise: BoolProperty(
+        name=_("Threshold Variation Noise"),
+        default=False,
+        description=_tip(
+            "Makes a more natural looking boundary for the Color Mountains threshold."
+        ),
+    )  # type: ignore
+    mountain_noise_amplitude: FloatProperty(
+        name=_("Amplitude"),
+        default=1.0,
+        min=0.0,
+        soft_max=10.0,
+        description=_tip(
+            "How far the Color Mountains boundary is allowed to dip below or rise above the flat threshold height, in map units. 0 gives the old razor-flat line."
+        ),
+    )  # type: ignore
+    mountain_noise_scale: FloatProperty(
+        name=_("Scale"),
+        default=0.5,
+        min=0.005,
+        soft_max=2.0,
+        description=_tip(
+            "Frequency of the Color Mountains boundary noise. Lower values give broad, slow-rolling dips and rises; higher values give tight, speckled variation."
+        ),
     )  # type: ignore
     cl_thickness: FloatProperty(
         name=_("Contour Line Thickness (mm)"),
         default=0.2,
-        description=_("Thickness of the Contour Line"),
+        description=_tip("Thickness of the Contour Line"),
     )  # type: ignore
     cl_distance: FloatProperty(
         name=_("Contour Line distance"),
         default=2,
-        description=_("Distance between Contour lines"),
+        description=_tip("Distance between Contour lines"),
     )  # type: ignore
     cl_offset: FloatProperty(
         name=_("Contour Line offset"),
         default=0.0,
-        description=_("Offset of the Contour lines"),
+        description=_tip("Offset of the Contour lines"),
     )  # type: ignore
     cl_useRealMeters: BoolProperty(
         name=_("Use Real-World Meters"),
         default=True,
-        description=_(
+        description=_tip(
             "Interpret the Contour Line distance/offset as real-world elevation meters instead of mm on the printed model"
         ),
     )  # type: ignore
+    cl_max_slices: IntProperty(
+        name=_("Max Slices"),
+        description=_tip("Safety cap on the number of contour line slices generated"),
+        default=200,
+        min=1,
+        max=2000,
+    )
 
     generation_mode: EnumProperty(
-        name="Generation Mode",
+        name=_("Generation Mode"),
         items=[
             ("GENERATION", _("Trail"), _("Single GPX file generation")),
             ("MULTI", _("Multi Trail"), _("Chain multiple GPX files")),
@@ -1440,24 +1557,24 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     disable_auto_export: BoolProperty(
         name=_("Disable Auto Export"),
         default=False,
-        description=_("Don't automatically export files after generation"),
+        description=_tip("Don't automatically export files after generation"),
     )  # type: ignore
     disable_3mf_export: BoolProperty(
         name=_("Disable 3MF Export"),
         default=False,
-        description=_("Don't use 3MF format even if the addon is installed"),
+        description=_tip("Don't use 3MF format even if the addon is installed"),
     )  # type: ignore
     keep_positions: BoolProperty(
         name=_("Keep positions during export"),
         default=False,
-        description=_(
+        description=_tip(
             "Enable this if you want the every item to keep it's position, instead of letting each piece remain separate in the slicer."
         ),
     )
     slicer_profile_name: EnumProperty(  # type: ignore
-        name=_("Slicer Profile"),
+        name="",
         items=_slicer_profile_items,
-        description=_(
+        description=_tip(
             "Printer/filament profile embedded in the 3MF export. Add profiles in Preferences \u2192 Add-ons \u2192 3MF Format \u2192 Advanced"
         ),
     )
@@ -1476,7 +1593,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     show_preset: BoolProperty(name=_("Preset"), default=False)  # type: ignore
 
     cityname: StringProperty(
-        name=_("Cityname"), default="Berlin", description=_("Get coordinates of a City")
+        name=_("Cityname"), default="Berlin", description=_tip("Get coordinates of a City")
     )  # type: ignore
     pinLat: FloatProperty(name=_("Latitude"), default=48.00)  # type: ignore
     pinLon: FloatProperty(name=_("Longitude"), default=8.00)  # type: ignore
@@ -1484,7 +1601,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     pinCutout: BoolProperty(
         name=_("Pin Cutout"),
         default=False,
-        description=_(
+        description=_tip(
             "When placing a pin, also cut a matching socket into the map and elements at the pin's position, so the printed pin can be inserted afterward"
         ),
     )  # type: ignore
@@ -1493,13 +1610,13 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=0.2,
         min=0.0,
         soft_max=2.0,
-        description=_(
+        description=_tip(
             "Extra size added to the cutout so the printed pin actually fits into the socket"
         ),
     )  # type: ignore
 
-    pinCutout: BoolProperty(name= _("Pin Cutout"), default=False, description=_("When placing a pin, also cut a matching socket into the map and elements at the pin's position, so the printed pin can be inserted afterward")) # type: ignore
-    pinCutoutClearance: FloatProperty(name= _("Cutout Clearance"), default=0.2, min=0.0, soft_max=2.0, description=_("Extra size added to the cutout so the printed pin actually fits into the socket")) # type: ignore
+    pinCutout: BoolProperty(name= _("Pin Cutout"), default=False, description=_tip("When placing a pin, also cut a matching socket into the map and elements at the pin's position, so the printed pin can be inserted afterward")) # type: ignore
+    pinCutoutClearance: FloatProperty(name= _("Cutout Clearance"), default=0.2, min=0.0, soft_max=2.0, description=_tip("Extra size added to the cutout so the printed pin actually fits into the socket")) # type: ignore
 
     mapmode: EnumProperty(
         name=_("mapmode"),
@@ -1523,7 +1640,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     geojsonFilePath: StringProperty(
         name=_("GeoJSON File"),
         default="",
-        description=_(
+        description=_tip(
             'Path(s) to the imported .geojson boundary file(s), "|"-joined when more than one was selected'
         ),
     )  # type: ignore
@@ -1533,84 +1650,86 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         min=0.0,
         soft_max=5.0,
         precision=3,
-        description=_(
+        description=_tip(
             "Douglas-Peucker simplification tolerance (map units) applied to the imported boundary. Higher = fewer points but can introduce self-intersections on convoluted borders. Set to 0 to disable simplification."
         ),
     )  # type: ignore
     geojsonPointCount: IntProperty(
         name=_("Boundary Points"),
         default=0,
-        description=_(
+        description=_tip(
             "Number of points in the boundary after simplification (read-only, set after import)"
         ),
     )  # type: ignore
     geojsonAreaKm: FloatProperty(
         name=_("Detected Area"),
         default=0.0,
-        description=_(
+        description=_tip(
             "Real-world size of the imported boundary in km (read-only, set after import)"
         ),
     )  # type: ignore
 
-    jMapLat: FloatProperty(name="Latitude", default=49.00)  # type: ignore
-    jMapLon: FloatProperty(name="Longitude", default=9.00)  # type: ignore
-    jMapRadius: FloatProperty(name="Radius im Km", default=200)  # type: ignore
+    jMapLat: FloatProperty(name=_("Latitude"), default=49.00)  # type: ignore
+    jMapLon: FloatProperty(name=_("Longitude"), default=9.00)  # type: ignore
+    jMapRadius: FloatProperty(name=_("Radius im Km"), default=200)  # type: ignore
 
-    jMapLat1: FloatProperty(name="Latitude1", default=48.00)  # type: ignore
-    jMapLat2: FloatProperty(name="Latitude2", default=49.00)  # type: ignore
-    jMapLon1: FloatProperty(name="Longitude1", default=8.00)  # type: ignore
-    jMapLon2: FloatProperty(name="Longitude2", default=9.00)  # type: ignore
+    jMapLat1: FloatProperty(name=_("Latitude1"), default=48.00)  # type: ignore
+    jMapLat2: FloatProperty(name=_("Latitude2"), default=49.00)  # type: ignore
+    jMapLon1: FloatProperty(name=_("Longitude1"), default=8.00)  # type: ignore
+    jMapLon2: FloatProperty(name=_("Longitude2"), default=9.00)  # type: ignore
 
     specialBlendFile: EnumProperty(
-        name="Category",
-        description=_("Choose what you want to import"),
+        name=_("Category"),
+        description=_tip("Choose what you want to import"),
         items=get_special_blend_items,
         update=utils.loadCollections,
     )  # type: ignore
 
     # Custom property to store selection
     specialCollectionName: EnumProperty(
-        name="specialCollection",
-        description=_("Choose a collection from the external .blend"),
+        name=_("Special Collection"),
+        description=_tip("Choose a collection from the external .blend"),
         # items=dynamic_specialCollection_items
         items=lambda self, context: const.specialCollection,
     )  # type: ignore
 
     # OTHER VARIABLES
     sRunDuration: IntProperty(
-        name="runDuration", default=0, description="how long the script was running"
+        name=_("Run Duration"),
+        default=0,
+        description=_tip("how long the script was running"),
     )  # type: ignore
-    sAdditionalExtrusion: FloatProperty(name="sAdditionalExtrusion", default=0)  # type: ignore
-    sAutoScale: FloatProperty(name="sAutoScale", default=1)  # type: ignore
+    sAdditionalExtrusion: FloatProperty(name=_("Additional Extrusion"), default=0)  # type: ignore
+    sAutoScale: FloatProperty(name=_("Auto Scale"), default=1)  # type: ignore
     sScaleHor: FloatProperty(
-        name="sScaleHor", default=1, description="Scale of the Map"
+        name=_("Scale Horizontal"), default=1, description=_tip("Scale of the Map")
     )  # type: ignore
     sMapInKm: FloatProperty(
-        name="Map Length",
+        name=_("Map Length"),
         default=0,
-        description="How much Km are the equivalent of the Map Size",
+        description=_tip("How much Km are the equivalent of the Map Size"),
     )  # type: ignore
-    sTime_str: StringProperty(name="time_str", default="")  # type: ignore
-    modelname: StringProperty(name="modelname", default="")  # type: ignore
-    total_length: FloatProperty(name="total_length", default=0)  # type: ignore
-    total_elevation: FloatProperty(name="total_elevation", default=0)  # type: ignore
-    total_time: FloatProperty(name="total_time", default=0)  # type: ignore
-    average_speed: FloatProperty(name="average_speed", default=0)  # type: ignore
-    trail_date: StringProperty(name="trail_date", default="")  # type: ignore
+    sTime_str: StringProperty(name=_("Time String"), default="")  # type: ignore
+    modelname: StringProperty(name=_("Model Name"), default="")  # type: ignore
+    total_length: FloatProperty(name=_("Total Length"), default=0)  # type: ignore
+    total_elevation: FloatProperty(name=_("Total Elevation"), default=0)  # type: ignore
+    total_time: FloatProperty(name=_("Total Time"), default=0)  # type: ignore
+    average_speed: FloatProperty(name=_("Average Speed"), default=0)  # type: ignore
+    trail_date: StringProperty(name=_("Trail Date"), default="")  # type: ignore
 
-    lowestZ: FloatProperty(name="lowestZ", default=0)  # type: ignore
-    highestZ: FloatProperty(name="highestZ", default=0)  # type: ignore
-    buggyDataset: BoolProperty(name="buggyDataset", default=0)  # type: ignore
+    lowestZ: FloatProperty(name=_("Lowest Z"), default=0)  # type: ignore
+    highestZ: FloatProperty(name=_("Highest Z"), default=0)  # type: ignore
+    buggyDataset: BoolProperty(name=_("Buggy Dataset"), default=0)  # type: ignore
 
-    minLat: FloatProperty(name="minLat", default=0)  # type: ignore
-    maxLat: FloatProperty(name="maxLat", default=0)  # type: ignore
-    minLon: FloatProperty(name="minLon", default=0)  # type: ignore
-    maxLon: FloatProperty(name="maxLon", default=0)  # type: ignore
+    minLat: FloatProperty(name=_("Min Latitude"), default=0)  # type: ignore
+    maxLat: FloatProperty(name=_("Max Latitude"), default=0)  # type: ignore
+    minLon: FloatProperty(name=_("Min Longitude"), default=0)  # type: ignore
+    maxLon: FloatProperty(name=_("Max Longitude"), default=0)  # type: ignore
 
-    exportformat: StringProperty(name="exportformat", default="STL")  # type: ignore
+    exportformat: StringProperty(name=_("Export Format"), default="STL")  # type: ignore
     opentopoAdress: StringProperty(
-        name="opentopoAdress", default="https://api.opentopodata.org/v1/"
+        name=_("OpenTopo Address"), default="https://api.opentopodata.org/v1/"
     )  # type: ignore
 
-    currentMap: PointerProperty(name="Map object", type=bpy.types.Object)  # type: ignore
-    currentTrail: PointerProperty(name="Trail object", type=bpy.types.Object)  # type: ignore
+    currentMap: PointerProperty(name=_("Map object"), type=bpy.types.Object)  # type: ignore
+    currentTrail: PointerProperty(name=_("Trail object"), type=bpy.types.Object)  # type: ignore

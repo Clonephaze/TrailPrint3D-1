@@ -119,11 +119,10 @@ function tp3dResetMapGenerator() {
     var cornerBtn = document.querySelector('.draw-mode-btn[data-mode="corner"]');
     if (cornerBtn && !cornerBtn.classList.contains('active')) cornerBtn.click();
 
-    var extraSel = document.getElementById('shapeExtraSelect');
-    if (extraSel && extraSel.value !== 'NONE') {
-        extraSel.value = 'NONE';
-        extraSel.dispatchEvent(new Event('change', { bubbles: true }));
-    }
+    plateMode = 'NONE';
+    textLayout = 'NONE';
+    tp3dRefreshShapeExtras();
+    saveState();
 
     // Same defaults the page itself starts with: the static HTML's slider
     // value, and Size from the scene's Object Size (OBJ_SIZE, as on load).
@@ -201,7 +200,7 @@ function tp3dSampleFileLoader(fileName, inputId, mimeType, what) {
             .catch(function() {
                 button.disabled = false;
                 button.textContent = label;
-                alert('Could not load the sample ' + what + '.');
+                tp3dAlert('Could not load the sample ' + what + '.');
             });
     };
 }

@@ -2,6 +2,7 @@ import math
 
 import bpy  # type: ignore
 import numpy as np  # type: ignore
+from bpy.app.translations import pgettext_iface as _
 
 from .. import constants as const
 
@@ -53,15 +54,9 @@ def calculate_scale(mapSize, coordinates, gen_type, diagonal=False):
     maxer = max(width, height, distance) if diagonal else max(width, height)
     scale = 1
     if scalemode == "COORDINATES" or gen_type == 2 or gen_type == 3:
-        if bpy.app.debug:
-            print("Scale Mode: Coordinates")
         scale = mapSize / maxer
     else:  # scalemode == "FACTOR"
-        if bpy.app.debug:
-            print("Scale Mode: Factor")
         scale = (mapSize * pathScale) / maxer
-    if bpy.app.debug:
-        print(f"Scale: {scale}")
 
     return scale
 
@@ -270,7 +265,7 @@ def move_coordinates(lat, lon, distance_km, direction):
     elif direction == "w":
         lon_rad -= distance_km / (R * math.cos(lat_rad))
     else:
-        raise ValueError("Direction must be 'n', 's', 'e', or 'w'")
+        raise ValueError(_("Direction must be 'n', 's', 'e', or 'w'"))
 
     # Convert radians back to degrees
     new_lat = math.degrees(lat_rad)

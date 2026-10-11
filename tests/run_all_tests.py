@@ -80,6 +80,7 @@ _TEST_FILES = [
     "test_geojson_import.py",
     "test_geometry2d.py",
     "test_gpx.py",
+    "test_magnet_layout.py",
     "test_osm_pipeline.py",
     "test_prefetch.py",
     "test_updater.py",

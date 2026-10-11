@@ -9,7 +9,38 @@ document.getElementById('coordSearchToggle').addEventListener('click', function(
     var body = document.getElementById('coordSearchBody');
     var open = body.classList.toggle('open');
     this.classList.toggle('active', open);
+    this.setAttribute('aria-expanded', String(open));
+    this.setAttribute('aria-controls', 'coordSearchBody');
+    if (open) document.getElementById('citySearchInput').focus();
 });
+document.getElementById('coordSearchToggle').setAttribute('aria-expanded', 'false');
+document.getElementById('coordSearchBody').addEventListener('keydown', function(event) {
+    if (event.key !== 'Escape') return;
+    document.getElementById('coordSearchBody').classList.remove('open');
+    var toggle = document.getElementById('coordSearchToggle');
+    toggle.classList.remove('active');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.focus();
+});
+
+function tp3dLocationError(message, inputs) {
+    var error = document.getElementById('coordSearchError');
+    if (!error) {
+        error = document.createElement('p');
+        error.id = 'coordSearchError';
+        error.className = 'field-error';
+        error.setAttribute('role', 'status');
+        document.getElementById('coordSearchBody').appendChild(error);
+    }
+    error.textContent = message;
+    error.hidden = !message;
+    inputs.forEach(function(input) {
+        input.setAttribute('aria-invalid', String(!!message));
+        var ids = (input.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+        if (ids.indexOf(error.id) === -1) ids.push(error.id);
+        input.setAttribute('aria-describedby', ids.join(' '));
+    });
+}
 
 function flyToMarker(lat, lon, zoom) {
     if (searchMarker) map.removeLayer(searchMarker);
@@ -20,13 +51,16 @@ function flyToMarker(lat, lon, zoom) {
 function goToCoords() {
     var latInput = document.getElementById('latInput');
     var lonInput = document.getElementById('lonInput');
-    var lat = parseFloat(latInput.value);
-    var lon = parseFloat(lonInput.value);
-    var latOk = !isNaN(lat) && lat >= -90 && lat <= 90;
-    var lonOk = !isNaN(lon) && lon >= -180 && lon <= 180;
-    latInput.style.borderColor = latOk ? '' : '#cc4444';
-    lonInput.style.borderColor = lonOk ? '' : '#cc4444';
-    if (!latOk || !lonOk) return;
+    var lat = Number(latInput.value);
+    var lon = Number(lonInput.value);
+    var latOk = latInput.value.trim() !== '' && Number.isFinite(lat) && lat >= -90 && lat <= 90;
+    var lonOk = lonInput.value.trim() !== '' && Number.isFinite(lon) && lon >= -180 && lon <= 180;
+    tp3dLocationError('', [latInput, lonInput]);
+    if (!latOk || !lonOk) {
+        tp3dLocationError('Enter a latitude from -90 to 90 and a longitude from -180 to 180.',
+            [latOk ? null : latInput, lonOk ? null : lonInput].filter(Boolean));
+        return;
+    }
     flyToMarker(lat, lon, 15);
 }
 
@@ -36,7 +70,9 @@ document.getElementById('coordSearchBtn').addEventListener('click', goToCoords);
     el.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') { e.preventDefault(); goToCoords(); }
     });
-    el.addEventListener('input', function() { this.style.borderColor = ''; });
+    el.addEventListener('input', function() {
+        tp3dLocationError('', [document.getElementById('latInput'), document.getElementById('lonInput')]);
+    });
 });
 
 // City lookup uses OpenStreetMap's Nominatim geocoder -- free, no
@@ -52,8 +88,14 @@ function searchCity() {
     var input = document.getElementById('citySearchInput');
     var btn = document.getElementById('citySearchBtn');
     var q = input.value.trim();
-    if (!q || btn.disabled) return;
+    if (btn.disabled) return;
+    if (!q) {
+        tp3dLocationError('Enter a city or place name.', [input]);
+        return;
+    }
+    tp3dLocationError('Searching for a location...', []);
     btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
     fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), {
         referrerPolicy: 'strict-origin-when-cross-origin'
     })
@@ -62,17 +104,20 @@ function searchCity() {
             return r.json();
         })
         .then(function(results) {
-            btn.disabled = false;
             if (!results || !results.length) {
-                input.style.borderColor = '#cc4444';
+                tp3dLocationError('No matching location found. Try a more specific name.', [input]);
                 return;
             }
-            input.style.borderColor = '';
+            tp3dLocationError('', [input]);
             flyToMarker(parseFloat(results[0].lat), parseFloat(results[0].lon), 12);
         })
-        .catch(function() {
+        .catch(function(error) {
+            console.error('[TP3D location] Search failed:', error);
+            tp3dLocationError('Location search failed. Check your connection and try again.', [input]);
+        })
+        .finally(function() {
             btn.disabled = false;
-            input.style.borderColor = '#cc4444';
+            btn.removeAttribute('aria-busy');
         });
 }
 
@@ -81,5 +126,5 @@ document.getElementById('citySearchInput').addEventListener('keydown', function(
     if (e.key === 'Enter') { e.preventDefault(); searchCity(); }
 });
 document.getElementById('citySearchInput').addEventListener('input', function() {
-    this.style.borderColor = '';
+    tp3dLocationError('', [this]);
 });

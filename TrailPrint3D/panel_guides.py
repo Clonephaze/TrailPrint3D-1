@@ -48,14 +48,14 @@ def draw_wrapped_text(layout, text):
 
 
 def make_help_panel(
-    panel_id,
-    label,
-    text_content,
-    doc_url=None,
+    panel_id: str,
+    label: str,
+    text_content: str,
+    doc_url: str | None = None,
 ):
     def draw(self, context):
         layout = self.layout
-        text = _(text_content)
+        text = _("%s") % text_content
 
         # First line → callout box with INFO icon
         raw_lines = text.split("\n")
@@ -76,7 +76,7 @@ def make_help_panel(
 
         if doc_url:
             layout.separator()
-            op = layout.operator("wm.url_open", text="Read More", icon="URL")
+            op = layout.operator("wm.url_open", text=_("Read More"), icon="URL")
             op.url = doc_url
 
     return type(
@@ -84,10 +84,11 @@ def make_help_panel(
         (bpy.types.Panel,),
         {
             "bl_idname": panel_id,
-            "bl_label": _(label),
+            "bl_label": _("%s") % label,
             "bl_space_type": "VIEW_3D",
-            "bl_region_type": "UI",
-            "bl_ui_units_x": 14,
+            "bl_region_type": "HEADER", # Stops the n-panel "misc" from showing these panels
+            "bl_options": {"INSTANCED"}, # Ensures blender knows these are meant to be called only as instances.
+            "bl_ui_units_x": 15,
             "draw": draw,
         },
     )

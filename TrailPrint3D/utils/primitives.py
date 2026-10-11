@@ -2,8 +2,8 @@ import math
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
+from bpy.app.translations import pgettext_iface as _
 from mathutils import Vector  # type: ignore
-from shapely import wkt
 
 from . import geometry2d as g2d  # deferred-safe: pure-Python, no bpy-time side effects
 from .dataclasses import GenerationContext
@@ -193,6 +193,7 @@ def heart_polygon(size: float, steps: int = 200):
             / 16
         )
         pts.append((x, y))
+    pts.reverse()
     return g2d.Polygon(pts)
 
 
@@ -280,7 +281,7 @@ def build_mesh_from_polygon(polygon, cell_size: float, name: str = "Shape"):
 
 
 def clean_and_union_geometry(
-    geometries, target_size: float = None, min_area_ratio: float = 0.001
+    geometries, target_size: float | None = None, min_area_ratio: float = 0.001
 ):
     from shapely import Polygon, make_valid, normalize, set_precision
     from shapely.affinity import scale as af_scale
@@ -383,7 +384,7 @@ def clean_and_union_geometry(
 # ── GeoJSON Importer ──────────────────────────────────────────────────────────
 
 
-def polygon_from_geojson(filepath: str, target_size: float = None):
+def polygon_from_geojson(filepath: str, target_size: float | None = None):
     """Loads a GeoJSON file using Shapely's C-accelerated parser, projects it
     from lon/lat degrees into local Mercator distance units (same projection
     convert_to_blender_coordinates uses for every other geo-sourced shape in
@@ -423,7 +424,7 @@ def polygon_from_geojson(filepath: str, target_size: float = None):
 # ── SVG Importer (via Blender SVG curve import) ───────────────────────────────
 
 
-def polygon_from_svg(filepath: str, target_size: float = None):
+def polygon_from_svg(filepath: str, target_size: float | None = None):
     """Imports an SVG, evaluates smooth Bezier geometry via Blender's 2D engine,
     polygonizes raw stroke networks, and returns a clean normalized geometry.
     """
@@ -512,7 +513,7 @@ def create_heart(size, num_subdivisions=1, name="Heart"):
     return build_mesh_from_polygon(heart_polygon(size), cell_size, name)
 
 
-def create_circle(radius, num_subdivisions=1, name="Circle", num_segments=64):
+def create_circle(radius, num_subdivisions=1, name="Circle", num_segments=192):
     """Creates a circle centered at (0,0,0). num_segments controls boundary
     smoothness independently of num_subdivisions (interior density) -- same
     two-knob split as before, just no more center-fan wedge triangles that
@@ -586,3 +587,82 @@ def col_create_face_mesh(name, coords):
     return tobj
 
 
+def col_create_line_curve(name, coords, close=False, collection=None, bevel_depth=0.0):
+    """
+    Create a Curve object with a POLY spline from coords.
+    coords: iterable of (x,y) or (x,y,z)
+    close: make spline cyclic
+    collection: bpy.types.Collection (defaults to context.collection)
+    bevel_depth: >0 will give the curve thickness
+    """
+    if not coords:
+        raise ValueError(_("coords is empty"))
+
+    # normalize coords to 3-tuples
+    pts = []
+    for c in coords:
+        if len(c) == 2:
+            pts.append((c[0], c[1], 0.0))
+        else:
+            pts.append((c[0], c[1], c[2]))
+
+    curve_data = bpy.data.curves.new(name + "_curve", type="CURVE")
+    curve_data.dimensions = "3D"
+    curve_data.resolution_u = 1
+
+    spline = curve_data.splines.new(type="POLY")
+    spline.points.add(len(pts) - 1)  # one point exists by default
+    for i, (x, y, z) in enumerate(pts):
+        spline.points[i].co = (x, y, z, 1.0)
+
+    spline.use_cyclic_u = bool(close)
+
+    if bevel_depth and bevel_depth > 0.0:
+        curve_data.bevel_depth = float(bevel_depth)
+        curve_data.fill_mode = "FULL"
+
+    obj = bpy.data.objects.new(name, curve_data)
+    target_col = collection or bpy.context.collection
+    target_col.objects.link(obj)
+
+    return obj
+
+
+def curve_to_mesh_object(curve_obj, name=None, apply_modifiers=True):
+    """
+    Create and return a new Mesh object built from `curve_obj` evaluation.
+    - curve_obj: bpy.types.Object of type 'CURVE'
+    - name: optional name for new object (mesh)
+    - apply_modifiers: if True, evaluate modifiers and use new_from_object (recommended)
+    """
+    if curve_obj.type != "CURVE":
+        raise ValueError(_("curve_obj must be a Curve object"))
+
+    mesh_name = name if name else curve_obj.name + "_mesh"
+    coll = bpy.context.collection
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+
+    if apply_modifiers:
+        # Create a real Mesh datablock from the evaluated object (safe to use with objects.new)
+        eval_obj = curve_obj.evaluated_get(depsgraph)
+        mesh = bpy.data.meshes.new_from_object(
+            eval_obj, preserve_all_data_layers=True, depsgraph=depsgraph
+        )
+        new_obj = bpy.data.objects.new(mesh_name, mesh)
+        new_obj.matrix_world = curve_obj.matrix_world.copy()
+        coll.objects.link(new_obj)
+        return new_obj
+
+    else:
+        # Create a temporary evaluated mesh, copy it to a real datablock, then clear the temp
+        eval_obj = curve_obj.evaluated_get(depsgraph)
+        temp_mesh = eval_obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+        # copy to real datablock
+        real_mesh = temp_mesh.copy()
+        real_mesh.name = mesh_name
+        new_obj = bpy.data.objects.new(mesh_name, real_mesh)
+        new_obj.matrix_world = curve_obj.matrix_world.copy()
+        coll.objects.link(new_obj)
+        # free the temporary evaluated mesh
+        eval_obj.to_mesh_clear()
+        return new_obj

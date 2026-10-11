@@ -182,6 +182,7 @@ _HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'generators' / 'multiti
 # __PORT__ already gets substituted below.
 _ASSETS_DIR = pathlib.Path(__file__).parent / 'assets'
 _COMMON_CSS_PATH = _ASSETS_DIR / 'picker_common.css'
+_PICKER_UI_JS_PATH = _ASSETS_DIR / 'picker_ui.js'
 _MAP_INIT_JS_PATH = _ASSETS_DIR / 'map_init.js'
 _LOCATION_PANEL_JS_PATH = _ASSETS_DIR / 'location_panel.js'
 _ELEMENT_STATUS_JS_PATH = _ASSETS_DIR / 'element_status.js'
@@ -237,7 +238,7 @@ def _history_key(html_path: pathlib.Path) -> str:
     a '_pe' suffix to begin with and keep their own history as before.
     """
     stem = html_path.stem
-    return stem[:-3] if stem.endswith('_pe') else stem
+    return stem.removesuffix('_pe')
 
 # Real top-down Blender renders (export.save_history_thumbnail), written well
 # after this server has usually already shut down -- see /get_history_render
@@ -759,6 +760,7 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__PORT__', str(cast(tuple[str, int], self.server.server_address)[1]))
             .replace('__OBJSIZE__', str(self.obj_size))
             .replace('__COMMON_CSS__', _COMMON_CSS_PATH.read_text(encoding='utf-8'))
+            .replace('__PICKER_UI_JS__', _PICKER_UI_JS_PATH.read_text(encoding='utf-8'))
             .replace('__DEM_BOUNDS_JS__', 'var DEM_BOUNDS = ' + self.dem_bounds_json.decode('utf-8') + ';')
             .replace('__MAP_INIT_JS__', _MAP_INIT_JS_PATH.read_text(encoding='utf-8'))
             .replace('__LOCATION_PANEL_JS__', _LOCATION_PANEL_JS_PATH.read_text(encoding='utf-8'))

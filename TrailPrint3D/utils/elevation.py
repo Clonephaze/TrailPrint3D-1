@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 
 import bpy  # type: ignore
 import requests  # type: ignore
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 
 from .. import constants as const
 from .. import progress as _progress
@@ -303,7 +305,7 @@ def parse_png_rgb_data(png_bytes):
         offset += 12 + length
 
         if chunk_type == b'IHDR':
-            width, height, bit_depth, color_type, _, _, _ = struct.unpack(">IIBBBBB", data)
+            width, height, bit_depth, color_type, _unused, _unused2, _unused3 = struct.unpack(">IIBBBBB", data)
             assert bit_depth == 8 and color_type == 2, "Only 8-bit RGB PNGs supported"
         elif chunk_type == b'IDAT':
             idat_data += data
@@ -345,7 +347,7 @@ def parse_png_rgb_data(png_bytes):
                 c = prev_row[i - 3] if i >= 3 else 0
                 recon[i] = (scanline[i] + paeth_predictor(a, b, c)) % 256
         else:
-            raise ValueError(f"Unsupported filter type {filter_type}")
+            raise ValueError(_("Unsupported filter type %s") % filter_type)
 
         # Convert scanline to list of (R, G, B) tuples
         row = [(recon[i], recon[i+1], recon[i+2]) for i in range(0, stride, 3)]
@@ -405,7 +407,7 @@ def get_elevation_TerrainTiles(bounds, coords, lenv=0, pointsDone=0, zoom=10, pr
             rgb_array:list[list[tuple[int, int]]] = parse_png_rgb_data(png_bytes)
         except (requests.RequestException, OSError, AssertionError, ValueError, struct.error, zlib.error) as e:
             print(f"Failed to fetch or parse tile {zoom}/{xtile}/{ytile}: {e}")
-            for idx, _, _ in idx_lat_lon_list:
+            for idx, _lat, _long in idx_lat_lon_list:
                 elevations[idx] = 0
             continue
 
@@ -536,7 +538,7 @@ def get_elevation_Mapterhorn(bounds, coords, lenv=0, pointsDone=0, zoom=10, prog
 
         if tile_path is None:
             invalidElevations += len(idx_lat_lon_list)
-            for idx, _, _ in idx_lat_lon_list:
+            for idx, _lat, _long in idx_lat_lon_list:
                 elevations[idx] = 0
             continue
 
@@ -545,7 +547,7 @@ def get_elevation_Mapterhorn(bounds, coords, lenv=0, pointsDone=0, zoom=10, prog
         except (OSError, RuntimeError, ValueError, AttributeError) as e:
             print(f"Failed to parse Mapterhorn tile {actual_zoom}/{actual_xtile}/{actual_ytile}: {e}")
             invalidElevations += len(idx_lat_lon_list)
-            for idx, _, _ in idx_lat_lon_list:
+            for idx, _lat, _long in idx_lat_lon_list:
                 elevations[idx] = 0
             continue
 
@@ -612,13 +614,13 @@ def get_elevation_openTopography(coords, lenv=0, pointsDone=0, progress_cb=None)
         )
         if response.status_code == 401:
             _progress.WarningsOverlay.add_warning(
-                "OpenTopography: invalid or missing API key (401). "
-                "Get a free key at portal.opentopography.org", "error")
+                _rpt("OpenTopography: invalid or missing API key (401). "
+                "Get a free key at portal.opentopography.org", "error"))
             return [0.0] * len(coords)
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         _progress.WarningsOverlay.add_warning(
-            f"OpenTopography: request failed — {e}", "error")
+            _("OpenTopography: request failed — {e}", "error").format(e=e))
         return [0.0] * len(coords)
 
     if progress_cb:
@@ -631,7 +633,7 @@ def get_elevation_openTopography(coords, lenv=0, pointsDone=0, progress_cb=None)
             asc_name = next((n for n in zf.namelist() if n.lower().endswith('.asc')), None)
             if asc_name is None:
                 _progress.WarningsOverlay.add_warning(
-                    "OpenTopography: no .asc file found in ZIP response", "error")
+                    _rpt("OpenTopography: no .asc file found in ZIP response", "error"))
                 return [0.0] * len(coords)
             asc_data = zf.read(asc_name).decode('utf-8')
     except zipfile.BadZipFile:
@@ -640,13 +642,13 @@ def get_elevation_openTopography(coords, lenv=0, pointsDone=0, progress_cb=None)
             asc_data = content.decode('utf-8')
         except (UnicodeDecodeError, AttributeError) as e:
             _progress.WarningsOverlay.add_warning(
-                f"OpenTopography: could not decode response — {e}", "error")
+                _rpt("OpenTopography: could not decode response — {e}", "error").format(e=e))
             return [0.0] * len(coords)
         # Sanity-check: if it looks like an error page rather than a grid, bail out
         if 'ncols' not in asc_data[:500].lower():
             print(f"OpenTopography unexpected response: {asc_data[:300]}")
             _progress.WarningsOverlay.add_warning(
-                "OpenTopography: unexpected response format (check API key / bbox)", "error")
+                _rpt("OpenTopography: unexpected response format (check API key / bbox)", "error"))
             return [0.0] * len(coords)
 
     # --- Parse ASCII Grid header ---
@@ -713,20 +715,27 @@ def get_elevation_localDem(coords, lenv=0, pointsDone=0, progress_cb=None):
     demFilePath = bpy.context.scene.tp3d.demFilePath
     if not demFilePath or not os.path.exists(demFilePath):
         _progress.WarningsOverlay.add_warning(
-            "Local DEM: no file/folder selected or not found — set it under Advanced ▸ API", "error")
+            _rpt("Local DEM: no file/folder selected or not found — set it under Advanced ▸ API"), "error")
         return [0.0] * len(coords)
 
     if progress_cb:
         progress_cb(10)
 
     # deferred to avoid import cost when unused
-    from .geotiff import GeoTiffError, build_tile_index, dem_contains_point, read_geotiff, sample_geotiff, sample_tile_index
+    from .geotiff import (
+        GeoTiffError,
+        build_tile_index,
+        dem_contains_point,
+        read_geotiff,
+        sample_geotiff,
+        sample_tile_index,
+    )
 
     if os.path.isdir(demFilePath):
         index = build_tile_index(demFilePath)
         if not index:
             _progress.WarningsOverlay.add_warning(
-                f"Local DEM: no readable GeoTIFF tiles found in {demFilePath}", "error")
+                _rpt("Local DEM: no readable GeoTIFF tiles found in file."), "error")
             return [0.0] * len(coords)
 
         if progress_cb:
@@ -743,9 +752,9 @@ def get_elevation_localDem(coords, lenv=0, pointsDone=0, progress_cb=None):
             elevations.append(value)
 
         if missing:
+            print(f"Local DEM: {missing} of {len(coords)} points fell outside every tile in the folder (sampled as 0.0)")
             _progress.WarningsOverlay.add_warning(
-                f"Local DEM: {missing} of {len(coords)} points fell outside every tile in the folder "
-                "(sampled as 0.0) — the tiles may not fully cover your selected area", "warn")
+                _rpt("There was an error, see console for details."), "warn")
 
         if progress_cb:
             progress_cb(100)
@@ -757,7 +766,8 @@ def get_elevation_localDem(coords, lenv=0, pointsDone=0, progress_cb=None):
     try:
         dem = read_geotiff(demFilePath)
     except (GeoTiffError, OSError, struct.error, zlib.error) as e:
-        _progress.WarningsOverlay.add_warning(f"Local DEM: {e}", "error")
+        _progress.WarningsOverlay.add_warning(_rpt("There was an error, see console for details."), "error")
+        print(f"Local DEM: {e}")
         return [0.0] * len(coords)
 
     if progress_cb:
@@ -767,9 +777,9 @@ def get_elevation_localDem(coords, lenv=0, pointsDone=0, progress_cb=None):
     elevations = [sample_geotiff(dem, lat, lon) for lat, lon in coords]
 
     if missing:
+        print(f"Local DEM: {missing} of {len(coords)} points fell outside the DEM file's coverage (edge-clamped) — you're generating outside this dataset")
         _progress.WarningsOverlay.add_warning(
-            f"Local DEM: {missing} of {len(coords)} points fell outside the DEM file's coverage "
-            "(edge-clamped) — you're generating outside this dataset", "warn")
+            _rpt("There was an error, see console for details."), "warn")
 
     if progress_cb:
         progress_cb(100)

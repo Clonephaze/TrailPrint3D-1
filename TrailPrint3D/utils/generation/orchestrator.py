@@ -1,6 +1,7 @@
 import time
 
 import bpy
+from bpy.app.translations import pgettext_rpt as _rpt
 
 from ... import progress as _progress
 from ..dataclasses import GenerationContext, GenerationError, ValidationError
@@ -222,7 +223,7 @@ def runGeneration(type, locked_scale=None):
             gen.runtime.elements = {}
 
         # --- Phase 15: Single color mode processing ---
-        overlay.update(0.95, "Coloring", "Applying single-color mode…")
+        overlay.update(0.95, "Coloring", "Applying single extruder mode…")
         _rg_apply_single_color_mode(gen)
 
         # --- Phase 16: Assign materials ---
@@ -263,7 +264,7 @@ def runGeneration(type, locked_scale=None):
         overlay.add_completed_step(f"Done  —  {_m:02d}:{_s:02d} total")
     except ValidationError as e:
         print(f"Validation Failed: {e}")
-        _progress.WarningsOverlay.add_warning(f"Error: {e}")
+        _progress.WarningsOverlay.add_warning(_rpt("There was an error, see console for details."))
 
     except GenerationError as e:
         print(f"Generation phase failed: {e}")
@@ -275,7 +276,7 @@ def runGeneration(type, locked_scale=None):
         traceback.print_exc()
         print(f"Generation failed: {e}")
         _progress.WarningsOverlay.add_warning(
-            "Generation failed, check console for details"
+            _rpt("There was an error, see console for details.")
         )
 
     finally:

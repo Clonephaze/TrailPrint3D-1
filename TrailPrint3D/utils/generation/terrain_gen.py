@@ -4,6 +4,8 @@ import time
 
 import bpy  # type: ignore
 import numpy as np  # type: ignore
+from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 from mathutils import Vector  # type: ignore
 
 from ... import constants as const
@@ -17,7 +19,9 @@ def _cleanup_build_area(gen: GenerationContext):
     xOff = gen.settings.xTerrainOffset
     yOff = gen.settings.yTerrainOffset
     target_2d = Vector((gen.runtime.centerX or 0.0, gen.runtime.centerY or 0.0))
-    target_2d_offset = Vector((gen.runtime.centerX or 0.0 + xOff, gen.runtime.centerY or 0.0 + yOff))
+    target_2d_offset = Vector(
+        (gen.runtime.centerX or 0.0 + xOff, gen.runtime.centerY or 0.0 + yOff)
+    )
     for obs in bpy.data.objects:
         obj_2d = Vector((obs.location.x, obs.location.y))
         obj_2d_offset = obj_2d
@@ -69,48 +73,71 @@ def _rg_create_map_object(gen: GenerationContext):
 
     MapObject = None
 
-    if "append_collection" not in gen.settings.flags and "use_active_object" not in gen.settings.flags:
+    if (
+        "append_collection" not in gen.settings.flags
+        and "use_active_object" not in gen.settings.flags
+    ):
         print(
             f"[map_object] creating '{gen.settings.shape}' N={gen.settings.num_subdivisions} size={gen.settings.size:.1f}…"
         )
         _t_shape = time.time()
-        if gen.settings.shape in {"SQUARE", "SQUARE SHELL"}:
+        if gen.settings.shape == "SQUARE":
             MapObject = create_rectangle(
-                gen.settings.size, gen.settings.rectangleHeight, gen.settings.num_subdivisions, gen.settings.modelname
+                gen.settings.size,
+                gen.settings.rectangleHeight,
+                gen.settings.num_subdivisions,
+                gen.settings.modelname,
             )
-        elif gen.settings.shape in {
-            "HEXAGON",
-            "HEXAGON SHELL",
-            "HEXAGON INNER TEXT",
-            "HEXAGON OUTER TEXT",
-            "HEXAGON FRONT TEXT",
-        }:
+        elif gen.settings.shape == "HEXAGON":
             MapObject = create_hexagon(
-                gen.settings.size / 2, gen.settings.num_subdivisions, gen.settings.modelname
+                gen.settings.size / 2,
+                gen.settings.num_subdivisions,
+                gen.settings.modelname,
             )
         elif gen.settings.shape == "HEART":
-            MapObject = create_heart(gen.settings.size / 2, gen.settings.num_subdivisions, gen.settings.modelname)
-        elif gen.settings.shape in {"OCTAGON", "OCTAGON SHELL", "OCTAGON OUTER TEXT"}:
-            MapObject = create_octagon(
-                gen.settings.size / 2, gen.settings.num_subdivisions, gen.settings.modelname
+            MapObject = create_heart(
+                gen.settings.size / 2,
+                gen.settings.num_subdivisions,
+                gen.settings.modelname,
             )
-        elif gen.settings.shape in {"CIRCLE", "CIRCLE SHELL", "CIRCLE OUTER TEXT"}:
-            MapObject = create_circle(gen.settings.size / 2, gen.settings.num_subdivisions, gen.settings.modelname)
-        elif gen.settings.shape in {"ELLIPSE", "ELLIPSE SHELL"}:
+        elif gen.settings.shape == "OCTAGON":
+            MapObject = create_octagon(
+                gen.settings.size / 2,
+                gen.settings.num_subdivisions,
+                gen.settings.modelname,
+            )
+        elif gen.settings.shape == "CIRCLE":
+            MapObject = create_circle(
+                gen.settings.size / 2,
+                gen.settings.num_subdivisions,
+                gen.settings.modelname,
+            )
+        elif gen.settings.shape == "ELLIPSE":
             MapObject = create_ellipse(
-                gen.settings.size / 2, gen.settings.num_subdivisions, gen.settings.modelname, gen.settings.ellipseRatio
+                gen.settings.size / 2,
+                gen.settings.num_subdivisions,
+                gen.settings.modelname,
+                gen.settings.ellipseRatio,
             )
         elif gen.settings.shape == "GEOJSON":
             MapObject = create_custom_geojson(
-                gen.settings.customFilePath, gen.settings.size, gen.settings.num_subdivisions, gen.settings.modelname
+                gen.settings.geojsonFilePath,
+                gen.settings.size,
+                gen.settings.num_subdivisions,
+                gen.settings.modelname,
             )
         elif gen.settings.shape == "SVG":
             MapObject = create_custom_svg(
-                gen.settings.customFilePath, gen.settings.size, gen.settings.num_subdivisions, gen.settings.modelname
+                gen.settings.customFilePath,
+                gen.settings.size,
+                gen.settings.num_subdivisions,
+                gen.settings.modelname,
             )
         else:
             MapObject = create_hexagon(
-                gen.settings.size / 2, gen.settings.num_subdivisions, gen.settings.modelname
+                gen.settings.size / 2,
+                gen.settings.num_subdivisions,
+                gen.settings.modelname,
             )
         print(f"[map_object] shape created in {time.time() - _t_shape:.3f}s")
     if "append_collection" in gen.settings.flags:
@@ -130,7 +157,10 @@ def _rg_create_map_object(gen: GenerationContext):
 
     targetx = (gen.runtime.centerX or 0.0) + gen.settings.xTerrainOffset
     targety = (gen.runtime.centerY or 0.0) + gen.settings.yTerrainOffset
-    if gen.settings.scalemode == "COORDINATES" and "chain_coords_center" in gen.settings.flags:
+    if (
+        gen.settings.scalemode == "COORDINATES"
+        and "chain_coords_center" in gen.settings.flags
+    ):
         midLat, midLon = midpoint_spherical(
             gen.settings.scaleLat1,
             gen.settings.scaleLon1,
@@ -229,22 +259,13 @@ def _rg_osm_fetch_settings(tp3d):
         water_big_rivers=bool(tp3d.show_water and tp3d.col_wMajorActive),
         exclude_alleys=True,
     )
-
-
 def _rg_start_osm_prefetch(gen: GenerationContext):
-    """Snapshot all bpy values on the main thread and launch a daemon thread
-    that pre-fetches every active OSM coloring kind before mesh-building begins.
-
-    The caller must call thread.join() before consuming the result dict.
-    Returns (None, {}) immediately if no coloring elements are active.
-    """
-    from ..terrain import (
-        _fetch_all_kinds_parallel,  # deferred to avoid circular import at load time
-    )
+    """Start a background fetch for the active OSM element kinds."""
+    from ..terrain import _fetch_all_kinds_parallel
 
     tp3d = bpy.context.scene.tp3d
     map_km = gen.runtime.mapKm if gen.runtime.mapKm is not None else tp3d.sMapInKm
-    _active_kind_tasks = _rg_build_osm_kind_tasks(
+    active_kind_tasks = _rg_build_osm_kind_tasks(
         gen.runtime.tbMinLat,
         gen.runtime.tbMaxLat,
         gen.runtime.tbMinLon,
@@ -253,25 +274,23 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
         gen.settings.elementSource,
         tp3d,
     )
-    if not _active_kind_tasks:
+    if not active_kind_tasks:
         return None, {}
 
-    _semaphore = threading.Semaphore(
-        1
-    )  # max 1 concurrent live Overpass request (avoid 429s on the public instance)
-    _fetch_settings = _rg_osm_fetch_settings(tp3d)
-
+    fetch_settings = _rg_osm_fetch_settings(tp3d)
     result = {}
 
     def _run():
         fetched = _fetch_all_kinds_parallel(
-            _active_kind_tasks, _semaphore, settings=_fetch_settings
+            active_kind_tasks,
+            threading.Semaphore(1),
+            settings=fetch_settings,
         )
         result.update(fetched)
 
-    t = threading.Thread(target=_run, daemon=True, name="osm-prefetch")
-    t.start()
-    gen.fetch.fetchThread = t
+    thread = threading.Thread(target=_run, daemon=True, name="osm-prefetch")
+    thread.start()
+    gen.fetch.fetchThread = thread
     gen.fetch.fetchResult = result
 
 
@@ -344,7 +363,11 @@ def _rg_start_satellite_prefetch(gen: GenerationContext):
 
     def _run():
         landcover = get_cached_landcover_image(
-            min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache,
+            min_lat,
+            max_lat,
+            min_lon,
+            max_lon,
+            disable_cache=disable_cache,
             progress_cb=lambda frac: overlay.set_fetch_progress("landcover", frac),
         )
         photo = (
@@ -394,12 +417,19 @@ def _rg_create_satellite_plane(gen: GenerationContext):
     z_height = float(tp3d.highestZ) + 1.0
 
     create_satellite_plane(
-        landcover, min_lat, max_lat, min_lon, max_lon, z_height,
+        landcover,
+        min_lat,
+        max_lat,
+        min_lon,
+        max_lon,
+        z_height,
         debug_photo_tiled=result.get("photo"),
     )
 
     if gen.settings.elementMode == "PAINT":
-        paint_terrain_from_landcover(gen.runtime.mapObject, min_lat, max_lat, min_lon, max_lon)
+        paint_terrain_from_landcover(
+            gen.runtime.mapObject, min_lat, max_lat, min_lon, max_lon
+        )
 
 
 def _rg_fetch_elevation(gen: GenerationContext):
@@ -430,10 +460,16 @@ def _rg_fetch_elevation(gen: GenerationContext):
 
     if gen.runtime.elDiff is None:
         raise GenerationError(
-            "Elevation fetch returned no data — check your API settings and connection"
+            _(
+                "Elevation fetch returned no data — check your API settings and connection"
+            )
         )
     if gen.settings.elevationMode == "FIXED":
-        autoScale = gen.settings.fixedHeightMM / (gen.runtime.elDiff / 1000) if gen.runtime.elDiff > 0 else gen.settings.fixedHeightMM
+        autoScale = (
+            gen.settings.fixedHeightMM / (gen.runtime.elDiff / 1000)
+            if gen.runtime.elDiff > 0
+            else gen.settings.fixedHeightMM
+        )
     else:
         autoScale = gen.runtime.sScaleHor
     bpy.context.scene.tp3d.sAutoScale = autoScale
@@ -441,14 +477,24 @@ def _rg_fetch_elevation(gen: GenerationContext):
 
     if gen.runtime.tileVerts and len(gen.runtime.tileVerts) < 1000:
         warning.add_warning(
-            f"Mesh has only {len(gen.runtime.tileVerts)} Points. Increase Resolution for higher Quality",
+            _(
+                "Mesh has only {num_points} Points. Increase Resolution for higher Quality"
+            ).format(num_points=len(gen.runtime.tileVerts)),
             "warn",
         )
-    if gen.settings.elevationMode != "FIXED" and (
-        gen.runtime.elDiff == 0 or (gen.runtime.elDiff / 1000) * autoScale * gen.settings.scaleElevation < 2
+    if (
+        gen.settings.elevationMode != "FIXED"
+        and gen.settings.scaleElevation is not None
+        and autoScale is not None
+        and (
+            gen.runtime.elDiff == 0
+            or (gen.runtime.elDiff / 1000) * autoScale * gen.settings.scaleElevation < 2
+        )
     ):
         warning.add_warning(
-            "Terrain seems to be really flat. If not intended, increase Elevation scale",
+            _rpt(
+                "Terrain seems to be really flat. If not intended, increase Elevation scale"
+            ),
             icon="warn",
         )
 
@@ -464,6 +510,7 @@ def _rg_prepare_trail_coords(gen: GenerationContext):
       gen.runtime.blenderPathSegsByFile — processed per-file paths   (replaces Phase-6 raw version)
     Also writes the real-world map scale to the scene property store.
     """
+
     def _subdivide_long_segments(coords, max_xy_dist, depsgraph=None):
         """Split trail segments longer than max_xy_dist Blender units to prevent clipping through hills.
 
@@ -507,7 +554,9 @@ def _rg_prepare_trail_coords(gen: GenerationContext):
 
     # Select coordinate set: trail_map uses the flat/synthetic path, not the GPX trail
     coordinates = (
-        gen.runtime.flatCoordinates if "trail_map" in gen.settings.flags else gen.runtime.pathCoordinates
+        gen.runtime.flatCoordinates
+        if "trail_map" in gen.settings.flags
+        else gen.runtime.pathCoordinates
     ) or []
 
     # --- Main path: convert → simplify → deduplicate → subdivide ---
@@ -647,17 +696,19 @@ def _rg_build_trail_curves(gen: GenerationContext):
             curveObjs = [bpy.context.view_layer.objects.active]
     except RuntimeError:
         raise GenerationError(
-            "Bad Response from API while creating the curve. If this happens everytime contact dev"
+            _(
+                "Bad Response from API while creating the curve. If this happens every time contact dev"
+            )
         )
 
     if curveObj is None and curveObjs is None:
-        raise GenerationError("No trail curves created")
+        raise GenerationError(_rpt("No trail curves created"))
 
     if curveObj is not None and curveObjs is None:
         curveObjs = splitCurves(curveObj)
 
     if curveObjs is None:
-        raise GenerationError("Failed to split curveObj")
+        raise GenerationError(_rpt("Failed to split curveObj"))
 
     gen.runtime.curveObjs = curveObjs
     print(f"Curve objects created: {len(curveObjs) or 'unknown'}")
@@ -677,24 +728,32 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
 
     # --- Validate input ---
     if gen.runtime.mapObject is None:
-        raise GenerationError("No map object assigned; cannot displace terrain.")
+        raise GenerationError(_rpt("No map object assigned; cannot displace terrain."))
     if gen.runtime.mapObject.type != "MESH":
-        raise GenerationError(f"Map object '{gen.runtime.mapObject.name}' is not a mesh.")
+        raise GenerationError(
+            _("Map object '{map_name}' is not a mesh.").format(
+                map_name=gen.runtime.mapObject.name
+            )
+        )
     if (
         not hasattr(gen.runtime, "tileVerts")
         or gen.runtime.tileVerts is None
         or len(gen.runtime.tileVerts) == 0
     ):
         raise GenerationError(
-            "Missing or empty 'tileVerts' – elevation data not available."
+            _("Missing or empty 'tileVerts' — elevation data not available.")
         )
 
     mesh = gen.runtime.mapObject.data
     _total_verts = len(mesh.vertices)
     if _total_verts == 0:
-        raise GenerationError("Map object has no vertices.")
+        raise GenerationError(_rpt("Map object has no vertices."))
 
-    print(f"Displacing terrain: {mesh.name} ({_total_verts} vertices)")
+    print(
+        _("Displacing terrain: {mesh_name} ({num_verts} vertices)").format(
+            mesh_name=mesh.name, num_verts=_total_verts
+        )
+    )
 
     # --- Bulk read vertex coordinates ---
     co_flat = np.empty(_total_verts * 3, dtype=np.float64)
@@ -707,26 +766,37 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
         co_h = np.hstack([co, np.ones((_total_verts, 1), dtype=np.float64)])
         world_y = (m @ co_h.T).T[:, 1]
     except Exception as e:  # noqa: BLE001
-        raise GenerationError(f"Failed to transform vertex coordinates: {e}")
+        raise GenerationError(
+            _("Failed to transform vertex coordinates: {error}").format(error=e)
+        )
 
     # --- Mercator latitude correction ---
     try:
-        lat_rad = 2.0 * np.arctan(np.exp(world_y / (const.R * gen.runtime.sScaleHor))) - (
-            np.pi / 2.0
-        )
+        if gen.runtime.sScaleHor is None:
+            raise GenerationError(_rpt("Horizontal scale (sScaleHor) is not set."))
+        lat_rad = 2.0 * np.arctan(
+            np.exp(world_y / (const.R * gen.runtime.sScaleHor))
+        ) - (np.pi / 2.0)
         merc = 1.0 / np.cos(lat_rad)
     except Exception as e:  # noqa: BLE001
-        raise GenerationError(f"Mercator correction failed: {e}")
+        raise GenerationError(_rpt("Mercator correction failed: {error}").format(error=e))
 
     # --- Compute new Z for all vertices ---
     try:
         tile_verts = np.array(gen.runtime.tileVerts, dtype=np.float64)
         if tile_verts.shape != (_total_verts,):
-            # if tileVerts is a list of lists? adapt as needed – here assume flat array
+            # if tileVerts is a list of lists? adapt as needed — here assume flat array
             raise ValueError(
-                f"tileVerts length {len(tile_verts)} doesn't match vertices {_total_verts}"
+                _(
+                    "tileVerts length {tile_verts_len} doesn't match vertices {total_verts}"
+                ).format(tile_verts_len=len(tile_verts), total_verts=_total_verts)
             )
-        new_z = (tile_verts / 1000.0) * gen.settings.scaleElevation * gen.runtime.autoScale * merc
+        new_z = (
+            (tile_verts / 1000.0)
+            * gen.settings.scaleElevation
+            * gen.runtime.autoScale
+            * merc
+        )
         if gen.settings.smoothTerrainTop:
             from ..terrain import smooth_terrain_top_z
 
@@ -737,7 +807,9 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
         mesh.vertices.foreach_set("co", co.ravel())
         mesh.update()
     except Exception as e:  # noqa: BLE001
-        raise GenerationError(f"Failed to apply elevation displacement: {e}")
+        raise GenerationError(
+            _("Failed to apply elevation displacement: {error}").format(error=e)
+        )
 
     # --- Store min/max and extrusion offset ---
     lowestZ = float(new_z.min())
@@ -776,7 +848,9 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
                     f"[DEBUG] Terrain avg slope: {_avg_t:.4f}  ({math.degrees(math.atan(_avg_t)):.2f}°)"
                 )
         except Exception as e:  # noqa: BLE001
-            raise GenerationError(f"[DEBUG] Slope computation failed: {e}")
+            raise GenerationError(
+                _("Slope computation failed: {error}").format(error=e)
+            )
 
     # --- Snap trail curves to the displaced surface ---
     if gen.settings.overwritePathElevation:
@@ -797,7 +871,9 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
                         RaycastCurveToMesh(curve, gen.runtime.mapObject)
                     except Exception as e:  # noqa: BLE001
                         raise GenerationError(
-                            f"Failed to snap curve '{curve.name}' to terrain: {e}"
+                            _(
+                                "Failed to snap curve '{curve_name}' to terrain: {error}"
+                            ).format(curve_name=curve.name, error=e)
                         )
                 else:
                     print(f"Skipping invalid curve object: {curve}")
@@ -812,6 +888,8 @@ def _rg_extrude_terrain(gen: GenerationContext):
 
     from .. import geometry2d as g2d
 
+    if gen.runtime.mapObject is None:
+        raise GenerationError(_rpt("Map object is not set."))
     obj: bpy.types.Mesh = gen.runtime.mapObject
     if obj.mode != "OBJECT":
         bpy.ops.object.mode_set(mode="OBJECT")
@@ -900,7 +978,7 @@ def _rg_extrude_terrain(gen: GenerationContext):
                     else:
                         bm.faces.new((v1, v2, v3))
         else:
-            verts2d, tris, _ = cdt_res
+            verts2d, tris, _unused = cdt_res
             bm_vert_list = []
 
             for x, y in verts2d:
@@ -945,5 +1023,3 @@ def _rg_extrude_terrain(gen: GenerationContext):
         for tcrv in gen.runtime.curveObjs:
             tcrv.select_set(True)
             bpy.ops.object.origin_set(type="ORIGIN_CURSOR")
-
-

@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 import bmesh  # type: ignore
 import bpy  # type: ignore
 import numpy as np  # type: ignore
+from bpy.app.translations import pgettext as _
+from bpy.app.translations import pgettext_rpt as _rpt
 from shapely import make_valid
 
 from ...progress import WarningsOverlay as warning
@@ -84,11 +86,6 @@ class RoadConfig:
             # exempt -- it behaves like the sparse arterial tiers (long, few
             # segments).
             _too_dense_for_full_depth = {"service", "footway", "pedestrian", "cycle_bridle", "path"}
-            if any(tier_active[t] for t in _too_dense_for_full_depth):
-                warning.add_warning(
-                    "[TP3D roads] full_depth mode: excluding service/footway/pedestrian/"
-                    "cycle_bridle/path tiers (too dense to remesh cleanly as a standalone piece)"
-                )
             for t in _too_dense_for_full_depth:
                 tier_active[t] = False
 
@@ -491,7 +488,7 @@ def _clip_terrain_grid_to_polygon(
             continue
 
         for part in g2d.iter_polygons(inter):
-            part = orient(part, sign=1.0)  # exterior CCW, holes CW -- matches terrain winding
+            part = g2d.orient(part, sign=1.0)  # exterior CCW, holes CW -- matches terrain winding
             ext = list(part.exterior.coords)[:-1]
             if len(ext) < 3:
                 continue
@@ -739,14 +736,14 @@ def create_roads(
 
     # --- Input validation ------------------------------------------------
     if gen is None:
-        raise GenerationError("Generation context is None.")
+        raise GenerationError(_rpt("Generation context is None."))
     if gen.runtime.mapObject is None:
-        raise GenerationError("No map object assigned; cannot create roads.")
+        raise GenerationError(_rpt("No map object assigned; cannot create roads."))
     # Check that tile bounds are present and reasonable
     required_bounds = ["tbMinLat", "tbMinLon", "tbMaxLat", "tbMaxLon"]
     for attr in required_bounds:
         if not hasattr(gen.runtime, attr) or getattr(gen.runtime, attr) is None:
-            raise GenerationError(f"Missing tile bound: '{attr}'")
+            raise GenerationError(_rpt("Missing tile bound: '{attr}'").format(attr=attr))
 
     _t_setup = time.time()
     _ov = _progress.ProgressOverlay.get()
@@ -759,7 +756,7 @@ def create_roads(
             full_depth = gen.settings.elementMode != "PAINT"
         config = RoadConfig.from_scene(bpy.context.scene.tp3d, full_depth=full_depth)
     except Exception as e:
-        raise GenerationError(f"Failed to load road configuration: {e}")
+        raise GenerationError(_rpt("Failed to load road configuration: {error}").format(error=e))
 
     # --- Fetch road polylines from OSM -----------------------------------
     try:
@@ -776,10 +773,10 @@ def create_roads(
             prefetched_tiles=prefetched_tiles,
         )
     except Exception as e:
-        raise GenerationError(f"Failed to fetch road polylines from OSM: {e}")
+        raise GenerationError(_rpt("Failed to fetch road polylines from OSM: {error}").format(error=e))
 
     if tier_polylines is None:
-        raise GenerationError("No road polylines fetched (tier_polylines is None).")
+        raise GenerationError(_rpt("No road polylines fetched (tier_polylines is None)."))
 
     # --- DEBUG: Stage 1 - raw polylines ----------------------------------
     if bpy.app.debug:
@@ -823,7 +820,7 @@ def create_roads(
         top_z = max(v.z for v in mc) + default_height
     except Exception as e:
         # Fallback to default heights if bounding box fails
-        print(f"Warning: Could not compute bounding box Z, using fallback: {e}")
+        print(_("Warning: Could not compute bounding box Z, using fallback: {error}").format(error=e))
         bottom_z = -10.0
         top_z = default_height
 
@@ -831,9 +828,9 @@ def create_roads(
     try:
         map_fp = map_footprint_polygon(gen.runtime.mapObject)
         if map_fp is None or map_fp.is_empty:
-            raise GenerationError("Failed to obtain valid map footprint polygon.")
+            raise GenerationError(_rpt("Failed to obtain valid map footprint polygon."))
     except Exception as e:
-        raise GenerationError(f"Map footprint computation failed: {e}")
+        raise GenerationError(_rpt("Map footprint computation failed: {error}").format(error=e))
 
     # --- Buffer tiers into polygons --------------------------------------
     try:
@@ -841,20 +838,20 @@ def create_roads(
             tier_polylines, half_width, map_fp
         )
     except Exception as e:
-        raise GenerationError(f"Failed to buffer road polylines into polygons: {e}")
+        raise GenerationError(_rpt("Failed to buffer road polylines into polygons: {error}").format(error=e))
 
     if not verts_2d or not tris:
         raise GenerationError(
-            "No road data returned after buffering (empty vertices or triangles)."
+            _("No road data returned after buffering (empty vertices or triangles).")
         )
 
     # --- Build extruded mesh ---------------------------------------------
     try:
         roads = _build_extruded_mesh(verts_2d, tris, bottom_z, top_z)
         if roads is None:
-            raise GenerationError("_build_extruded_mesh returned None.")
+            raise GenerationError(_rpt(" _build_extruded_mesh returned None."))
     except Exception as e:
-        raise GenerationError(f"Failed to build extruded road mesh: {e}")
+        raise GenerationError(_rpt("Failed to build extruded road mesh: {error}").format(error=e))
 
     # This is a coarse cutter mesh only -- finalize_roads() will rebuild the top
     # surface from the terrain's own grid, clipped to road_union, later.
@@ -902,7 +899,7 @@ def create_roads(
 
     if width_was_adjusted:
         _progress.WarningsOverlay.add_warning(
-            "Some roads were too thin and made thicker", "warn"
+            _rpt("Some roads were too thin and made thicker"), "warn"
         )
 
     print(
