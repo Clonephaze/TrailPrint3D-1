@@ -28,8 +28,9 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
     """
     from bpy.types import Scene
 
-    from ...props import (
-        any_road_active,  # deferred to avoid circular import at load time
+    from ...props import (  # deferred to avoid circular import at load time
+        any_road_active,
+        texture_trail_active,
     )
 
     start_time = time.time()
@@ -55,11 +56,6 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         size: int = tp3d.objSize
         autoExport: bool = tp3d.disable_auto_export
         scaleElevation: float = tp3d.scaleElevation
-        scalemode: str = tp3d.scalemode
-        scaleLon1: float = tp3d.scaleLon1
-        scaleLat1: float = tp3d.scaleLat1
-        scaleLon2: float = tp3d.scaleLon2
-        scaleLat2: float = tp3d.scaleLat2
         shapeRotation: int = tp3d.shapeRotation
         overwritePathElev: bool = tp3d.overwritePathElevation
         api: str = tp3d.api
@@ -105,7 +101,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         useTexture: bool = tp3d.tex_use_texture and elementMode == "PAINT"
         texResolution: int = tp3d.tex_resolution
         texRoads: bool = tp3d.tex_include_roads
-        texTrail: bool = tp3d.tex_include_trail
+        texTrail: bool = texture_trail_active(tp3d)
         exportFormat: str = tp3d.exportformat
     except AttributeError as e:
         raise ValidationError(e)
@@ -202,11 +198,6 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
             size=size,
             autoExport=autoExport,
             scaleElevation=scaleElevation,
-            scalemode=scalemode,
-            scaleLon1=scaleLon1,
-            scaleLat1=scaleLat1,
-            scaleLon2=scaleLon2,
-            scaleLat2=scaleLat2,
             shapeRotation=shapeRotation,
             overwritePathElevation=overwritePathElev,
             elevationMode=elevationMode,
@@ -406,13 +397,7 @@ def _rg_calculate_horizontal_scale(gen: GenerationContext):
         bpy.context.scene.tp3d["sScaleHor"] = gen.settings.lockedScale
         return
 
-    scalecoords = gen.runtime.pathCoordinates
-    if gen.settings.scalemode == "COORDINATES" and "gpx_scale" in gen.settings.flags:
-        scalecoords = (
-            (gen.settings.scaleLon1, gen.settings.scaleLat1),
-            (gen.settings.scaleLon2, gen.settings.scaleLat2),
-        )
-    scaleHor = calculate_scale(gen.settings.size, scalecoords, gen.settings.genType, diagonal=True)
+    scaleHor = calculate_scale(gen.settings.size, gen.runtime.pathCoordinates, gen.settings.genType, diagonal=True)
     bpy.context.scene.tp3d["sScaleHor"] = scaleHor
     gen.runtime.sScaleHor = scaleHor
 

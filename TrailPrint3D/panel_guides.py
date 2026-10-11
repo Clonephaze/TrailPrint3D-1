@@ -128,19 +128,12 @@ classes = [
         "- {scale} — map scale",
     ),
     make_help_panel(
-        "TP3D_PT_help_scale",
-        "About: Scale",
-        "Controls how much real-world area fits into your print.\n"
-        "\n"
-        "Two modes:\n"
-        "- Map Scale: auto-fits the trail to fill a set percentage of the print.\n"
-        "- Coordinates: pin two real GPS points to exact spots on your print "
-        "for a precise, fixed scale.",
-    ),
-    make_help_panel(
         "TP3D_PT_help_trail",
         "About: Trail",
-        "Controls how the trail line is printed.\n"
+        "Controls how much real-world area fits into your print and how "
+        "the trail line is printed.\n"
+        "\n"
+        "Path Scale auto-fits the trail to fill a set percentage of the print.\n"
         "\n"
         "On single-color printers, enable Single Extruder Mode — the trail "
         "becomes a separate object with a matching cutout in the map, so you "

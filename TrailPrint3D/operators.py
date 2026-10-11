@@ -35,7 +35,7 @@ class TP3D_OT_run_generation(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        export_path_set = bool(getattr(context.scene.tp3d, "export_path", None))
+        export_path_set = bool(addon_preferences.get_export_folder(context.scene.tp3d))
         file_path_set = bool(getattr(context.scene.tp3d, "file_path", None))
         if not export_path_set and not file_path_set:
             cls.poll_message_set(_tip("Choose a GPX file, and set an export path"))

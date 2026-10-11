@@ -168,6 +168,7 @@ def export_selected_to_3mf(
     if tp3d.tex_use_texture:
         import ast
 
+        from .props import texture_trail_active
         from .utils.texture import (
             _srgb_to_hex,
             material_to_srgb,
@@ -200,7 +201,7 @@ def export_selected_to_3mf(
                         _ccol = material_to_srgb(
                             bpy.data.materials.get(_fixed_companion_material[obj_type])
                         )
-                    elif obj_type == "TRAIL" and not tp3d.tex_include_trail:
+                    elif obj_type == "TRAIL" and not texture_trail_active(tp3d):
                         _own_mat = (
                             dup.data.materials[0]
                             if dup.data and dup.data.materials

@@ -230,3 +230,9 @@ class TP3D_AddonPreferences(bpy.types.AddonPreferences):
 def get_prefs():
     """Convenience helper — returns the AddonPreferences instance."""
     return bpy.context.preferences.addons[__package__].preferences
+
+
+def get_export_folder(tp3d):
+    """The scene's export path, falling back to the Default Export Folder
+    preference -- same fallback generation/export apply."""
+    return tp3d.export_path or get_prefs().default_export_folder

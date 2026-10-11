@@ -33,11 +33,6 @@ class RunSettings:
     size: int
     autoExport: bool
     scaleElevation: float
-    scalemode: str
-    scaleLon1: float
-    scaleLat1: float
-    scaleLon2: float
-    scaleLat2: float
     shapeRotation: int
     overwritePathElevation: bool
     elevationMode: str

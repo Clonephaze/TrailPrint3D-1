@@ -48,7 +48,7 @@ var TP3D_SETTINGS_TAB = 'elements';
 // Send time regardless of anything pushed live via this modal). Having both
 // meant two controls for one setting that could silently disagree.
 //
-// Grouped and ordered to mirror panels.py's own "5. Terrain" then "4. Trail"
+// Grouped and ordered to mirror panels.py's own "4. Terrain" then "3. Trail"
 // sections (in that order, since Elevation was already the modal's first
 // field before this list grew) -- same fields, same conditional visibility
 // (`showWhen`, see tp3dRefreshMapTabVisibility) as the sidebar's own
@@ -56,7 +56,7 @@ var TP3D_SETTINGS_TAB = 'elements';
 // panels.py. Elevation Mode itself is deliberately left out -- Fixed Height
 // mode is a niche option not worth the extra control here.
 var SETTINGS_MODAL_MAP_FIELDS = [
-    // -- Terrain (panels.py "5. Terrain") --
+    // -- Terrain (panels.py "4. Terrain") --
     { key: 'scaleElevation', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Elevation Scale', type: 'number', step: 0.1, min: 0,
       title: 'Multiplier to the Elevation',
@@ -84,7 +84,7 @@ var SETTINGS_MODAL_MAP_FIELDS = [
     // Divider: spans both grid columns (see tp3dBuildMapTab/.map-tab-divider),
     // separating the terrain fields above from the trail-specific ones below.
     { type: 'divider' },
-    // -- Trail (panels.py "4. Trail") --
+    // -- Trail (panels.py "3. Trail") --
     { key: 'pathThickness', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Trail Thickness', type: 'number', step: 0.01, min: 0.1, max: 5, decimals: 2,
       title: 'Thickness of the path in mm',
@@ -151,7 +151,7 @@ var SIMPLE_ELEMENT_FIELDS = {
 // ESA WorldCover's own card order -- no per-category threshold fields (see
 // SIMPLE_ELEMENT_FIELDS not having entries for these keys below); a single
 // shared field (WORLDCOVER_MIN_AREA_FIELD) covers all of them at once,
-// mirroring panels.py's "6. Map Elements" layout (one el_wcMinFeatureArea
+// mirroring panels.py's "5. Map Elements" layout (one el_wcMinFeatureArea
 // row above the whole _LANDCOVER_COLOR_ROWS box, not one per category).
 var LANDCOVER_ELEMENT_ORDER = ['water', 'forest', 'mountain', 'city', 'greenspace', 'farmland', 'glacier'];
 var WORLDCOVER_MIN_AREA_FIELD = {
@@ -727,7 +727,7 @@ function tp3dBuildElementSourceSwitch() {
 }
 
 // Small two-button Paint on Map / Single Extruder Mode switch -- mirrors
-// panels.py's own "Paint or Single Extruder Mode" row in the "6. Map
+// panels.py's own "Paint or Single Extruder Mode" row in the "5. Map
 // Elements" sidebar section, which only shows up there when
 // props.elementSource == "OSM" (ESA WorldCover has no per-element
 // paint-vs-remesh split of its own). Unlike that sidebar row, this stays
@@ -895,7 +895,7 @@ function tp3dBuildElementsTab() {
     // ESA WorldCover has none of OSM's per-category thresholds or
     // Water/Roads composites -- one shared Min Feature Area field (in the
     // options row above) plus a row of plain toggle cards, mirroring
-    // panels.py's "6. Map Elements" WORLDCOVER branch structure.
+    // panels.py's "5. Map Elements" WORLDCOVER branch structure.
     if (tp3dIsWorldCover()) {
         var landcoverRow = document.createElement('div');
         landcoverRow.className = 'elements-row';

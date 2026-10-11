@@ -970,10 +970,12 @@ def generateJustTrail(material="TRAIL"):
         curveObj.data.materials.clear()
         curveObj.data.materials.append(mat)
 
+    from ...props import texture_trail_active  # deferred to avoid circular import at load time
+
     if (
         curveObj is not None
         and props.tex_use_texture
-        and props.tex_include_trail
+        and texture_trail_active(props)
     ):
         if _gjt_bake_into_existing_textures(curveObj):
             bpy.data.objects.remove(curveObj, do_unlink=True)

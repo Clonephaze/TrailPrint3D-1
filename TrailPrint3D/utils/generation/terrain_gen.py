@@ -46,10 +46,6 @@ def _rg_create_map_object(gen: GenerationContext):
     """Create, rotate, and position the base map shape object."""
     from shapely.wkt import loads
 
-    from ..geo import (  # deferred to avoid circular import at load time
-        convert_to_blender_coordinates,
-        midpoint_spherical,
-    )
     from ..mesh_ops import (
         recalculateNormals,  # deferred to avoid circular import at load time
     )
@@ -157,17 +153,6 @@ def _rg_create_map_object(gen: GenerationContext):
 
     targetx = (gen.runtime.centerX or 0.0) + gen.settings.xTerrainOffset
     targety = (gen.runtime.centerY or 0.0) + gen.settings.yTerrainOffset
-    if (
-        gen.settings.scalemode == "COORDINATES"
-        and "chain_coords_center" in gen.settings.flags
-    ):
-        midLat, midLon = midpoint_spherical(
-            gen.settings.scaleLat1,
-            gen.settings.scaleLon1,
-            gen.settings.scaleLat2,
-            gen.settings.scaleLon2,
-        )
-        targetx, targety, _el = convert_to_blender_coordinates(midLat, midLon, 0, 0)
 
     transform_MapObject(MapObject, targetx, targety)
     if MapObject and "map_polygon_wkt" in MapObject:

@@ -307,20 +307,31 @@ def get_effective_footprint_size(tp3d):
     return tp3d.objSize
 
 
+def single_extruder_active(tp3d):
+    """Single Extruder Mode is on, either via the Trail checkbox or the
+    SINGLECOLORMODE_REMESH element mode."""
+    return tp3d.singleColorMode or tp3d.elementMode == "SINGLECOLORMODE_REMESH"
+
+
+def texture_trail_active(tp3d):
+    """Trail in texture is in effect. Single Extruder Mode wins: it builds a
+    separate trail piece plus cutout, so the stored checkbox (greyed out in
+    the Appearance box) must not also paint the trail onto the texture."""
+    return tp3d.tex_include_trail and not single_extruder_active(tp3d)
+
+
 def estimate_map_km(tp3d):
     """Estimate the generated map's real-world km footprint from the cached
     GPX trail bounding box (set by TP3D_OT_pick_gpx_file at file-pick time --
     see utils.io_gpx.compute_gpx_bounds), for the live per-category size
     warnings in the Map Elements section. Returns None when no estimate is
-    available (no GPX picked yet, or COORDINATES scale mode, which derives
-    its bounds from the scaleLat/scaleLon fields directly rather than the
-    trail's own extent).
+    available (no GPX picked yet).
 
     Reuses calculate_scale()'s own branch logic rather than re-deriving the
-    FACTOR/SCALE formulas here -- see plan Finding 2d: one source of truth
+    scale formula here -- see plan Finding 2d: one source of truth
     for "how big is the map", not a second copy that can drift from what
     generation actually computes."""
-    if not tp3d.cachedTrailBoundsValid or tp3d.scalemode == "COORDINATES":
+    if not tp3d.cachedTrailBoundsValid:
         return None
     coordinates = [
         (tp3d.cachedTrailMinLat, tp3d.cachedTrailMinLon),
@@ -564,28 +575,6 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default="aster30m",
     )  # type: ignore
 
-    scalemode: EnumProperty(
-        name=_("Scale Mode"),
-        items=[
-            (
-                "FACTOR",
-                _("Map Scale"),
-                _(
-                    "Set the map scale based on how much of the generated area the trail should occupy."
-                ),
-            ),
-            (
-                "COORDINATES",
-                _("Coordinates"),
-                _(
-                    "Calculate the map scale using two geographic coordinates. (Lat/lon)"
-                ),
-            ),
-        ],
-        default="FACTOR",
-        update=update_map_estimate,
-        description=_tip("Choose how the map scale should be determined."),
-    )  # type: ignore
     pathScale: FloatProperty(
         name=_("Path Scale (%)"),
         default=0.8,
@@ -596,24 +585,6 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
         subtype="FACTOR",
         update=update_map_estimate,
-    )  # type: ignore
-    scaleLon1: FloatProperty(
-        name=_("Lon1"),
-        default=0,
-        description=_tip("The Longitude of the first coordinate"),
-    )  # type: ignore
-    scaleLat1: FloatProperty(
-        name=_("Lat1"), default=0, description=_tip("The Latitude of the first coordinate")
-    )  # type: ignore
-    scaleLon2: FloatProperty(
-        name=_("Lon2"),
-        default=0,
-        description=_tip("The Longitude of the second coordinate"),
-    )  # type: ignore
-    scaleLat2: FloatProperty(
-        name=_("Lat2"),
-        default=0,
-        description=_tip("The Latitude of the second coordinate"),
     )  # type: ignore
 
     selfHosted: StringProperty(

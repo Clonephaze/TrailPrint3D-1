@@ -9,53 +9,29 @@ from .. import constants as const
 
 def calculate_scale(mapSize, coordinates, gen_type, diagonal=False):
 
-    scalemode = bpy.context.scene.tp3d.scalemode
     pathScale = bpy.context.scene.tp3d.pathScale
 
     if bpy.app.debug:
-        print(f"Scalemode: {scalemode}")
         print(f"Gen_type: {gen_type}")
 
     min_lat = min(point[0] for point in coordinates)
     max_lat = max(point[0] for point in coordinates)
     min_lon = min(point[1] for point in coordinates)
     max_lon = max(point[1] for point in coordinates)
-    mf = 1
-    R = const.R
 
     x1, y1, _e = convert_to_neutral_coordinates(min_lat, min_lon, 0,0)
     x2, y2, _e = convert_to_neutral_coordinates(max_lat, max_lon, 0,0)
 
-    if scalemode == "FACTOR" and gen_type != 2:
-        width = abs(x2 - x1)
-        height = abs(y2 - y1)
-        distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-
-    else:
-        #width = haversine(min_lat, min_lon, min_lat, max_lon) * 1
-        #height = haversine(min_lat, min_lon, max_lat,min_lon) * 1
-        #distance = haversine(min_lat,min_lon,max_lat,max_lon)*1
-        width = abs(x2 - x1)
-        height = abs(y2 - y1)
-        distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-
-
-    if scalemode == "SCALE":
-        mx1 = x1 = R * math.radians(min_lon) * math.cos(math.radians(min_lat))
-        mx2 = x2 = R * math.radians(max_lon) * math.cos(math.radians(max_lat))
-        mwidth = abs(mx1 - mx2)
-        mf = 1/width * mwidth
-        mf = 1
-
-    if scalemode == "COORDINATES" or scalemode == "SCALE":
-        distance = 0
-
+    width = abs(x2 - x1)
+    height = abs(y2 - y1)
+    distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
     maxer = max(width, height, distance) if diagonal else max(width, height)
-    scale = 1
-    if scalemode == "COORDINATES" or gen_type == 2 or gen_type == 3:
+    # Area-based generation types (2/3) fill the whole map; trail-based ones
+    # leave a pathScale margin around the trail.
+    if gen_type == 2 or gen_type == 3:
         scale = mapSize / maxer
-    else:  # scalemode == "FACTOR"
+    else:
         scale = (mapSize * pathScale) / maxer
 
     return scale

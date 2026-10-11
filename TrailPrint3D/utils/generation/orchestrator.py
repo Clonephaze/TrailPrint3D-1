@@ -46,35 +46,16 @@ from .terrain_gen import (
 # ---------------------------------------------------------------------------
 
 _GEN_FLAGS = {
-    0: frozenset({"gpx_file", "trail", "stats", "gpx_scale"}),
-    1: frozenset(
-        {
-            "gpx_chain",
-            "trail",
-            "stats",
-            "gpx_scale",
-            "separate_paths",
-            "chain_coords_center",
-        }
-    ),
+    0: frozenset({"gpx_file", "trail", "stats"}),
+    1: frozenset({"gpx_chain", "trail", "stats", "separate_paths"}),
     2: frozenset({"jmap"}),
     3: frozenset({"jmap_bbox"}),
     4: frozenset({"gpx_file", "jmap", "trail", "trail_map"}),
-    10: frozenset({"gpx_file", "stats", "gpx_scale"}),
-    11: frozenset(
-        {"gpx_chain", "stats", "gpx_scale", "separate_paths", "chain_coords_center"}
-    ),
-    20: frozenset({"gpx_file", "trail", "stats", "gpx_scale", "append_collection"}),
+    10: frozenset({"gpx_file", "stats"}),
+    11: frozenset({"gpx_chain", "stats", "separate_paths"}),
+    20: frozenset({"gpx_file", "trail", "stats", "append_collection"}),
     21: frozenset(
-        {
-            "gpx_chain",
-            "trail",
-            "stats",
-            "gpx_scale",
-            "separate_paths",
-            "chain_coords_center",
-            "append_collection",
-        }
+        {"gpx_chain", "trail", "stats", "separate_paths", "append_collection"}
     ),
 }
 

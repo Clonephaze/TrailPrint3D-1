@@ -492,41 +492,19 @@ def _draw_shape_extras(box, props):
             _draw_handle_group(extras, props)
 
 
-def _draw_scale_box(layout, props):
-    box = _create_box_with_header(
-        layout,
-        props,
-        _("3. Scale"),
-        icon="DRIVER_DISTANCE",
-        help_key="TP3D_PT_help_scale",
-    )
-    col = box.column()
-    col.label(text=_("Scale Mode") + ":")
-    row = col.row(align=True)
-    row.scale_y = 1.2
-    row.prop(props, "scalemode", expand=True, emboss=True)
-    col = box.column(align=True)
-    if props.scalemode == "FACTOR":
-        col.prop(props, "pathScale")
-    elif props.scalemode == "COORDINATES":
-        row = col.row(align=True)
-        row.prop(props, "scaleLat1")
-        row.prop(props, "scaleLon1")
-        row = col.row(align=True)
-        row.prop(props, "scaleLat2")
-        row.prop(props, "scaleLon2")
-    if props.cachedTrailBoundsValid and props.scalemode != "COORDINATES":
-        col.label(text=_("Estimated Map Size: %.1f km") % props.estimated_map_km)
-
-
 def _draw_trail_box(layout, props):
     box = _create_box_with_header(
         layout,
         props,
-        _("4. Trail"),
+        _("3. Trail"),
         icon="IPO_LINEAR",
         help_key="TP3D_PT_help_trail",
     )
+
+    col = box.column(align=True)
+    col.prop(props, "pathScale")
+    if props.cachedTrailBoundsValid:
+        col.label(text=_("Estimated Map Size: %.1f km") % props.estimated_map_km)
 
     col = box.column(align=True)
     col.prop(props, "pathThickness")
@@ -551,7 +529,7 @@ def _draw_terrain_box(layout, props):
     box = _create_box_with_header(
         layout,
         props,
-        _("5. Terrain"),
+        _("4. Terrain"),
         icon="RNDCURVE",
         help_key="TP3D_PT_help_terrain",
     )
@@ -667,28 +645,31 @@ def _draw_element_box(layout, props):
                 oceanCol.prop(props, "el_oMinIslandArea")
                 oceanCol.prop(props, "el_oRdpEpsilon")
 
-                if _elem_scm:
-                    flatten_row = col.row(align=True)
-                    flatten_row.prop(
-                        props,
-                        "col_wFlattenTop",
-                        icon="CHECKBOX_HLT"
-                        if props.col_wFlattenTop
-                        else "CHECKBOX_DEHLT",
+                # Both Single Extruder and Paint on Map modes honour these
+                # (see terrain.py), so they're shown in every mode. Insert
+                # only applies while flattening is on -- greyed out, not
+                # hidden, same as the settings modal's water card.
+                flatten_row = col.row(align=True)
+                flatten_row.prop(
+                    props,
+                    "col_wFlattenTop",
+                    icon="CHECKBOX_HLT"
+                    if props.col_wFlattenTop
+                    else "CHECKBOX_DEHLT",
+                )
+                insert_row = flatten_row.row(align=True)
+                insert_row.enabled = props.col_wFlattenTop
+                insert_row.prop(props, "col_wInsert")
+                _insert_cap = max(
+                    0.0, props.minThickness - const.WATER_INSERT_MARGIN
+                )
+                if props.col_wFlattenTop and props.col_wInsert > _insert_cap:
+                    col.label(
+                        text=_(
+                            "Insert is capped to {:.1f}mm (Extra Map Height - {}mm)"
+                        ).format(_insert_cap, const.WATER_INSERT_MARGIN),
+                        icon="INFO",
                     )
-                    if props.col_wFlattenTop:
-                        flatten_row.enabled = _elem_scm
-                        flatten_row.prop(props, "col_wInsert")
-                        _insert_cap = max(
-                            0.0, props.minThickness - const.WATER_INSERT_MARGIN
-                        )
-                        if props.col_wInsert > _insert_cap:
-                            col.label(
-                                text=_(
-                                    "Insert is capped to {:.1f}mm (Extra Map Height - {}mm)"
-                                ).format(_insert_cap, const.WATER_INSERT_MARGIN),
-                                icon="INFO",
-                            )
 
         def _create_element_category(
             box,
@@ -878,7 +859,7 @@ def _draw_element_box(layout, props):
     box = _create_box_with_header(
         layout,
         props,
-        _("6. Map Elements"),
+        _("5. Map Elements"),
         icon="TEXTURE",
         prop_toggle="elementChoice",
         help_key="TP3D_PT_help_elements",
@@ -897,7 +878,7 @@ def _draw_appearance_box(layout, props):
     box = _create_box_with_header(
         layout,
         props,
-        _("7. Appearance"),
+        _("6. Appearance"),
         icon="COLOR",
         help_key="TP3D_PT_help_appearance",
     )
@@ -970,21 +951,19 @@ class TP3D_PT_generate(bpy.types.Panel):
             # 2. Shape
             _draw_shape_box(layout, props)
 
-            # 3. Scale -- after Shape, not before: calculate_scale() needs
-            # objSize (Shape's own field) as an input for FACTOR mode
-            _draw_scale_box(layout, props)
-
-            # 4. Trail -- structural properties of the printed trail line
+            # 3. Trail -- path scale plus structural properties of the printed
+            # trail line. After Shape, not before: calculate_scale() needs
+            # objSize (Shape's own field) as an input.
             _draw_trail_box(layout, props)
 
-            # 5. Terrain -- the surrounding ground's height and smoothing.
+            # 4. Terrain -- the surrounding ground's height and smoothing.
             _draw_terrain_box(layout, props)
 
-            # 6. Map Elements -- what geographic data gets included.
+            # 5. Map Elements -- what geographic data gets included.
             _draw_element_box(layout, props)
 
             if props.elementChoice and temp.has3mf and props.elementMode == "PAINT":
-                # 7. Appearance -- how included elements render
+                # 6. Appearance -- how included elements render
                 _draw_appearance_box(layout, props)
         # --- Status ---
         if props.o_time != "":
