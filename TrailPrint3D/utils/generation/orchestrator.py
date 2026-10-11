@@ -208,19 +208,24 @@ def runGeneration(type, locked_scale=None):
         _rg_apply_single_color_mode(gen)
 
         # --- Phase 16: Assign materials ---
-        overlay.update(0.95, "Finalizing", "Assigning materials…")
+        # 0.97+: single color mode's own remesh steps span 0.95-0.97.
+        overlay.update(0.97, "Finalizing", "Assigning materials…")
         _rg_assign_materials(gen)
 
         # --- Phase 17: Rasterise OSM polygons into UV texture ---
-        if gen.texture.useTexture and gen.settings.elementChoice:
-            overlay.update(0.96, "Texture", "Rasterising OSM texture…")
+        # Not gated on elementChoice: with Map Elements off the texture still
+        # carries the terrain and, with "Trail in texture" on, the trail --
+        # _rg_export leaves the trail curve out in that case, so skipping
+        # this would drop the trail from the export entirely.
+        if gen.texture.useTexture:
+            overlay.update(0.98, "Texture", "Rasterising OSM texture…")
             _rg_apply_texture(gen)
             _lo = bpy.context.scene.tp3d.lowestZ
             _hi = bpy.context.scene.tp3d.highestZ
             overlay.add_completed_step(f"Terrain applied  —  z {_lo:.1f} to {_hi:.1f}")
 
         # --- Phase 18: Export ---
-        overlay.update(0.97, "Exporting", "Exporting files…")
+        overlay.update(0.99, "Exporting", "Exporting files…")
         _rg_export(gen)
 
         # Calculate script durations for prints and overlay updates
@@ -245,7 +250,8 @@ def runGeneration(type, locked_scale=None):
         overlay.add_completed_step(f"Done  —  {_m:02d}:{_s:02d} total")
     except ValidationError as e:
         print(f"Validation Failed: {e}")
-        _progress.WarningsOverlay.add_warning(_rpt("There was an error, see console for details."))
+        # Validation messages are user-facing and already translated.
+        _progress.WarningsOverlay.add_warning(str(e), icon="error")
 
     except GenerationError as e:
         print(f"Generation phase failed: {e}")

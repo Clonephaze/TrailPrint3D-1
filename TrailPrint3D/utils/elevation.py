@@ -127,6 +127,41 @@ def cache_elevation(lat, lon, elevation, api_type="opentopodata"):
     key = f"{lat:.5f}_{lon:.5f}_{api_type}"
     const._elevation_cache[key] = elevation
 
+class _SegmentProgress:
+    """Report per-segment fetch progress as progress_cb(pct, (done, total)).
+
+    A segment is one of the separate requests a fetch gets split into (a map
+    tile for Terrain Tiles/Mapterhorn, a point batch for OpenTopoData/
+    Open-Elevation). Calls are throttled so a fast run over already-cached
+    tiles doesn't rewrite the progress file hundreds of times; the final
+    segment always reports.
+    """
+
+    _MIN_INTERVAL = 0.2  # seconds
+
+    def __init__(self, progress_cb, total):
+        self.progress_cb = progress_cb
+        self.total = total
+        self._last = None
+
+    def __call__(self, done):
+        if not self.progress_cb or self.total <= 0:
+            return
+        now = time.monotonic()
+        if done < self.total and self._last is not None and now - self._last < self._MIN_INTERVAL:
+            return
+        self._last = now
+        self.progress_cb(int(done / self.total * 100), (done, self.total))
+
+
+def elevation_sub_label(base, segments=None):
+    """Sub-bar label for an elevation progress_cb call, with the segment
+    count appended when the fetch is split into more than one request."""
+    if segments and segments[1] > 1:
+        return f"{base} — segment {segments[0]}/{segments[1]}"
+    return base
+
+
 def get_elevation_openTopoData(coords, lenv = 0, pointsDone = 0, progress_cb=None):
     """Fetches real elevation for each vertex using OpenTopoData with request batching."""
 
@@ -166,8 +201,9 @@ def get_elevation_openTopoData(coords, lenv = 0, pointsDone = 0, progress_cb=Non
         return elevations
 
     batch_size = 100
-    progress_intervals = set(range(5, 101, 5))
     total_to_fetch = len(coords_to_fetch)
+    report = _SegmentProgress(progress_cb, math.ceil(total_to_fetch / batch_size))
+    report(0)
     for i in range(0, total_to_fetch, batch_size):
         batch = coords_to_fetch[i:i + batch_size]
         query = "|".join([f"{c[0]},{c[1]}" for c in batch])
@@ -177,11 +213,7 @@ def get_elevation_openTopoData(coords, lenv = 0, pointsDone = 0, progress_cb=Non
         nr = i + len(batch) + pointsDone
         addition = f" {nr}/{int(lenv)}"
         send_api_request(addition)
-        pct = int(min((i + len(batch)) / total_to_fetch * 100, 100))
-        for threshold in sorted(t for t in progress_intervals if pct >= t):
-            if progress_cb:
-                progress_cb(threshold)
-            progress_intervals.discard(threshold)
+        report(i // batch_size + 1)
         response.raise_for_status()
 
 
@@ -212,7 +244,8 @@ def get_elevation_openElevation(coords, lenv = 0, pointsDone = 0, progress_cb=No
     elevations = []
     batch_size = 1000
     total = len(coords)
-    progress_intervals = set(range(5, 101, 5))
+    report = _SegmentProgress(progress_cb, math.ceil(total / batch_size))
+    report(0)
     for i in range(0, total, batch_size):
         batch = coords[i:i + batch_size]
         # Open-Elevation expects a POST request with JSON body
@@ -224,15 +257,11 @@ def get_elevation_openElevation(coords, lenv = 0, pointsDone = 0, progress_cb=No
         nr = i + len(batch) + pointsDone
         addition = f" {nr}/{int(lenv)}"
         send_api_request(addition)
-        pct = int(min((i + len(batch)) / total * 100, 100))
-        for threshold in sorted(t for t in progress_intervals if pct >= t):
-            if progress_cb:
-                progress_cb(threshold)
-            progress_intervals.discard(threshold)
 
         response = requests.post(url, json=payload, headers=headers)
 
         response.raise_for_status()
+        report(i // batch_size + 1)
 
         data = response.json()
 
@@ -395,13 +424,13 @@ def get_elevation_TerrainTiles(bounds, coords, lenv=0, pointsDone=0, zoom=10, pr
     invalidElevations = 0
     progress_intervals = set(range(10,101,10))
     elevations = [0] * len(coords)
+    report = _SegmentProgress(progress_cb, total_tiles)
     for i, ((xtile, ytile), idx_lat_lon_list) in enumerate(tile_dict.items(), 1):
+        report(i - 1)
         percent_complete = int((i/ total_tiles) * 100)
         if percent_complete in progress_intervals:
             print(f"{datetime.now(tz=timezone.utc).strftime('%H:%M:%S')} - Elevation {percent_complete}% complete, {i}")
             progress_intervals.remove(percent_complete)
-            if progress_cb:
-                progress_cb(percent_complete)
         try:
             png_bytes = fetch_terrarium_tile_raw(zoom, xtile, ytile)
             rgb_array:list[list[tuple[int, int]]] = parse_png_rgb_data(png_bytes)
@@ -418,7 +447,7 @@ def get_elevation_TerrainTiles(bounds, coords, lenv=0, pointsDone=0, zoom=10, pr
             r, g, b = rgb_array[py][px]
             temp_ele = terrarium_pixel_to_elevation(r, g, b)
             elevations[idx] = temp_ele
-    
+    report(total_tiles)
 
     print(f"Finished fetching elevation data. Invalid elevations: {invalidElevations} ({(invalidElevations/len(coords))*100:.2f}%)")
     return elevations
@@ -506,14 +535,14 @@ def get_elevation_Mapterhorn(bounds, coords, lenv=0, pointsDone=0, zoom=10, prog
     invalidElevations = 0
     progress_intervals = set(range(10, 101, 10))
     elevations = [0] * len(coords)
+    report = _SegmentProgress(progress_cb, total_tiles)
 
     for i, ((xtile, ytile), idx_lat_lon_list) in enumerate(tile_dict.items(), 1):
+        report(i - 1)
         percent_complete = int((i / total_tiles) * 100)
         if percent_complete in progress_intervals:
             print(f"{datetime.now(tz=timezone.utc).strftime('%H:%M:%S')} - Mapterhorn elevation {percent_complete}% ({i}/{total_tiles})")
             progress_intervals.discard(percent_complete)
-            if progress_cb:
-                progress_cb(percent_complete)
 
         # Mapterhorn only has zoom 13+ tiles for select regions; fall back to zoom 12 (global) on 404.
         tile_path = None
@@ -560,6 +589,7 @@ def get_elevation_Mapterhorn(bounds, coords, lenv=0, pointsDone=0, zoom=10, prog
             py = min(max(py, 0), ts - 1)
             r, g, b = rgb_array[py][px]
             elevations[idx] = terrarium_pixel_to_elevation(r, g, b)
+    report(total_tiles)
 
     print(f"Mapterhorn: finished. Invalid elevations: {invalidElevations}")
     return elevations

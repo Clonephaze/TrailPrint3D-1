@@ -231,11 +231,20 @@ class ProgressOverlay:
         SubprocessProgress.get().start()
         _force_redraw()
 
-    def set_fetch_items(self, items):
-        """Register the list of fetch items (call once before fetching begins)."""
+    def set_fetch_items(self, items, keep_done=()):
+        """Register the list of fetch items (call once before fetching begins).
+
+        keep_done: keys whose 'done' status from the previous list carries
+        over instead of resetting to pending -- e.g. elevation the map
+        generator already fetched itself before handing off to
+        runTileGeneration, which re-registers the list.
+        """
+        done = {it['key'] for it in self.fetch_items
+                if it['key'] in keep_done and it['status'] == 'done'}
         self.fetch_items = [
             {'key': it['key'], 'icon': it['icon'], 'label': it['label'],
-             'status': 'pending', 'percent': 0.0}
+             'status': 'done' if it['key'] in done else 'pending',
+             'percent': 1.0 if it['key'] in done else 0.0}
             for it in items
         ]
         self._sync_subprocess()
@@ -249,6 +258,10 @@ class ProgressOverlay:
                 item['percent'] = max(0.0, min(1.0, percent))
                 break
         self._sync_subprocess()
+
+    def is_fetch_done(self, key):
+        """True if the fetch item `key` is registered and marked done."""
+        return any(it['key'] == key and it['status'] == 'done' for it in self.fetch_items)
 
     def set_fetch_ready(self, key):
         """Mark an item as downloaded but awaiting mesh processing (↓)."""

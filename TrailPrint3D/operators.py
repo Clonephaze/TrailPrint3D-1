@@ -3089,7 +3089,6 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         bpy.context.view_layer.objects.active = blank
         bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
         overlay.update(0.06, "Fetching Elevation", "Querying elevation API…")
-        overlay.set_fetch_progress("elevation", 0.0)
 
         # This fetch (not createTerrainFromSelected's later one) is where the
         # real API querying happens -- it runs at full target resolution, not
@@ -3100,14 +3099,14 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # count, not object identity) and returns instantly without ever calling
         # its own progress_cb -- so without this, all the real wait time sat behind
         # a static "Analyzing terrain…" message instead of moving progress.
-        def _puzzle_elev_progress(pct):
+        def _puzzle_elev_progress(pct, segments=None):
             t = pct / 100.0
             overlay.update(
                 0.06 + t * (0.20 - 0.06),
                 "Fetching Elevation",
                 f"{pct}% complete…",
                 sub_percent=t,
-                sub_label="Elevation tiles",
+                sub_label=utils.elevation_sub_label("Elevation tiles", segments),
             )
             overlay.set_fetch_progress("elevation", t)
 
@@ -3117,10 +3116,15 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         gen = utils._rg_validate_inputs(frozenset(), gen_type=0)
         gen.runtime.mapObject = blank
         utils.compute_and_store_tile_bounds(gen)
+        # set_fetch_progress is a no-op for an unregistered key -- the fetch
+        # strip has to exist before this (the real) elevation download.
+        overlay.set_fetch_items(utils.build_fetch_items(round(gen.runtime.mapKm or 0, 1)))
+        overlay.set_fetch_progress("elevation", 0.0)
         preview_elevations, preview_diff = utils.get_tile_elevation(
             gen, progress_cb=_puzzle_elev_progress
         )
         overlay.sub_percent = None
+        overlay.set_fetch_done("elevation", success=True)
 
         if props.elevationMode == "FIXED":
             auto_scale = (
@@ -3160,7 +3164,12 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # any shortfall the recess check would catch is just float-precision
         # noise between this step's lowest_z and createTerrainFromSelected's
         # own re-derived one, not a real need to dig into the bottom.
-        utils.runTileGeneration(manage_overlay=False, skip_bottom_recess=True)
+        utils.runTileGeneration(
+            manage_overlay=False,
+            skip_bottom_recess=True,
+            progress_start=0.23,
+            progress_end=0.6,
+        )
 
         # roads_obj was used as a boolean cutter during generation; delete it
         # now — per-piece road geometry is rebuilt from the polygon cache below.
@@ -3663,7 +3672,9 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             # Keeps the sidebar's own Shape field in sync with what this tile
             # actually is, same as the SVG branch below does.
             props.shape = "GEOJSON"
-            props.customFilePath = geojson_paths[0]
+            # geojson_path, not customFilePath (that's the SVG shape's file)
+            # -- Shape=GEOJSON reads geojson_path on the next sidebar Generate.
+            props.geojson_path = geojson_paths[0]
             self._apply_shape_extra(props, data)
         else:
             shape_name = data.get("type", "rectangle")
@@ -3794,16 +3805,15 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             bpy.context.view_layer.objects.active = blank
             bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
             overlay.update(0.06, "Fetching Elevation", "Querying elevation API…")
-            overlay.set_fetch_progress("elevation", 0.0)
 
-            def _elev_progress(pct):
+            def _elev_progress(pct, segments=None):
                 t = pct / 100.0
                 overlay.update(
                     0.06 + t * (0.30 - 0.06),
                     "Fetching Elevation",
                     f"{pct}% complete…",
                     sub_percent=t,
-                    sub_label="Elevation tiles",
+                    sub_label=utils.elevation_sub_label("Elevation tiles", segments),
                 )
                 overlay.set_fetch_progress("elevation", t)
 
@@ -3813,10 +3823,16 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             gen = utils._rg_validate_inputs(frozenset(), gen_type=0)
             gen.runtime.mapObject = blank
             utils.compute_and_store_tile_bounds(gen)
+            # This is the real elevation download (runTileGeneration's later
+            # fetch is a cache hit), so the fetch strip has to exist now --
+            # set_fetch_progress is a no-op for an unregistered key.
+            overlay.set_fetch_items(utils.build_fetch_items(round(gen.runtime.mapKm or 0, 1)))
+            overlay.set_fetch_progress("elevation", 0.0)
             preview_elevations, preview_diff = utils.get_tile_elevation(
                 gen, progress_cb=_elev_progress
             )
             overlay.sub_percent = None
+            overlay.set_fetch_done("elevation", success=True)
 
             if props.elevationMode == "FIXED":
                 auto_scale = (
@@ -3864,13 +3880,16 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # boundary, internally by build_tile_from_polygon), not an older
         # neighbor's -- there's no seam to protect.
         tile_gen = utils.runTileGeneration(
-            manage_overlay=False, skip_bottom_recess=True
+            manage_overlay=False,
+            skip_bottom_recess=True,
+            progress_start=0.33,
+            progress_end=0.92,
         )
 
         if gpx_paths:
             from .utils.osm import gen as _osm_gen
 
-            trails = _generate_trails(context, gpx_paths, overlay, 0.95, 0.99)
+            trails = _generate_trails(context, gpx_paths, overlay, 0.92, 0.96)
             for trail_obj in trails:
                 if _osm_gen.is_bbox_overlapping(trail_obj, blank):
                     utils.merge_active_with_map(blank, trail_obj)
@@ -3915,7 +3934,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             south, north = bounds["south"], bounds["north"]
             west, east = bounds["west"], bounds["east"]
 
-            overlay.update(0.02, "Creating base tile…", "Building terrain…")
+            overlay.update(0.97, "Cutting shape…", "Trimming map to its rotated outline…")
             # sScaleHor must be set BEFORE the convert_to_blender_coordinates
             # calls below, since that function reads it -- derive the scale from
             # the unscaled convert_to_neutral_coordinates extent first, then set
@@ -3961,7 +3980,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # final outline (see _rtg_add_shape_extras for why this can't run
         # inside runTileGeneration the way runGeneration does it).
         if tile_gen is not None:
-            overlay.update(0.99, "Shape Overlays", "Adding text and plate elements…")
+            overlay.update(0.98, "Shape Overlays", "Adding text and plate elements…")
             riders = [
                 o for o in bpy.data.objects if o not in objs_before and o is not blank
             ]

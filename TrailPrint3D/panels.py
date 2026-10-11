@@ -893,8 +893,12 @@ def _draw_appearance_box(layout, props):
         "tex_include_trail",
     )
     road_tex_row = box.row()
+    # Roads only exist with Map Elements on.
     road_tex_row.enabled = (
-        not _elem_scm and not props.singleColorMode and props.tex_use_texture
+        not _elem_scm
+        and not props.singleColorMode
+        and props.tex_use_texture
+        and props.elementChoice
     )
     road_tex_row.prop(
         props,
@@ -962,8 +966,9 @@ class TP3D_PT_generate(bpy.types.Panel):
             # 5. Map Elements -- what geographic data gets included.
             _draw_element_box(layout, props)
 
-            if props.elementChoice and temp.has3mf and props.elementMode == "PAINT":
-                # 6. Appearance -- how included elements render
+            if temp.has3mf and props.elementMode == "PAINT":
+                # 6. Appearance -- how included elements render. Shown even
+                # with Map Elements off: "Trail in texture" still applies.
                 _draw_appearance_box(layout, props)
         # --- Status ---
         if props.o_time != "":

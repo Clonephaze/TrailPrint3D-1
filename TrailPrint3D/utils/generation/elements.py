@@ -674,8 +674,13 @@ def _rg_build_terrain_elements(
     return terrain
 
 
-def _rg_apply_single_color_mode(gen: GenerationContext):
+def _rg_apply_single_color_mode(
+    gen: GenerationContext, phase_start=0.95, phase_end=0.97
+):
     """Apply all final boolean cuts: single‑color mode, roads, trails, and road finalisation.
+
+    phase_start/phase_end: overlay progress range the per-element remesh
+    steps spread across (the tile-based flow passes its own per-tile slice).
 
     This orchestrates the following steps:
       1. Process curve objects for single‑color remesh (thicker curves and trail ribbons).
@@ -1019,7 +1024,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
                 _ov = _progress.ProgressOverlay.get()
                 if _ov.active:
                     _ov.update(
-                        percent=0.95 + 0.02 * (_scm_done / _n_scm),
+                        percent=phase_start + (phase_end - phase_start) * (_scm_done / _n_scm),
                         message=f"Single-color: remeshing {key.capitalize()} ({_scm_done + 1}/{_n_scm})…",
                     )
 
@@ -1048,7 +1053,7 @@ def _rg_apply_single_color_mode(gen: GenerationContext):
 
                 if _ov.active:
                     _ov.update(
-                        percent=0.95 + 0.02 * ((_scm_done + 0.5) / _n_scm),
+                        percent=phase_start + (phase_end - phase_start) * ((_scm_done + 0.5) / _n_scm),
                         message=f"Single-color: subtracting from {key.capitalize()}…",
                     )
 

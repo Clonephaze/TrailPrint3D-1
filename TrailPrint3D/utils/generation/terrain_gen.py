@@ -423,12 +423,12 @@ def _rg_create_satellite_plane(gen: GenerationContext):
 
 def _rg_fetch_elevation(gen: GenerationContext):
     from ...progress import ProgressOverlay, WarningsOverlay
-    from ..elevation import get_tile_elevation
+    from ..elevation import elevation_sub_label, get_tile_elevation
 
     overlay = ProgressOverlay.get()
     warning = WarningsOverlay.get()
 
-    def _elevation_progress(pct):
+    def _elevation_progress(pct, segments=None):
         t = pct / 100.0
         overlay.set_fetch_progress("elevation", t)
         overlay.update(
@@ -436,7 +436,7 @@ def _rg_fetch_elevation(gen: GenerationContext):
             "Fetching Elevation Data",
             "Querying elevation API…",
             sub_percent=t,
-            sub_label="Tiles processed",
+            sub_label=elevation_sub_label("Tiles processed", segments),
         )
 
     print(

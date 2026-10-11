@@ -384,6 +384,8 @@ def _rtg_process_tile(
     overlay,
     map_km: float,
     prefetched_osm=None,
+    progress_start=0.0,
+    progress_end=1.0,
 ):
     """Run one tile through the same back-half phases runGeneration itself uses.
 
@@ -401,18 +403,31 @@ def _rtg_process_tile(
     prefetched_osm docstring for why that matters for an OSM element bigger
     than one physical tile.
 
+    progress_start/progress_end: the overlay range the whole batch spans
+    (see runTileGeneration); this tile gets its own equal slice of it.
+
     Raises GenerationError on failure -- caught by the caller's per-tile loop.
     Returns (lowestZ, highestZ, additionalExtrusion).
     """
+    from ..elevation import (
+        elevation_sub_label,  # deferred to avoid circular import at load time
+    )
     from ..mesh_ops import (
         recalculateNormals,  # deferred to avoid circular import at load time
     )
 
     tile_label = f"Tile {tile_idx + 1}/{n_tiles}"
-    base_pct = tile_idx / n_tiles
-    step = 1.0 / n_tiles
+    step = (progress_end - progress_start) / n_tiles
+    base_pct = progress_start + tile_idx * step
 
-    overlay.set_fetch_items(build_fetch_items(map_km))
+    # The first tile keeps an elevation fetch the caller already finished
+    # itself (map generator / puzzle configurator fetch the full tile up front
+    # to size the base) -- this tile's own fetch below is then just a cache
+    # hit, so the row shouldn't drop back to "fetching" for it.
+    overlay.set_fetch_items(
+        build_fetch_items(map_km), keep_done=("elevation",) if tile_idx == 0 else ()
+    )
+    elev_prefetched = overlay.is_fetch_done("elevation")
 
     # --- Phase 1: Apply terrain elevation + extrude bottom face ---
     overlay.update(
@@ -420,18 +435,20 @@ def _rtg_process_tile(
         "Fetching Elevation",
         f"{tile_label} — querying elevation API…",
     )
-    overlay.set_fetch_progress("elevation", 0.0)
+    if not elev_prefetched:
+        overlay.set_fetch_progress("elevation", 0.0)
 
-    def _elev_progress(pct):
+    def _elev_progress(pct, segments=None):
         t = pct / 100.0
         overlay.update(
             base_pct + step * t * 0.50,
             "Fetching Elevation",
             f"{tile_label} — {pct}% complete…",
             sub_percent=t,
-            sub_label="Elevation tiles",
+            sub_label=elevation_sub_label("Elevation tiles", segments),
         )
-        overlay.set_fetch_progress("elevation", t)
+        if not elev_prefetched:
+            overlay.set_fetch_progress("elevation", t)
 
     lowestZ, highestZ, additionalExtrusion, n_elev_pts = _rtg_apply_elevation(
         gen,
@@ -484,7 +501,7 @@ def _rtg_process_tile(
 
     # --- Phase 4: Terrain overlay elements (water, forest, city, glacier, buildings, roads) ---
     _elem_start = base_pct + step * 0.70
-    _elem_end = base_pct + step * 0.93
+    _elem_end = base_pct + step * 0.85
     overlay.update(
         _elem_start, "Terrain Elements", f"{tile_label} — building overlay layers…"
     )
@@ -512,11 +529,13 @@ def _rtg_process_tile(
         "Coloring",
         f"{tile_label} — applying single extruder mode…",
     )
-    _rg_apply_single_color_mode(gen)
+    _rg_apply_single_color_mode(
+        gen, phase_start=base_pct + step * 0.85, phase_end=base_pct + step * 0.92
+    )
 
     # --- Phase 6: Assign materials ---
     overlay.update(
-        base_pct + step * 0.90, "Finalizing", f"{tile_label} — assigning materials…"
+        base_pct + step * 0.92, "Finalizing", f"{tile_label} — assigning materials…"
     )
     _rg_assign_materials(gen)
 
@@ -525,7 +544,7 @@ def _rtg_process_tile(
     # (elements.py) and discarded the road mesh; this just bakes it.
     if gen.texture.useTexture:
         overlay.update(
-            base_pct + step * 0.93,
+            base_pct + step * 0.95,
             "Texture",
             f"{tile_label} — rasterising OSM texture…",
         )
@@ -599,7 +618,13 @@ def _rtg_add_shape_extras(gen: GenerationContext, map_obj, riders=()):
     _rg_assign_extra_materials(gen)
 
 
-def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_osm=None):
+def runTileGeneration(
+    manage_overlay=True,
+    skip_bottom_recess=False,
+    prefetched_osm=None,
+    progress_start=0.0,
+    progress_end=1.0,
+):
     """Run the generation pipeline's back half on already-placed tile objects.
 
     An orchestrator in its own right, same as runGeneration -- the map
@@ -625,6 +650,11 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_
     premium/operators_pe.py's _apply_grid_segments) fetches each OSM kind
     once for the whole batch instead of once per physical tile. None (the
     default) preserves the original per-tile fetch for every other caller.
+
+    progress_start/progress_end: the slice of the overlay's 0-1 bar this
+    whole batch fills. A manage_overlay=False caller that already moved the
+    bar (e.g. its own up-front elevation fetch) passes the range left over
+    for it, so the bar doesn't jump back to 0 when tile generation starts.
 
     Does NOT export -- unlike runGeneration's own Phase 18, a single call
     here doesn't necessarily mean the caller's final deliverable is ready
@@ -664,7 +694,7 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_
 
         setupColors()
 
-        overlay.update(0.02, "Initializing", "Validating selection…")
+        overlay.update(progress_start, "Initializing", "Validating selection…")
 
         selected_objects = bpy.context.selected_objects
         if not selected_objects:
@@ -682,7 +712,8 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_
         additionalExtrusion = tp3d.sAdditionalExtrusion
 
         _map_km = round(bpy.context.scene.tp3d.get("sMapInKm", 0), 1)
-        overlay.set_fetch_items(build_fetch_items(_map_km))
+        # keep_done: see _rtg_process_tile's own set_fetch_items call.
+        overlay.set_fetch_items(build_fetch_items(_map_km), keep_done=("elevation",))
 
         _mp_valid, _mp_tiles_info, _mp_tile_size = _rtg_build_tile_preview(
             selected_objects
@@ -731,6 +762,8 @@ def runTileGeneration(manage_overlay=True, skip_bottom_recess=False, prefetched_
                     overlay,
                     _map_km,
                     prefetched_osm=prefetched_osm,
+                    progress_start=progress_start,
+                    progress_end=progress_end,
                 )
             except GenerationError as e:
                 print(f"{tile_label} — generation phase failed: {e}")

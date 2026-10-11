@@ -138,6 +138,20 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         file_extension = os.path.splitext(gpx_file_path)[1].lower()
         if file_extension != ".gpx" and file_extension != ".igc":
             raise ValidationError(_("Invalid file format. Please Use a .GPX or .IGC file"))
+    # Custom-outline shapes read their own file in _rg_create_map_object.
+    # Only runGeneration builds the map from the shape (it always passes
+    # flags); the tile flow (_rtg_build_gen, flags empty) works on tiles the
+    # pickers already built and never reads this file.
+    shape_file_path = {"GEOJSON": geojsonFilePath, "SVG": customFilePath}.get(shape)
+    if flags and shape_file_path is not None:
+        if not shape_file_path or not os.path.isfile(shape_file_path):
+            if shape == "GEOJSON":
+                raise ValidationError(
+                    _("GeoJSON is selected as the shape, but no GeoJSON file is chosen. Pick one in the Shape section.")
+                )
+            raise ValidationError(
+                _("SVG is selected as the shape, but no SVG file is chosen. Pick one in the Shape section.")
+            )
     if "gpx_chain" in flags:
         if not gpx_chain_path or gpx_chain_path == "":
             raise ValidationError(_("CHAIN path is empty! Please select a valid folder."))
