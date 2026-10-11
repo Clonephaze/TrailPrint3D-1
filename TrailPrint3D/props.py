@@ -295,14 +295,16 @@ def element_source_update(self, context):
         self.elementMode = "PAINT"
 
 
-# def get_effective_footprint_size(tp3d):
-#     """The actual outer footprint size (mm) of the generated model. Shapes
-#     with a plate (see PLATE_SHAPES) are larger than objSize by the outer
-#     border, so anything scaled to fit the map (e.g. an imported holder) needs
-#     this instead of the bare objSize."""
-#     if get_effective_shape(tp3d) in PLATE_SHAPES:
-#         return tp3d.objSize * (1 + tp3d.outerBorderSize / 100)
-#     return tp3d.objSize
+def get_effective_footprint_size(tp3d):
+    """The actual outer footprint size (mm) of the generated model. A Solid
+    Plate or Shell is larger than objSize (same growth create_generic_plate
+    applies), so anything scaled to fit the map (e.g. an imported holder)
+    needs this instead of the bare objSize."""
+    if tp3d.plateMode == "SOLID_PLATE":
+        return tp3d.objSize * (1 + tp3d.outerBorderSize / 100)
+    if tp3d.plateMode == "SHELL":
+        return tp3d.objSize + 2 * (tp3d.tolerance + tp3d.shellWallThickness)
+    return tp3d.objSize
 
 
 def estimate_map_km(tp3d):
