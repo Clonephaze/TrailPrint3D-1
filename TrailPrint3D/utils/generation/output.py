@@ -6,7 +6,7 @@ from bpy.app.translations import pgettext_iface as _
 from bpy.app.translations import pgettext_rpt as _rpt
 from bpy.types import Object
 
-from ...progress import ProgressOverlay as _progress
+from ... import progress as _progress
 from ..dataclasses import GenerationContext
 
 

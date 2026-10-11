@@ -100,6 +100,13 @@ def convert_to_geo(x,y):
     latitude = math.degrees(2 * math.atan(math.exp((y) / (R * scaleHor) )) - math.pi / 2)
     return latitude, longitude
 
+def parallel_distance(lat, lon1, lon2):
+    """East-west distance in km along the parallel at *lat*. Unlike
+    haversine() it never wraps: a 360-degree span (e.g. -180..180) is a full
+    circumference, not 0, so a map's width can't collapse to nothing."""
+    return const.R * math.radians(abs(lon2 - lon1)) * math.cos(math.radians(lat))
+
+
 def haversine(lat1, lon1, lat2, lon2):
     """Calculates the great-circle distance between two points using the Haversine formula."""
 

@@ -497,14 +497,19 @@ def _fetch_tiled(
     ]
 
     def _fetch_one(t):
+        # A map unwrapped across the 180th meridian (io_geojson's
+        # _unwrap_antimeridian) has chunks past lon 180; the grid snap keeps
+        # 180 itself a chunk edge, so a chunk is either wholly past it
+        # (request it at lon-360) or wholly before it.
+        lon_shift = -360.0 if t["min_lon"] >= 180.0 else 0.0
         t["path"] = _get_cached_crop(
             prefix,
             collection,
             asset,
             t["min_lat"],
             t["max_lat"],
-            t["min_lon"],
-            t["max_lon"],
+            t["min_lon"] + lon_shift,
+            t["max_lon"] + lon_shift,
             disable_cache,
             max_cache_age_hours,
             t["width"],

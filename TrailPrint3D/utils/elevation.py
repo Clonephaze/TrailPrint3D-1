@@ -366,10 +366,10 @@ def get_elevation_TerrainTiles(bounds, coords, lenv=0, pointsDone=0, zoom=10, pr
     num_subdivisions = bpy.context.scene.tp3d.num_subdivisions
     minLat, maxLat, minLon, maxLon = bounds
 
-    from .geo import haversine  # deferred to avoid circular import at load time
+    from .geo import parallel_distance  # deferred to avoid circular import at load time
 
-    realdist1 = haversine(minLat,minLon,minLat,maxLon)*1000
-    realdist2 = haversine(maxLat,minLon,maxLat,maxLon)*1000
+    realdist1 = parallel_distance(minLat, minLon, maxLon) * 1000
+    realdist2 = parallel_distance(maxLat, minLon, maxLon) * 1000
     #calculating zoom
     zoom = 10
     horVerts = 1 + 2**(num_subdivisions+1)
@@ -479,10 +479,10 @@ def get_elevation_Mapterhorn(bounds, coords, lenv=0, pointsDone=0, zoom=10, prog
     num_subdivisions = bpy.context.scene.tp3d.num_subdivisions
     minLat, maxLat, minLon, maxLon = bounds
 
-    from .geo import haversine
+    from .geo import parallel_distance
 
-    realdist1 = haversine(minLat, minLon, minLat, maxLon) * 1000
-    realdist2 = haversine(maxLat, minLon, maxLat, maxLon) * 1000
+    realdist1 = parallel_distance(minLat, minLon, maxLon) * 1000
+    realdist2 = parallel_distance(maxLat, minLon, maxLon) * 1000
 
     zoom = 10
     horVerts = 1 + 2 ** (num_subdivisions + 1)
@@ -971,6 +971,10 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
         chunk = world_verts[i:i + chunk_size]
 
         coords = [convert_to_geo(v.x, v.y) for v in chunk]
+        # A map unwrapped across the 180th meridian (io_geojson's
+        # _unwrap_antimeridian) has vertices past lon 180 -- wrap them back
+        # into -180..180 for the APIs/tile grids.
+        coords = [(lat, (lon + 180.0) % 360.0 - 180.0) for lat, lon in coords]
         if api == "OPENTOPODATA":
             chunk_elevations = get_elevation_openTopoData(coords, len(world_verts), i, progress_cb=progress_cb)
         elif api == "OPEN-ELEVATION":

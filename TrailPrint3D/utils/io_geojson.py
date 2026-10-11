@@ -90,6 +90,36 @@ def _extract_polygons_from_geojson(data):
     return polygons
 
 
+def _unwrap_antimeridian(polygons):
+    """Shift western-hemisphere parts by +360 degrees when the boundary
+    crosses the 180th meridian (Russia's Chukotka, Fiji, the Aleutians...).
+
+    GeoJSON splits such shapes at +/-180, so their raw bounding box spans
+    nearly the whole globe -- the map gets scaled to ~360 degrees of width
+    with the split-off parts on the opposite edge. Moving every part that
+    lies entirely west of Greenwich (maxx <= 0) to lon+360 makes the shape
+    contiguous again; it's only kept if it actually narrows the span, so a
+    genuinely world-wide boundary is left alone. Longitudes past 180 are fine
+    downstream: the Mercator projection is linear in lon, and
+    get_tile_elevation() wraps them back into -180..180 before fetching.
+    """
+    from shapely.affinity import translate as _shp_translate
+
+    min_x = min(p.bounds[0] for p in polygons)
+    max_x = max(p.bounds[2] for p in polygons)
+    if max_x - min_x <= 180:
+        return polygons
+
+    shifted = [
+        _shp_translate(p, xoff=360) if p.bounds[2] <= 0 else p for p in polygons
+    ]
+    new_min = min(p.bounds[0] for p in shifted)
+    new_max = max(p.bounds[2] for p in shifted)
+    if new_max - new_min < max_x - min_x:
+        return shifted
+    return polygons
+
+
 def _finalize_polygons(polygons, source_desc="file"):
     """Union, validate, and normalize a flat list of raw polygon parts into
     the canonical Polygon/MultiPolygon shape every function in this module
@@ -104,6 +134,7 @@ def _finalize_polygons(polygons, source_desc="file"):
             % source_desc
         )
 
+    polygons = _unwrap_antimeridian(polygons)
     merged = g2d.union(polygons) if len(polygons) > 1 else polygons[0]
     merged = g2d.validate(merged)
 
