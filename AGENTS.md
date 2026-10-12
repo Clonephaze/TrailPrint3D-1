@@ -34,6 +34,7 @@ TrailPrint3D/                 - Blender addon package (installed as a Blender ex
     map_generator.html          - free Map Generator
     puzzleGenerator.html        - free Puzzle Configurator
     medalHolderGenerator.html   - Medal Holder Generator (3D-preview page)
+    backplateGenerator.html     - Backplate Generator (3D-preview page, Shape Extras solid plate)
   assets/                      - .blend asset libraries (connectors, holder, other) + progress-overlay SVG icons
   sample_files/                - bundled sample files, e.g. GPX tracks (for tutorials and example generations)
     BetweenLakes.gpx            - Lake Como to Lake Ceresio route (komoot export)
@@ -44,6 +45,7 @@ TrailPrint3D/                 - Blender addon package (installed as a Blender ex
     __init__.py                - re-exports from submodules (wildcards OK here, see §10)
     accessories/
       medal_holder.py           - Medal Holder mesh builder (backs generators/medalHolderGenerator.html)
+      backplate.py              - Backplate builder via the Shape Extras code (backs generators/backplateGenerator.html)
     elevation.py                - elevation API helpers
     generation.py                - runGeneration() orchestration
     geo.py                       - coordinate math

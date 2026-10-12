@@ -433,28 +433,71 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
 /* Import GeoJSON / Import SVG Shape while that import is the selected shape
    -- same blue as .shape-btn.active. */
 .import-shape-active { background: var(--accent) !important; box-shadow: 0 0 0 2px var(--accent); }
-#shapeExtrasSection select, #shapeExtrasSection input[type=text] {
+/* The sidebar holds just the "Backplate" button; the settings live in the
+   #backplateModal popup (.shape-extras-ui): plate left, top view middle,
+   text right. */
+.backplate-open-btn { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 12px; text-align: left; }
+.backplate-btn-summary { font-size: 11px; font-weight: normal; color: var(--text-muted); }
+.backplate-open-btn.backplate-on .backplate-btn-summary { color: var(--accent); }
+.backplate-modal .backplate-box { width: min(1100px, 96vw); max-width: none; height: min(680px, 92vh); max-height: none;
+    display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+.backplate-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 17rem minmax(0, 1fr) 19rem; gap: 14px; }
+.backplate-col { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+.backplate-preview { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 6px;
+    background: var(--surface-base); border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
+#backplateSvg { flex: 3 1 0; min-height: 0; width: 100%; font-family: inherit; }
+#backplateSideSvg { flex: 1.4 1 0; min-height: 0; width: 100%; font-family: inherit;
+    border-top: 1px solid var(--border); padding-top: 4px; }
+.bp-view-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.bp-view-label span { text-transform: none; font-weight: normal; letter-spacing: 0; }
+#backplateSideSvg .bp-hidden { fill: none; stroke: #c9c9c9; stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+#backplateSideSvg .bp-relief { fill: #f0f0f0; }
+#backplateSideSvg .bp-dim { stroke: #8a8a8a; stroke-width: 1; vector-effect: non-scaling-stroke; fill: none; }
+#backplateSideSvg .bp-dim-text { fill: #b5b5b5; dominant-baseline: central; }
+.backplate-caption { font-size: 12px; color: var(--text-secondary); text-align: center; font-variant-numeric: tabular-nums; }
+.backplate-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.backplate-footer .btn-send { margin-top: 0; padding: 8px 24px; }
+:is(#backplateSvg, #backplateSideSvg) .bp-plate { fill: #3a3a3a; stroke: #9a9a9a; stroke-width: 0.6; vector-effect: non-scaling-stroke; }
+:is(#backplateSvg, #backplateSideSvg) .bp-cavity { fill: #232323; stroke: #6f6f6f; stroke-width: 0.6; vector-effect: non-scaling-stroke; }
+:is(#backplateSvg, #backplateSideSvg) .bp-hole { fill: var(--surface-base); stroke: #9a9a9a; stroke-width: 0.6; vector-effect: non-scaling-stroke; }
+:is(#backplateSvg, #backplateSideSvg) .bp-map { fill: #3f5a48; stroke: #7fa58a; stroke-width: 0.8; vector-effect: non-scaling-stroke; }
+:is(#backplateSvg, #backplateSideSvg) .bp-map-inset { stroke-dasharray: 5 3; }
+:is(#backplateSvg, #backplateSideSvg) .bp-map-label { fill: #a9c7b2; text-anchor: middle; dominant-baseline: central; opacity: 0.7; }
+:is(#backplateSvg, #backplateSideSvg) .bp-text { fill: #f0f0f0; text-anchor: middle; dominant-baseline: central; font-weight: 600;
+    font-family: var(--bp-font, inherit); }
+/* The real font (shape_extras.js's tp3dPreviewFontFamily) as-is -- no faux bold. */
+:is(#backplateSvg, #backplateSideSvg).bp-real-font .bp-text { font-weight: normal; }
+:is(#backplateSvg, #backplateSideSvg) .bp-text-inset { fill: #b8b8b8; }
+:is(#backplateSvg, #backplateSideSvg) .bp-text-side { fill: #d0d0d0; font-style: italic; }
+:is(#backplateSvg, #backplateSideSvg) .bp-text-empty { fill: #7d7d7d; font-weight: normal; font-style: italic; }
+:is(#backplateSvg, #backplateSideSvg) .bp-icon { fill: #f0f0f0; fill-rule: evenodd; }
+:is(#backplateSvg, #backplateSideSvg) .bp-icon.bp-text-inset { fill: #b8b8b8; }
+@media (max-width: 60rem) {
+    .backplate-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(12rem, 1fr) auto; overflow-y: auto; }
+    .backplate-preview { grid-column: 1 / -1; grid-row: 1; }
+}
+.shape-extras-ui select, .shape-extras-ui input[type=text] {
     background: var(--surface-field); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px;
     font-size: 12px; font-family: inherit; min-width: 0; }
 .shape-extra-switch { display: flex; width: 100%; gap: 4px; }
 .shape-extra-switch .element-mode-btn { flex: 1 1 0; min-width: 0; padding: 5px 3px; font-size: 10px;
     white-space: normal; line-height: 1.15; }
 .shape-extra-switch.shape-extra-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-#shapeExtrasSection .shape-extra-settings { display: flex; flex-direction: column; gap: 6px; }
-#shapeExtrasSection .field-row { display: flex; align-items: center; justify-content: space-between; gap: 6px;
+.shape-extras-ui .shape-extra-settings { display: flex; flex-direction: column; gap: 6px; }
+.shape-extras-ui .field-row { display: flex; align-items: center; justify-content: space-between; gap: 6px;
     min-width: 0; font-size: 11px; color: var(--text-secondary); }
-#shapeExtrasSection .field-row input[type=number] { width: 70px; flex-shrink: 0; }
-#shapeExtrasSection .field-row input[type=text] { flex: 1; }
-#shapeExtrasSection .se-font-select { flex: 1; min-width: 0; }
-#shapeExtrasSection .se-section-label { font-size: 12px; font-weight: bold; color: var(--text-secondary); margin-top: 2px; }
-#shapeExtrasSection .se-hint { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
-#shapeExtrasSection .se-text-row { display: flex; gap: 6px; min-width: 0; }
-#shapeExtrasSection .se-text-row select, #shapeExtrasSection .se-icon-locked { width: 40%; flex-shrink: 0; }
-#shapeExtrasSection .se-text-row input[type=text] { flex: 1; min-width: 0; }
-#shapeExtrasSection .se-icon-locked { background: var(--surface-field); color: #666; border: 1px solid var(--surface-raised); border-radius: 4px;
+.shape-extras-ui .field-row input[type=number] { width: 70px; flex-shrink: 0; }
+.shape-extras-ui .field-row input[type=text] { flex: 1; }
+.shape-extras-ui .se-font-select { flex: 1; min-width: 0; }
+.shape-extras-ui .se-section-label { font-size: 12px; font-weight: bold; color: var(--text-secondary); margin-top: 2px; }
+.shape-extras-ui .se-hint, .backplate-footer .se-hint { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+.shape-extras-ui .se-text-row { display: flex; gap: 6px; min-width: 0; }
+.shape-extras-ui .se-text-row select, .shape-extras-ui .se-icon-locked { width: 40%; flex-shrink: 0; }
+.shape-extras-ui .se-text-row input[type=text] { flex: 1; min-width: 0; }
+.shape-extras-ui .se-icon-locked { background: var(--surface-field); color: #666; border: 1px solid var(--surface-raised); border-radius: 4px;
     font-size: 11px; cursor: not-allowed; }
-#shapeExtrasSection .se-handle-switch { display: flex; gap: 4px; width: 100%; }
-#shapeExtrasSection .se-handle-switch .element-mode-btn { flex: 1 1 0; min-width: 0; }
+.shape-extras-ui .se-handle-switch { display: flex; gap: 4px; width: 100%; }
+.shape-extras-ui .se-handle-switch .element-mode-btn { flex: 1 1 0; min-width: 0; }
 
 /* "Prefetch Elements" (assets/prefetch_layer.js) -- map generator pages only. */
 #prefetchInfo { display: none; font-size: 11px; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }

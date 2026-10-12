@@ -349,7 +349,7 @@ function tp3dMapGenerateSteps(withGpx) {
     return (withGpx ? gpx : intro).concat(rest).filter(Boolean);
 }
 
-// ---- "Add Colors to the map" ----
+// ---- "Colorize your Map" ----
 
 // OSM vs ESA example pictures, hosted on trailprint3d.com rather than
 // bundled (keeps the addon small). An image that fails to load just
@@ -545,7 +545,7 @@ function tp3dMapTutorialColors() {
     ];
 }
 
-// ---- "Use GeoJSON and SVG shapes" ----
+// ---- "Use GeoJson or SVG as your Map Shape" ----
 
 function tp3dHasGeojson() {
     return typeof geojsonPaths !== 'undefined' && geojsonPaths.length > 0;
@@ -608,7 +608,7 @@ function tp3dMapTutorialShapes() {
     ];
 }
 
-// ---- "Prefetch elements" ----
+// ---- "Prefetch and edit Elements" ----
 
 // Munich's old town just south-east of Marienplatz, reaching over to the Isar
 // -- dense roads and buildings plus the river in a small area, so a prefetch
@@ -757,7 +757,7 @@ function tp3dMapTutorialPrefetch() {
         {
             target: '.element-source-switch-compact',
             placement: 'bottom',
-            title: 'Prefetch elements',
+            title: 'Prefetch and edit Elements',
             text: 'Prefetching shows the map elements on the map before you generate, ' +
                   'so you can pick which ones to keep.<br><br>' +
                   '<b>It only works with OSM selected.</b>'
@@ -855,14 +855,14 @@ tp3dTutorialMenu({
     tutorials: [
         {
             id: 'map-generate',
-            title: 'Generate Map without GPX file',
+            title: 'Map Generation Basics',
             description: 'Pick any place in the world and turn it into a 3D map.',
             prepare: tp3dResetMapGenerator,
             steps: tp3dMapTutorialNoGpx
         },
         {
             id: 'map-generate-gpx',
-            title: 'Generate Map with GPX file',
+            title: 'Adding a GPX Trail',
             description: 'Import a recorded route and print it on the terrain.',
             // Hexagon picked before the import, so the shape the import
             // places around the trail is already a hexagon.
@@ -875,21 +875,21 @@ tp3dTutorialMenu({
         },
         {
             id: 'map-colors',
-            title: 'Add Colors to the map',
+            title: 'Colorize your Map',
             description: 'Color water, roads and other elements for multi-color printing.',
             prepare: tp3dPrepareColorTutorial,
             steps: tp3dMapTutorialColors
         },
         {
             id: 'map-shapes',
-            title: 'Use GeoJSON and SVG shapes',
+            title: 'Use GeoJson or SVG as your Map Shape',
             description: 'Shape your map like a country border, or any outline from a file.',
             prepare: tp3dResetMapGenerator,
             steps: tp3dMapTutorialShapes
         },
         {
             id: 'map-prefetch',
-            title: 'Prefetch elements',
+            title: 'Prefetch and edit Elements',
             description: 'Preview roads, buildings and water on the map and leave single ones out.',
             prepare: function() {
                 var m = tp3dSettingsModal();

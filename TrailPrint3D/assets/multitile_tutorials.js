@@ -78,11 +78,111 @@ function tp3dMtDemoDrawArea() {
 // height that gives 3 rows -- nothing once the grid is already right.
 function tp3dMtDemoFixRows() {
     if (tp3dMtIs3x3()) return null;
+    // Resizing can't help with the wrong segments/shape (see tp3dMtRowHint).
+    if (currentShape !== 'hexagon' || tp3dMtSegmentsValue() !== TP3D_MT_SEGMENTS) return null;
     var r = tp3dMtDrawnBoxRect();
     if (!r) return null;
     var targetBottom = r.top + tp3dMtHexBoxHeight(r.width);
     if (Math.abs(targetBottom - r.bottom) < 4) return null;
     return [{ x: r.right, y: r.bottom }, { x: r.right, y: targetBottom }];
+}
+
+// Tile count buildHexGridSegments gives for the drawn area with its north
+// edge moved to *north* -- the page's own grid code, on a scratch copy of
+// coords/segments that are put back afterwards.
+function tp3dMtTilesForNorth(north) {
+    var savedCoords = coords, savedSegments = segments;
+    try {
+        coords = { north: north, south: savedCoords.south, east: savedCoords.east, west: savedCoords.west, type: savedCoords.type };
+        segments = [];
+        buildHexGridSegments();
+        return segments.length;
+    } finally {
+        coords = savedCoords;
+        segments = savedSegments;
+    }
+}
+
+// "Fix it for me" on the 3-rows step: keeps the width and the bottom edge,
+// and moves the top edge to the middle of the range of heights that give 9
+// tiles (that range is narrow -- about 0.9 to 1.05 times the width, which is
+// what makes dragging to it fiddly). Resized through the rectangle itself,
+// then its own 'edit' handler (bindLiveEdit) updates coords, grid and state.
+function tp3dMtFixRows() {
+    if (!tp3dMtHasDrawnArea() || typeof rectLayer === 'undefined' || !rectLayer) return;
+    // 9 tiles only exist for hexagons with 3 segments -- put those back
+    // first if they were changed after their own steps (through the page's
+    // own controls, so the grid redraws as if the user did it).
+    if (currentShape !== 'hexagon') document.querySelector('.shape-btn[data-shape="hexagon"]').click();
+    if (tp3dMtSegmentsValue() !== TP3D_MT_SEGMENTS) {
+        var slider = document.getElementById('subdivisionSlider');
+        slider.value = TP3D_MT_SEGMENTS;
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+        slider.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    var south = coords.south;
+    // Same height units as the page's grid: north/south span in degrees,
+    // scanned from very flat to very tall relative to the width.
+    var lonSpan = coords.east - coords.west;
+    var lo = null, hi = null;
+    for (var f = 0.2; f <= 3; f += 0.01) {
+        var north = south + lonSpan * f;
+        if (tp3dMtTilesForNorth(north) === 9) {
+            if (lo === null) lo = north;
+            hi = north;
+        } else if (lo !== null) {
+            break;
+        }
+    }
+    if (lo === null) return;
+    var target = (lo + hi) / 2;
+    rectLayer.setBounds(L.latLngBounds([south, coords.west], [target, coords.east]));
+    if (rectLayer.editing && rectLayer.editing.enabled()) {
+        // Moves leaflet-draw's corner handles to the new corners.
+        rectLayer.editing.disable();
+        rectLayer.editing.enable();
+    }
+    rectLayer.fire('edit');
+}
+
+// Live hint under the 3-rows step's text: how many tiles there are now and
+// which way to drag. Refreshed by the step's own timer.
+var tp3dMtRowHintTimer = null;
+function tp3dMtRowHint() {
+    var el = document.getElementById('tp3dMtRowHint');
+    if (!el) return;
+    var n = typeof segments !== 'undefined' ? segments.length : 0;
+    if (typeof currentShape !== 'undefined' && currentShape !== 'hexagon') {
+        el.innerHTML = 'The shape isn\'t <b>hexagon</b> anymore — click <b>Fix it for me</b> to switch it back.';
+    } else if (tp3dMtSegmentsValue() !== TP3D_MT_SEGMENTS) {
+        el.innerHTML = '<b>Segments</b> is set to <b>' + tp3dMtSegmentsValue() + '</b> now, so 3 x 3 can\'t come ' +
+            'out — click <b>Fix it for me</b> to set it back to 3.';
+    } else if (tp3dMtIs3x3()) {
+        el.innerHTML = '<b>9 tiles</b> — that\'s 3 x 3.';
+    } else {
+        el.innerHTML = 'Now: <b>' + n + ' tiles</b> — drag the corner <b>' +
+            (n < 9 ? 'down' : 'up') + '</b> (' + (n < 9 ? 'taller' : 'shorter') + ').';
+    }
+}
+
+// Slider steps only count once the mouse is let go: a waitUntil alone fires
+// the moment a drag passes the target value, moving on while the user is
+// still dragging it somewhere else.
+var tp3dMtPointerDown = false;
+document.addEventListener('pointerdown', function() { tp3dMtPointerDown = true; }, true);
+document.addEventListener('pointerup', function() { tp3dMtPointerDown = false; }, true);
+document.addEventListener('pointercancel', function() { tp3dMtPointerDown = false; }, true);
+
+function tp3dMtWaitForSlider(predicate) {
+    return tp3dTutorial.waitUntil(function() { return !tp3dMtPointerDown && predicate(); });
+}
+
+// A slider keeps keyboard focus after its step, and the tutorial's overlay
+// only blocks the mouse -- arrow keys would keep changing it. Dropped on
+// leaving a slider step.
+function tp3dMtBlurSlider() {
+    var el = document.activeElement;
+    if (el && el.type === 'range') el.blur();
 }
 
 // Demo for a slider step: drags the slider's thumb from its current value
@@ -218,9 +318,10 @@ function tp3dMultitileTutorialCreate() {
             text: '<b>Segments</b> is the number of tiles across your map.<br><br>' +
                   'Drag the slider to <b>3</b>.',
             demo: tp3dMtDemoSlider('subdivisionSlider', TP3D_MT_SEGMENTS),
-            waitFor: tp3dTutorial.waitUntil(function() { return tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS; }),
+            waitFor: tp3dMtWaitForSlider(function() { return tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS; }),
             waitText: 'Set Segments to 3',
-            skipIf: function() { return tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS; }
+            skipIf: function() { return tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS; },
+            onExit: tp3dMtBlurSlider
         },
         {
             target: function() { return document.getElementById('tileSpacing').parentElement; },
@@ -230,9 +331,10 @@ function tp3dMultitileTutorialCreate() {
                   'between, so everything still lines up when you mount the tiles with that gap.<br><br>' +
                   'Set it to <b>5 mm</b>.',
             demo: tp3dMtDemoSlider('tileSpacing', TP3D_MT_SPACING),
-            waitFor: tp3dTutorial.waitUntil(function() { return tp3dMtSpacingValue() === TP3D_MT_SPACING; }),
+            waitFor: tp3dMtWaitForSlider(function() { return tp3dMtSpacingValue() === TP3D_MT_SPACING; }),
             waitText: 'Set Tile Spacing to 5',
-            skipIf: function() { return tp3dMtSpacingValue() === TP3D_MT_SPACING; }
+            skipIf: function() { return tp3dMtSpacingValue() === TP3D_MT_SPACING; },
+            onExit: tp3dMtBlurSlider
         },
         {
             target: function() { return document.getElementById('objSizeInput').closest('.field-row'); },
@@ -245,14 +347,25 @@ function tp3dMultitileTutorialCreate() {
         {
             target: '#map',
             title: 'Get 3 rows of 3 hexagons',
-            text: 'Drag a corner of the orange box up or down until you see <b>3 rows of 3 hexagons</b>, ' +
-                  '9 tiles in total.<br><br>' +
-                  'Drag the handle in the middle to move the whole area.',
+            text: '<b>Segments</b> sets the <b>columns</b>: 3 across. The number of <b>rows</b> depends on how ' +
+                  '<b>tall</b> the orange box is.<br><br>' +
+                  'Drag its <b>bottom-right corner straight down or up</b> (keep the width the same) until you ' +
+                  'see <b>3 rows of 3 hexagons</b>, 9 tiles in total.<br><br>' +
+                  '<span id="tp3dMtRowHint"></span>',
             demo: tp3dMtDemoFixRows,
             waitFor: tp3dTutorial.waitUntil(tp3dMtIs3x3),
             waitText: 'Make it 3 x 3',
             skippable: true,
-            skipIf: tp3dMtIs3x3
+            skipIf: tp3dMtIs3x3,
+            buttons: [{ label: 'Fix it for me', onClick: tp3dMtFixRows }],
+            onEnter: function() {
+                tp3dMtBlurSlider();
+                tp3dMtRowHint();
+                tp3dMtRowHintTimer = setInterval(tp3dMtRowHint, 200);
+            },
+            onExit: function() {
+                clearInterval(tp3dMtRowHintTimer);
+            }
         },
         {
             target: '#totalSizeInfo',
@@ -298,13 +411,14 @@ function tp3dMultitileTutorialCreate() {
                   'but take longer to generate.<br><br>' +
                   'Set it to <b>6</b> so this example generates quickly.',
             demo: tp3dMtDemoSlider('resolutionSlider', TP3D_MT_RESOLUTION),
-            waitFor: tp3dTutorial.waitUntil(function() {
+            waitFor: tp3dMtWaitForSlider(function() {
                 return parseInt(document.getElementById('resolutionSlider').value) === TP3D_MT_RESOLUTION;
             }),
             waitText: 'Set Resolution to 6',
             skipIf: function() {
                 return parseInt(document.getElementById('resolutionSlider').value) === TP3D_MT_RESOLUTION;
-            }
+            },
+            onExit: tp3dMtBlurSlider
         },
         {
             // Whichever is visible: Select Export Folder stands in for Send until a folder is set (export_folder.js).

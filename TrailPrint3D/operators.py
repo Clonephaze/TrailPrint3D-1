@@ -2757,6 +2757,9 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
 
         from . import picker_server as mp
 
+        if not mp.is_active_server(self._server):  # another generator page took over
+            self._cleanup(context)
+            return {"CANCELLED"}
         for key in mp.drain_pending_toggles():
             utils.apply_element_toggle(context.scene.tp3d, key)
         for key, value in mp.drain_pending_settings():
@@ -3382,6 +3385,9 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
         from . import picker_server as mp
 
+        if not mp.is_active_server(self._server):  # another generator page took over
+            self._cleanup(context)
+            return {"CANCELLED"}
         for key in mp.drain_pending_toggles():
             utils.apply_element_toggle(context.scene.tp3d, key)
         for key, value in mp.drain_pending_settings():
@@ -4058,6 +4064,9 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
 
         from . import picker_server as mp
 
+        if not mp.is_active_server(self._server):  # another generator page took over
+            self._cleanup(context)
+            return {"CANCELLED"}
         # This page only sends the export-folder button's 'exportFolder'.
         for key, value in mp.drain_pending_settings():
             utils.apply_setting_update(context.scene.tp3d, key, value)
@@ -4175,6 +4184,161 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
         context.view_layer.objects.active = plate
         self.report(
             {"INFO"}, _rpt('Created medal holder "{name}"').format(name=plate.name)
+        )
+
+    def _cleanup(self, context):
+        wm = context.window_manager
+        if self._timer:
+            wm.event_timer_remove(self._timer)
+            self._timer = None
+        if self._server:
+            threading.Thread(target=self._server.shutdown, daemon=True).start()
+            self._server = None
+
+    def execute(self, context):
+        return {"FINISHED"}
+
+
+class TP3D_OT_backplate_generator(bpy.types.Operator):
+    bl_idname = "tp3d.backplate_generator"
+    bl_label = _("Backplate Generator")
+    bl_description = (
+        _tip("Open the backplate configurator — a Shape Extras solid plate with a map inset, text and dovetails, with a live 3D preview, then Send to Blender to create it")
+    )
+    bl_options = {"REGISTER", "UNDO"}
+
+    _timer = None
+    _result_path: str = ""
+    _server = None
+
+    def modal(self, context, event):
+        if event.type != "TIMER":
+            return {"PASS_THROUGH"}
+
+        from . import picker_server as mp
+
+        if not mp.is_active_server(self._server):  # another generator page took over
+            self._cleanup(context)
+            return {"CANCELLED"}
+        # This page only sends the export-folder button's 'exportFolder'.
+        for key, value in mp.drain_pending_settings():
+            utils.apply_setting_update(context.scene.tp3d, key, value)
+        request = mp.drain_latest_model_preview()
+        if request is not None:
+            self._build_preview(context, request)
+
+        rp = pathlib.Path(self._result_path)
+        if not (rp.exists() and rp.stat().st_size > 0):
+            return {"PASS_THROUGH"}
+
+        try:
+            data = json.loads(rp.read_text(encoding="utf-8"))
+            self._apply_result(context, data)
+        except Exception:  # noqa: BLE001 - Wide exception catch for backplate result application
+            import traceback
+
+            traceback.print_exc()
+            self.report({"ERROR"}, _rpt("There was an error, see console for details."))
+        finally:
+            try:
+                rp.unlink()
+            except OSError:
+                pass
+            self._cleanup(context)
+
+        return {"FINISHED"}
+
+    def _build_preview(self, context, request):
+        from . import picker_server as mp
+        from .utils.accessories import backplate
+
+        # 'seq': see TP3D_OT_medal_holder_generator._build_preview.
+        seq = request.get("seq")
+        job = mp.model_preview_job()
+        job.update(status="running", message="")
+        try:
+            params = backplate.sanitize_params(request, context.scene.tp3d.textFont)
+            backplate.write_preview_glb(params, str(mp.model_preview_path()))
+        except Exception as exc:  # noqa: BLE001 - surfaced to the page instead of killing the modal
+            import traceback
+
+            traceback.print_exc()
+            job.update(status="error", message=str(exc), seq=seq)
+            return
+        job.update(
+            status="done",
+            version=job.get("version", 0) + 1,
+            message="",
+            seq=seq,
+            **backplate.preview_info(params),
+        )
+
+    def invoke(self, context, event):
+        import tempfile
+
+        from . import picker_server as mp
+        from . import temp
+        from .utils.accessories import backplate
+
+        self._result_path = str(
+            pathlib.Path(tempfile.gettempdir()) / "trailprint_backplate.json"
+        )
+        rp = pathlib.Path(self._result_path)
+        if rp.exists():
+            rp.unlink()
+
+        html_path = (
+            pathlib.Path(__file__).parent / "generators" / "backplateGenerator.html"
+        )
+        tp3d = context.scene.tp3d
+        # The page starts from the scene's own Shape Extras settings (a
+        # restored page state overrides them).
+        settings_state = {
+            key: getattr(tp3d, key)
+            for key in (
+                "objSize", "plateThickness", "outerBorderSize", "plateInsertValue",
+                "plateBevel", "tolerance", "textSize", "textSizeTitle", "textFont",
+                "textPlacement", "handleStyle",
+            )
+        }
+        settings_state["shape"] = tp3d.shape if tp3d.shape in backplate.SHAPES else "HEXAGON"
+        if tp3d.textLayout in backplate.LAYOUTS and tp3d.textLayout != "NONE":
+            settings_state["textLayout"] = tp3d.textLayout
+        settings_state["premium"] = bool(temp.PREMIUMVERSION)
+        self._server = mp.start_picker(
+            self._result_path, html_path=html_path, settings_state=settings_state
+        )
+
+        wm = context.window_manager
+        # Same short timer as the medal holder -- it also drives the preview.
+        self._timer = wm.event_timer_add(0.1, window=context.window)
+        wm.modal_handler_add(self)
+        self.report(
+            {"INFO"},
+            _rpt("Backplate generator open — adjust the model then click Send to Blender"),
+        )
+        return {"RUNNING_MODAL"}
+
+    def _apply_result(self, context, data):
+        from .utils.accessories import backplate
+
+        params = backplate.sanitize_params(data, context.scene.tp3d.textFont)
+        name = str(data.get("name") or "").strip()[:60] or "Backplate"
+        cursor = context.scene.cursor.location.copy()
+        plate, text = backplate.build_objects(params, name=name)
+        objs = [plate] + ([text] if text is not None else [])
+        backplate.place_at(objs, cursor)
+
+        for obj in context.selected_objects:
+            obj.select_set(False)
+        for obj in objs:
+            # "Object type" stays what the Shape Extras builders set (PLATE/TEXT).
+            obj["Addon"] = const.ADDON_NAME
+            obj["Version"] = const.ADDON_VERSION
+            obj.select_set(True)
+        context.view_layer.objects.active = plate
+        self.report(
+            {"INFO"}, _rpt('Created backplate "{name}"').format(name=plate.name)
         )
 
     def _cleanup(self, context):

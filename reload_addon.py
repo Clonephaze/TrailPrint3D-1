@@ -68,6 +68,16 @@ importlib.reload(T.utils.elevation)
 importlib.reload(T.utils.geometry2d)
 importlib.reload(T.utils.ui_state)
 
+# Shape Extras / accessories helpers, only reached via deferred or
+# submodule-level imports (not utils/__init__), so import them explicitly.
+# font_list/magnet_layout/outline are leaves; shape_capabilities needs temp;
+# plate needs geometry2d/mesh_ops; text_layouts needs text_objects -- all
+# reloaded above. Must precede accessories (medal_holder imports
+# magnet_layout, backplate imports shape_capabilities at module scope) and
+# props/panels (which bind shape_capabilities/text_layouts names).
+for _name in ("font_list", "magnet_layout", "outline", "shape_capabilities", "plate", "text_layouts"):
+    importlib.reload(_imp(f"utils.{_name}"))
+
 # satellite.py, texture.py, io_geojson.py, and geotiff.py are only pulled in
 # via deferred (function-scope) imports (io_geojson.py specifically only via
 # the premium add-on's operators_pe.py), so they may not be an attribute of
@@ -83,12 +93,16 @@ _imp("utils.geotiff")
 importlib.reload(T.utils.geotiff)
 
 # accessories sub-package: accessories/medal_holder.py (Medal Holder
-# Generator) is likewise only imported from inside operator methods. It
-# imports geometry2d/mesh_ops/primitives at module scope, so it must come
-# after those above. generators/medalHolderGenerator.html itself needs no
-# reload -- picker_server.py re-reads it from disk on every request.
+# Generator) and backplate.py (Backplate Generator) are likewise only
+# imported from inside operator methods. They import geometry2d/mesh_ops/
+# primitives/magnet_layout/shape_capabilities at module scope, so they must
+# come after those above. The generator HTML pages themselves need no
+# reload -- picker_server.py re-reads them from disk on every request.
 _imp("utils.accessories.medal_holder")
 importlib.reload(T.utils.accessories.medal_holder)
+# backplate.py (Backplate Generator) imports medal_holder, so after it.
+_imp("utils.accessories.backplate")
+importlib.reload(T.utils.accessories.backplate)
 importlib.reload(T.utils.accessories)
 
 # osm sub-package: its submodules are only pulled in via deferred (function-

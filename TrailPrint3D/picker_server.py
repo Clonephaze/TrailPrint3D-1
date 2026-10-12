@@ -201,6 +201,15 @@ def _open_folder(path: str) -> bool:
     return True
 
 
+def is_active_server(server) -> bool:
+    """False once a newer start_picker() replaced *server* (the user opened
+    another generator page). The queues and page-load snapshots in this
+    module are shared, so the replaced page's operator must end its modal
+    then -- otherwise it keeps draining the new page's queued updates and
+    overwriting its SETTINGS_STATE via refresh_state_snapshots."""
+    return server is not None and server is _active_server
+
+
 def drain_latest_model_preview() -> dict | None:
     """Pop every queued preview request and return only the newest -- older
     ones are already stale by the time the main thread gets to them."""
@@ -325,6 +334,9 @@ _SETTINGS_MODAL_JS_PATH = _ASSETS_DIR / 'settings_modal.js'
 _RECT_EDITOR_JS_PATH = _ASSETS_DIR / 'rect_editor.js'
 _PREFETCH_JS_PATH = _ASSETS_DIR / 'prefetch_layer.js'
 _SHAPE_EXTRAS_JS_PATH = _ASSETS_DIR / 'shape_extras.js'
+# Generated icon outlines (generate_text_icons.py) the Backplate top view in
+# shape_extras.js draws -- served as part of __SHAPE_EXTRAS_JS__.
+_TEXT_ICONS_JS_PATH = _ASSETS_DIR / 'text_icons.js'
 _HISTORY_PANEL_JS_PATH = _ASSETS_DIR / 'history_panel.js'
 _TUTORIAL_JS_PATH = _ASSETS_DIR / 'tutorial.js'
 _MAP_TUTORIALS_JS_PATH = _ASSETS_DIR / 'map_tutorials.js'
@@ -468,6 +480,82 @@ def _mark_tutorial_complete(tutorial_id: str) -> dict:
     except OSError as e:
         print(f"[TP3D picker] Failed to write tutorial progress {_TUTORIAL_PROGRESS_PATH}: {e}")
     return progress
+
+
+# Saved "Defaults" per page (e.g. the Backplate Generator's): a list of
+# {'name', 'settings'} kept in one JSON file per page, keyed like the history
+# (_history_key). The page owns the list -- it sends the whole edited list
+# back -- this only validates and caps it.
+_DEFAULTS_DIR = pathlib.Path(const.generator_defaults_dir)
+_DEFAULTS_MAX_ENTRIES = 200
+_DEFAULTS_NAME_MAX = 60
+
+
+_FONT_TYPES = {'.ttf': 'font/ttf', '.otf': 'font/otf', '.ttc': 'font/collection', '.woff': 'font/woff'}
+
+
+def _servable_font_path(requested: str, settings_state_json: bytes) -> pathlib.Path | None:
+    """The font file GET /font_file may send for *requested*, or None.
+
+    The path comes from the browser, so only fonts the page could have
+    picked anyway are served: an installed one from /list_fonts, Blender's
+    default text font (for '' -- text_objects.default_font_path), or the
+    scene's own textFont from the page's SETTINGS_STATE snapshot. Never an
+    arbitrary file."""
+    from .utils import font_list
+    from .utils.text_objects import default_font_path
+
+    if not requested:
+        requested = default_font_path()
+    if not requested:
+        return None
+    allowed = {f['path'] for f in font_list.list_fonts()}
+    allowed.add(default_font_path())
+    try:
+        scene_font = json.loads(settings_state_json.decode('utf-8')).get('textFont')
+    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+        scene_font = None
+    if scene_font:
+        allowed.add(scene_font)
+    if requested not in allowed:
+        return None
+    path = pathlib.Path(requested)
+    if path.suffix.lower() not in _FONT_TYPES or not path.is_file():
+        return None
+    return path
+
+
+def _read_page_defaults(path: pathlib.Path) -> list:
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return _clean_page_defaults(data)
+
+
+def _clean_page_defaults(entries) -> list:
+    """Only well-formed entries, unique by name (case-insensitive, the
+    later one wins), sorted by name, capped."""
+    by_name = {}
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict) or not isinstance(entry.get('settings'), dict):
+            continue
+        name = ' '.join(str(entry.get('name') or '').split())[:_DEFAULTS_NAME_MAX]
+        if name:
+            by_name[name.casefold()] = {'name': name, 'settings': entry['settings']}
+    cleaned = sorted(by_name.values(), key=lambda e: e['name'].casefold())
+    return cleaned[:_DEFAULTS_MAX_ENTRIES]
+
+
+def _write_page_defaults(path: pathlib.Path, entries) -> list:
+    cleaned = _clean_page_defaults(entries)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(cleaned, indent=1), encoding='utf-8')
+    except OSError as e:
+        print(f"[TP3D picker] Failed to write defaults {path}: {e}")
+        return _read_page_defaults(path)
+    return cleaned
 
 
 def _delete_history_render(entry_id: str) -> None:
@@ -701,6 +789,7 @@ class _Handler(BaseHTTPRequestHandler):
     html_path: pathlib.Path = _HTML_PATH
     state_path: pathlib.Path = _STATE_PATH
     history_path: pathlib.Path = _HISTORY_DIR / f'{_history_key(_HTML_PATH)}.json'
+    defaults_path: pathlib.Path = _DEFAULTS_DIR / f'{_history_key(_HTML_PATH)}.json'
 
     def log_message(self, *args):
         pass
@@ -738,6 +827,30 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path.startswith('/font_file'):
+            # The font file itself, so a page can draw text in the font
+            # Blender will use (shape_extras.js's Backplate top view). An
+            # empty path means Blender's default text font.
+            from urllib.parse import parse_qs, urlparse
+            path = _servable_font_path(parse_qs(urlparse(self.path).query).get('path', [''])[0],
+                                       self.settings_state_json)
+            if path is None:
+                self.send_response(404)
+                self.end_headers()
+                return
+            try:
+                body = path.read_bytes()
+            except OSError:
+                self.send_response(404)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header('Content-Type', _FONT_TYPES.get(path.suffix.lower(), 'application/octet-stream'))
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'max-age=3600')
             self.end_headers()
             self.wfile.write(body)
             return
@@ -846,6 +959,14 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == '/get_page_defaults':
+            body = json.dumps(_read_page_defaults(self.defaults_path)).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == '/get_tutorial_progress':
             body = json.dumps(_read_tutorial_progress()).encode('utf-8')
             self.send_response(200)
@@ -925,7 +1046,8 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__HISTORY_PANEL_JS__', _HISTORY_PANEL_JS_PATH.read_text(encoding='utf-8'))
             .replace('__RECT_EDITOR_JS__', _RECT_EDITOR_JS_PATH.read_text(encoding='utf-8'))
             .replace('__PREFETCH_JS__', _PREFETCH_JS_PATH.read_text(encoding='utf-8'))
-            .replace('__SHAPE_EXTRAS_JS__', _SHAPE_EXTRAS_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__SHAPE_EXTRAS_JS__', _TEXT_ICONS_JS_PATH.read_text(encoding='utf-8') + '\n'
+                     + _SHAPE_EXTRAS_JS_PATH.read_text(encoding='utf-8'))
             .replace('__TUTORIAL_JS__', _TUTORIAL_JS_PATH.read_text(encoding='utf-8'))
             .replace('__MAP_TUTORIALS_JS__', _MAP_TUTORIALS_JS_PATH.read_text(encoding='utf-8'))
             .replace('__MULTITILE_TUTORIALS_JS__', _MULTITILE_TUTORIALS_JS_PATH.read_text(encoding='utf-8'))
@@ -1063,6 +1185,24 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', '2')
             self.end_headers()
             self.wfile.write(b'ok')
+            return
+        if self.path == '/save_page_defaults':
+            # The page's whole edited Defaults list ({'defaults': [...]}) --
+            # see _write_page_defaults. Answers with what was actually saved.
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            try:
+                entries = json.loads(body).get('defaults')
+            except (json.JSONDecodeError, AttributeError):
+                entries = None
+            saved = (_write_page_defaults(self.defaults_path, entries) if isinstance(entries, list)
+                     else _read_page_defaults(self.defaults_path))
+            resp = json.dumps(saved).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp)))
+            self.end_headers()
+            self.wfile.write(resp)
             return
         if self.path == '/complete_tutorial':
             # assets/tutorial.js's menu -- a tutorial was run to its last
@@ -1394,6 +1534,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     _Handler.html_path = html_path
     _Handler.state_path = state_path
     _Handler.history_path = history_path
+    _Handler.defaults_path = _DEFAULTS_DIR / f'{_history_key(html_path)}.json'
 
     server = HTTPServer(('127.0.0.1', port), _Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

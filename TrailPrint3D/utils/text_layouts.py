@@ -11,7 +11,6 @@ import math
 import bpy  # type: ignore
 
 from .text_objects import (
-    convert_text_to_mesh,
     convert_text_to_mesh_obj,
     create_text,
     replaceShapeText,
@@ -338,8 +337,8 @@ def _inset_into_plate(
         if obj.type == "MESH":
             sources.append(obj)
 
-    if len(sources) < 2:
-        print(f"[inset] only {len(sources)} mesh source(s) — skipping.")
+    if not sources:
+        print("[inset] no mesh sources — skipping.")
         return None
 
     # --- Work entirely in the plate's LOCAL frame ---
@@ -601,6 +600,15 @@ def _inset_into_side_wall(plate_obj, text_objs, icons, margin=0.1, modelname="")
     return text_obj
 
 
+def _only(fields, only_fields):
+    """*fields* (a layout table's rows) limited to the props in
+    *only_fields* -- e.g. the Backplate Generator builds just the fields
+    that have text. None keeps every field."""
+    if only_fields is None:
+        return fields
+    return [f for f in fields if _FIELD_TO_PROP.get(f[0]) in only_fields]
+
+
 def _import_transform_map_object():
     # Deferred to avoid circular import at load time.
     from . import transform_MapObject  # type: ignore
@@ -613,10 +621,12 @@ def _import_transform_map_object():
 # ---------------------------------------------------------------------------
 
 
-def apply_outer_edge_layout(map_obj, plate_obj, shape, inset=False, inset_depth=0.8):
+def apply_outer_edge_layout(
+    map_obj, plate_obj, shape, inset=False, inset_depth=0.8, only_fields=None
+):
     from .text_objects import create_text as _create_text  # local alias
 
-    fields = OUTER_EDGE_FIELDS.get(shape)
+    fields = _only(OUTER_EDGE_FIELDS.get(shape) or [], only_fields)
     if not fields:
         return None
 
@@ -687,8 +697,8 @@ def _polygon_radius_at_angle(inradius, shape, angle_rad):
     return circumradius * math.cos(half_step) / math.cos(deviation)
 
 
-def apply_front_face_layout(map_obj, plate_obj, shape, inset):
-    fields = FRONT_FACE_FIELDS.get(shape)
+def apply_front_face_layout(map_obj, plate_obj, shape, inset, only_fields=None):
+    fields = _only(FRONT_FACE_FIELDS.get(shape) or [], only_fields)
     if not fields:
         return None
 
@@ -731,7 +741,9 @@ def apply_front_face_layout(map_obj, plate_obj, shape, inset):
     _substitute_text(text_objs, active)
 
     for name, obj in text_objs.items():
-        convert_text_to_mesh(name, plate_obj.name, False)
+        # Object-based: convert_text_to_mesh's name lookup would convert a
+        # stale same-named object left in the scene instead of this one.
+        text_objs[name] = obj = convert_text_to_mesh_obj(obj)
         transform_MapObject(
             obj,
             tp3d.o_centerx + tp3d.xTerrainOffset,
@@ -755,10 +767,12 @@ def apply_front_face_layout(map_obj, plate_obj, shape, inset):
     return _finalize(text_objs, icons, plate_obj, tp3d.modelname)
 
 
-def apply_curved_ring_layout(map_obj, plate_obj, shape, inset=False, inset_depth=0.8):
+def apply_curved_ring_layout(
+    map_obj, plate_obj, shape, inset=False, inset_depth=0.8, only_fields=None
+):
     import bmesh
 
-    fields = CURVED_RING_FIELDS.get(shape)
+    fields = _only(CURVED_RING_FIELDS.get(shape) or [], only_fields)
     if not fields:
         return None
 
@@ -939,16 +953,24 @@ def fields_for_layout(layout, shape):
 # ---------------------------------------------------------------------------
 
 
-def apply_text_layout(map_obj, plate_obj, layout, shape, inset=False, inset_depth=0.8):
+def apply_text_layout(
+    map_obj, plate_obj, layout, shape, inset=False, inset_depth=0.8, only_fields=None
+):
+    """*only_fields*: prop names (titlefield, textfield1, ...) to build, or
+    None for every field of the layout. ON_MAP always builds every field."""
     if layout == "OUTER_EDGE":
-        return apply_outer_edge_layout(map_obj, plate_obj, shape, inset, inset_depth)
+        return apply_outer_edge_layout(
+            map_obj, plate_obj, shape, inset, inset_depth, only_fields
+        )
     if layout == "FRONT_FACE":
         # Not supported: front-face extrusion runs along the plate's
         # outward normal (horizontal), so an inset would need a radial
         # carve, not a vertical one. Falls back to raised.
-        return apply_front_face_layout(map_obj, plate_obj, shape, inset)
+        return apply_front_face_layout(map_obj, plate_obj, shape, inset, only_fields)
     if layout == "CURVED":
-        return apply_curved_ring_layout(map_obj, plate_obj, shape, inset, inset_depth)
+        return apply_curved_ring_layout(
+            map_obj, plate_obj, shape, inset, inset_depth, only_fields
+        )
     if layout == "ON_MAP":
         # ON_MAP already carves into the map surface via projection; the
         # inset flag is a no-op there.

@@ -1557,6 +1557,11 @@ class TP3D_MT_generators_menu(bpy.types.Menu):
             text=_("Medal Holder Generator"),
             icon="MESH_CIRCLE",
         )
+        layout.operator(
+            "tp3d.backplate_generator",
+            text=_("Backplate Generator"),
+            icon="MESH_CIRCLE",
+        )
 
 
 def draw_tp3d_viewport_menu(self, context):
