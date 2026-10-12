@@ -3,9 +3,10 @@ import math
 import bpy  # type: ignore
 
 from .. import constants as const
+from .generation_snapshot import GenerationSnapshot
 
 
-def writeMetadata(obj, type = "MAP"):
+def writeMetadata(obj, type="MAP"):
 
     if obj is None:
         return
@@ -290,3 +291,6 @@ def writeMetadata(obj, type = "MAP"):
         obj["Object type"] = type
 
         obj["ExportGroup"] = 1
+
+    snapshot = GenerationSnapshot.from_mapping(obj)
+    obj[const.GENERATION_SNAPSHOT_PROPERTY] = snapshot.to_json()

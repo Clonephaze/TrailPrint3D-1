@@ -76,6 +76,7 @@ _RUN_OVERPASS = "--overpass" in _script_args
 _RUN_INTEGRATION = "--integration" in _script_args
 
 _TEST_FILES = [
+    "test_generation_snapshot.py",
     "test_geo_elevation.py",
     "test_geojson_import.py",
     "test_geometry2d.py",
