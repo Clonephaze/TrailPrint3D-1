@@ -87,7 +87,7 @@ INTERNAL_NAME_CALL_SUFFIXES = (
     "textures.new",
     "images.new",
     "curves.new",
-    "build_tile_from_polygon"
+    "build_tile_from_polygon",
     "build_objects",
 )
 

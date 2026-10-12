@@ -1584,7 +1584,7 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
         minThickness = None
 
         if not selected_objects:
-            self.report({"ERROR"}, _("No object selected. Select a map first."))
+            self.report({"ERROR"}, _rpt("No object selected. Select a map first."))
             return {"CANCELLED"}
 
         map_objects = [
@@ -1593,7 +1593,7 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
             if obj.type == "MESH" and obj.get("Object type") == "MAP"
         ]
         if not map_objects:
-            self.report({"ERROR"}, _("Select at least one generated map."))
+            self.report({"ERROR"}, _rpt("Select at least one generated map."))
             return {"CANCELLED"}
 
         if self.color_height_SEM:
@@ -1621,7 +1621,7 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
         if min_z is None or max_z is None:
             self.report(
                 {"ERROR"},
-                _("No valid map selected. Select a generated map first."),
+                _rpt("No valid map selected. Select a generated map first."),
             )
             return {"CANCELLED"}
 
@@ -1857,7 +1857,7 @@ class TP3D_OT_undo_mountain_texture(bpy.types.Operator):
         if restored == 0:
             self.report(
                 {"INFO"},
-                _("Nothing to undo -- no Color by Height texture bake to restore."),
+                _rpt("Nothing to undo -- no Color by Height texture bake to restore."),
             )
             return {"CANCELLED"}
         return {"FINISHED"}

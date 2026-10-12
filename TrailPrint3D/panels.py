@@ -8,6 +8,7 @@ from math import ceil
 
 import bpy  # type: ignore
 from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 from bpy.app.translations import pgettext_tip as _tip
 
 from . import addon_preferences, operators, temp, updater
@@ -1537,19 +1538,19 @@ class TP3D_OT_copy_generation_settings_markdown(bpy.types.Operator):
     def execute(self, context):
         obj = context.active_object
         if obj is None:
-            self.report({"ERROR"}, _("No active object."))
+            self.report({"ERROR"}, _rpt("No active object."))
             return {"CANCELLED"}
 
         snapshot, _snapshot_error = _load_generation_snapshot(obj)
         if not snapshot.sections:
             self.report(
                 {"ERROR"},
-                _("No generation settings found. Please select a generated object."),
+                _rpt("No generation settings found. Please select a generated object."),
             )
             return {"CANCELLED"}
 
         context.window_manager.clipboard = snapshot.to_markdown()
-        self.report({"INFO"}, _("Generation settings copied to clipboard."))
+        self.report({"INFO"}, _rpt("Generation settings copied to clipboard."))
         return {"FINISHED"}
 
 
@@ -1593,8 +1594,9 @@ def _draw_generation_sections(layout, sections):
         column = box.column(align=True)
         for setting in section.settings:
             row = column.row(align=True)
+            key_text = _(format_generation_setting_label(setting.key))
             row.label(
-                text=f"{_(format_generation_setting_label(setting.key))}:",
+                text=f"{key_text}:",
                 icon="DOT",
             )
             row.label(

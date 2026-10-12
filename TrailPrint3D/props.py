@@ -1221,7 +1221,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_fActive: BoolProperty(
         name=_("Include Forests"),
         default=False,
-        description=_(
+        description=_tip(
             "Skipped automatically on large maps (size limit set in the Add-on Preferences)"
         ),
     )  # type: ignore
@@ -1234,7 +1234,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_scrActive: BoolProperty(
         name=_("Include Scree"),
         default=False,
-        description=_(
+        description=_tip(
             "Rocky/stony terrain. Skipped automatically on large maps (size limit set in the Add-on Preferences)"
         ),
     )  # type: ignore
@@ -1247,7 +1247,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_cActive: BoolProperty(
         name=_("Include City Boundaries"),
         default=False,
-        description=_(
+        description=_tip(
             "Skipped automatically on large maps (size limit set in the Add-on Preferences)"
         ),
     )  # type: ignore
@@ -1260,7 +1260,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_grActive: BoolProperty(
         name=_("Include Greenspaces"),
         default=False,
-        description=_(
+        description=_tip(
             "Parks, gardens, grass and other urban green areas. Skipped automatically on large maps (size limit set in the Add-on Preferences)"
         ),
     )  # type: ignore
@@ -1273,7 +1273,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_faActive: BoolProperty(
         name=_("Include Farmland"),
         default=False,
-        description=_(
+        description=_tip(
             "Fetches landuse=farmland and landuse=farmyard. Skipped automatically on large maps (size limit set in the Add-on Preferences)"
         ),
     )  # type: ignore
@@ -1286,7 +1286,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     col_glActive: BoolProperty(
         name=_("Include Glaciers"),
         default=False,
-        description=_(
+        description=_tip(
             "Skipped automatically on large maps (size limit set in the Add-on Preferences)"
         ),
     )  # type: ignore
@@ -1362,7 +1362,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     el_bActive: BoolProperty(
         name=_("Include Buildings"),
         default=False,
-        description=_(
+        description=_tip(
             "Skipped automatically on large maps (size limit set in the Add-on Preferences)"
         ),
     )  # type: ignore
