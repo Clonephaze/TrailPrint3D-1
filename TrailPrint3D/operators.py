@@ -21,6 +21,7 @@ from mathutils import Euler, Quaternion, Vector, noise  # type: ignore
 from . import addon_preferences, export, utils
 from . import constants as const
 from . import progress as _progress
+from .utils.color import set_material_srgb
 from .utils.dataclasses import ExportError, GenerationError
 
 _warn = _progress.WarningsOverlay.add_warning
@@ -1222,7 +1223,7 @@ def _height_color_material(color):
         output = nodes.new(type="ShaderNodeOutputMaterial")
     if not bsdf.outputs["BSDF"].is_linked:
         links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
-    bsdf.inputs["Base Color"].default_value = (*color[:3], 1.0)
+    set_material_srgb(mat, (r, g, b))
     return mat
 
 

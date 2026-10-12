@@ -29,6 +29,7 @@ from ..constants import (
     _RASTER_ORDER,
     _UV_LAYER_NAME,
 )
+from .color import material_to_srgb
 from .dataclasses import GenerationContext
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -43,30 +44,6 @@ def _srgb_to_hex(r8, g8, b8):
 def _srgb_to_rgba(srgb):
     """Convert an sRGB uint8 (R, G, B) tuple to an opaque float (R, G, B, A) pixel."""
     return (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
-
-
-def material_to_srgb(material, fallback=(0, 0, 0)):
-    """Convert a material's Principled BSDF Base Colour to an sRGB uint8
-    (R, G, B) tuple, so texture-mode colours -- and the fake solid-colour
-    patches given to companion objects for 3MF paint export -- always match
-    what that material actually renders as everywhere else in the addon.
-
-    Materials here are set up (see primitives.setupColors()) by plugging the
-    desired 0-255 colour directly into Base Color as value/255, not through a
-    proper linear-light workflow -- e.g. BASE's old hardcoded texture colour
-    (13, 179, 13) only lines up with its material (0.05, 0.7, 0.05) under a
-    plain ×255 scale, not the sRGB gamma curve (which would give ~63,178,63).
-    So converting back uses that same plain scale, not gamma decoding.
-    """
-    if material is None or not material.use_nodes:
-        return fallback
-    bsdf = next(
-        (n for n in material.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None
-    )
-    if bsdf is None:
-        return fallback
-    lin = bsdf.inputs["Base Color"].default_value
-    return tuple(round(max(0.0, min(1.0, lin[i])) * 255) for i in range(3))
 
 
 def _named_material_srgb(name, fallback=(0, 0, 0)):
@@ -912,9 +889,9 @@ def bake_height_layer_into_texture(
     noise_amplitude/noise_scale perturb that flat threshold per-pixel via
     _value_noise_field so the boundary isn't a razor-flat line.
 
-    material : the MOUNTAIN material by default, matching every other
-    export path's colour (see material_to_srgb's docstring for why that
-    conversion has to stay a plain 0-255 scale, not gamma decoding).
+    material : the MOUNTAIN material by default. The shared material reader
+    preserves legacy colors and decodes materials written with the current
+    scene-linear convention.
 
     Returns False (no-op) if terrain_obj has no existing paint texture.
     """

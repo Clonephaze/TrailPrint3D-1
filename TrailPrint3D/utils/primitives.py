@@ -5,6 +5,7 @@ import bpy  # type: ignore
 from bpy.app.translations import pgettext_iface as _
 from mathutils import Vector  # type: ignore
 
+from .color import COLOR_DECODED_PROP, material_to_srgb, set_material_srgb
 from . import geometry2d as g2d  # deferred-safe: pure-Python, no bpy-time side effects
 from .dataclasses import GenerationContext
 
@@ -32,23 +33,32 @@ def _setup_material(name, color):
     if not bsdf.outputs["BSDF"].is_linked:
         links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
 
-    bsdf.inputs["Base Color"].default_value = color
+    set_material_srgb(mat, color[:3])
 
 
 def setupColors():
-    _setup_material("BASE", (0.05, 0.7, 0.05, 1.0))
-    _setup_material("FOREST", (0.05, 0.25, 0.05, 1.0))
-    _setup_material("MOUNTAIN", (0.5, 0.5, 0.5, 1.0))
-    _setup_material("WATER", (0.0, 0.0, 0.8, 1.0))
-    _setup_material("TRAIL", (1.0, 0.0, 0.0, 1.0))
-    _setup_material("YELLOW", (1.0, 1.0, 0.0, 1.0))
-    _setup_material("CITY", (0.7, 0.7, 0.1, 1.0))
-    _setup_material("GREENSPACE", (0.16, 1.0, 0.16, 1.0))
-    _setup_material("GLACIER", (0.8, 0.9, 0.8, 1.0))
-    _setup_material("BLACK", (0.0, 0.0, 0.0, 1.0))
-    _setup_material("WHITE", (1.0, 1.0, 1.0, 1.0))
-    _setup_material("BUILDINGS", (0.4, 0.4, 0.4, 1.0))
-    _setup_material("FARMLAND", (0.3, 0.5, 0.1, 1.0))
+    _setup_material("BASE", (13, 178, 13))
+    _setup_material("FOREST", (13, 64, 13))
+    _setup_material("MOUNTAIN", (128, 128, 128))
+    _setup_material("WATER", (0, 0, 204))
+    _setup_material("TRAIL", (255, 0, 0))
+    _setup_material("YELLOW", (255, 255, 0))
+    _setup_material("CITY", (178, 178, 26))
+    _setup_material("GREENSPACE", (41, 255, 41))
+    _setup_material("GLACIER", (204, 229, 204))
+    _setup_material("BLACK", (0, 0, 0))
+    _setup_material("WHITE", (255, 255, 255))
+    _setup_material("BUILDINGS", (102, 102, 102))
+    _setup_material("FARMLAND", (77, 128, 26))
+
+    for mat in bpy.data.materials:
+        if not mat.name.startswith("HEIGHT_") or mat.get(COLOR_DECODED_PROP):
+            continue
+        if not mat.use_nodes or not mat.node_tree:
+            continue
+        if not any(node.type == "BSDF_PRINCIPLED" for node in mat.node_tree.nodes):
+            continue
+        set_material_srgb(mat, material_to_srgb(mat))
 
 
 def create_curve_from_coordinates(gen: GenerationContext, coordinates):

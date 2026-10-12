@@ -23,7 +23,13 @@ if "TrailPrint3D" not in bpy.context.preferences.addons:
     bpy.ops.preferences.addon_enable(module="TrailPrint3D")
 
 from TrailPrint3D import operators
+from TrailPrint3D.utils import primitives
 from TrailPrint3D.utils import texture
+from TrailPrint3D.utils.color import (
+    COLOR_DECODED_PROP,
+    set_material_srgb,
+    srgb_to_material_color,
+)
 
 _passed = 0
 _failed = 0
@@ -143,12 +149,80 @@ def test_material_helper_is_per_color():
     bsdf = next(
         node for node in material.node_tree.nodes if node.type == "BSDF_PRINCIPLED"
     )
-    assert tuple(bsdf.inputs["Base Color"].default_value[:3]) == (1.0, 0.0, 0.25)
+    expected = srgb_to_material_color((255, 0, 64))
+    assert tuple(bsdf.inputs["Base Color"].default_value) == expected
+    assert texture.material_to_srgb(material) == (255, 0, 64)
+    assert material.get(COLOR_DECODED_PROP) is True
     # Default grey keeps the historical MOUNTAIN material, and a second colour
     # must never reuse (and therefore recolour) the first one.
     grey = operators._height_color_material((0.5, 0.5, 0.5))
     assert grey.name == "MOUNTAIN"
     assert grey is not material
+
+
+def test_material_color_round_trips_all_srgb_bytes():
+    material = bpy.data.materials.new("SrgbRoundTrip")
+    material.use_nodes = True
+    for value in range(256):
+        expected = (value, 255 - value, value)
+        set_material_srgb(material, expected)
+        assert texture.material_to_srgb(material) == expected
+
+
+def test_legacy_material_color_is_unchanged():
+    material = bpy.data.materials.new("LegacySrgbColor")
+    material.use_nodes = True
+    bsdf = next(
+        node for node in material.node_tree.nodes if node.type == "BSDF_PRINCIPLED"
+    )
+    bsdf.inputs["Base Color"].default_value = (0.05, 0.7, 0.05, 1.0)
+    assert material.get(COLOR_DECODED_PROP) is None
+    assert texture.material_to_srgb(material) == (13, 178, 13)
+
+
+def test_setup_colors_migrates_legacy_named_materials():
+    base = bpy.data.materials.get("BASE") or bpy.data.materials.new("BASE")
+    base.use_nodes = True
+    bsdf = next(
+        node for node in base.node_tree.nodes if node.type == "BSDF_PRINCIPLED"
+    )
+    bsdf.inputs["Base Color"].default_value = (0.05, 0.7, 0.05, 1.0)
+    if COLOR_DECODED_PROP in base:
+        del base[COLOR_DECODED_PROP]
+
+    height = bpy.data.materials.new("HEIGHT_LEGACY_MIGRATION")
+    height.use_nodes = True
+    bsdf = next(
+        node for node in height.node_tree.nodes if node.type == "BSDF_PRINCIPLED"
+    )
+    bsdf.inputs["Base Color"].default_value = (0.5, 0.1, 0.3, 1.0)
+    legacy_height_color = texture.material_to_srgb(height)
+
+    primitives.setupColors()
+
+    assert texture.material_to_srgb(base) == (13, 178, 13)
+    assert base.get(COLOR_DECODED_PROP) is True
+    assert texture.material_to_srgb(height) == legacy_height_color
+    assert height.get(COLOR_DECODED_PROP) is True
+    expected_standard_colors = {
+        "BASE": (13, 178, 13),
+        "FOREST": (13, 64, 13),
+        "MOUNTAIN": (128, 128, 128),
+        "WATER": (0, 0, 204),
+        "TRAIL": (255, 0, 0),
+        "YELLOW": (255, 255, 0),
+        "CITY": (178, 178, 26),
+        "GREENSPACE": (41, 255, 41),
+        "GLACIER": (204, 229, 204),
+        "BLACK": (0, 0, 0),
+        "WHITE": (255, 255, 255),
+        "BUILDINGS": (102, 102, 102),
+        "FARMLAND": (77, 128, 26),
+    }
+    for name, expected_color in expected_standard_colors.items():
+        material = bpy.data.materials[name]
+        assert material.get(COLOR_DECODED_PROP) is True
+        assert texture.material_to_srgb(material) == expected_color
 
 
 def test_palette_slots_stack_and_prune():
@@ -503,6 +577,9 @@ def test_already_applied_map_does_not_abort_selection():
 _run("operator properties are registered", test_operator_properties_registered)
 _run("blank-map eligibility is conservative", test_blank_map_eligibility)
 _run("material helper is per color", test_material_helper_is_per_color)
+_run("material color round-trips all sRGB bytes", test_material_color_round_trips_all_srgb_bytes)
+_run("legacy material color is unchanged", test_legacy_material_color_is_unchanged)
+_run("setup colors migrates legacy named materials", test_setup_colors_migrates_legacy_named_materials)
 _run("palette slots stack and prune", test_palette_slots_stack_and_prune)
 _run("palette ownership restores with undo", test_palette_ownership_restored_with_undo)
 _run("texture recolor removes previous pixels", test_texture_recolor_removes_previous_pixels)
