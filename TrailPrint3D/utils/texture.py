@@ -23,7 +23,6 @@ import bpy
 import numpy as np
 
 from ..constants import (
-    _HEIGHT_BAKE_BASELINE,
     _HEIGHT_BAKE_UNDO,
     _KIND_MATERIAL_NAME,
     _MAX_HEIGHT_BAKE_UNDO_MEMORY,
@@ -33,6 +32,8 @@ from ..constants import (
 from .dataclasses import GenerationContext
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+_HEIGHT_BAKE_PALETTE_KEY_PROP = "3mf_height_bake_palette_key"
 
 
 def _srgb_to_hex(r8, g8, b8):
@@ -70,6 +71,63 @@ def material_to_srgb(material, fallback=(0, 0, 0)):
 
 def _named_material_srgb(name, fallback=(0, 0, 0)):
     return material_to_srgb(bpy.data.materials.get(name), fallback)
+
+
+def _height_palette_keys(mesh):
+    """Return the palette slots this feature created, as a plain int list.
+
+    Stored as a list because "Color by Height" stacks: every colour the user
+    layers on gets its own extruder slot, and all of them have to survive the
+    next bake.
+    """
+    stored = mesh.get(_HEIGHT_BAKE_PALETTE_KEY_PROP)
+    if isinstance(stored, int):
+        return [stored]
+    if stored is None:
+        return []
+    return [int(key) for key in stored]
+
+
+def _present_hex_colors(arr):
+    """Collect every distinct #RRGGBB colour actually present in a pixel array."""
+    u8 = np.clip(np.rint(arr[..., :3] * 255.0), 0, 255).astype(np.uint8)
+    packed = (
+        (u8[..., 0].astype(np.uint32) << 16)
+        | (u8[..., 1].astype(np.uint32) << 8)
+        | u8[..., 2].astype(np.uint32)
+    )
+    return {f"#{int(value):06X}" for value in np.unique(packed)}
+
+
+def _sync_height_bake_palette(mesh, palette, arr, mountain_hex=None):
+    """Keep one owned palette slot per height colour still visible in the image.
+
+    Adding a slot is only done for colours this feature introduced, and owned
+    slots are dropped again once a later bake has painted over them, so
+    stacking green -> grey -> white keeps three slots while simply recolouring
+    a single layer keeps one.
+    """
+    owned = [key for key in _height_palette_keys(mesh) if key in palette]
+
+    # Prune first so a colour that was just painted over frees its slot for
+    # the new one; what survives is exactly the set of stacked layers.
+    present = _present_hex_colors(arr)
+    for key in list(owned):
+        if palette.get(key) not in present:
+            palette.pop(key, None)
+            owned.remove(key)
+
+    if mountain_hex is not None and mountain_hex not in palette.values():
+        next_idx = (max(palette.keys()) + 1) if palette else 1
+        palette[next_idx] = mountain_hex
+        owned.append(next_idx)
+
+    owned = sorted(set(owned))
+    if owned:
+        mesh[_HEIGHT_BAKE_PALETTE_KEY_PROP] = owned
+    elif _HEIGHT_BAKE_PALETTE_KEY_PROP in mesh:
+        del mesh[_HEIGHT_BAKE_PALETTE_KEY_PROP]
+    return palette
 
 
 def _build_palette(present_kinds):
@@ -410,11 +468,9 @@ def setup_paint_texture(gen: GenerationContext):
     if img_name in bpy.data.images:
         bpy.data.images.remove(bpy.data.images[img_name])
     # A fresh generation invalidates any height-bake history from a prior
-    # run that happened to reuse this same mesh/image name -- otherwise
-    # bake_height_layer_into_texture's baseline (or the undo backup) could
-    # silently apply pixels from a completely different, already-deleted
-    # image onto this new one.
-    _HEIGHT_BAKE_BASELINE.pop(img_name, None)
+    # run that happened to reuse this same mesh/image name -- otherwise the
+    # undo backup could silently apply pixels from a completely different,
+    # already-deleted image onto this new one.
     _HEIGHT_BAKE_UNDO.pop(img_name, None)
     image = bpy.data.images.new(
         img_name, width=resolution, height=resolution, alpha=True
@@ -852,7 +908,7 @@ def bake_height_layer_into_texture(
     setup_paint_texture's original polygons_by_kind is gone.
 
     z_threshold is in the same local-space Z units already used by the
-    vertex/material-index "Color Mountains" path (see operators.py) --
+    vertex/material-index "Color by Height" path (see operators.py) --
     noise_amplitude/noise_scale perturb that flat threshold per-pixel via
     _value_noise_field so the boundary isn't a razor-flat line.
 
@@ -889,15 +945,13 @@ def bake_height_layer_into_texture(
     image.pixels.foreach_get(current)
     current = current.reshape((resolution, resolution, 4))
 
-    baseline = _HEIGHT_BAKE_BASELINE.get(img_name)
-    if baseline is None or baseline.shape != current.shape:
-        baseline = current.copy()
-        _HEIGHT_BAKE_BASELINE[img_name] = baseline
-
     # Snapshot pre-edit state for undo functionality
     save_height_bake_state(image, mesh)
 
-    arr = baseline.copy()
+    # Paint on top of whatever is already baked rather than resetting to a
+    # pristine baseline -- that is what lets successive bakes stack, e.g.
+    # green from 40%, grey from 60%, white from 80%.
+    arr = current.copy()
     srgb = (
         material_to_srgb(material)
         if material is not None
@@ -917,13 +971,20 @@ def bake_height_layer_into_texture(
     try:
         palette = ast.literal_eval(mesh.get("3mf_paint_extruder_colors", "{}"))
     except (ValueError, SyntaxError):
+        print(
+            f"[TP3D] Invalid 3mf_paint_extruder_colors on {terrain_obj.name}; "
+            "rebuilding the height-bake palette entry."
+        )
         palette = {}
-    if mountain_mask.any():
-        mountain_hex = _srgb_to_hex(*srgb)
-        if mountain_hex not in palette.values():
-            next_idx = (max(palette.keys()) + 1) if palette else 1
-            palette[next_idx] = mountain_hex
-            mesh["3mf_paint_extruder_colors"] = str(palette)
+    if not isinstance(palette, dict):
+        print(
+            f"[TP3D] Invalid 3mf_paint_extruder_colors type on {terrain_obj.name}; "
+            "rebuilding the height-bake palette entry."
+        )
+        palette = {}
+    mountain_hex = _srgb_to_hex(*srgb) if mountain_mask.any() else None
+    _sync_height_bake_palette(mesh, palette, arr, mountain_hex)
+    mesh["3mf_paint_extruder_colors"] = str(palette)
 
     return True
 
@@ -1014,12 +1075,14 @@ def save_height_bake_state(image, mesh):
             "index": compressed_index,
             "shape": shape,
             "meta_palette": deepcopy(mesh.get("3mf_paint_extruder_colors")),
+            "height_palette_key": _height_palette_keys(mesh),
         }
     else:
         state = {
             "kind": "raw",
             "pixels": pixels,
             "meta_palette": deepcopy(mesh.get("3mf_paint_extruder_colors")),
+            "height_palette_key": _height_palette_keys(mesh),
         }
 
     history.append(state)
@@ -1077,6 +1140,10 @@ def restore_last_height_bake(terrain_obj):
         mesh["3mf_paint_extruder_colors"] = backup["meta_palette"]
     elif "3mf_paint_extruder_colors" in mesh:
         del mesh["3mf_paint_extruder_colors"]
+    if backup["height_palette_key"]:
+        mesh[_HEIGHT_BAKE_PALETTE_KEY_PROP] = backup["height_palette_key"]
+    elif _HEIGHT_BAKE_PALETTE_KEY_PROP in mesh:
+        del mesh[_HEIGHT_BAKE_PALETTE_KEY_PROP]
     history.pop()
     if not history:
         del _HEIGHT_BAKE_UNDO[image.name]
@@ -1084,7 +1151,7 @@ def restore_last_height_bake(terrain_obj):
 
 
 def has_height_bake_undo(terrain_obj):
-    """Return whether the object has a saved Color Mountains texture state."""
+    """Return whether the object has a saved Color by Height texture state."""
     # check if an object is even selected
     if terrain_obj is None or not hasattr(terrain_obj, "type") or terrain_obj.type != "MESH":
         return False

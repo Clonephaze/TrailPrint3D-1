@@ -11,6 +11,7 @@ from bpy.props import (
     CollectionProperty,
     EnumProperty,
     FloatProperty,
+    FloatVectorProperty,
     IntProperty,
     PointerProperty,
     StringProperty,
@@ -1451,18 +1452,34 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         ),
     )  # type: ignore
     mountain_treshold: IntProperty(
-        name=_("Mountain Threshold"),
+        name=_("Height Threshold"),
         default=60,
         min=0,
         max=100,
         subtype="PERCENTAGE",
-        description=_tip("Height Threshold to Color Mountains"),
+        description=_tip("Height threshold for Color by Height"),
+    )  # type: ignore
+    mountain_color: FloatVectorProperty(
+        name="",
+        description=_tip("Color used for terrain above the threshold"),
+        subtype="COLOR_GAMMA",
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(0.5, 0.5, 0.5),
+    )  # type: ignore
+    color_height_SEM: BoolProperty(
+        name=_("Single Extruder Mode"),
+        description=_tip(
+            "Build terrain above the threshold as a one-millimeter-deep element and cut its tolerance gap from the piece below it, using the same construction as normal Single Extruder elements. Select the new piece and run again with a higher threshold to stack another color on top. Reversible with Ctrl-Z"
+        ),
+        default=False,
     )  # type: ignore
     mountain_noise: BoolProperty(
         name=_("Threshold Variation Noise"),
         default=False,
         description=_tip(
-            "Makes a more natural looking boundary for the Color Mountains threshold."
+            "Makes a more natural looking boundary for the Color by Height threshold."
         ),
     )  # type: ignore
     mountain_noise_amplitude: FloatProperty(
@@ -1471,7 +1488,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         min=0.0,
         soft_max=10.0,
         description=_tip(
-            "How far the Color Mountains boundary is allowed to dip below or rise above the flat threshold height, in map units. 0 gives the old razor-flat line."
+            "How far the Color by Height boundary is allowed to dip below or rise above the flat threshold height, in map units. 0 gives a flat boundary."
         ),
     )  # type: ignore
     mountain_noise_scale: FloatProperty(
@@ -1480,7 +1497,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         min=0.005,
         soft_max=2.0,
         description=_tip(
-            "Frequency of the Color Mountains boundary noise. Lower values give broad, slow-rolling dips and rises; higher values give tight, speckled variation."
+            "Frequency of the Color by Height boundary noise. Lower values give broad, slow-rolling dips and rises; higher values give tight, speckled variation."
         ),
     )  # type: ignore
     cl_thickness: FloatProperty(

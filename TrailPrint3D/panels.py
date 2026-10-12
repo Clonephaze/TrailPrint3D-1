@@ -10,7 +10,7 @@ import bpy  # type: ignore
 from bpy.app.translations import pgettext_iface as _
 from bpy.app.translations import pgettext_tip as _tip
 
-from . import addon_preferences, temp, updater
+from . import addon_preferences, operators, temp, updater
 from . import constants as const
 from .constants import _LANDCOVER_COLOR_ROWS
 from .props import (
@@ -1106,19 +1106,27 @@ def _draw_special_box(layout, props):
 def _draw_post_process_box(layout, props, context):
     def _draw_color_mountains_box(layout, props, context):
         sub = layout.box()
-        sub.label(text=_("Color Mountains"), icon="RNDCURVE")
+        sub.label(text=_("Color by Height"), icon="RNDCURVE")
         col = sub.column(align=True)
+        color_row = col.split(align=True, factor=0.3)
+        color_row.label(text=_("Color:"))
+        color_row.prop(props, "mountain_color")
         col.prop(props, "mountain_treshold")
         col.prop(
             props,
             "mountain_noise",
             icon="CHECKBOX_DEHLT" if not props.mountain_noise else "CHECKBOX_HLT",
         )
-        if props.mountain_noise:
-            row = col.row(align=True)
-            row.prop(props, "mountain_noise_amplitude")
-            row.prop(props, "mountain_noise_scale")
-        col.operator("tp3d.color_mountain", text=_("Color Mountains"), icon="RNDCURVE")
+        noise_settings = col.row(align=True)
+        noise_settings.prop(props, "mountain_noise_amplitude")
+        noise_settings.prop(props, "mountain_noise_scale")
+        noise_settings.enabled = props.mountain_noise
+        if operators._mountain_manifold_selection_eligible(context):
+            col.prop(props, "color_height_SEM", icon="CHECKBOX_DEHLT" if not props.color_height_SEM else "CHECKBOX_HLT")
+            ch_sem_row = col.row(align=True)
+            ch_sem_row.prop(props, "toleranceElements", text=_("Tolerance"))
+            ch_sem_row.enabled = props.color_height_SEM
+        col.operator("tp3d.color_mountain", text=_("Color by Height"), icon="RNDCURVE")
         if has_height_bake_undo(context.object):
             col.operator(
                 "tp3d.undo_mountain_texture",
