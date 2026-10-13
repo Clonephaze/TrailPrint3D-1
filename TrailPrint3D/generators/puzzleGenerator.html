@@ -127,6 +127,7 @@
     <div id="mapColumn" role="main" tabindex="-1" aria-label="Generator workspace">
     <div id="elementStatus"></div>
     <div id="map">
+        <button id="tutorialBtn" class="tutorial-btn map-tutorial-btn" type="button" title="Interactive step-by-step tutorials">Tutorials</button>
         <div id="coordSearch">
             <button id="coordSearchToggle" title="Go to location">
                 <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M10 1a6 6 0 00-6 6c0 4.5 6 12 6 12s6-7.5 6-12a6 6 0 00-6-6zm0 8.5A2.5 2.5 0 1110 4.5a2.5 2.5 0 010 5z"/></svg>
@@ -1282,7 +1283,14 @@
         updateHolderTextPreview();
         restoreState();
     </script>
-    <script>__TUTORIAL_JS__</script>
+    <script>
+        // Tutorial engine + this page's tutorials (assets/tutorial.js and
+        // assets/map_tutorials.js, which picks the puzzle menu via
+        // TP3D_IS_PUZZLE_PAGE) -- after the page's own script, since the
+        // steps hook into `map` and its Draw/Send handlers.
+        __TUTORIAL_JS__
+        __MAP_TUTORIALS_JS__
+    </script>
     <script>__EXPORT_FOLDER_JS__</script>
 </body>
 </html>

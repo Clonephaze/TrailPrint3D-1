@@ -667,6 +667,9 @@ var tp3dTutorial = (function() {
 //              offerId is recorded in the same progress file as finished
 //              tutorials (not counted as one), so it's only ever offered
 //              once. export_folder.js calls it once an export folder is set.
+//   offerTitle, offerText  optional: that guide's heading and body (HTML),
+//              to describe this generator's own tutorials instead of the
+//              generic wording.
 //
 // Finishing a tutorial (running past its last step, not exiting early)
 // records its id via picker_server.py's /complete_tutorial, and completed
@@ -812,8 +815,9 @@ function tp3dTutorialMenu(opts) {
         return [{
             target: btn,
             placement: 'right',
-            title: 'Interactive tutorials',
-            text: '<b>New here?</b> There are <b>interactive tutorials</b> that walk you through the ' +
+            title: opts.offerTitle || 'Interactive tutorials',
+            text: opts.offerText ||
+                  '<b>New here?</b> There are <b>interactive tutorials</b> that walk you through the ' +
                   'generator step by step, right on this page.<br><br>They\'re completely ' +
                   '<b>optional</b> — click <b>Tutorials</b> to pick one, or skip them and start on your ' +
                   'own. The button stays here at the top of the map for later.',

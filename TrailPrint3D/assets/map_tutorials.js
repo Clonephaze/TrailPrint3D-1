@@ -4,6 +4,12 @@
 // set of steps covers both. Must be inlined *after* the page has created
 // `map` and its own Draw/Send handlers, and requires a #tutorialBtn button
 // in the page's own markup.
+//
+// The Jigsaw Puzzle Generator pages (generators/puzzleGenerator.html and
+// premium/generators/puzzleGenerator_pe.html) inline this file too: they
+// share the drawn-area, layers-control and Settings-popup plumbing the
+// helpers below work with, and get their own tutorial menu instead of the
+// map one (see the bottom of this file, keyed on TP3D_IS_PUZZLE_PAGE).
 
 // Viewport (clientX/Y) position of a lat/lng on the page's Leaflet map --
 // what the tutorial engine's `demo` cursor points are expressed in.
@@ -643,8 +649,10 @@ function tp3dZoomToTopLeftQuarter() {
 // gets the same /toggle_element calls a click sends), so the "Turn on some
 // elements" step starts from nothing. Only for OSM -- WorldCover's chips are
 // a different set, so this runs again once the tutorial has switched to OSM.
-function tp3dAllElementsOff() {
-    if (!tp3dIsOsm() || typeof TP3D_ELEMENT_STATE === 'undefined') return;
+// anySource switches off the current source's elements, OSM or ESA (the
+// puzzle tutorial, which turns ESA ones on later).
+function tp3dAllElementsOff(anySource) {
+    if ((!anySource && !tp3dIsOsm()) || typeof TP3D_ELEMENT_STATE === 'undefined') return;
     Object.keys(TP3D_ELEMENT_STATE).forEach(function(key) {
         if (key !== 'elevation' && TP3D_ELEMENT_STATE[key]) tp3dToggleElement(key);
     });
@@ -847,7 +855,380 @@ function tp3dMapTutorialPrefetch() {
     ];
 }
 
-tp3dTutorialMenu({
+// ---- Puzzle Generator: "Create a 4 x 4 Jigsaw Puzzle" ----
+
+// Mount Fuji -- a single big cone with its summit crater, centered in the
+// puzzle. VIEW is where the map starts, AREA the ~20 km square "Draw it for
+// me" places around the summit.
+var TP3D_FUJI_VIEW_BOUNDS = [[35.20, 138.52], [35.52, 138.94]];
+var TP3D_FUJI_AREA_BOUNDS = [[35.27, 138.617], [35.45, 138.837]];
+
+// The grid the tutorial asks for -- not the page's 3 x 3 default, so the
+// grid step has something to do.
+var TP3D_PUZZLE_COLS = 4;
+var TP3D_PUZZLE_ROWS = 4;
+
+function tp3dPuzzleGridValue(id) {
+    return parseInt(document.getElementById(id).value) || 0;
+}
+function tp3dPuzzleIs4x4() {
+    return tp3dPuzzleGridValue('colsInput') === TP3D_PUZZLE_COLS &&
+        tp3dPuzzleGridValue('rowsInput') === TP3D_PUZZLE_ROWS;
+}
+
+// Square pieces: always on the free page (its other shapes are a locked
+// preview); on the premium page, whichever piece-shape button is active.
+function tp3dPuzzleIsSquare() {
+    return typeof puzzleShape === 'undefined' || puzzleShape === 'square';
+}
+
+function tp3dPuzzleSetInput(id, value) {
+    var el = document.getElementById(id);
+    if (!el || String(el.value) === String(value)) return;
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+// Same idea as tp3dResetMapGenerator, for the puzzle pages: drives the
+// page's own controls (delete / Clear buttons, piece-shape and draw-mode
+// buttons, inputs, layer radios) back to what a first launch shows. Leaves
+// the Settings popup's Puzzle tab values (tab size, jitter, ...) alone, like
+// the map reset leaves the scene settings alone.
+function tp3dResetPuzzleGenerator() {
+    function clickIfShown(id) {
+        var el = document.getElementById(id);
+        if (el && el.style.display !== 'none') el.click();
+    }
+
+    var m = tp3dSettingsModal();
+    if (m) m.classList.remove('open');
+    closePlateSettings();
+    if (typeof drawArmed !== 'undefined' && drawArmed) disarmDraw();
+    if (tp3dHasDrawnArea()) document.getElementById('deleteBtn').click();
+    clickIfShown('clearGpx');
+    clickIfShown('clearPrefetch');
+
+    if (!tp3dPuzzleIsSquare()) document.getElementById('shapeSquareBtn').click();
+    var cornerBtn = document.querySelector('.draw-mode-btn[data-mode="corner"]');
+    if (cornerBtn && !cornerBtn.classList.contains('active')) cornerBtn.click();
+    var holder = document.getElementById('holderEnabled');
+    if (holder.checked) holder.click();
+    // No colored elements until the ESA step turns some on.
+    tp3dAllElementsOff(true);
+
+    // Same defaults the page itself starts with: the static HTML's values.
+    ['lengthInput', 'widthInput', 'colsInput', 'rowsInput', 'resolutionSlider'].forEach(function(id) {
+        tp3dPuzzleSetInput(id, document.getElementById(id).defaultValue);
+    });
+
+    document.querySelectorAll('.leaflet-control-layers-base label').forEach(function(label) {
+        var input = label.querySelector('input');
+        if (input && !input.checked && label.textContent.trim() === 'OpenStreetMap') input.click();
+    });
+}
+
+// "Draw it for me": places the area around the summit through the page's
+// own placeShapeAroundBounds (rect_editor.js), same as a GPX import does.
+function tp3dPlaceFujiArea() {
+    if (typeof drawArmed !== 'undefined' && drawArmed) disarmDraw();
+    placeShapeAroundBounds(L.latLngBounds(TP3D_FUJI_AREA_BOUNDS), 1);
+    if (rectLayer) map.fitBounds(rectLayer.getBounds(), { padding: [50, 50] });
+}
+
+// waitFor for the pencil step: the pencil click, or an area appearing
+// through "Draw it for me" instead (tutorial.js ignores the second done()).
+function tp3dWaitForPencilOrArea() {
+    var click = tp3dTutorial.waitForClick('#drawBtn');
+    var area = tp3dTutorial.waitUntil(tp3dHasDrawnArea);
+    return function(done, api) {
+        var stopClick = click(done, api), stopArea = area(done, api);
+        return function() { stopClick(); stopArea(); };
+    };
+}
+
+// ESA WorldCover elements the puzzle tutorial asks for: forest on Fuji's
+// lower slopes, bare rock ("Mountain") on the upper cone.
+var TP3D_PUZZLE_ELEMENTS = ['forest', 'mountain'];
+
+function tp3dPuzzleElementsOn() {
+    return !tp3dIsOsm() && TP3D_PUZZLE_ELEMENTS.every(function(key) { return !!TP3D_ELEMENT_STATE[key]; });
+}
+
+// Sample cursor clicks the first of those chips that's still off.
+function tp3dDemoPuzzleElements() {
+    for (var i = 0; i < TP3D_PUZZLE_ELEMENTS.length; i++) {
+        var key = TP3D_PUZZLE_ELEMENTS[i];
+        if (TP3D_ELEMENT_STATE[key]) continue;
+        var chip = document.querySelector('#elementStatus .element-chip[data-element-toggle="' + key + '"]');
+        if (!chip) return null;
+        var r = chip.getBoundingClientRect();
+        return [{ x: r.left + 18, y: r.top + r.height / 2 }];
+    }
+    return null;
+}
+
+// Center of the ESA side of the OSM | ESA switch.
+function tp3dDemoClickEsa() {
+    var btns = document.querySelectorAll('.element-source-switch-compact .source-switch-btn');
+    var esa = btns[btns.length - 1];
+    if (!esa) return null;
+    var r = esa.getBoundingClientRect();
+    return [{ x: r.left + r.width / 2, y: r.top + r.height / 2 }];
+}
+
+function tp3dIsTopoLayer() {
+    return typeof activeBaseLayerName !== 'undefined' && activeBaseLayerName === 'Topographic';
+}
+
+// Demo for the layer step: clicks the Topographic entry of the (held open)
+// layers control.
+function tp3dDemoClickTopo() {
+    var pt = null;
+    document.querySelectorAll('.leaflet-control-layers-base label').forEach(function(label) {
+        if (label.textContent.trim() !== 'Topographic') return;
+        var r = label.getBoundingClientRect();
+        if (r.width) pt = { x: r.left + 12, y: r.top + r.height / 2 };
+    });
+    return pt ? [pt] : null;
+}
+
+// Through the page's own inputs, so the pieces on the map redraw as if the
+// user typed it.
+function tp3dPuzzleSet4x4() {
+    tp3dPuzzleSetInput('colsInput', TP3D_PUZZLE_COLS);
+    tp3dPuzzleSetInput('rowsInput', TP3D_PUZZLE_ROWS);
+}
+
+// Live hint under the grid step's text: the current grid and piece count.
+// Refreshed by the step's own timer.
+var tp3dPuzzleGridHintTimer = null;
+function tp3dPuzzleGridHint() {
+    var el = document.getElementById('tp3dPuzzleGridHint');
+    if (!el) return;
+    var c = tp3dPuzzleGridValue('colsInput'), r = tp3dPuzzleGridValue('rowsInput');
+    el.innerHTML = 'Now: <b>' + c + ' × ' + r + ' = ' + (c * r) + ' pieces</b>';
+}
+function tp3dPuzzleStartGridHint() {
+    tp3dPuzzleStopGridHint();
+    tp3dPuzzleGridHint();
+    tp3dPuzzleGridHintTimer = setInterval(tp3dPuzzleGridHint, 200);
+}
+function tp3dPuzzleStopGridHint() {
+    if (tp3dPuzzleGridHintTimer) { clearInterval(tp3dPuzzleGridHintTimer); tp3dPuzzleGridHintTimer = null; }
+}
+
+function tp3dPuzzleTutorialCreate() {
+    return [
+        {
+            target: '#map',
+            title: 'Create a jigsaw puzzle',
+            text: 'Turn any place into a 3D-printed jigsaw puzzle. Every piece is a small 3D map, and ' +
+                  'together they show the whole landscape.<br><br>' +
+                  'We moved the map to <b>Mount Fuji</b> in Japan. Its big cone makes for great terrain.<br><br>' +
+                  'You can exit this tutorial at any time with <b>✕</b> or <b>Esc</b>.'
+        },
+        {
+            target: function() { return document.getElementById('shapeSquareBtn').closest('.field-row'); },
+            placement: 'right',
+            title: 'Piece shape',
+            text: '<b>Square</b> pieces make a classic jigsaw puzzle with tabs on every inner edge.<br><br>' +
+                  'We use square pieces for this tutorial.'
+        },
+        {
+            target: '#drawBtn',
+            placement: 'right',
+            title: 'Draw your area',
+            text: 'Draw your area first, so you can see every setting change on the map right away.<br><br>' +
+                  'Click the <b>pencil</b> to start drawing.',
+            waitFor: tp3dWaitForPencilOrArea(),
+            waitText: 'Click the pencil',
+            buttons: [{ label: 'Draw it for me', onClick: tp3dPlaceFujiArea }],
+            skipIf: tp3dHasDrawnArea
+        },
+        {
+            target: '#map',
+            title: 'Draw your area',
+            text: 'Click and drag over the mountain to draw your area, then let go of the mouse. ' +
+                  'Keep the summit in the middle.<br><br>' +
+                  'If nothing happens, click the pencil again.',
+            demo: tp3dDemoDrawArea,
+            demoShape: 'rect',
+            demoGhostColor: TP3D_DRAWING_BLUE,
+            // Polled rather than waiting for the draw event, so "Draw it
+            // for me" (which places the area without one) counts too.
+            waitFor: tp3dTutorial.waitUntil(tp3dHasDrawnArea),
+            waitText: 'Draw on the map',
+            buttons: [{ label: 'Draw it for me', onClick: tp3dPlaceFujiArea }],
+            skipIf: tp3dHasDrawnArea
+        },
+        {
+            target: '.leaflet-control-layers',
+            title: 'See the terrain',
+            text: 'Click <b>Topographic</b> to see the mountains and valleys in your area.',
+            demo: tp3dDemoClickTopo,
+            waitFor: tp3dTutorial.waitUntil(tp3dIsTopoLayer),
+            waitText: 'Click Topographic',
+            skippable: true,
+            skipIf: tp3dIsTopoLayer,
+            onEnter: tp3dHoldLayersOpen,
+            onExit: tp3dReleaseLayersOpen
+        },
+        {
+            target: '#sizeRowRect',
+            interactive: true,
+            placement: 'right',
+            title: 'Set the size',
+            text: 'This is the size of the <b>whole puzzle</b> in <b>mm</b>, length × width.<br><br>' +
+                  'We keep <b>100 × 100</b> for this tutorial.'
+        },
+        {
+            target: '#gridRowRect',
+            placement: 'right',
+            title: 'Set the grid',
+            text: '<b>Grid</b> sets how many pieces your puzzle has: columns × rows. The blue shapes on the ' +
+                  'map are your pieces.<br><br>' +
+                  'Set it to <b>4 × 4</b>.<br><br>' +
+                  '<span id="tp3dPuzzleGridHint"></span>',
+            waitFor: tp3dTutorial.waitUntil(tp3dPuzzleIs4x4),
+            waitText: 'Set the grid to 4 × 4',
+            buttons: [{ label: 'Set 4 × 4 for me', onClick: tp3dPuzzleSet4x4 }],
+            skipIf: tp3dPuzzleIs4x4,
+            onEnter: tp3dPuzzleStartGridHint,
+            onExit: tp3dPuzzleStopGridHint
+        },
+        {
+            target: '#map',
+            interactive: true,
+            title: 'Frame the peak',
+            text: 'Inner edges get <b>tabs</b>, the outer edges stay straight.<br><br>' +
+                  'Drag the handle in the middle of the box to move your area, or a corner to resize it, ' +
+                  'until the summit sits in the <b>middle</b> of the puzzle.',
+            demo: tp3dDemoMoveShape,
+            demoGhost: tp3dDemoMoveGhost,
+            demoGhostColor: TP3D_DRAWN_ORANGE
+        },
+        {
+            target: function() { return document.getElementById('resolutionSlider').parentElement; },
+            placement: 'right',
+            title: 'Resolution',
+            text: '<b>Resolution</b> sets how much terrain detail your puzzle gets. Higher values look ' +
+                  'sharper but take longer to generate.<br><br>' +
+                  'We keep <b>8</b>, so the ridges of the mountain come out crisp.'
+        },
+        {
+            target: '.element-source-switch-compact',
+            placement: 'bottom',
+            title: 'Color the terrain with ESA',
+            text: 'Elements like forest or rock can get their own color for multi-color printing. ' +
+                  'Right now they are all off.<br><br>' +
+                  '<b>ESA</b> is made from satellite images and works for areas of any size, great for ' +
+                  'natural landscapes like this one.<br><br>' +
+                  'Click <b>ESA</b>.',
+            demo: tp3dDemoClickEsa,
+            waitFor: tp3dTutorial.waitUntil(function() { return !tp3dIsOsm(); }),
+            waitText: 'Click ESA',
+            skippable: true,
+            skipIf: function() { return !tp3dIsOsm(); }
+        },
+        {
+            target: function() {
+                return TP3D_PUZZLE_ELEMENTS.map(tp3dElementChipWrap).filter(Boolean);
+            },
+            placement: 'bottom',
+            title: 'Turn on Forest and Mountain',
+            text: 'Mount Fuji has <b>forest</b> on its lower slopes and bare rock, <b>Mountain</b>, on top.<br><br>' +
+                  'Click <b>Forest</b> and <b>Mountain</b> to switch them on. Green means on.',
+            // Starts from nothing, whatever ESA had switched on before.
+            onEnter: function() { tp3dAllElementsOff(true); },
+            demo: tp3dDemoPuzzleElements,
+            waitFor: tp3dTutorial.waitUntil(tp3dPuzzleElementsOn),
+            waitText: 'Turn on Forest and Mountain',
+            skippable: true,
+            skipIf: tp3dIsOsm
+        },
+        {
+            target: '.settings-gear-btn',
+            placement: 'bottom',
+            title: 'Puzzle settings',
+            text: 'Click <b>Settings</b> to see the options for the pieces themselves.',
+            waitFor: tp3dTutorial.waitForClick('.settings-gear-btn'),
+            waitText: 'Click Settings',
+            skipIf: tp3dSettingsOpen
+        },
+        {
+            // The Puzzle tab's fields (settings_modal.js's tp3dBuildPuzzleTab).
+            target: function() {
+                var el = document.getElementById('tabSizeInput');
+                return el ? el.closest('.map-tab-fields') : null;
+            },
+            interactive: true,
+            title: 'Puzzle settings',
+            text: '<ul class="tp3d-tut-list">' +
+                  '<li><b>Tab Size:</b> how big the tabs are</li>' +
+                  '<li><b>Jitter:</b> how irregular the tabs are, so every piece looks different</li>' +
+                  '<li><b>Seed:</b> a number to get the exact same pieces again. Empty means new pieces every time</li>' +
+                  '<li><b>Corner Radius:</b> rounds the 4 outer corners of the puzzle</li>' +
+                  '<li><b>Tolerance:</b> the gap between pieces, so they fit together after printing</li>' +
+                  '</ul>',
+            onEnter: function() { if (window.tp3dActivateSettingsTab) window.tp3dActivateSettingsTab('puzzle'); },
+            skipIf: function() { return !tp3dSettingsOpen(); }
+        },
+        {
+            target: tp3dInSettings('.tp3d-modal-close-btn'),
+            title: 'Close the settings',
+            text: 'Your changes are saved right away. Close the settings to continue.',
+            waitFor: tp3dTutorial.waitUntil(function() { return !tp3dSettingsOpen(); }),
+            waitText: 'Close the settings',
+            skipIf: function() { return !tp3dSettingsOpen(); }
+        },
+        {
+            target: function() { return document.getElementById('holderEnabled').closest('.control-stack'); },
+            interactive: true,
+            placement: 'right',
+            title: 'Add a holder',
+            text: 'Tick <b>Generate Holder</b> to also get a tray that holds the finished puzzle. ' +
+                  '<b>Plate Settings…</b> sets its frame, corners and text.<br><br>' +
+                  'This is optional.'
+        },
+        {
+            // Whichever is visible: Select Export Folder stands in for Send until a folder is set (export_folder.js).
+            target: ['#send', '.export-folder-pick'],
+            placement: 'right',
+            title: 'Generate your puzzle',
+            text: 'Click <b>Send to Blender</b> to generate your 16 puzzle pieces.',
+            waitFor: tp3dTutorial.waitForClick('#send'),
+            waitText: 'Click Send to Blender',
+            skippable: true
+        }
+    ];
+}
+
+var TP3D_PUZZLE_TUTORIAL_MENU = {
+    button: '#tutorialBtn',
+    title: 'Puzzle Generator Tutorials',
+    // Free + premium puzzle generator share it -- offered once for either.
+    offerId: 'offer-puzzle-generator',
+    offerTitle: 'Puzzle tutorial',
+    offerText: '<b>New to the Puzzle Generator?</b> An <b>interactive tutorial</b> walks you through ' +
+               'making a <b>4 × 4 jigsaw puzzle</b> of Mount Fuji: drawing the area, setting the grid, ' +
+               'coloring the terrain, the piece settings and the holder, right on this page.<br><br>It\'s completely ' +
+               '<b>optional</b> — click <b>Tutorials</b> to start it, or skip it and build your own ' +
+               'puzzle. The button stays here at the top of the map for later.',
+    tutorials: [
+        {
+            id: 'puzzle-create',
+            title: 'Create a 4 x 4 Jigsaw Puzzle',
+            description: 'Turn Mount Fuji into a 16-piece 3D terrain puzzle.',
+            prepare: function() {
+                tp3dResetPuzzleGenerator();
+                map.fitBounds(TP3D_FUJI_VIEW_BOUNDS);
+            },
+            steps: tp3dPuzzleTutorialCreate
+        }
+    ]
+};
+
+var TP3D_MAP_TUTORIAL_MENU = {
     button: '#tutorialBtn',
     title: 'Map Generator Tutorials',
     // Free + premium map generator share it -- offered once for either.
@@ -901,4 +1282,9 @@ tp3dTutorialMenu({
             steps: tp3dMapTutorialPrefetch
         }
     ]
-});
+};
+
+// TP3D_IS_PUZZLE_PAGE is set by both puzzle pages (also read by
+// settings_modal.js for its Puzzle tab).
+tp3dTutorialMenu(typeof TP3D_IS_PUZZLE_PAGE !== 'undefined' && TP3D_IS_PUZZLE_PAGE
+    ? TP3D_PUZZLE_TUTORIAL_MENU : TP3D_MAP_TUTORIAL_MENU);
