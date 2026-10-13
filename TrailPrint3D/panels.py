@@ -1012,8 +1012,10 @@ def _draw_export_box(layout, props):
     box.prop(props, "disable_auto_export")
     if temp.has3mf:
         box.prop(props, "disable_3mf_export")
-    if props.elementMode == "SINGLECOLORMODE_REMESH":
-        box.prop(props, "keep_positions", text=_("Keep Positions"))
+    
+    keep_pos = box.row(align=True)
+    keep_pos.prop(props, "keep_positions", text=_("Keep Positions"))
+    keep_pos.enabled = props.elementMode == "SINGLECOLORMODE_REMESH" or props.color_height_SEM
     if temp.has3mf and not props.disable_3mf_export:
         box.label(text=_("3MF Export Profile:"))
         row = box.row(align=True)
