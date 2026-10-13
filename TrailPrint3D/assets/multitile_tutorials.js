@@ -12,8 +12,8 @@ var TP3D_MT_DRAWING_BLUE = '#3388ff';
 // Zermatt and the Matterhorn in the Swiss Alps -- the tutorial's example area.
 var TP3D_MT_MATTERHORN_BOUNDS = [[45.94, 7.60], [46.05, 7.80]];
 
-// The grid the tutorial asks for: 3 x 3 hexagons, 5 mm apart.
-var TP3D_MT_SEGMENTS = 3;
+// The grid the tutorial asks for: 2 x 2 hexagons, 5 mm apart.
+var TP3D_MT_SEGMENTS = 2;
 var TP3D_MT_SPACING = 5;
 // Lower than the page's default 8 so the example generates quickly.
 var TP3D_MT_RESOLUTION = 6;
@@ -29,23 +29,23 @@ function tp3dMtSpacingValue() {
     return parseFloat(document.getElementById('tileSpacingValue').value) || 0;
 }
 
-// The drawn area is split into exactly 3 rows of 3 hexagons. With 3
-// segments, buildHexGridSegments only produces 9 tiles for a 3 x 3 layout
-// (fewer rows give 6-7, more give 12+), so the count alone is enough.
-function tp3dMtIs3x3() {
+// The drawn area is split into exactly 2 rows of 2 hexagons. With 2
+// segments, buildHexGridSegments only produces 4 tiles for a 2 x 2 layout
+// (fewer rows give 2-3, more give 6+), so the count alone is enough.
+function tp3dMtIs2x2() {
     return typeof currentShape !== 'undefined' && currentShape === 'hexagon' &&
-        tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS && segments.length === 9;
+        tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS && segments.length === 4;
 }
 
 function tp3dMtSelectedSlotCount() {
     return typeof selectedSlots !== 'undefined' ? Object.keys(selectedSlots).length : 0;
 }
 
-// Screen height a drawn box *widthPx* wide needs for 3 rows of hexagons --
+// Screen height a drawn box *widthPx* wide needs for 2 rows of hexagons --
 // buildHexGridSegments' own layout, solved for the height. Its (mx, my)
 // space is a linear rescale of screen pixels at a fixed zoom, so the ratio
-// carries over directly. 3 rows come out for a height of 2..2.5 row steps;
-// 2.25 aims at the middle so the demo's box lands safely inside. Uses the
+// carries over directly. 2 rows come out for a height of 1..1.5 row steps;
+// 1.25 aims at the middle so the demo's box lands safely inside. Uses the
 // tutorial's target spacing, not the slider's: the area is drawn before the
 // spacing step, and the grid has to come out right once it's set.
 function tp3dMtHexBoxHeight(widthPx) {
@@ -53,7 +53,7 @@ function tp3dMtHexBoxHeight(widthPx) {
     var objSize = parseFloat(document.getElementById('objSizeInput').value) || OBJ_SIZE;
     var spacingRatio = objSize > 0 ? 2 * TP3D_MT_SPACING / objSize : 0;
     var R = 2 * widthPx / ((3 * n - 1) + 2 * spacingRatio * (n - 1));
-    return 2.25 * (Math.sqrt(3) + spacingRatio) * R;
+    return 1.25 * (Math.sqrt(3) + spacingRatio) * R;
 }
 
 // Screen rect of the drawn area's orange box, or null when nothing is drawn.
@@ -64,7 +64,7 @@ function tp3dMtDrawnBoxRect() {
 }
 
 // Demo for "draw your area": a drag across the middle of the map, shaped
-// so the grid comes out as 3 x 3 hexagons once the following steps have set
+// so the grid comes out as 2 x 2 hexagons once the following steps have set
 // the shape, segments and spacing.
 function tp3dMtDemoDrawArea() {
     var box = map.getContainer().getBoundingClientRect();
@@ -74,10 +74,10 @@ function tp3dMtDemoDrawArea() {
     return [{ x: cx - dx, y: cy - dy }, { x: cx + dx, y: cy + dy }];
 }
 
-// Demo for "3 rows of 3": drags the bottom-right corner up or down to the
-// height that gives 3 rows -- nothing once the grid is already right.
+// Demo for "2 rows of 2": drags the bottom-right corner up or down to the
+// height that gives 2 rows -- nothing once the grid is already right.
 function tp3dMtDemoFixRows() {
-    if (tp3dMtIs3x3()) return null;
+    if (tp3dMtIs2x2()) return null;
     // Resizing can't help with the wrong segments/shape (see tp3dMtRowHint).
     if (currentShape !== 'hexagon' || tp3dMtSegmentsValue() !== TP3D_MT_SEGMENTS) return null;
     var r = tp3dMtDrawnBoxRect();
@@ -103,14 +103,13 @@ function tp3dMtTilesForNorth(north) {
     }
 }
 
-// "Fix it for me" on the 3-rows step: keeps the width and the bottom edge,
-// and moves the top edge to the middle of the range of heights that give 9
-// tiles (that range is narrow -- about 0.9 to 1.05 times the width, which is
-// what makes dragging to it fiddly). Resized through the rectangle itself,
-// then its own 'edit' handler (bindLiveEdit) updates coords, grid and state.
+// "Fix it for me" on the 2-rows step: keeps the width and the bottom edge,
+// and moves the top edge to the middle of the range of heights that give 4
+// tiles. Resized through the rectangle itself, then its own 'edit' handler
+// (bindLiveEdit) updates coords, grid and state.
 function tp3dMtFixRows() {
     if (!tp3dMtHasDrawnArea() || typeof rectLayer === 'undefined' || !rectLayer) return;
-    // 9 tiles only exist for hexagons with 3 segments -- put those back
+    // 4 tiles only exist for hexagons with 2 segments -- put those back
     // first if they were changed after their own steps (through the page's
     // own controls, so the grid redraws as if the user did it).
     if (currentShape !== 'hexagon') document.querySelector('.shape-btn[data-shape="hexagon"]').click();
@@ -127,7 +126,7 @@ function tp3dMtFixRows() {
     var lo = null, hi = null;
     for (var f = 0.2; f <= 3; f += 0.01) {
         var north = south + lonSpan * f;
-        if (tp3dMtTilesForNorth(north) === 9) {
+        if (tp3dMtTilesForNorth(north) === 4) {
             if (lo === null) lo = north;
             hi = north;
         } else if (lo !== null) {
@@ -145,7 +144,7 @@ function tp3dMtFixRows() {
     rectLayer.fire('edit');
 }
 
-// Live hint under the 3-rows step's text: how many tiles there are now and
+// Live hint under the 2-rows step's text: how many tiles there are now and
 // which way to drag. Refreshed by the step's own timer.
 var tp3dMtRowHintTimer = null;
 function tp3dMtRowHint() {
@@ -155,13 +154,13 @@ function tp3dMtRowHint() {
     if (typeof currentShape !== 'undefined' && currentShape !== 'hexagon') {
         el.innerHTML = 'The shape isn\'t <b>hexagon</b> anymore — click <b>Fix it for me</b> to switch it back.';
     } else if (tp3dMtSegmentsValue() !== TP3D_MT_SEGMENTS) {
-        el.innerHTML = '<b>Segments</b> is set to <b>' + tp3dMtSegmentsValue() + '</b> now, so 3 x 3 can\'t come ' +
-            'out — click <b>Fix it for me</b> to set it back to 3.';
-    } else if (tp3dMtIs3x3()) {
-        el.innerHTML = '<b>9 tiles</b> — that\'s 3 x 3.';
+        el.innerHTML = '<b>Segments</b> is set to <b>' + tp3dMtSegmentsValue() + '</b> now, so 2 x 2 can\'t come ' +
+            'out — click <b>Fix it for me</b> to set it back to 2.';
+    } else if (tp3dMtIs2x2()) {
+        el.innerHTML = '<b>4 tiles</b> — that\'s 2 x 2.';
     } else {
         el.innerHTML = 'Now: <b>' + n + ' tiles</b> — drag the corner <b>' +
-            (n < 9 ? 'down' : 'up') + '</b> (' + (n < 9 ? 'taller' : 'shorter') + ').';
+            (n < 4 ? 'down' : 'up') + '</b> (' + (n < 4 ? 'taller' : 'shorter') + ').';
     }
 }
 
@@ -316,10 +315,10 @@ function tp3dMultitileTutorialCreate() {
             placement: 'right',
             title: 'Set the segments',
             text: '<b>Segments</b> is the number of tiles across your map.<br><br>' +
-                  'Drag the slider to <b>3</b>.',
+                  'Drag the slider to <b>2</b>.',
             demo: tp3dMtDemoSlider('subdivisionSlider', TP3D_MT_SEGMENTS),
             waitFor: tp3dMtWaitForSlider(function() { return tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS; }),
-            waitText: 'Set Segments to 3',
+            waitText: 'Set Segments to 2',
             skipIf: function() { return tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS; },
             onExit: tp3dMtBlurSlider
         },
@@ -346,17 +345,17 @@ function tp3dMultitileTutorialCreate() {
         },
         {
             target: '#map',
-            title: 'Get 3 rows of 3 hexagons',
-            text: '<b>Segments</b> sets the <b>columns</b>: 3 across. The number of <b>rows</b> depends on how ' +
+            title: 'Get 2 rows of 2 hexagons',
+            text: '<b>Segments</b> sets the <b>columns</b>: 2 across. The number of <b>rows</b> depends on how ' +
                   '<b>tall</b> the orange box is.<br><br>' +
                   'Drag its <b>bottom-right corner straight down or up</b> (keep the width the same) until you ' +
-                  'see <b>3 rows of 3 hexagons</b>, 9 tiles in total.<br><br>' +
+                  'see <b>2 rows of 2 hexagons</b>, 4 tiles in total.<br><br>' +
                   '<span id="tp3dMtRowHint"></span>',
             demo: tp3dMtDemoFixRows,
-            waitFor: tp3dTutorial.waitUntil(tp3dMtIs3x3),
-            waitText: 'Make it 3 x 3',
+            waitFor: tp3dTutorial.waitUntil(tp3dMtIs2x2),
+            waitText: 'Make it 2 x 2',
             skippable: true,
-            skipIf: tp3dMtIs3x3,
+            skipIf: tp3dMtIs2x2,
             buttons: [{ label: 'Fix it for me', onClick: tp3dMtFixRows }],
             onEnter: function() {
                 tp3dMtBlurSlider();
@@ -386,7 +385,7 @@ function tp3dMultitileTutorialCreate() {
         {
             target: '#map',
             title: 'Add a tile',
-            text: 'Your 9 tiles are shown in blue. Every dashed hexagon with a <b>+</b> is a free spot ' +
+            text: 'Your 4 tiles are shown in blue. Every dashed hexagon with a <b>+</b> is a free spot ' +
                   'next to them.<br><br>' +
                   'Click a <b>+</b> to add a tile there.',
             demo: tp3dMtDemoClickPlus,
@@ -408,7 +407,7 @@ function tp3dMultitileTutorialCreate() {
             placement: 'right',
             title: 'Set the resolution',
             text: '<b>Resolution</b> sets how much terrain detail each tile gets. Higher values look sharper ' +
-                  'but take longer to generate.<br><br>' +
+                  'but take longer to generate. Lower values generate faster but show less detail.<br><br>' +
                   'Set it to <b>6</b> so this example generates quickly.',
             demo: tp3dMtDemoSlider('resolutionSlider', TP3D_MT_RESOLUTION),
             waitFor: tp3dMtWaitForSlider(function() {
@@ -433,6 +432,218 @@ function tp3dMultitileTutorialCreate() {
     ];
 }
 
+// ---- Shared sample-file helpers ----
+
+// Fetches a bundled sample file from the server and hands it to an
+// <input type="file"> element, same approach as map_tutorials.js.
+function tp3dMtSampleFileLoader(fileName, inputId, mimeType, what) {
+    return function(button) {
+        var label = button.textContent;
+        button.disabled = true;
+        button.textContent = 'Loading…';
+        fetch('http://127.0.0.1:' + PORT + '/get_sample_file?name=' + encodeURIComponent(fileName))
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.text();
+            })
+            .then(function(text) {
+                var transfer = new DataTransfer();
+                transfer.items.add(new File([text], fileName, { type: mimeType }));
+                var input = document.getElementById(inputId);
+                input.files = transfer.files;
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            })
+            .catch(function() {
+                button.disabled = false;
+                button.textContent = label;
+                tp3dAlert('Could not load the sample ' + what + '.');
+            });
+    };
+}
+
+var tp3dMtLoadSampleGpx = tp3dMtSampleFileLoader('BetweenLakes.gpx', 'gpxInput', 'application/gpx+xml', 'GPX file');
+var tp3dMtLoadSampleGeojson = tp3dMtSampleFileLoader('germany.json', 'geojsonInput', 'application/geo+json', 'GeoJSON file');
+
+function tp3dHasMtGpx() { return typeof gpxPaths !== 'undefined' && gpxPaths.length > 0; }
+function tp3dHasMtGeojson() { return typeof geojsonPaths !== 'undefined' && geojsonPaths.length > 0; }
+
+// Lake Como / Ceresio area -- the region the sample GPX trail passes through.
+var TP3D_MT_LAKE_COMO_BOUNDS = [[45.8, 8.8], [46.1, 9.4]];
+
+// Germany -- starting view for the country-map tutorial.
+var TP3D_MT_GERMANY_BOUNDS = [[47.3, 5.9], [55.1, 15.0]];
+
+// ---- "Spread a Trail (GPX file) across multiple tiles" ----
+
+function tp3dMultitileTutorialGpx() {
+    return [
+        {
+            target: '#map',
+            title: 'Spread a trail across tiles',
+            text: 'A GPX file holds a recorded route. Import it here and the grid automatically ' +
+                  'wraps around the whole trail — so your route spreads across as many tiles ' +
+                  'as it needs.<br><br>' +
+                  'You can exit this tutorial at any time with <b>✕</b> or <b>Esc</b>.'
+        },
+        {
+            target: '#importGpx',
+            placement: 'right',
+            title: 'Import a GPX file',
+            text: 'Click <b>Import GPX</b> and pick your file.<br><br>' +
+                  'No file at hand? Use our sample route between the two lakes.',
+            buttons: [{ label: 'Use sample GPX file', onClick: tp3dMtLoadSampleGpx }],
+            waitFor: tp3dTutorial.waitUntil(tp3dHasMtGpx),
+            waitText: 'Import a GPX file'
+        },
+        {
+            target: '#map',
+            title: 'Grid placed around the trail',
+            text: 'The orange box and the grid were placed automatically around the full extent of the trail.<br><br>' +
+                  'The rectangle shape works well for linear routes — each tile covers a different section.'
+        },
+        {
+            target: function() { return document.getElementById('subdivisionSlider').parentElement; },
+            placement: 'right',
+            title: 'Set the segments',
+            text: '<b>Segments</b> controls how many tiles the trail is split into.<br><br>' +
+                  'Drag the slider to <b>2</b> to get two tiles: one for each half of the route.',
+            demo: tp3dMtDemoSlider('subdivisionSlider', TP3D_MT_SEGMENTS),
+            waitFor: tp3dMtWaitForSlider(function() { return tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS; }),
+            waitText: 'Set Segments to 2',
+            skipIf: function() { return tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS; },
+            onExit: tp3dMtBlurSlider
+        },
+        {
+            target: function() { return document.getElementById('tileSpacing').parentElement; },
+            placement: 'right',
+            title: 'Set the tile spacing',
+            text: 'Add a gap between the tiles so they can be mounted side by side without overlapping.<br><br>' +
+                  'Set it to <b>5 mm</b>.',
+            demo: tp3dMtDemoSlider('tileSpacing', TP3D_MT_SPACING),
+            waitFor: tp3dMtWaitForSlider(function() { return tp3dMtSpacingValue() === TP3D_MT_SPACING; }),
+            waitText: 'Set Tile Spacing to 5',
+            skipIf: function() { return tp3dMtSpacingValue() === TP3D_MT_SPACING; },
+            onExit: tp3dMtBlurSlider
+        },
+        {
+            target: '#totalSizeInfo',
+            placement: 'right',
+            title: 'Total map size',
+            text: 'The total display size of both tiles together is shown here. ' +
+                  'Adjust <b>Size (mm)</b> to change how big each individual tile is.'
+        },
+        {
+            target: function() { return document.getElementById('resolutionSlider').parentElement; },
+            placement: 'right',
+            title: 'Set the resolution',
+            text: '<b>Resolution</b> sets how much terrain detail each tile gets. Higher values look sharper ' +
+                  'but take longer to generate. Lower values generate faster but show less detail.<br><br>' +
+                  'Set it to <b>6</b> so this example generates quickly.',
+            demo: tp3dMtDemoSlider('resolutionSlider', TP3D_MT_RESOLUTION),
+            waitFor: tp3dMtWaitForSlider(function() {
+                return parseInt(document.getElementById('resolutionSlider').value) === TP3D_MT_RESOLUTION;
+            }),
+            waitText: 'Set Resolution to 6',
+            skipIf: function() {
+                return parseInt(document.getElementById('resolutionSlider').value) === TP3D_MT_RESOLUTION;
+            },
+            onExit: tp3dMtBlurSlider
+        },
+        {
+            target: ['#send', '.export-folder-pick'],
+            placement: 'right',
+            title: 'Generate your tiles',
+            text: 'Click <b>Send to Blender</b> to generate both trail tiles.',
+            waitFor: tp3dTutorial.waitForClick('#send'),
+            waitText: 'Click Send to Blender',
+            skippable: true
+        }
+    ];
+}
+
+// ---- "Create Multitile Country Maps" ----
+
+function tp3dMultitileTutorialCountry() {
+    return [
+        {
+            target: '#map',
+            title: 'Create a country map',
+            text: 'A GeoJSON file holds a real geographic boundary — a country, a region, a park. ' +
+                  'Import it and the grid is clipped to that exact outline, so each tile follows the border.<br><br>' +
+                  'We will split <b>Germany</b> into two tiles.<br><br>' +
+                  'You can exit this tutorial at any time with <b>✕</b> or <b>Esc</b>.'
+        },
+        {
+            target: '#importGeojson',
+            placement: 'right',
+            title: 'Import a GeoJSON boundary',
+            text: 'Click <b>GeoJSON</b> to pick your file.<br><br>' +
+                  'No file at hand? Use our sample of Germany.',
+            buttons: [{ label: 'Use sample Germany GeoJSON', onClick: tp3dMtLoadSampleGeojson }],
+            waitFor: tp3dTutorial.waitUntil(tp3dHasMtGeojson),
+            waitText: 'Import a GeoJSON file'
+        },
+        {
+            target: '#map',
+            title: 'Germany on the map',
+            text: 'The outline of Germany is now drawn on the map. The grid will be clipped to this border — ' +
+                  'tiles that fall outside are left out, so the finished set follows the country\'s shape exactly.'
+        },
+        {
+            target: function() { return document.getElementById('subdivisionSlider').parentElement; },
+            placement: 'right',
+            title: 'Set the segments',
+            text: '<b>Segments</b> sets how many tiles wide the country is split.<br><br>' +
+                  'Drag it to <b>2</b> to divide Germany into a western and an eastern tile.',
+            demo: tp3dMtDemoSlider('subdivisionSlider', TP3D_MT_SEGMENTS),
+            waitFor: tp3dMtWaitForSlider(function() { return tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS; }),
+            waitText: 'Set Segments to 2',
+            skipIf: function() { return tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS; },
+            onExit: tp3dMtBlurSlider
+        },
+        {
+            target: '#map',
+            title: 'Tiles clipped to Germany',
+            text: 'The grid is now split into two columns. Tiles that lie fully outside Germany\'s border are ' +
+                  'removed, and the rest follow its outline exactly.<br><br>' +
+                  'You can drag the orange box to reposition or resize it if you want a different crop.'
+        },
+        {
+            target: '#totalSizeInfo',
+            placement: 'right',
+            title: 'Total map size',
+            text: 'The total display size of all tiles together is shown here. ' +
+                  'Adjust <b>Size (mm)</b> to change how big each individual tile is.'
+        },
+        {
+            target: function() { return document.getElementById('resolutionSlider').parentElement; },
+            placement: 'right',
+            title: 'Set the resolution',
+            text: '<b>Resolution</b> sets how much terrain detail each tile gets. Higher values look sharper ' +
+                  'but take longer to generate. Lower values generate faster but show less detail.<br><br>' +
+                  'Set it to <b>6</b> so this example generates quickly.',
+            demo: tp3dMtDemoSlider('resolutionSlider', TP3D_MT_RESOLUTION),
+            waitFor: tp3dMtWaitForSlider(function() {
+                return parseInt(document.getElementById('resolutionSlider').value) === TP3D_MT_RESOLUTION;
+            }),
+            waitText: 'Set Resolution to 6',
+            skipIf: function() {
+                return parseInt(document.getElementById('resolutionSlider').value) === TP3D_MT_RESOLUTION;
+            },
+            onExit: tp3dMtBlurSlider
+        },
+        {
+            target: ['#send', '.export-folder-pick'],
+            placement: 'right',
+            title: 'Generate your country map',
+            text: 'Click <b>Send to Blender</b> to generate all tiles.',
+            waitFor: tp3dTutorial.waitForClick('#send'),
+            waitText: 'Click Send to Blender',
+            skippable: true
+        }
+    ];
+}
+
 tp3dTutorialMenu({
     button: '#tutorialBtn',
     title: 'Multi-Tile Generator Tutorials',
@@ -441,12 +652,29 @@ tp3dTutorialMenu({
         {
             id: 'multitile-create',
             title: 'Create a multi-tile map',
-            description: 'Split a map of the Alps into 3 x 3 hexagon tiles and extend it with more.',
+            description: 'Split a map of the Alps into 2 x 2 hexagon tiles and extend it with more.',
             prepare: function() {
                 tp3dResetMultitileGenerator();
                 map.fitBounds(TP3D_MT_MATTERHORN_BOUNDS);
             },
             steps: tp3dMultitileTutorialCreate
+        },
+        {
+            id: 'multitile-gpx',
+            title: 'Spread a Trail (GPX file) across multiple tiles',
+            description: 'Import a recorded route and let the grid automatically span all the tiles it covers.',
+            prepare: tp3dResetMultitileGenerator,
+            steps: tp3dMultitileTutorialGpx
+        },
+        {
+            id: 'multitile-country',
+            title: 'Create Multitile Country Maps',
+            description: 'Import a GeoJSON country border and split it into tiles that follow its outline.',
+            prepare: function() {
+                tp3dResetMultitileGenerator();
+                map.fitBounds(TP3D_MT_GERMANY_BOUNDS);
+            },
+            steps: tp3dMultitileTutorialCountry
         }
     ]
 });
