@@ -12,6 +12,7 @@ import time
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
+import numpy as np
 from bpy.app.translations import pgettext_iface as _
 from bpy.app.translations import pgettext_rpt as _rpt
 from bpy.app.translations import pgettext_tip as _tip
@@ -1235,12 +1236,20 @@ def _mountain_uniform_material(obj):
     Single Extruder Mode and lets an existing piece be split again.
     """
     mesh = obj.data
-    if not mesh.polygons:
+    face_count = len(mesh.polygons)
+    if not face_count:
         return None
-    indices = {polygon.material_index for polygon in mesh.polygons}
-    if len(indices) != 1:
-        return None
-    index = indices.pop()
+    # Called from panel draw, so avoid per-polygon Python iteration. The
+    # attribute is absent when every face uses slot 0.
+    attribute = mesh.attributes.get("material_index")
+    if attribute is None:
+        index = 0
+    else:
+        values = np.empty(face_count, dtype=np.int32)
+        attribute.data.foreach_get("value", values)
+        index = int(values[0])
+        if (values != index).any():
+            return None
     if index >= len(mesh.materials):
         return None
     return mesh.materials[index]
