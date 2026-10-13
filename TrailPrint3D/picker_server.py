@@ -1244,7 +1244,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
         proc = sp.Popen(
             [browser, f'--app={url}',
              f'--user-data-dir={profile_dir}',
-             '--window-size=1870,1030', '--window-position=25,5',
+             '--start-maximized',
              '--no-first-run', '--no-default-browser-check',
              '--disable-extensions', '--disable-background-networking',
              '--disable-features=Translate,TranslateUI',
