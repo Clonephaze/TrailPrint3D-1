@@ -174,6 +174,12 @@ water_cache_dir = os.path.join(
 # Set up a folder for Presets
 preset_dir = os.path.join(bpy.utils.user_resource("CONFIG"), "TP3D-presets")
 
+# Named "Defaults" a generator page saves and loads (e.g. the Backplate
+# Generator's) -- one JSON file per page, see picker_server.py's
+# /get_page_defaults & /save_page_defaults. Created on first save. A
+# subfolder, so the main panel's CSV presets in preset_dir never list them.
+generator_defaults_dir = os.path.join(preset_dir, "generator_defaults")
+
 # Set up a folder for the picker pages' (puzzleGenerator.html etc.) per-
 # generator generation history -- one JSON file per page, see
 # picker_server.py's /save_history_entry & /get_history.

@@ -740,7 +740,7 @@ function tp3dBuildElementSourceSwitch() {
 // doesn't change which fields/cards the rest of this tab shows -- it only
 // greys singleExtruderOnly fields in or out (tp3dRefreshSingleExtruderFields).
 // Visual example behind the row's "?" button (also highlighted by the
-// "Add Colors to the map" tutorial, assets/map_tutorials.js).
+// "Colorize your Map" tutorial, assets/map_tutorials.js).
 var ELEMENT_MODE_PREVIEW = 'https://trailprint3d.com/images/howto/PaintVsSingleExtruder.webp';
 function tp3dBuildElementModeSwitch() {
     var row = document.createElement('div');

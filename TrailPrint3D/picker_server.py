@@ -5,6 +5,7 @@
 # POSTs the coordinates to /confirm and writes them to a temp JSON file that
 # the Blender operator polls via a modal timer.
 import json
+import os
 import pathlib
 import queue
 import re
@@ -64,6 +65,149 @@ _prefetch_job: dict = {'status': 'idle', 'message': '', 'result': None}
 _pending_model_previews: 'queue.Queue[dict]' = queue.Queue()
 _model_preview_job: dict = {'status': 'idle', 'version': 0, 'message': ''}
 _MODEL_PREVIEW_PATH = pathlib.Path(tempfile.gettempdir()) / 'trailprint_model_preview.glb'
+
+# Every generator page's export-folder button (assets/export_folder.js).
+# 'scene' is the scene's own Export Path and 'default' the Default Export
+# Folder preference (both read from Blender in start_picker); exports use
+# 'scene' if set, else 'default' (addon_preferences.get_export_folder). A
+# pick only ever replaces 'default'. 'status' is 'picking' while the OS
+# folder dialog is open. POST /pick_export_folder runs the (blocking) dialog
+# on its own thread so this single-threaded server keeps answering the page
+# meanwhile, and queues the choice as an 'exportFolder' update on
+# _pending_settings (utils.apply_setting_update sets it on the main thread).
+# Same key-wise-update-only rule as _prefetch_job.
+_export_folder_job: dict = {'status': 'idle', 'scene': '', 'default': ''}
+
+
+def _effective_export_folder() -> str:
+    return _export_folder_job.get('scene') or _export_folder_job.get('default') or ''
+
+
+def _pick_folder_dialog(initial: str) -> str:
+    """Show the OS's own folder picker (blocking) and return the chosen
+    folder, or '' if cancelled/unavailable. Never touches bpy -- runs on a
+    worker thread. The start folder goes in via an environment variable so
+    no path ever needs quoting into a script. The dialog's process id is
+    kept in _export_folder_job['pid'] while it's open (see _raise_dialog)."""
+    title = 'Select the TrailPrint3D export folder'
+    env = dict(os.environ, TP3D_INITIAL_DIR=initial if initial and os.path.isdir(initial) else '')
+    flags = 0
+    if sys.platform == 'win32':
+        # Windows won't let a background process bring a window to the front,
+        # so the dialog used to open behind the browser now and then. Owning
+        # it by a *shown* TopMost window fixes that: owned windows always sit
+        # above their owner. The owner is fully transparent and off the
+        # taskbar, centered on screen so the dialog opens there too.
+        ps = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$owner = New-Object System.Windows.Forms.Form; "
+            "$owner.TopMost = $true; $owner.ShowInTaskbar = $false; $owner.Opacity = 0; "
+            "$owner.FormBorderStyle = 'None'; $owner.StartPosition = 'CenterScreen'; "
+            "$owner.Width = 1; $owner.Height = 1; "
+            "$owner.Show(); $owner.Activate(); "
+            "$b = New-Object System.Windows.Forms.FolderBrowserDialog; "
+            f"$b.Description = '{title}'; "
+            "$b.ShowNewFolderButton = $true; "
+            "if ($env:TP3D_INITIAL_DIR) { $b.SelectedPath = $env:TP3D_INITIAL_DIR }; "
+            "$r = $b.ShowDialog($owner); $owner.Close(); "
+            "if ($r -eq 'OK') { Write-Output $b.SelectedPath }"
+        )
+        cmd = ['powershell', '-NoProfile', '-NonInteractive', '-STA', '-Command',
+               '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; ' + ps]
+        flags = sp.CREATE_NO_WINDOW
+    elif sys.platform == 'darwin':
+        script = f'POSIX path of (choose folder with prompt "{title}"'
+        if env['TP3D_INITIAL_DIR']:
+            script += ' default location (POSIX file (system attribute "TP3D_INITIAL_DIR"))'
+        cmd = ['osascript', '-e', script + ')']
+    elif shutil.which('zenity'):
+        cmd = ['zenity', '--file-selection', '--directory', f'--title={title}']
+        if env['TP3D_INITIAL_DIR']:
+            cmd.append('--filename=' + os.path.join(env['TP3D_INITIAL_DIR'], ''))
+    elif shutil.which('kdialog'):
+        cmd = ['kdialog', '--getexistingdirectory', env['TP3D_INITIAL_DIR'] or os.path.expanduser('~'),
+               '--title', title]
+    else:
+        print("[TP3D picker] no folder dialog available (install zenity or kdialog)")
+        return ''
+    try:
+        proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.DEVNULL, env=env, creationflags=flags)
+    except OSError as e:
+        print(f"[TP3D picker] folder dialog failed: {e}")
+        return ''
+    _export_folder_job.update(pid=proc.pid)
+    try:
+        out, _unused = proc.communicate()
+    finally:
+        _export_folder_job.update(pid=None)
+    path = out.decode('utf-8', errors='replace').strip()
+    return path if path and os.path.isdir(path) else ''
+
+
+def _raise_dialog() -> None:
+    """Bring the already-open folder dialog back to the front (Windows) --
+    e.g. after the user clicked into the browser and it went behind. Called
+    when the page's button is clicked again while a dialog is still open,
+    instead of ignoring that click."""
+    pid = _export_folder_job.get('pid')
+    if not pid or sys.platform != 'win32':
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    hwnds = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def _collect(hwnd, _lparam):
+        owner_pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner_pid))
+        if owner_pid.value == pid and user32.IsWindowVisible(hwnd):
+            hwnds.append(hwnd)
+        return True
+
+    user32.EnumWindows(_collect, 0)
+    HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW = -1, 0x2, 0x1, 0x40
+    for hwnd in hwnds:
+        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+        user32.SetForegroundWindow(hwnd)
+
+
+def _run_export_folder_pick() -> None:
+    chosen = _pick_folder_dialog(_export_folder_job.get('default') or _effective_export_folder())
+    if not chosen:
+        _export_folder_job.update(status='cancelled')
+        return
+    # Trailing separator: export.py appends file names to it directly.
+    chosen = os.path.join(chosen, '')
+    _pending_settings.put(('exportFolder', chosen))
+    _export_folder_job.update(status='done', default=chosen)
+
+
+def _open_folder(path: str) -> bool:
+    """Open *path* in the OS file manager. False if it isn't a folder."""
+    if not path or not os.path.isdir(path):
+        return False
+    try:
+        if sys.platform == 'win32':
+            os.startfile(path)  # type: ignore[attr-defined]
+        elif sys.platform == 'darwin':
+            sp.Popen(['open', path])
+        else:
+            sp.Popen(['xdg-open', path])
+    except OSError as e:
+        print(f"[TP3D picker] could not open folder {path}: {e}")
+        return False
+    return True
+
+
+def is_active_server(server) -> bool:
+    """False once a newer start_picker() replaced *server* (the user opened
+    another generator page). The queues and page-load snapshots in this
+    module are shared, so the replaced page's operator must end its modal
+    then -- otherwise it keeps draining the new page's queued updates and
+    overwriting its SETTINGS_STATE via refresh_state_snapshots."""
+    return server is not None and server is _active_server
 
 
 def drain_latest_model_preview() -> dict | None:
@@ -190,10 +334,14 @@ _SETTINGS_MODAL_JS_PATH = _ASSETS_DIR / 'settings_modal.js'
 _RECT_EDITOR_JS_PATH = _ASSETS_DIR / 'rect_editor.js'
 _PREFETCH_JS_PATH = _ASSETS_DIR / 'prefetch_layer.js'
 _SHAPE_EXTRAS_JS_PATH = _ASSETS_DIR / 'shape_extras.js'
+# Generated icon outlines (generate_text_icons.py) the Backplate top view in
+# shape_extras.js draws -- served as part of __SHAPE_EXTRAS_JS__.
+_TEXT_ICONS_JS_PATH = _ASSETS_DIR / 'text_icons.js'
 _HISTORY_PANEL_JS_PATH = _ASSETS_DIR / 'history_panel.js'
 _TUTORIAL_JS_PATH = _ASSETS_DIR / 'tutorial.js'
 _MAP_TUTORIALS_JS_PATH = _ASSETS_DIR / 'map_tutorials.js'
 _MULTITILE_TUTORIALS_JS_PATH = _ASSETS_DIR / 'multitile_tutorials.js'
+_EXPORT_FOLDER_JS_PATH = _ASSETS_DIR / 'export_folder.js'
 
 _element_icons_js_cache: str | None = None
 
@@ -332,6 +480,82 @@ def _mark_tutorial_complete(tutorial_id: str) -> dict:
     except OSError as e:
         print(f"[TP3D picker] Failed to write tutorial progress {_TUTORIAL_PROGRESS_PATH}: {e}")
     return progress
+
+
+# Saved "Defaults" per page (e.g. the Backplate Generator's): a list of
+# {'name', 'settings'} kept in one JSON file per page, keyed like the history
+# (_history_key). The page owns the list -- it sends the whole edited list
+# back -- this only validates and caps it.
+_DEFAULTS_DIR = pathlib.Path(const.generator_defaults_dir)
+_DEFAULTS_MAX_ENTRIES = 200
+_DEFAULTS_NAME_MAX = 60
+
+
+_FONT_TYPES = {'.ttf': 'font/ttf', '.otf': 'font/otf', '.ttc': 'font/collection', '.woff': 'font/woff'}
+
+
+def _servable_font_path(requested: str, settings_state_json: bytes) -> pathlib.Path | None:
+    """The font file GET /font_file may send for *requested*, or None.
+
+    The path comes from the browser, so only fonts the page could have
+    picked anyway are served: an installed one from /list_fonts, Blender's
+    default text font (for '' -- text_objects.default_font_path), or the
+    scene's own textFont from the page's SETTINGS_STATE snapshot. Never an
+    arbitrary file."""
+    from .utils import font_list
+    from .utils.text_objects import default_font_path
+
+    if not requested:
+        requested = default_font_path()
+    if not requested:
+        return None
+    allowed = {f['path'] for f in font_list.list_fonts()}
+    allowed.add(default_font_path())
+    try:
+        scene_font = json.loads(settings_state_json.decode('utf-8')).get('textFont')
+    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+        scene_font = None
+    if scene_font:
+        allowed.add(scene_font)
+    if requested not in allowed:
+        return None
+    path = pathlib.Path(requested)
+    if path.suffix.lower() not in _FONT_TYPES or not path.is_file():
+        return None
+    return path
+
+
+def _read_page_defaults(path: pathlib.Path) -> list:
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return _clean_page_defaults(data)
+
+
+def _clean_page_defaults(entries) -> list:
+    """Only well-formed entries, unique by name (case-insensitive, the
+    later one wins), sorted by name, capped."""
+    by_name = {}
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict) or not isinstance(entry.get('settings'), dict):
+            continue
+        name = ' '.join(str(entry.get('name') or '').split())[:_DEFAULTS_NAME_MAX]
+        if name:
+            by_name[name.casefold()] = {'name': name, 'settings': entry['settings']}
+    cleaned = sorted(by_name.values(), key=lambda e: e['name'].casefold())
+    return cleaned[:_DEFAULTS_MAX_ENTRIES]
+
+
+def _write_page_defaults(path: pathlib.Path, entries) -> list:
+    cleaned = _clean_page_defaults(entries)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(cleaned, indent=1), encoding='utf-8')
+    except OSError as e:
+        print(f"[TP3D picker] Failed to write defaults {path}: {e}")
+        return _read_page_defaults(path)
+    return cleaned
 
 
 def _delete_history_render(entry_id: str) -> None:
@@ -565,6 +789,7 @@ class _Handler(BaseHTTPRequestHandler):
     html_path: pathlib.Path = _HTML_PATH
     state_path: pathlib.Path = _STATE_PATH
     history_path: pathlib.Path = _HISTORY_DIR / f'{_history_key(_HTML_PATH)}.json'
+    defaults_path: pathlib.Path = _DEFAULTS_DIR / f'{_history_key(_HTML_PATH)}.json'
 
     def log_message(self, *args):
         pass
@@ -605,8 +830,47 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path.startswith('/font_file'):
+            # The font file itself, so a page can draw text in the font
+            # Blender will use (shape_extras.js's Backplate top view). An
+            # empty path means Blender's default text font.
+            from urllib.parse import parse_qs, urlparse
+            path = _servable_font_path(parse_qs(urlparse(self.path).query).get('path', [''])[0],
+                                       self.settings_state_json)
+            if path is None:
+                self.send_response(404)
+                self.end_headers()
+                return
+            try:
+                body = path.read_bytes()
+            except OSError:
+                self.send_response(404)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header('Content-Type', _FONT_TYPES.get(path.suffix.lower(), 'application/octet-stream'))
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'max-age=3600')
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == '/prefetch_status':
             body = json.dumps(_prefetch_job).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == '/export_folder_status':
+            path = _effective_export_folder()
+            body = json.dumps({
+                'status': _export_folder_job.get('status'),
+                'path': path,
+                'valid': bool(path) and os.path.isdir(path),
+                # The scene's own Export Path is in effect, not the default.
+                'sceneOverride': bool(_export_folder_job.get('scene')),
+            }).encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(body)))
@@ -695,6 +959,14 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == '/get_page_defaults':
+            body = json.dumps(_read_page_defaults(self.defaults_path)).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == '/get_tutorial_progress':
             body = json.dumps(_read_tutorial_progress()).encode('utf-8')
             self.send_response(200)
@@ -774,10 +1046,12 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__HISTORY_PANEL_JS__', _HISTORY_PANEL_JS_PATH.read_text(encoding='utf-8'))
             .replace('__RECT_EDITOR_JS__', _RECT_EDITOR_JS_PATH.read_text(encoding='utf-8'))
             .replace('__PREFETCH_JS__', _PREFETCH_JS_PATH.read_text(encoding='utf-8'))
-            .replace('__SHAPE_EXTRAS_JS__', _SHAPE_EXTRAS_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__SHAPE_EXTRAS_JS__', _TEXT_ICONS_JS_PATH.read_text(encoding='utf-8') + '\n'
+                     + _SHAPE_EXTRAS_JS_PATH.read_text(encoding='utf-8'))
             .replace('__TUTORIAL_JS__', _TUTORIAL_JS_PATH.read_text(encoding='utf-8'))
             .replace('__MAP_TUTORIALS_JS__', _MAP_TUTORIALS_JS_PATH.read_text(encoding='utf-8'))
             .replace('__MULTITILE_TUTORIALS_JS__', _MULTITILE_TUTORIALS_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__EXPORT_FOLDER_JS__', _EXPORT_FOLDER_JS_PATH.read_text(encoding='utf-8'))
             .encode('utf-8')
         )
         self.send_response(200)
@@ -794,6 +1068,27 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        if self.path in ('/pick_export_folder', '/open_export_folder'):
+            length = int(self.headers.get('Content-Length', 0))
+            self.rfile.read(length)
+            if self.path == '/open_export_folder':
+                ok = _open_folder(_effective_export_folder())
+            elif _export_folder_job.get('status') == 'picking':
+                # A dialog is already open (probably behind another window)
+                # -- show it again rather than ignoring the click.
+                _raise_dialog()
+                ok = True
+            else:
+                ok = True
+                _export_folder_job.update(status='picking')
+                threading.Thread(target=_run_export_folder_pick, daemon=True).start()
+            body = json.dumps({'ok': ok}).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == '/toggle_element':
             length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(length)
@@ -890,6 +1185,24 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', '2')
             self.end_headers()
             self.wfile.write(b'ok')
+            return
+        if self.path == '/save_page_defaults':
+            # The page's whole edited Defaults list ({'defaults': [...]}) --
+            # see _write_page_defaults. Answers with what was actually saved.
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            try:
+                entries = json.loads(body).get('defaults')
+            except (json.JSONDecodeError, AttributeError):
+                entries = None
+            saved = (_write_page_defaults(self.defaults_path, entries) if isinstance(entries, list)
+                     else _read_page_defaults(self.defaults_path))
+            resp = json.dumps(saved).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp)))
+            self.end_headers()
+            self.wfile.write(resp)
             return
         if self.path == '/complete_tutorial':
             # assets/tutorial.js's menu -- a tutorial was run to its last
@@ -1180,6 +1493,20 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     # OLD job dict only if it was handed the dict itself -- it's handed the
     # live one, so replace contents instead of rebinding (see prefetch_job()).
     _prefetch_job.update(status='idle', message='', result=None)
+    # start_picker runs on Blender's main thread (an operator's invoke), so
+    # the export folders can be read here directly.
+    try:
+        import bpy  # type: ignore
+
+        from .addon_preferences import get_prefs
+
+        scene_folder = bpy.path.abspath(bpy.context.scene.tp3d.export_path) if bpy.context.scene.tp3d.export_path else ''
+        default_folder = get_prefs().default_export_folder
+        default_folder = bpy.path.abspath(default_folder) if default_folder else ''
+    except (AttributeError, KeyError, ImportError) as e:
+        print(f"[TP3D picker] could not read the export folder: {e}")
+        scene_folder = default_folder = ''
+    _export_folder_job.update(status='idle', scene=scene_folder, default=default_folder, pid=None)
 
     html_path = pathlib.Path(html_path) if html_path else _HTML_PATH
     # Keep the original state filename for multitile_generator.html itself (exact
@@ -1207,6 +1534,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     _Handler.html_path = html_path
     _Handler.state_path = state_path
     _Handler.history_path = history_path
+    _Handler.defaults_path = _DEFAULTS_DIR / f'{_history_key(html_path)}.json'
 
     server = HTTPServer(('127.0.0.1', port), _Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

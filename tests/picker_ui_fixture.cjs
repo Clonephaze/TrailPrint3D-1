@@ -8,6 +8,7 @@ const pages = [
     'generators/map_generator.html',
     'generators/puzzleGenerator.html',
     'generators/medalHolderGenerator.html',
+    'generators/backplateGenerator.html',
     'premium/generators/map_generator_pe.html',
     'premium/generators/puzzleGenerator_pe.html',
     'premium/generators/multitile_generator.html',
@@ -19,7 +20,8 @@ const assets = {
     ELEMENT_STATUS_JS: 'element_status.js', SETTINGS_MODAL_JS: 'settings_modal.js',
     HISTORY_PANEL_JS: 'history_panel.js', RECT_EDITOR_JS: 'rect_editor.js',
     PREFETCH_JS: 'prefetch_layer.js', SHAPE_EXTRAS_JS: 'shape_extras.js',
-    TUTORIAL_JS: 'tutorial.js', MAP_TUTORIALS_JS: 'map_tutorials.js'
+    TUTORIAL_JS: 'tutorial.js', MAP_TUTORIALS_JS: 'map_tutorials.js',
+    EXPORT_FOLDER_JS: 'export_folder.js', MULTITILE_TUTORIALS_JS: 'multitile_tutorials.js'
 };
 const elementStates = Object.fromEntries([
     'water', 'forest', 'roads', 'city', 'greenspace', 'farmland',
@@ -40,6 +42,8 @@ function renderPage(index, port) {
     for (const [token, file] of Object.entries(assets)) {
         tokens[token] = fs.readFileSync(path.join(addon, 'assets', file), 'utf8');
     }
+    // Same as picker_server.py: the generated icon outlines ride along.
+    tokens.SHAPE_EXTRAS_JS = fs.readFileSync(path.join(addon, 'assets', 'text_icons.js'), 'utf8') + '\n' + tokens.SHAPE_EXTRAS_JS;
     return fs.readFileSync(path.join(addon, pages[index]), 'utf8')
         .replace(/__([A-Z_]+)__/g, (match, token) => {
             if (!(token in tokens)) throw new Error('Unknown template token: ' + token);
