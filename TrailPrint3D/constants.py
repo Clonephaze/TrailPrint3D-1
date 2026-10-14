@@ -17,6 +17,9 @@ ADDON_NAME = "TrailPrint3D"
 ADDON_VERSION = (3, 2, 1)
 required_blender_version = (5, 1, 0)
 
+GENERATION_SNAPSHOT_PROPERTY = "_tp3d_generation_snapshot"
+GENERATION_SNAPSHOT_VERSION = 1
+
 ENABLE_UPDATE_CHECKER = True
 
 R = 6371.0  # Earth radius in kilometers
