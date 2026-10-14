@@ -33,12 +33,12 @@ except ImportError:
 # (field_object_name, base_angle, flip_180)
 OUTER_EDGE_FIELDS = {
     "HEXAGON": [
-        ("t_name", 90, True),  # N  — title
-        ("t_field5", 150, True),  # NW
-        ("t_length", 210, False),  # SW
-        ("t_elevation", 270, False),  # S
-        ("t_duration", 330, False),  # SE
-        ("t_field4", 30, True),  # NE
+        ("t_name", 90, True),       # N  — title
+        ("t_length", 150, True),    # NW — Text 1
+        ("t_elevation", 210, False), # SW — Text 2
+        ("t_duration", 270, False),  # S  — Text 3
+        ("t_field4", 330, False),    # SE — Text 4
+        ("t_field5", 30, True),      # NE — Text 5
     ],
     "OCTAGON": [
         ("t_name", 90, True),  # N  — title

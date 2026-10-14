@@ -57,7 +57,7 @@ var LAYOUT_LABELS = { NONE: 'None', ON_MAP: 'On Map', OUTER_EDGE: 'Outer Edge', 
 // in the same physical (counter-clockwise) order.
 var TEXT_FIELDS_BY_LAYOUT_SHAPE = {
     OUTER_EDGE: {
-        HEXAGON: ['titlefield', 'textfield5', 'textfield1', 'textfield2', 'textfield3', 'textfield4'],
+        HEXAGON: ['titlefield', 'textfield1', 'textfield2', 'textfield3', 'textfield4', 'textfield5'],
         OCTAGON: ['titlefield', 'textfield5', 'textfield6', 'textfield1', 'textfield2', 'textfield3', 'textfield7', 'textfield4'],
         SQUARE: ['titlefield', 'textfield1', 'textfield2', 'textfield3']
     },
@@ -531,7 +531,7 @@ function tp3dRenderHandleSettings(body) {
 // ON_MAP_FIELDS.
 var BACKPLATE_TEXT_SPOTS = {
     OUTER_EDGE: {
-        HEXAGON: { titlefield: [90, 1], textfield5: [150, 1], textfield1: [210, 0], textfield2: [270, 0], textfield3: [330, 0], textfield4: [30, 1] },
+        HEXAGON: { titlefield: [90, 1], textfield1: [150, 1], textfield2: [210, 0], textfield3: [270, 0], textfield4: [330, 0], textfield5: [30, 1] },
         OCTAGON: { titlefield: [90, 1], textfield5: [135, 1], textfield6: [180, 0], textfield1: [225, 0], textfield2: [270, 0],
                    textfield3: [315, 0], textfield7: [0, 0], textfield4: [45, 1] },
         SQUARE: { titlefield: [90, 1], textfield1: [180, 0], textfield2: [270, 0], textfield3: [0, 0] }
