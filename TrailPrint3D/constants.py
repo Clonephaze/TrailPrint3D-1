@@ -10,7 +10,10 @@ from collections import defaultdict
 
 import bpy
 from bpy.app.translations import (  # type: ignore
-    pgettext_iface as _,  # For Translation of Text Required
+    pgettext_iface as _,
+)
+from bpy.app.translations import (
+    pgettext_rpt as _rpt,
 )
 
 ADDON_NAME = "TrailPrint3D"
@@ -43,7 +46,7 @@ OSM_SIZE_LIMIT_DEFAULTS = {
     "FARMLAND_MAXSIZE": 200,
     "GLACIER_MAXSIZE": 1000,
     "BUILDINGS_MAXSIZE": 30,
-    "ROADS_MAXSIZE": 500,                  # dense + sparse road tiers dropped entirely above this mapsize
+    "ROADS_MAXSIZE": 500,  # dense + sparse road tiers dropped entirely above this mapsize
     "COASTLINE_MAXSIZE": 350,
     # Above COASTLINE_MAXSIZE, ocean is built from the prebuilt global OSMData
     # water-polygon dataset (STRtree query, no Overpass fetch) instead of being
@@ -53,10 +56,10 @@ OSM_SIZE_LIMIT_DEFAULTS = {
     # leave generous headroom and tighten later if profiling on a real huge map
     # says otherwise.
     "COASTLINE_WATERPOLY_MAXSIZE": 20000,
-    "STREETS_PRIMARY_THRESHOLD": 40,       # dense-tier roads (residential/service/footway/pedestrian/cycle_bridle/path)
-                                            # dropped above this mapsize to avoid width-scaled roads fusing
-                                            # into solid blocks on zoomed-out maps; sparse tiers (highways/
-                                            # major/minor/track) are unaffected until ROADS_MAXSIZE
+    "STREETS_PRIMARY_THRESHOLD": 40,  # dense-tier roads (residential/service/footway/pedestrian/cycle_bridle/path)
+    # dropped above this mapsize to avoid width-scaled roads fusing
+    # into solid blocks on zoomed-out maps; sparse tiers (highways/
+    # major/minor/track) are unaffected until ROADS_MAXSIZE
 }
 
 _osm_size_limits = dict(OSM_SIZE_LIMIT_DEFAULTS)
@@ -75,7 +78,11 @@ def __getattr__(name):
     try:
         return _osm_size_limits[name]
     except KeyError:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+        msg = _rpt(
+            "module %r has no attribute %r",
+            "Python",  # translation context
+        ) % (__name__, name)
+        raise AttributeError(msg) from None
 
 
 BUILDINGS_MIN_PRINT_MM = 0.15  # PRINTED footprint
@@ -112,7 +119,6 @@ _RASTER_ORDER = [
 
 _UV_LAYER_NAME = "MMU_Paint"
 
-_HEIGHT_BAKE_BASELINE = {}
 _HEIGHT_BAKE_UNDO = defaultdict(list)
 _MAX_HEIGHT_BAKE_UNDO_MEMORY = 64 * 1024 * 1024  # 64 MB
 
@@ -186,7 +192,7 @@ generator_defaults_dir = os.path.join(preset_dir, "generator_defaults")
 # Set up a folder for the picker pages' (puzzleGenerator.html etc.) per-
 # generator generation history -- one JSON file per page, see
 # picker_server.py's /save_history_entry & /get_history.
-generation_history_dir = os.path.join(bpy.utils.user_resource('CONFIG'), "TP3D-history")
+generation_history_dir = os.path.join(bpy.utils.user_resource("CONFIG"), "TP3D-history")
 
 # Real top-down Blender renders of past generations (export.save_history_thumbnail),
 # named <history entry id>.png -- served by picker_server.py's
@@ -200,7 +206,9 @@ generation_history_thumbnails_dir = os.path.join(generation_history_dir, "thumbn
 # /get_tutorial_progress & /complete_tutorial. Kept here rather than in the
 # browser's own storage because each picker window gets a fresh, throwaway
 # browser profile.
-tutorial_progress_path = os.path.join(generation_history_dir, "tutorials_completed.json")
+tutorial_progress_path = os.path.join(
+    generation_history_dir, "tutorials_completed.json"
+)
 
 
 def _ensure_dirs():

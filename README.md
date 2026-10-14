@@ -28,7 +28,7 @@ Automatically fetches and renders geographic data from [OpenStreetMap](https://w
 - Roads (major, primary, and small streets)
 
 ### Post-Processing
-- **Color Mountains** — assigns material zones by elevation threshold
+- **Color by Height** — stacks multiple elevation colors in material and texture modes; on a single-colored map or previously created height piece, Single Extruder Mode turns the next region into a recessed, one-millimeter-deep element that can be selected and split again
 - **Contour Lines** — adds printable contour line geometry
 - **Magnet Holes** — drills holes for magnets (configurable diameter/depth)
 - **Dovetail Cutouts** — adds dovetail joints for tiling maps

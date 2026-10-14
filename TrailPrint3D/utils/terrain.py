@@ -2792,7 +2792,9 @@ def contourLines(objs):
         mat = bpy.data.materials.get("WHITE")
         if mat is None:
             mat = bpy.data.materials.new(name="WHITE")
-            mat.diffuse_color = (1.0, 1.0, 1.0, 1.0)
+            from .color import set_material_srgb
+
+            set_material_srgb(mat, (255, 255, 255))
         plane.data.materials.clear()
         plane.data.materials.append(mat)
 

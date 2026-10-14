@@ -276,37 +276,37 @@ class GenerationSnapshot:
     def from_json(cls, value: str) -> "GenerationSnapshot":
         data = json.loads(value)
         if not isinstance(data, dict):
-            raise ValueError("Generation snapshot must be a JSON object.")
+            raise TypeError("Generation snapshot must be a JSON object.")
         if data.get("schema_version") != const.GENERATION_SNAPSHOT_VERSION:
             raise ValueError(
                 f"Unsupported generation snapshot version: {data.get('schema_version')!r}"
             )
         raw_sections = data.get("sections")
         if not isinstance(raw_sections, list):
-            raise ValueError("Generation snapshot sections must be a list.")
+            raise TypeError("Generation snapshot sections must be a list.")
 
         sections = []
         for raw_section in raw_sections:
             if not isinstance(raw_section, dict):
-                raise ValueError("Generation snapshot section must be an object.")
+                raise TypeError("Generation snapshot section must be an object.")
             title = raw_section.get("title")
             raw_settings = raw_section.get("settings")
             if not isinstance(title, str) or not isinstance(raw_settings, list):
-                raise ValueError("Generation snapshot section is malformed.")
+                raise TypeError("Generation snapshot section is malformed.")
             settings = []
             for raw_setting in raw_settings:
                 if not isinstance(raw_setting, dict):
-                    raise ValueError("Generation snapshot setting must be an object.")
+                    raise TypeError("Generation snapshot setting must be an object.")
                 key = raw_setting.get("key")
                 setting_value = raw_setting.get("value")
                 if not isinstance(key, str) or not _is_snapshot_value(setting_value):
-                    raise ValueError("Generation snapshot setting is malformed.")
+                    raise TypeError("Generation snapshot setting is malformed.")
                 settings.append(GenerationSetting(key, setting_value))
             sections.append(GenerationSettingsSection(title, tuple(settings)))
 
         object_type = data.get("object_type", "")
         if not isinstance(object_type, str):
-            raise ValueError("Generation snapshot object type must be a string.")
+            raise TypeError("Generation snapshot object type must be a string.")
         return cls(
             schema_version=const.GENERATION_SNAPSHOT_VERSION,
             object_type=object_type,

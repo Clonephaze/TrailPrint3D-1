@@ -2,12 +2,28 @@
 import textwrap
 
 import bpy  # type: ignore
-from bpy.app.translations import (  # type: ignore
-    pgettext_iface as _,  # For Translation of Text Required
-)
+from bpy.app.translations import pgettext_iface as _  # type: ignore
+
+# ---------------------------------------------------------------------------
+# Feature detection
+# ---------------------------------------------------------------------------
 
 
-def draw_wrapped_text(layout, text):
+def _has_multiline(layout) -> bool:
+    return hasattr(layout, "label_multiline")
+
+
+def _has_markdown(layout) -> bool:
+    return hasattr(layout, "label_markdown")
+
+
+# ---------------------------------------------------------------------------
+# Fallback for Blender 5.1 / 5.2
+# ---------------------------------------------------------------------------
+
+
+def draw_wrapped_text_fallback(layout, text):
+    """Manual wrapping used only when label_multiline is unavailable."""
     body_wrap = textwrap.TextWrapper(width=50)
     bullet_wrap = textwrap.TextWrapper(width=43)
 
@@ -21,13 +37,11 @@ def draw_wrapped_text(layout, text):
             layout.separator(factor=0.4)
             continue
 
-        # Sub-header: short line ending with ':'
         if line.endswith(":") and not line.startswith("-"):
             layout.separator(factor=0.2)
             layout.label(text=line, icon="TRIA_RIGHT")
             continue
 
-        # Bullet list: collect the full run into a single box
         if line.startswith("- "):
             bullet_lines = [line]
             while i < len(lines) and lines[i].strip().startswith("- "):
@@ -47,6 +61,45 @@ def draw_wrapped_text(layout, text):
             layout.label(text=w)
 
 
+# ---------------------------------------------------------------------------
+# Unified text drawing
+# ---------------------------------------------------------------------------
+
+
+def draw_body_text(layout, text):
+    """Prefer label_multiline; fall back to manual wrapping."""
+    if _has_multiline(layout):
+        layout.label_multiline(text=text)
+    else:
+        draw_wrapped_text_fallback(layout, text)
+
+
+def draw_intro_text(layout, intro: str):
+    """Draw the first line as a boxed callout with an INFO icon.
+
+    On Blender 5.3+ the text body uses label_markdown so it wraps correctly
+    for any language. On 5.1/5.2 it falls back to manual wrapping.
+    """
+    box = layout.box()
+
+    if _has_markdown(box):
+        row = box.row(align=True)
+        row.label(text="", icon="INFO")
+        row.label_markdown(text=intro)
+    else:
+        col = box.column(align=True)
+        intro_wrap = textwrap.TextWrapper(width=46)
+        intro_lines = intro_wrap.wrap(intro) or [intro]
+        col.label(text=intro_lines[0], icon="INFO")
+        for line in intro_lines[1:]:
+            col.label(text=f"   {line}")
+
+
+# ---------------------------------------------------------------------------
+# Panel factory
+# ---------------------------------------------------------------------------
+
+
 def make_help_panel(
     panel_id: str,
     label: str,
@@ -55,24 +108,20 @@ def make_help_panel(
 ):
     def draw(self, context):
         layout = self.layout
-        text = _("%s") % text_content
+        # Wrap the whole content block in the translation context.
+        # The context string is optional but helpful if the same English
+        # word appears in different panels with different meanings.
+        text = _(text_content)
 
-        # First line → callout box with INFO icon
         raw_lines = text.split("\n")
         intro = raw_lines[0].strip()
         body = "\n".join(raw_lines[1:]).strip()
 
-        intro_wrap = textwrap.TextWrapper(width=46)
-        box = layout.box()
-        col = box.column(align=True)
-        intro_lines = intro_wrap.wrap(intro) or [intro]
-        col.label(text=intro_lines[0], icon="INFO")
-        for line in intro_lines[1:]:
-            col.label(text=f"   {line}")
+        draw_intro_text(layout, intro)
 
         if body:
             layout.separator(factor=0.3)
-            draw_wrapped_text(layout, body)
+            draw_body_text(layout, body)
 
         if doc_url:
             layout.separator()
@@ -84,10 +133,10 @@ def make_help_panel(
         (bpy.types.Panel,),
         {
             "bl_idname": panel_id,
-            "bl_label": _("%s") % label,
+            "bl_label": _(label),
             "bl_space_type": "VIEW_3D",
-            "bl_region_type": "HEADER", # Stops the n-panel "misc" from showing these panels
-            "bl_options": {"INSTANCED"}, # Ensures blender knows these are meant to be called only as instances.
+            "bl_region_type": "HEADER",
+            "bl_options": {"INSTANCED"},
             "bl_ui_units_x": 15,
             "draw": draw,
         },
@@ -102,6 +151,7 @@ classes = [
         "\n"
         "Both GPX and IGC files are supported. The name is optional — "
         "leave it blank to use the filename from your trail file.",
+        doc_url="https://trailprint3d.com/howto.html#ht-gpx",
     ),
     make_help_panel(
         "TP3D_PT_help_shape",
@@ -111,7 +161,7 @@ classes = [
         "Resolution controls how smooth edges and terrain curves look. "
         "Higher values give more detail but take longer to process — "
         "for most prints, a value around 7 is a good starting point.",
-        doc_url="https://trailprint3d.com/howto.html#ht-resolution",
+        doc_url="https://trailprint3d.com/howto.html#ht-shape",
     ),
     make_help_panel(
         "TP3D_PT_help_shape_extras",
@@ -126,6 +176,7 @@ classes = [
         "- {date} — recorded date\n"
         "- {speed} — average speed\n"
         "- {scale} — map scale",
+        doc_url="https://trailprint3d.com/howto.html#ht-textshapes",
     ),
     make_help_panel(
         "TP3D_PT_help_trail",
@@ -138,6 +189,7 @@ classes = [
         "On single-color printers, enable Single Extruder Mode — the trail "
         "becomes a separate object with a matching cutout in the map, so you "
         "can print both pieces in different colors and snap them together.",
+        doc_url="https://trailprint3d.com/howto.html#ht-elevation",
     ),
     make_help_panel(
         "TP3D_PT_help_terrain",
@@ -150,6 +202,7 @@ classes = [
         "\n"
         "Use Extra Height to add thickness below the terrain, and Smooth "
         "Terrain to reduce blockiness on lower-resolution elevation data.",
+        doc_url="https://trailprint3d.com/howto.html#ht-resolution",
     ),
     make_help_panel(
         "TP3D_PT_help_elements",
@@ -162,6 +215,7 @@ classes = [
         "\n"
         "In Single Extruder mode, each element is generated as its own "
         "separate printable object.",
+        doc_url="https://trailprint3d.com/howto.html#ht-elements",
     ),
     make_help_panel(
         "TP3D_PT_help_appearance",
@@ -171,5 +225,6 @@ classes = [
         "Textures produce more accurate results regardless of mesh resolution, "
         "but increase export and slicing time. Including the trail or roads in "
         "the texture merges them into a single object instead of separate parts.",
+        doc_url="https://trailprint3d.com/howto.html#ht-elements",
     ),
 ]

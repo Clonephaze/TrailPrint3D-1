@@ -8,9 +8,10 @@ from math import ceil
 
 import bpy  # type: ignore
 from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 from bpy.app.translations import pgettext_tip as _tip
 
-from . import addon_preferences, temp, updater
+from . import addon_preferences, operators, temp, updater
 from . import constants as const
 from .constants import _LANDCOVER_COLOR_ROWS
 from .props import (
@@ -1011,8 +1012,10 @@ def _draw_export_box(layout, props):
     box.prop(props, "disable_auto_export")
     if temp.has3mf:
         box.prop(props, "disable_3mf_export")
-    if props.elementMode == "SINGLECOLORMODE_REMESH":
-        box.prop(props, "keep_positions", text=_("Keep Positions"))
+    
+    keep_pos = box.row(align=True)
+    keep_pos.prop(props, "keep_positions", text=_("Keep Positions"))
+    keep_pos.enabled = props.elementMode == "SINGLECOLORMODE_REMESH" or props.color_height_SEM
     if temp.has3mf and not props.disable_3mf_export:
         box.label(text=_("3MF Export Profile:"))
         row = box.row(align=True)
@@ -1106,19 +1109,27 @@ def _draw_special_box(layout, props):
 def _draw_post_process_box(layout, props, context):
     def _draw_color_mountains_box(layout, props, context):
         sub = layout.box()
-        sub.label(text=_("Color Mountains"), icon="RNDCURVE")
+        sub.label(text=_("Color by Height"), icon="RNDCURVE")
         col = sub.column(align=True)
+        color_row = col.split(align=True, factor=0.3)
+        color_row.label(text=_("Color:"))
+        color_row.prop(props, "mountain_color")
         col.prop(props, "mountain_treshold")
         col.prop(
             props,
             "mountain_noise",
             icon="CHECKBOX_DEHLT" if not props.mountain_noise else "CHECKBOX_HLT",
         )
-        if props.mountain_noise:
-            row = col.row(align=True)
-            row.prop(props, "mountain_noise_amplitude")
-            row.prop(props, "mountain_noise_scale")
-        col.operator("tp3d.color_mountain", text=_("Color Mountains"), icon="RNDCURVE")
+        noise_settings = col.row(align=True)
+        noise_settings.prop(props, "mountain_noise_amplitude")
+        noise_settings.prop(props, "mountain_noise_scale")
+        noise_settings.enabled = props.mountain_noise
+        if operators._mountain_manifold_selection_eligible(context):
+            col.prop(props, "color_height_SEM", icon="CHECKBOX_DEHLT" if not props.color_height_SEM else "CHECKBOX_HLT")
+            ch_sem_row = col.row(align=True)
+            ch_sem_row.prop(props, "toleranceElements", text=_("Tolerance"))
+            ch_sem_row.enabled = props.color_height_SEM
+        col.operator("tp3d.color_mountain", text=_("Color by Height"), icon="RNDCURVE")
         if has_height_bake_undo(context.object):
             col.operator(
                 "tp3d.undo_mountain_texture",
@@ -1529,19 +1540,19 @@ class TP3D_OT_copy_generation_settings_markdown(bpy.types.Operator):
     def execute(self, context):
         obj = context.active_object
         if obj is None:
-            self.report({"ERROR"}, _("No active object."))
+            self.report({"ERROR"}, _rpt("No active object."))
             return {"CANCELLED"}
 
         snapshot, _snapshot_error = _load_generation_snapshot(obj)
         if not snapshot.sections:
             self.report(
                 {"ERROR"},
-                _("No generation settings found. Please select a generated object."),
+                _rpt("No generation settings found. Please select a generated object."),
             )
             return {"CANCELLED"}
 
         context.window_manager.clipboard = snapshot.to_markdown()
-        self.report({"INFO"}, _("Generation settings copied to clipboard."))
+        self.report({"INFO"}, _rpt("Generation settings copied to clipboard."))
         return {"FINISHED"}
 
 
@@ -1585,8 +1596,9 @@ def _draw_generation_sections(layout, sections):
         column = box.column(align=True)
         for setting in section.settings:
             row = column.row(align=True)
+            key_text = _(format_generation_setting_label(setting.key))
             row.label(
-                text=f"{_(format_generation_setting_label(setting.key))}:",
+                text=f"{key_text}:",
                 icon="DOT",
             )
             row.label(
