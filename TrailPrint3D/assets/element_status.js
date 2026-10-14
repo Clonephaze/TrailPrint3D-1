@@ -188,10 +188,13 @@ function tp3dToggleElement(key) {
 // (settings_modal.js's tp3dBuildElementSourceSwitch) -- '[data-tp3d-source-btn]'
 // marks every button from either one, so whichever is currently on screen
 // gets disabled for the round-trip and neither can double-fire the other.
+// Returns a promise that settles once the new source's state is applied
+// (undefined when there's nothing to switch), e.g. so a tutorial reset can
+// act on the new source's elements afterwards.
 function tp3dSwitchElementSource(newSource) {
     if (typeof ELEMENT_SOURCE === 'undefined' || ELEMENT_SOURCE === newSource) return;
     document.querySelectorAll('[data-tp3d-source-btn]').forEach(function(b) { b.disabled = true; });
-    fetch('http://127.0.0.1:' + PORT + '/update_setting', {
+    return fetch('http://127.0.0.1:' + PORT + '/update_setting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: 'elementSource', value: newSource })

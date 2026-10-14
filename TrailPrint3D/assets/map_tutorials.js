@@ -913,8 +913,12 @@ function tp3dResetPuzzleGenerator() {
     if (cornerBtn && !cornerBtn.classList.contains('active')) cornerBtn.click();
     var holder = document.getElementById('holderEnabled');
     if (holder.checked) holder.click();
-    // No colored elements until the ESA step turns some on.
-    tp3dAllElementsOff(true);
+    // Start on OSM with no colored elements, so the ESA step has a switch to
+    // teach. Switching reloads OSM's own element states from Blender, so
+    // they're turned off once that's done.
+    var switching = tp3dIsOsm() ? null : tp3dSwitchElementSource('OSM');
+    if (switching) switching.then(function() { tp3dAllElementsOff(true); });
+    else tp3dAllElementsOff(true);
 
     // Same defaults the page itself starts with: the static HTML's values.
     ['lengthInput', 'widthInput', 'colsInput', 'rowsInput', 'resolutionSlider'].forEach(function(id) {
@@ -976,6 +980,12 @@ function tp3dDemoClickEsa() {
     return [{ x: r.left + r.width / 2, y: r.top + r.height / 2 }];
 }
 
+var tp3dPlateSettingsTimer = null;
+function tp3dPlateSettingsOpen() {
+    var m = document.getElementById('plateSettingsModal');
+    return !!m && m.classList.contains('open');
+}
+
 function tp3dIsTopoLayer() {
     return typeof activeBaseLayerName !== 'undefined' && activeBaseLayerName === 'Topographic';
 }
@@ -1022,9 +1032,7 @@ function tp3dPuzzleTutorialCreate() {
         {
             target: '#map',
             title: 'Create a jigsaw puzzle',
-            text: 'Turn any place into a 3D-printed jigsaw puzzle. Every piece is a small 3D map, and ' +
-                  'together they show the whole landscape.<br><br>' +
-                  'We moved the map to <b>Mount Fuji</b> in Japan. Its big cone makes for great terrain.<br><br>' +
+            text: 'We moved the map to <b>Mount Fuji</b> in Japan. Its big cone makes for great terrain.<br><br>' +
                   'You can exit this tutorial at any time with <b>✕</b> or <b>Esc</b>.'
         },
         {
@@ -1100,8 +1108,7 @@ function tp3dPuzzleTutorialCreate() {
             target: '#map',
             interactive: true,
             title: 'Frame the peak',
-            text: 'Inner edges get <b>tabs</b>, the outer edges stay straight.<br><br>' +
-                  'Drag the handle in the middle of the box to move your area, or a corner to resize it, ' +
+            text: 'Drag the handle in the middle of the box to move your area, or a corner to resize it, ' +
                   'until the summit sits in the <b>middle</b> of the puzzle.',
             demo: tp3dDemoMoveShape,
             demoGhost: tp3dDemoMoveGhost,
@@ -1113,14 +1120,14 @@ function tp3dPuzzleTutorialCreate() {
             title: 'Resolution',
             text: '<b>Resolution</b> sets how much terrain detail your puzzle gets. Higher values look ' +
                   'sharper but take longer to generate.<br><br>' +
-                  'We keep <b>8</b>, so the ridges of the mountain come out crisp.'
+                  'We keep <b>8</b>, so the ridges of the mountain come out crispy clean.'
         },
         {
             target: '.element-source-switch-compact',
             placement: 'bottom',
             title: 'Color the terrain with ESA',
-            text: 'Elements like forest or rock can get their own color for multi-color printing. ' +
-                  'Right now they are all off.<br><br>' +
+            text: 'Enabling elements adds colors to your maps based on real world data. For this example ' +
+                  'we use <b>ESA</b> as a data source.<br><br>' +
                   '<b>ESA</b> is made from satellite images and works for areas of any size, great for ' +
                   'natural landscapes like this one.<br><br>' +
                   'Click <b>ESA</b>.',
@@ -1147,48 +1154,29 @@ function tp3dPuzzleTutorialCreate() {
             skipIf: tp3dIsOsm
         },
         {
-            target: '.settings-gear-btn',
-            placement: 'bottom',
-            title: 'Puzzle settings',
-            text: 'Click <b>Settings</b> to see the options for the pieces themselves.',
-            waitFor: tp3dTutorial.waitForClick('.settings-gear-btn'),
-            waitText: 'Click Settings',
-            skipIf: tp3dSettingsOpen
-        },
-        {
-            // The Puzzle tab's fields (settings_modal.js's tp3dBuildPuzzleTab).
-            target: function() {
-                var el = document.getElementById('tabSizeInput');
-                return el ? el.closest('.map-tab-fields') : null;
-            },
-            interactive: true,
-            title: 'Puzzle settings',
-            text: '<ul class="tp3d-tut-list">' +
-                  '<li><b>Tab Size:</b> how big the tabs are</li>' +
-                  '<li><b>Jitter:</b> how irregular the tabs are, so every piece looks different</li>' +
-                  '<li><b>Seed:</b> a number to get the exact same pieces again. Empty means new pieces every time</li>' +
-                  '<li><b>Corner Radius:</b> rounds the 4 outer corners of the puzzle</li>' +
-                  '<li><b>Tolerance:</b> the gap between pieces, so they fit together after printing</li>' +
-                  '</ul>',
-            onEnter: function() { if (window.tp3dActivateSettingsTab) window.tp3dActivateSettingsTab('puzzle'); },
-            skipIf: function() { return !tp3dSettingsOpen(); }
-        },
-        {
-            target: tp3dInSettings('.tp3d-modal-close-btn'),
-            title: 'Close the settings',
-            text: 'Your changes are saved right away. Close the settings to continue.',
-            waitFor: tp3dTutorial.waitUntil(function() { return !tp3dSettingsOpen(); }),
-            waitText: 'Close the settings',
-            skipIf: function() { return !tp3dSettingsOpen(); }
-        },
-        {
             target: function() { return document.getElementById('holderEnabled').closest('.control-stack'); },
             interactive: true,
             placement: 'right',
             title: 'Add a holder',
             text: 'Tick <b>Generate Holder</b> to also get a tray that holds the finished puzzle. ' +
                   '<b>Plate Settings…</b> sets its frame, corners and text.<br><br>' +
-                  'This is optional.'
+                  'This is optional.',
+            // Opening Plate Settings moves on to the step below, which
+            // focuses the popup -- otherwise it'd sit greyed out under this one.
+            onEnter: function(api) {
+                tp3dPlateSettingsTimer = setInterval(function() { if (tp3dPlateSettingsOpen()) api.next(); }, 200);
+            },
+            onExit: function() { clearInterval(tp3dPlateSettingsTimer); }
+        },
+        // Only shown when Plate Settings was opened on the step above.
+        {
+            target: '#plateSettingsBox',
+            title: 'Plate settings',
+            text: 'Set the holder\'s frame thickness, corner radius and text here.<br><br>' +
+                  'Your changes are saved right away. Close it with <b>✕</b> to continue.',
+            waitFor: tp3dTutorial.waitUntil(function() { return !tp3dPlateSettingsOpen(); }),
+            waitText: 'Close Plate Settings',
+            skipIf: function() { return !tp3dPlateSettingsOpen(); }
         },
         {
             // Whichever is visible: Select Export Folder stands in for Send until a folder is set (export_folder.js).
@@ -1211,7 +1199,7 @@ var TP3D_PUZZLE_TUTORIAL_MENU = {
     offerTitle: 'Puzzle tutorial',
     offerText: '<b>New to the Puzzle Generator?</b> An <b>interactive tutorial</b> walks you through ' +
                'making a <b>4 × 4 jigsaw puzzle</b> of Mount Fuji: drawing the area, setting the grid, ' +
-               'coloring the terrain, the piece settings and the holder, right on this page.<br><br>It\'s completely ' +
+               'coloring the terrain and adding a holder, right on this page.<br><br>It\'s completely ' +
                '<b>optional</b> — click <b>Tutorials</b> to start it, or skip it and build your own ' +
                'puzzle. The button stays here at the top of the map for later.',
     tutorials: [
