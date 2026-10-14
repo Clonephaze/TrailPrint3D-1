@@ -39,6 +39,7 @@ classes = [
     panels.TP3D_PT_generate,
     panels.TP3D_PT_advanced,
     panels.TP3D_OT_show_custom_props_popup,
+    panels.TP3D_OT_copy_generation_settings_markdown,
     panels.TP3D_MT_generators_menu,
     operators.TP3D_OT_run_generation,
     operators.TP3D_OT_shapely_status,

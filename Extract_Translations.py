@@ -87,7 +87,7 @@ INTERNAL_NAME_CALL_SUFFIXES = (
     "textures.new",
     "images.new",
     "curves.new",
-    "build_tile_from_polygon"
+    "build_tile_from_polygon",
     "build_objects",
 )
 
@@ -115,6 +115,25 @@ INCORRECTLY_WRAPPED_LITERAL_PATTERNS = (
 # so strings that are genuinely different stay distinguishable, and the
 # "Near-duplicate" sheet only shows real consolidation opportunities.
 _TRAILING_PUNCT_RE = re.compile(r"[\s\.\!\?\:\;\,…]+$")
+
+# --- Functions that take translatable strings as positional args ----------
+#
+# Some addon helpers accept raw English strings as positional arguments and
+# hand them to pgettext themselves (or to a runtime translation call). The
+# extractor can't see those strings via the normal pgettext call-site path
+# because the caller never writes `_(...)` around them.
+#
+# Map short-name -> {arg_index: expected_pgettext_variant}. Matching is on
+# the function's short (last-segment) name, so `make_help_panel(...)` and
+# `panel_guides.make_help_panel(...)` both hit the same entry. Add rows as
+# more helpers of this shape appear.
+TRANSLATABLE_POSITIONAL_FUNCS = {
+    # panel_guides.make_help_panel(panel_id, label, text_content, doc_url=None)
+    "make_help_panel": {
+        1: "iface",  # label    -> Panel bl_label
+        2: "iface",  # text_content -> body shown when the "?" is clicked
+    },
+}
 
 
 def _normalize_for_grouping(s):
@@ -417,6 +436,38 @@ class Extractor(ast.NodeVisitor):
                         ast.unparse(kw.value)[:100],
                     )
                 )
+                # --- positional args to registered wrapper functions ---
+        short = call_qualified_name(node).rsplit(".", 1)[-1]
+        spec = TRANSLATABLE_POSITIONAL_FUNCS.get(short)
+        if spec is not None:
+            for idx, _expected in spec.items():
+                if idx >= len(node.args):
+                    continue
+                arg = node.args[idx]
+                s = const_str(arg)
+                if s is not None:
+                    self.tracked.append((s, self.rel, node.lineno))
+                elif isinstance(arg, ast.JoinedStr):
+                    self.needs_review.append(
+                        (
+                            f"f-string passed to {short}(arg {idx})",
+                            self.rel,
+                            node.lineno,
+                            ast.unparse(arg)[:80],
+                        )
+                    )
+                elif is_wrapped_in_gettext(arg, self.aliases):
+                    # Already wrapped: the normal _() path recorded it.
+                    pass
+                else:
+                    self.needs_review.append(
+                        (
+                            f"non-literal passed to {short}(arg {idx})",
+                            self.rel,
+                            node.lineno,
+                            ast.unparse(arg)[:80],
+                        )
+                    )
 
         self.generic_visit(node)
 

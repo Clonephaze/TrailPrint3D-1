@@ -8,9 +8,10 @@ from math import ceil
 
 import bpy  # type: ignore
 from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_rpt as _rpt
 from bpy.app.translations import pgettext_tip as _tip
 
-from . import addon_preferences, temp, updater
+from . import addon_preferences, operators, temp, updater
 from . import constants as const
 from .constants import _LANDCOVER_COLOR_ROWS
 from .props import (
@@ -19,6 +20,11 @@ from .props import (
     estimate_map_km,
 )
 from .utils import get_effective_cl_values, get_map_z_extent
+from .utils.generation_snapshot import (
+    GenerationSnapshot,
+    format_generation_setting_label,
+    format_generation_setting_value,
+)
 from .utils.text_layouts import _PROP_TO_ICON, fields_for_layout
 from .utils.texture import has_height_bake_undo
 
@@ -1006,8 +1012,10 @@ def _draw_export_box(layout, props):
     box.prop(props, "disable_auto_export")
     if temp.has3mf:
         box.prop(props, "disable_3mf_export")
-    if props.elementMode == "SINGLECOLORMODE_REMESH":
-        box.prop(props, "keep_positions", text=_("Keep Positions"))
+    
+    keep_pos = box.row(align=True)
+    keep_pos.prop(props, "keep_positions", text=_("Keep Positions"))
+    keep_pos.enabled = props.elementMode == "SINGLECOLORMODE_REMESH" or props.color_height_SEM
     if temp.has3mf and not props.disable_3mf_export:
         box.label(text=_("3MF Export Profile:"))
         row = box.row(align=True)
@@ -1101,19 +1109,27 @@ def _draw_special_box(layout, props):
 def _draw_post_process_box(layout, props, context):
     def _draw_color_mountains_box(layout, props, context):
         sub = layout.box()
-        sub.label(text=_("Color Mountains"), icon="RNDCURVE")
+        sub.label(text=_("Color by Height"), icon="RNDCURVE")
         col = sub.column(align=True)
+        color_row = col.split(align=True, factor=0.3)
+        color_row.label(text=_("Color:"))
+        color_row.prop(props, "mountain_color")
         col.prop(props, "mountain_treshold")
         col.prop(
             props,
             "mountain_noise",
             icon="CHECKBOX_DEHLT" if not props.mountain_noise else "CHECKBOX_HLT",
         )
-        if props.mountain_noise:
-            row = col.row(align=True)
-            row.prop(props, "mountain_noise_amplitude")
-            row.prop(props, "mountain_noise_scale")
-        col.operator("tp3d.color_mountain", text=_("Color Mountains"), icon="RNDCURVE")
+        noise_settings = col.row(align=True)
+        noise_settings.prop(props, "mountain_noise_amplitude")
+        noise_settings.prop(props, "mountain_noise_scale")
+        noise_settings.enabled = props.mountain_noise
+        if operators._mountain_manifold_selection_eligible(context):
+            col.prop(props, "color_height_SEM", icon="CHECKBOX_DEHLT" if not props.color_height_SEM else "CHECKBOX_HLT")
+            ch_sem_row = col.row(align=True)
+            ch_sem_row.prop(props, "toleranceElements", text=_("Tolerance"))
+            ch_sem_row.enabled = props.color_height_SEM
+        col.operator("tp3d.color_mountain", text=_("Color by Height"), icon="RNDCURVE")
         if has_height_bake_undo(context.object):
             col.operator(
                 "tp3d.undo_mountain_texture",
@@ -1468,49 +1484,131 @@ class TP3D_OT_show_custom_props_popup(bpy.types.Operator):
             layout.label(text=_("No active object."), icon="ERROR")
             return
 
-        custom_props = [k for k in obj if not k.startswith("_")]
-
-        if not custom_props:
+        snapshot, snapshot_error = _load_generation_snapshot(obj)
+        if snapshot_error:
             layout.label(
-                text=_("No custom properties found. Please Select a Map"), icon="INFO"
+                text=_("Stored settings are invalid; showing legacy metadata."),
+                icon="ERROR",
+            )
+        if not snapshot.sections:
+            layout.label(
+                text=_("No generation settings found. Please select a generated object."),
+                icon="INFO",
             )
             return
 
-        total = len(custom_props)
+        layout.operator(
+            "tp3d.copy_generation_settings_markdown",
+            text=_("Copy as Markdown"),
+            icon="COPYDOWN",
+        )
+        layout.separator()
 
-        if total > self.MAX_PER_COLUMN:
+        if snapshot.setting_count > self.MAX_PER_COLUMN:
             split = layout.split(factor=0.5)
-            col1 = split.column(align=True)
-            col2 = split.column(align=True)
-
-            mid = (total + 1) // 2
-
-            for col, chunk in zip(
-                (col1, col2), (custom_props[:mid], custom_props[mid:])
+            section_columns = _split_generation_sections(snapshot.sections)
+            for column, sections in zip(
+                (split.column(align=True), split.column(align=True)),
+                section_columns,
             ):
-                for key in chunk:
-                    row = col.row()
-                    row.label(text=key + ":", icon="DOT")
-                    row.label(text=str(obj[key]))
+                _draw_generation_sections(column, sections)
         else:
-            col = layout.column(align=True)
-            for key in custom_props:
-                row = col.row()
-                row.label(text=key + ":", icon="DOT")
-                row.label(text=str(obj[key]))
+            _draw_generation_sections(layout, snapshot.sections)
 
     def execute(self, context):
         return {"FINISHED"}
 
     def invoke(self, context, event):
         obj = context.active_object
-        custom_props = [k for k in obj if not k.startswith("_")] if obj else []
+        snapshot, _snapshot_error = _load_generation_snapshot(obj)
         width = (
             self.DOUBLE_WIDTH
-            if len(custom_props) > self.MAX_PER_COLUMN
+            if snapshot.setting_count > self.MAX_PER_COLUMN
             else self.NORMAL_WIDTH
         )
         return context.window_manager.invoke_props_dialog(self, width=width)
+
+
+class TP3D_OT_copy_generation_settings_markdown(bpy.types.Operator):
+    bl_idname = "tp3d.copy_generation_settings_markdown"
+    bl_label = _("Copy Generation Settings as Markdown")
+    bl_description = _tip(
+        "Copy these generation settings as Markdown for Discord or GitHub"
+    )
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        obj = context.active_object
+        if obj is None:
+            self.report({"ERROR"}, _rpt("No active object."))
+            return {"CANCELLED"}
+
+        snapshot, _snapshot_error = _load_generation_snapshot(obj)
+        if not snapshot.sections:
+            self.report(
+                {"ERROR"},
+                _rpt("No generation settings found. Please select a generated object."),
+            )
+            return {"CANCELLED"}
+
+        context.window_manager.clipboard = snapshot.to_markdown()
+        self.report({"INFO"}, _rpt("Generation settings copied to clipboard."))
+        return {"FINISHED"}
+
+
+def _load_generation_snapshot(obj):
+    if obj is None:
+        return GenerationSnapshot.from_mapping({}), None
+    stored = obj.get(const.GENERATION_SNAPSHOT_PROPERTY)
+    if stored is None:
+        return GenerationSnapshot.from_mapping(obj), None
+    if not isinstance(stored, str):
+        return GenerationSnapshot.from_mapping(obj), _("Stored settings are not text.")
+    try:
+        snapshot = GenerationSnapshot.from_json(stored)
+        if snapshot.has_legacy_display_artifacts:
+            return GenerationSnapshot.from_mapping(obj), None
+        return snapshot, None
+    except (TypeError, ValueError) as error:
+        return GenerationSnapshot.from_mapping(obj), str(error)
+
+
+def _split_generation_sections(sections):
+    left = []
+    right = []
+    left_rows = 0
+    right_rows = 0
+    for section in sections:
+        section_rows = len(section.settings) + 1
+        if left_rows <= right_rows:
+            left.append(section)
+            left_rows += section_rows
+        else:
+            right.append(section)
+            right_rows += section_rows
+    return tuple(left), tuple(right)
+
+
+def _draw_generation_sections(layout, sections):
+    for section in sections:
+        box = layout.box()
+        box.label(text=_(section.title), icon="PREFERENCES")
+        column = box.column(align=True)
+        for setting in section.settings:
+            row = column.row(align=True)
+            key_text = _(format_generation_setting_label(setting.key))
+            row.label(
+                text=f"{key_text}:",
+                icon="DOT",
+            )
+            row.label(
+                text=format_generation_setting_value(
+                    setting.value,
+                    enabled=_("Enabled"),
+                    disabled=_("Disabled"),
+                    not_set=_("Not set"),
+                )
+            )
 
 
 class TP3D_MT_generators_menu(bpy.types.Menu):

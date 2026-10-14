@@ -12,6 +12,7 @@ import time
 
 import bmesh  # type: ignore
 import bpy  # type: ignore
+import numpy as np
 from bpy.app.translations import pgettext_iface as _
 from bpy.app.translations import pgettext_rpt as _rpt
 from bpy.app.translations import pgettext_tip as _tip
@@ -21,6 +22,7 @@ from mathutils import Euler, Quaternion, Vector, noise  # type: ignore
 from . import addon_preferences, export, utils
 from . import constants as const
 from . import progress as _progress
+from .utils.color import set_material_srgb
 from .utils.dataclasses import ExportError, GenerationError
 
 _warn = _progress.WarningsOverlay.add_warning
@@ -1187,11 +1189,358 @@ class TP3D_OT_terrain_dummy(bpy.types.Operator):
         return {"FINISHED"}
 
 
+_HEIGHT_COLOR_MATERIALS_PROP = "heightColorMaterials"
+
+
+def _color_to_srgb255(color):
+    return tuple(
+        max(0, min(255, int(round(max(0.0, min(1.0, c)) * 255.0)))) for c in color[:3]
+    )
+
+
+def _height_color_material(color):
+    """Return the material dedicated to this exact colour.
+
+    Every height layer owns its own material so stacking a second colour on
+    top never recolours the layers applied before it. The default grey keeps
+    using the long-standing MOUNTAIN material so existing maps, palettes and
+    exports are unaffected.
+    """
+    r, g, b = _color_to_srgb255(color)
+    name = (
+        "MOUNTAIN" if (r, g, b) == (128, 128, 128) else f"HEIGHT_{r:02X}{g:02X}{b:02X}"
+    )
+    mat = bpy.data.materials.get(name)
+    if mat is None:
+        mat = bpy.data.materials.new(name=name)
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    bsdf = next((node for node in nodes if node.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is None:
+        bsdf = nodes.new(type="ShaderNodeBsdfPrincipled")
+    output = next((node for node in nodes if node.type == "OUTPUT_MATERIAL"), None)
+    if output is None:
+        output = nodes.new(type="ShaderNodeOutputMaterial")
+    if not bsdf.outputs["BSDF"].is_linked:
+        links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
+    set_material_srgb(mat, (r, g, b))
+    return mat
+
+
+def _mountain_uniform_material(obj):
+    """Return the single material shared by every face, or None if mixed.
+
+    A fresh map is uniformly BASE and a previously produced height piece is
+    uniformly its own colour, so this one check both keeps painted maps out of
+    Single Extruder Mode and lets an existing piece be split again.
+    """
+    mesh = obj.data
+    face_count = len(mesh.polygons)
+    if not face_count:
+        return None
+    # Called from panel draw, so avoid per-polygon Python iteration. The
+    # attribute is absent when every face uses slot 0.
+    attribute = mesh.attributes.get("material_index")
+    if attribute is None:
+        index = 0
+    else:
+        values = np.empty(face_count, dtype=np.int32)
+        attribute.data.foreach_get("value", values)
+        index = int(values[0])
+        if (values != index).any():
+            return None
+    if index >= len(mesh.materials):
+        return None
+    return mesh.materials[index]
+
+
+def _mountain_split_ineligible_reason(obj, tp3d, check_topology=False):
+    if obj.type != "MESH" or obj.get("Object type") != "MAP":
+        return _("Only generated map meshes can be split")
+
+    mesh = obj.data
+    if mesh.get("3mf_is_paint_texture") or bpy.data.images.get(
+        f"{mesh.name}_MMU_Paint"
+    ):
+        return _("Maps with paint textures cannot be split")
+
+    element_mode = obj.get("elementMode", tp3d.elementMode)
+    if element_mode == "SINGLECOLORMODE_REMESH":
+        return _("Maps generated with Single Extruder elements cannot be split")
+    if not mesh.polygons:
+        return _("The map has no faces")
+
+    if _mountain_uniform_material(obj) is None:
+        return _("Only single-colored maps or height pieces can be split")
+
+    if check_topology:
+        bm = bmesh.new()
+        try:
+            bm.from_mesh(mesh)
+            if any(not edge.is_manifold for edge in bm.edges):
+                return _("The map must be manifold before it can be split")
+        finally:
+            bm.free()
+    return None
+
+
+def _mountain_manifold_selection_eligible(context, check_topology=False):
+    maps = [
+        obj
+        for obj in context.selected_objects
+        if obj.type == "MESH" and obj.get("Object type") == "MAP"
+    ]
+    return bool(maps) and all(
+        _mountain_split_ineligible_reason(
+            obj, context.scene.tp3d, check_topology=check_topology
+        )
+        is None
+        for obj in maps
+    )
+
+
+def _mountain_noise_offset(x, y, noise_amplitude, noise_scale):
+    if noise_amplitude <= 0:
+        return 0.0
+    value = noise.noise((x * noise_scale, y * noise_scale, 0.0))
+    return (value - 0.5) * 2.0 * noise_amplitude
+
+
+def _build_mountain_element(
+    obj, z_threshold, noise_amplitude, noise_scale, sink_depth=1.0
+):
+    source_bm = bmesh.new()
+    source_bm.from_mesh(obj.data)
+    bm = source_bm.copy()
+    source_bm.free()
+
+    for vertex in bm.verts:
+        vertex.co.z -= _mountain_noise_offset(
+            vertex.co.x, vertex.co.y, noise_amplitude, noise_scale
+        )
+
+    result = bmesh.ops.bisect_plane(
+        bm,
+        geom=bm.verts[:] + bm.edges[:] + bm.faces[:],
+        plane_co=Vector((0.0, 0.0, z_threshold)),
+        plane_no=Vector((0.0, 0.0, 1.0)),
+        clear_outer=False,
+        clear_inner=True,
+    )
+
+    for vertex in bm.verts:
+        vertex.co.z += _mountain_noise_offset(
+            vertex.co.x, vertex.co.y, noise_amplitude, noise_scale
+        )
+
+    cut_edges = [
+        element
+        for element in result.get("geom_cut", ())
+        if isinstance(element, bmesh.types.BMEdge)
+        and element.is_valid
+        and element.is_boundary
+    ]
+    if not bm.faces or not cut_edges:
+        bm.free()
+        return None, None
+
+    mw = obj.matrix_world
+    mw_inv = mw.inverted()
+    # coloring_main() gives normal Single Extruder elements this same 1 mm body.
+    bottom_world_z = min((mw @ vertex.co).z for vertex in bm.verts) - sink_depth
+    extruded = bmesh.ops.extrude_edge_only(bm, edges=cut_edges)
+    bottom_vertices = [
+        element
+        for element in extruded["geom"]
+        if isinstance(element, bmesh.types.BMVert)
+    ]
+    for vertex in bottom_vertices:
+        world_co = mw @ vertex.co
+        world_co.z = bottom_world_z
+        vertex.co = mw_inv @ world_co
+
+    bottom_vertex_set = set(bottom_vertices)
+    bottom_edges = [
+        edge
+        for edge in bm.edges
+        if edge.is_boundary and all(vertex in bottom_vertex_set for vertex in edge.verts)
+    ]
+    if not bottom_edges:
+        bm.free()
+        return None, None
+
+    bmesh.ops.holes_fill(bm, edges=bottom_edges, sides=0)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    if any(not edge.is_manifold for edge in bm.edges):
+        bm.free()
+        return None, None
+    return bm, bottom_world_z
+
+
+def _apply_mountain_manifold(
+    obj,
+    z_threshold,
+    mountain_mat,
+    noise_amplitude,
+    noise_scale,
+    tolerance,
+):
+    # The remainder keeps whatever colour it already had, so splitting a grey
+    # mountain piece for a white snow cap leaves the mountain grey.
+    base_mat = _mountain_uniform_material(obj) or bpy.data.materials.get("BASE")
+
+    mountain_bm, bottom_world_z = _build_mountain_element(
+        obj, z_threshold, noise_amplitude, noise_scale
+    )
+    if mountain_bm is None:
+        return None
+
+    original_mesh = obj.data
+    base_work = None
+    mountain_mesh = None
+    mountain_obj = None
+    cutter = None
+    try:
+        for face in mountain_bm.faces:
+            face.material_index = 0
+
+        mountain_mesh = bpy.data.meshes.new(f"{obj.data.name}_Mountain")
+        mountain_bm.to_mesh(mountain_mesh)
+        mountain_mesh.materials.append(mountain_mat)
+
+        mountain_obj = obj.copy()
+        mountain_obj.data = mountain_mesh
+        mountain_obj.name = f"{obj.name}_Mountain"
+        for collection in obj.users_collection:
+            collection.objects.link(mountain_obj)
+
+        base_work = obj.copy()
+        base_work.data = original_mesh.copy()
+        base_work.name = f"{obj.name}_ColorByHeightWork"
+        bpy.context.collection.objects.link(base_work)
+
+        from .utils.mesh_ops import single_color_mode_mesh_remesh
+
+        cutter = single_color_mode_mesh_remesh(
+            mountain_obj,
+            base_work,
+            tolerance=tolerance,
+            shared_bottom_z=bottom_world_z,
+        )
+        if cutter is None:
+            return None
+
+        for candidate in (base_work, mountain_obj):
+            check_bm = bmesh.new()
+            try:
+                check_bm.from_mesh(candidate.data)
+                if not check_bm.faces or any(
+                    not edge.is_manifold for edge in check_bm.edges
+                ):
+                    return None
+            finally:
+                check_bm.free()
+
+        new_base_mesh = base_work.data
+        obj.data = new_base_mesh
+        bpy.data.objects.remove(base_work, do_unlink=True)
+        base_work = None
+        if original_mesh.users == 0:
+            bpy.data.meshes.remove(original_mesh)
+        obj.data.materials.clear()
+        if base_mat is not None:
+            obj.data.materials.append(base_mat)
+        level = int(obj.get("heightLayerLevel", 0) or 0)
+        # Only the original map is forced into the map export group; a piece
+        # that is being split again keeps its own separate-piece grouping.
+        if not obj.get("IsMountainPiece"):
+            obj["ExportGroup"] = 1
+        obj["lastMountianManifold"] = True
+        obj["mountain_obj_name"] = mountain_obj.name
+        mountain_obj["ExportGroup"] = 0
+        mountain_obj["lastMountianManifold"] = True
+        mountain_obj["IsMountainPiece"] = True
+        mountain_obj["heightLayerLevel"] = level + 1
+        mountain_obj["mountain_base_name"] = obj.name
+        # The piece is a solid single colour, not a map carrying height bands.
+        mountain_obj[_HEIGHT_COLOR_MATERIALS_PROP] = []
+        return mountain_obj
+    finally:
+        mountain_bm.free()
+        if cutter is not None and cutter.name in bpy.data.objects:
+            bpy.data.objects.remove(cutter, do_unlink=True)
+        if base_work is not None and base_work.name in bpy.data.objects:
+            bpy.data.objects.remove(base_work, do_unlink=True)
+        if (
+            mountain_obj is not None
+            and not mountain_obj.get("lastMountianManifold")
+            and mountain_obj.name in bpy.data.objects
+        ):
+            bpy.data.objects.remove(mountain_obj, do_unlink=True)
+        elif (
+            mountain_obj is None
+            and mountain_mesh is not None
+            and mountain_mesh.name in bpy.data.meshes
+        ):
+            bpy.data.meshes.remove(mountain_mesh)
+
+
 class TP3D_OT_color_mountain(bpy.types.Operator):
     bl_idname = "tp3d.color_mountain"
-    bl_label = _("Color Mountains")
-    bl_description = _tip("Color Mountains above a certain Threshold")
+    bl_label = _("Color by Height")
+    bl_description = _tip("Color terrain above a height threshold")
     bl_options = {"REGISTER", "UNDO"}
+
+    mountain_treshold: bpy.props.IntProperty(
+        name=_("Mountain Threshold"),
+        default=60,
+        min=0,
+        max=100,
+        subtype="PERCENTAGE",
+        description=_tip("Height threshold for Color by Height"),
+    )  # type: ignore
+    mountain_color: bpy.props.FloatVectorProperty(
+        name=_("Mountain Color"),
+        description=_tip("Color used for terrain above the threshold"),
+        subtype="COLOR_GAMMA",
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(0.5, 0.5, 0.5),
+    )  # type: ignore
+    color_height_SEM: bpy.props.BoolProperty(
+        name=_("Single Extruder Mode"),
+        description=_tip(
+            "Build terrain above the threshold as a one-millimeter-deep element and cut its tolerance gap from the piece below it, using the same construction as normal Single Extruder elements. Select the new piece and run again with a higher threshold to stack another color on top. Reversible with Ctrl-Z"
+        ),
+        default=False,
+    )  # type: ignore
+    mountain_noise: bpy.props.BoolProperty(
+        name=_("Threshold Variation Noise"),
+        default=False,
+        description=_tip(
+            "Makes a more natural looking boundary for the Color by Height threshold."
+        ),
+    )  # type: ignore
+    mountain_noise_amplitude: bpy.props.FloatProperty(
+        name=_("Amplitude"),
+        default=1.0,
+        min=0.0,
+        soft_max=10.0,
+        description=_tip(
+            "How far the Color by Height boundary is allowed to dip below or rise above the flat threshold height, in map units. 0 gives a flat boundary."
+        ),
+    )  # type: ignore
+    mountain_noise_scale: bpy.props.FloatProperty(
+        name=_("Scale"),
+        default=0.5,
+        min=0.005,
+        soft_max=2.0,
+        description=_tip(
+            "Frequency of the Color by Height boundary noise. Lower values give broad, slow-rolling dips and rises; higher values give tight, speckled variation."
+        ),
+    )  # type: ignore
 
     @classmethod
     def poll(cls, context):
@@ -1207,6 +1556,8 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
     def invoke(self, context, event):
         tp3d = context.scene.tp3d
         self.mountain_treshold = tp3d.mountain_treshold
+        self.mountain_color = tp3d.mountain_color
+        self.color_height_SEM = tp3d.color_height_SEM
         self.mountain_noise = tp3d.mountain_noise
         self.mountain_noise_amplitude = tp3d.mountain_noise_amplitude
         self.mountain_noise_scale = tp3d.mountain_noise_scale
@@ -1215,6 +1566,8 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
     def draw(self, context):
         layout = self.layout
         layout.prop(self, "mountain_treshold")
+        layout.prop(self, "mountain_color")
+        layout.prop(self, "color_height_SEM")
         layout.prop(self, "mountain_noise")
         col = layout.column()
         col.enabled = self.mountain_noise
@@ -1226,6 +1579,8 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
         tp3d = context.scene.tp3d
         # Keep scene settings and redo settings in sync.
         tp3d.mountain_treshold = self.mountain_treshold
+        tp3d.mountain_color = self.mountain_color
+        tp3d.color_height_SEM = self.color_height_SEM
         tp3d.mountain_noise = self.mountain_noise
         tp3d.mountain_noise_amplitude = self.mountain_noise_amplitude
         tp3d.mountain_noise_scale = self.mountain_noise_scale
@@ -1239,8 +1594,29 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
         minThickness = None
 
         if not selected_objects:
-            utils.show_message_box("No Object Selected. Please select a Map first")
+            self.report({"ERROR"}, _rpt("No object selected. Select a map first."))
             return {"CANCELLED"}
+
+        map_objects = [
+            obj
+            for obj in selected_objects
+            if obj.type == "MESH" and obj.get("Object type") == "MAP"
+        ]
+        if not map_objects:
+            self.report({"ERROR"}, _rpt("Select at least one generated map."))
+            return {"CANCELLED"}
+
+        if self.color_height_SEM:
+            problems = []
+            for obj in map_objects:
+                reason = _mountain_split_ineligible_reason(
+                    obj, tp3d, check_topology=True
+                )
+                if reason is not None:
+                    problems.append(f"{obj.name}: {reason}")
+            if problems:
+                self.report({"ERROR"}, "; ".join(problems))
+                return {"CANCELLED"}
 
         for obj in selected_objects:
             if "lowestZ" in obj and "highestZ" in obj and obj["highestZ"] != 0:
@@ -1253,10 +1629,9 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
         # print(f"Lowest Z across objects: {min_z}, Highest Z: {max_z}")
 
         if min_z is None or max_z is None:
-            utils.show_message_box(
-                "No valid Map object selected. Please select a generated Map first.",
-                "INFO",
-                "INFO",
+            self.report(
+                {"ERROR"},
+                _rpt("No valid map selected. Select a generated map first."),
             )
             return {"CANCELLED"}
 
@@ -1265,11 +1640,7 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
         noise_amplitude = self.mountain_noise_amplitude if self.mountain_noise else 0.0
         noise_scale = self.mountain_noise_scale
 
-        # ---------------------------------------
-        # Create or get green material
-
-        # Create or get a gray material
-        mat = bpy.data.materials.get("MOUNTAIN")
+        mat = _height_color_material(tuple(self.mountain_color))
 
         def color_mountains_noised(
             obj, z_threshold, base_mat, mountain_mat, noise_amplitude, noise_scale
@@ -1303,42 +1674,52 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
             bpy.ops.object.mode_set(mode="OBJECT")
 
             mesh = obj.data
-            base_index = mesh.materials.find(base_mat)
+            # Faces that may still change colour: untouched base terrain plus
+            # any band an earlier "Color by Height" pass already painted.
+            # Element colours (water, forest, ...) are deliberately excluded so
+            # stacking never eats them.
+            recolorable = {mesh.materials.find(base_mat)}
+            uniform = _mountain_uniform_material(obj)
+            if uniform is not None:
+                recolorable.add(mesh.materials.find(uniform.name))
+            for name in obj.get(_HEIGHT_COLOR_MATERIALS_PROP, []):
+                recolorable.add(mesh.materials.find(str(name)))
+            recolorable.discard(-1)
             mount_index = mesh.materials.find(mountain_mat)
+            recolorable.add(mount_index)
             for f in mesh.polygons:
-                if f.material_index not in (base_index, mount_index):
-                    continue  # leave non-BASE/MOUNTAIN faces untouched
+                if f.material_index not in recolorable:
+                    continue
                 avg_z = sum(mesh.vertices[v].co.z for v in f.vertices) / len(f.vertices)
                 cx, cy, _ = f.center
                 local_threshold = z_threshold + _noise_offset(cx, cy)
                 if avg_z > local_threshold:
                     f.material_index = mount_index
-                else:
-                    f.material_index = base_index
 
         # Iterate objects and faces
         for obj in selected_objects:
-            if obj.type != "MESH" or obj["Object type"] != "MAP" or max_z == 0:
+            if (
+                obj.type != "MESH"
+                or obj.get("Object type") != "MAP"
+                or max_z == 0
+            ):
                 print("Not Applied")
                 continue
 
             mesh = obj.data
-            is_texture_mode = bool(mesh.get("3mf_is_paint_texture")) and bool(
+            has_texture_flag = bool(mesh.get("3mf_is_paint_texture"))
+            has_texture_image = bool(
                 bpy.data.images.get(f"{mesh.name}_MMU_Paint")
             )
-
-            if not is_texture_mode:
-                already_applied = (
-                    "lastMountianCut" in obj
-                    and obj["lastMountianCut"] == tres
-                    and obj.get("lastMountianNoiseAmp") == noise_amplitude
-                    and obj.get("lastMountianNoiseScale") == noise_scale
+            if has_texture_flag != has_texture_image:
+                self.report(
+                    {"ERROR"},
+                    _(
+                        "{name} has incomplete paint-texture data and cannot be processed."
+                    ).format(name=obj.name),
                 )
-                if already_applied:
-                    utils.show_message_box(
-                        "Already Applied mountains at this height and noise settings"
-                    )
-                    return {"FINISHED"}
+                continue
+            is_texture_mode = has_texture_flag and has_texture_image
 
             print("Apply Mountain Color")
 
@@ -1348,44 +1729,118 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
             if is_texture_mode:
                 from .utils import texture as _tp3d_texture
 
-                _tp3d_texture.bake_height_layer_into_texture(
+                baked = _tp3d_texture.bake_height_layer_into_texture(
                     obj,
                     tres,
                     material=mat,
                     noise_amplitude=noise_amplitude,
                     noise_scale=noise_scale,
                 )
+                if not baked:
+                    self.report(
+                        {"ERROR"},
+                        _("Could not find the paint texture for {name}.").format(
+                            name=obj.name
+                        ),
+                    )
+                    continue
                 obj["lastMountianCut"] = tres
                 obj["lastMountianNoiseAmp"] = noise_amplitude
                 obj["lastMountianNoiseScale"] = noise_scale
+                obj["lastMountianColor"] = tuple(self.mountain_color)
                 continue
 
-            # Ensure MOUNTAIN material exists on the object before coloring
-            mat_index = obj.data.materials.find("MOUNTAIN")
-            if mat_index == -1 and mat is not None:
+            if self.color_height_SEM:
+                # A stacked piece only has terrain above its own cut, so a
+                # lower threshold would carve straight through its 1 mm body.
+                previous_cut = obj.get("lastMountianCut")
+                if (
+                    obj.get("IsMountainPiece")
+                    and previous_cut is not None
+                    and tres <= previous_cut
+                ):
+                    self.report(
+                        {"WARNING"},
+                        _(
+                            "{name} was made at a higher threshold -- raise the threshold to stack another color on it."
+                        ).format(name=obj.name),
+                    )
+                    continue
+
+                mountain_obj = _apply_mountain_manifold(
+                    obj,
+                    z_threshold=tres,
+                    mountain_mat=mat,
+                    noise_amplitude=noise_amplitude,
+                    noise_scale=noise_scale,
+                    tolerance=tp3d.toleranceElements,
+                )
+                if mountain_obj is None:
+                    self.report(
+                        {"WARNING"},
+                        _(
+                            "{name} could not produce a valid recessed mountain element at this threshold."
+                        ).format(name=obj.name),
+                    )
+                    continue
+                for piece in (obj, mountain_obj):
+                    piece["lastMountianCut"] = tres
+                    piece["lastMountianNoiseAmp"] = noise_amplitude
+                    piece["lastMountianNoiseScale"] = noise_scale
+                    piece["lastMountianColor"] = tuple(self.mountain_color)
+                continue
+
+            already_applied = (
+                "lastMountianCut" in obj
+                and obj["lastMountianCut"] == tres
+                and obj.get("lastMountianNoiseAmp") == noise_amplitude
+                and obj.get("lastMountianNoiseScale") == noise_scale
+                and obj.get("lastMountianColor") is not None
+                and all(
+                    abs(a - b) < 1e-4
+                    for a, b in zip(
+                        obj["lastMountianColor"], self.mountain_color
+                    )
+                )
+            )
+            if already_applied:
+                self.report(
+                    {"INFO"},
+                    _(
+                        "{name} already uses this height, noise, and color."
+                    ).format(name=obj.name),
+                )
+                continue
+
+            if obj.data.materials.find(mat.name) == -1:
                 obj.data.materials.append(mat)
-                mat_index = len(obj.data.materials) - 1
 
             color_mountains_noised(
-                obj, tres, "BASE", "MOUNTAIN", noise_amplitude, noise_scale
+                obj, tres, "BASE", mat.name, noise_amplitude, noise_scale
             )
+            applied = [str(name) for name in obj.get(_HEIGHT_COLOR_MATERIALS_PROP, [])]
+            if mat.name not in applied:
+                applied.append(mat.name)
+            obj[_HEIGHT_COLOR_MATERIALS_PROP] = applied
             obj["lastMountianCut"] = tres
             obj["lastMountianNoiseAmp"] = noise_amplitude
             obj["lastMountianNoiseScale"] = noise_scale
+            obj["lastMountianColor"] = tuple(self.mountain_color)
 
-        for area in context.screen.areas:
-            if area.type == "VIEW_3D":
-                area.tag_redraw()
+        if context.screen is not None:
+            for area in context.screen.areas:
+                if area.type == "VIEW_3D":
+                    area.tag_redraw()
         return {"FINISHED"}
 
 
 class TP3D_OT_undo_mountain_texture(bpy.types.Operator):
-    """Restore the selected object's MMU_Paint texture to its state immediately before its most recent Color Mountains texture bake. Blender's native Ctrl+Z does not track raw Image.pixels writes made through Python, so texture-mode Color Mountains maintains its own in-session history instead."""
+    """Restore the selected object's MMU_Paint texture to its state immediately before its most recent Color by Height texture bake. Blender's native Ctrl+Z does not track raw Image.pixels writes made through Python, so texture mode maintains its own in-session history instead."""
 
     bl_idname = "tp3d.undo_mountain_texture"
-    bl_label = _("Undo Texture Mountain Color")
+    bl_label = _("Undo Texture Bake")
     bl_description = _tip(
-        "Undo the most recent Color Mountains texture bake for the selected object"
+        "Undo the most recent Color by Height texture bake for the selected object"
     )
     bl_options = {"REGISTER"}
 
@@ -1410,10 +1865,9 @@ class TP3D_OT_undo_mountain_texture(bpy.types.Operator):
             if _tp3d_texture.restore_last_height_bake(obj):
                 restored += 1
         if restored == 0:
-            utils.show_message_box(
-                _("Nothing to undo -- no Color Mountains texture bake to restore."),
-                "INFO",
-                "INFO",
+            self.report(
+                {"INFO"},
+                _rpt("Nothing to undo -- no Color by Height texture bake to restore."),
             )
             return {"CANCELLED"}
         return {"FINISHED"}

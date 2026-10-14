@@ -21,6 +21,7 @@ Added: Option to smooth Terrain when elevation data hits the API's resolution li
 Changed: Increased maximum River Width and Road Width Multiplier from 10 to 100
 Changed: Longitude now wraps at any magnitude in the map pickers, allowing continuous panning
 Changed: 3MF export now supports slicer profiles and custom filenames (By Clonephaze)
+Changed: Material-mode colors now match texture-mode swatches in the viewport and 3MF exports; legacy named and height-layer materials migrate when their colors are set up
 Fixed: Clicking a draw-mode toggle button no longer also starts drawing behind it, and switching mode after clicking Draw (before placing the shape) now actually uses the new mode
 Fixed: Puzzle Generator ignoring the configured Map Size
 Fixed: Buildings floating in the air or disappearing on steep faces
