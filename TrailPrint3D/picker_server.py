@@ -1379,7 +1379,6 @@ class _Handler(BaseHTTPRequestHandler):
             return
         length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(length)
-        pathlib.Path(self.result_path).write_text(body.decode('utf-8'), encoding='utf-8')
         # Must run before the response is sent: the picker page calls
         # window.close() as soon as it sees the response, and this function
         # AttachThreadInput's onto that browser window's thread. Doing that
@@ -1389,7 +1388,15 @@ class _Handler(BaseHTTPRequestHandler):
         # becomes noticeable once generation finishes and the user tries to
         # interact again. Running it first, against a still-open window,
         # removes the race.
+        # Must also run before the result file is written: its window calls
+        # (SetWindowPos, ShowWindow, ...) block until Blender's main thread
+        # handles them, and the operator's modal timer starts the (blocking)
+        # generation as soon as the file exists. Written first, a timer tick
+        # landing in between leaves this thread stuck -- still attached to the
+        # browser's input -- for the whole generation: the page never gets its
+        # response (stays open), and Blender freezes once generation finishes.
         _bring_blender_to_foreground()
+        pathlib.Path(self.result_path).write_text(body.decode('utf-8'), encoding='utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'text/plain')
         self.send_header('Access-Control-Allow-Origin', '*')

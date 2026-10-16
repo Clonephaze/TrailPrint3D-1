@@ -22,7 +22,7 @@ function tp3dAlert(message, title) {
 }
 
 (function() {
-    var dialogSelector = '.tp3d-modal, #plateSettingsModal';
+    var dialogSelector = '.tp3d-modal';
     var toggleSelector = 'button.shape-btn, button.shape-toggle-btn, button.element-mode-btn, button.source-switch-btn, button[data-element-toggle]';
     var stack = [];
     var inertElements = new Map();
@@ -56,7 +56,7 @@ function tp3dAlert(message, title) {
                 && (!element.textContent.trim() || element.matches('.shape-toggle-btn')) && element.title) {
                 element.setAttribute('aria-label', element.title);
             }
-            if (element.matches('button.tp3d-modal-close-btn, #plateSettingsCloseBtn')) {
+            if (element.matches('button.tp3d-modal-close-btn')) {
                 element.setAttribute('aria-label', element.title || 'Close');
             }
             if (element.matches('input:not([type=hidden]):not([type=file]), select') && !element.hasAttribute('aria-label')) {

@@ -902,7 +902,6 @@ function tp3dResetPuzzleGenerator() {
 
     var m = tp3dSettingsModal();
     if (m) m.classList.remove('open');
-    closePlateSettings();
     if (typeof drawArmed !== 'undefined' && drawArmed) disarmDraw();
     if (tp3dHasDrawnArea()) document.getElementById('deleteBtn').click();
     clickIfShown('clearGpx');
@@ -911,8 +910,9 @@ function tp3dResetPuzzleGenerator() {
     if (!tp3dPuzzleIsSquare()) document.getElementById('shapeSquareBtn').click();
     var cornerBtn = document.querySelector('.draw-mode-btn[data-mode="corner"]');
     if (cornerBtn && !cornerBtn.classList.contains('active')) cornerBtn.click();
+    // The sliding puzzle page has no holder checkbox -- its frame is always generated.
     var holder = document.getElementById('holderEnabled');
-    if (holder.checked) holder.click();
+    if (holder && holder.checked) holder.click();
     // Start on OSM with no colored elements, so the ESA step has a switch to
     // teach. Switching reloads OSM's own element states from Blender, so
     // they're turned off once that's done.
@@ -921,7 +921,9 @@ function tp3dResetPuzzleGenerator() {
     else tp3dAllElementsOff(true);
 
     // Same defaults the page itself starts with: the static HTML's values.
-    ['lengthInput', 'widthInput', 'colsInput', 'rowsInput', 'resolutionSlider'].forEach(function(id) {
+    var inputs = ['lengthInput', 'widthInput', 'colsInput', 'rowsInput', 'resolutionSlider'];
+    if (tp3dIsSlidingPuzzlePage()) inputs.push('cornerRadiusInput', 'toleranceInput');
+    inputs.forEach(function(id) {
         tp3dPuzzleSetInput(id, document.getElementById(id).defaultValue);
     });
 
@@ -980,11 +982,10 @@ function tp3dDemoClickEsa() {
     return [{ x: r.left + r.width / 2, y: r.top + r.height / 2 }];
 }
 
-var tp3dPlateSettingsTimer = null;
-function tp3dPlateSettingsOpen() {
-    var m = document.getElementById('plateSettingsModal');
-    return !!m && m.classList.contains('open');
-}
+// The holder (jigsaw) / frame (sliding) fields, below the divider on the
+// Settings popup's Puzzle tab (settings_modal.js's tp3dBuildPuzzleTab).
+function tp3dPlateTabPanel() { return document.getElementById('plateTabFields'); }
+function tp3dShowPlateTab() { if (window.tp3dActivateSettingsTab) window.tp3dActivateSettingsTab('puzzle'); }
 
 function tp3dIsTopoLayer() {
     return typeof activeBaseLayerName !== 'undefined' && activeBaseLayerName === 'Topographic';
@@ -1158,25 +1159,37 @@ function tp3dPuzzleTutorialCreate() {
             interactive: true,
             placement: 'right',
             title: 'Add a holder',
-            text: 'Tick <b>Generate Holder</b> to also get a tray that holds the finished puzzle. ' +
-                  '<b>Plate Settings…</b> sets its frame, corners and text.<br><br>' +
-                  'This is optional.',
-            // Opening Plate Settings moves on to the step below, which
-            // focuses the popup -- otherwise it'd sit greyed out under this one.
-            onEnter: function(api) {
-                tp3dPlateSettingsTimer = setInterval(function() { if (tp3dPlateSettingsOpen()) api.next(); }, 200);
-            },
-            onExit: function() { clearInterval(tp3dPlateSettingsTimer); }
+            text: 'Tick <b>Generate Holder</b> to also get a tray that holds the finished puzzle.<br><br>' +
+                  'This is optional.'
         },
-        // Only shown when Plate Settings was opened on the step above.
         {
-            target: '#plateSettingsBox',
+            target: '.settings-gear-btn',
+            placement: 'bottom',
+            title: 'Holder settings',
+            text: 'The holder\'s frame, corners and text are in the settings, on the <b>Puzzle</b> tab.<br><br>' +
+                  'Click <b>Settings</b> to have a look. This is optional.',
+            waitFor: tp3dTutorial.waitForClick('.settings-gear-btn'),
+            waitText: 'Click Settings',
+            skippable: true,
+            skipIf: tp3dSettingsOpen
+        },
+        // Only shown when the settings were opened on the step above.
+        {
+            target: tp3dPlateTabPanel,
+            interactive: true,
             title: 'Plate settings',
-            text: 'Set the holder\'s frame thickness, corner radius and text here.<br><br>' +
-                  'Your changes are saved right away. Close it with <b>✕</b> to continue.',
-            waitFor: tp3dTutorial.waitUntil(function() { return !tp3dPlateSettingsOpen(); }),
-            waitText: 'Close Plate Settings',
-            skipIf: function() { return !tp3dPlateSettingsOpen(); }
+            text: 'Set the holder\'s frame thickness, corner radius and text here. They\'re greyed out ' +
+                  'until <b>Generate Holder</b> is ticked.',
+            onEnter: tp3dShowPlateTab,
+            skipIf: function() { return !tp3dSettingsOpen(); }
+        },
+        {
+            target: tp3dInSettings('.tp3d-modal-close-btn'),
+            title: 'Close the settings',
+            text: 'Your changes are saved right away. Close the settings to continue.',
+            waitFor: tp3dTutorial.waitUntil(function() { return !tp3dSettingsOpen(); }),
+            waitText: 'Close the settings',
+            skipIf: function() { return !tp3dSettingsOpen(); }
         },
         {
             // Whichever is visible: Select Export Folder stands in for Send until a folder is set (export_folder.js).
@@ -1212,6 +1225,294 @@ var TP3D_PUZZLE_TUTORIAL_MENU = {
                 map.fitBounds(TP3D_FUJI_VIEW_BOUNDS);
             },
             steps: tp3dPuzzleTutorialCreate
+        }
+    ]
+};
+
+// ---- Sliding Puzzle Generator: "Create a 3 x 3 Sliding Puzzle" ----
+// Same flow as the jigsaw one above, on premium/generators/slidingPuzzleGenerator.html
+// (flagged by TP3D_IS_SLIDING_PUZZLE_PAGE): no piece shapes, an empty slot
+// instead, and a frame that's always generated instead of an optional holder.
+
+function tp3dIsSlidingPuzzlePage() {
+    return typeof TP3D_IS_SLIDING_PUZZLE_PAGE !== 'undefined' && TP3D_IS_SLIDING_PUZZLE_PAGE;
+}
+
+// The classic 8-tile puzzle -- not the page's 4 x 4 default, so the grid
+// step has something to do.
+var TP3D_SLIDING_COLS = 3;
+var TP3D_SLIDING_ROWS = 3;
+
+function tp3dSlidingIs3x3() {
+    return tp3dPuzzleGridValue('colsInput') === TP3D_SLIDING_COLS &&
+        tp3dPuzzleGridValue('rowsInput') === TP3D_SLIDING_ROWS;
+}
+
+function tp3dSlidingSet3x3() {
+    tp3dPuzzleSetInput('colsInput', TP3D_SLIDING_COLS);
+    tp3dPuzzleSetInput('rowsInput', TP3D_SLIDING_ROWS);
+}
+
+// Live hint under the grid step's text, like tp3dPuzzleGridHint: one cell
+// always stays empty, so it's one tile less than the grid has cells.
+var tp3dSlidingGridHintTimer = null;
+function tp3dSlidingGridHint() {
+    var el = document.getElementById('tp3dSlidingGridHint');
+    if (!el) return;
+    var c = tp3dPuzzleGridValue('colsInput'), r = tp3dPuzzleGridValue('rowsInput');
+    el.innerHTML = 'Now: <b>' + c + ' × ' + r + ' = ' + Math.max(0, c * r - 1) + ' tiles</b> + 1 empty slot';
+}
+function tp3dSlidingStartGridHint() {
+    tp3dSlidingStopGridHint();
+    tp3dSlidingGridHint();
+    tp3dSlidingGridHintTimer = setInterval(tp3dSlidingGridHint, 200);
+}
+function tp3dSlidingStopGridHint() {
+    if (tp3dSlidingGridHintTimer) { clearInterval(tp3dSlidingGridHintTimer); tp3dSlidingGridHintTimer = null; }
+}
+
+// Sample cursor for the empty-slot step: clicks the center of the top-left
+// tile (row 0 is the south row, so the top row is the highest index).
+function tp3dDemoClickSlidingTile() {
+    if (typeof pieces === 'undefined' || !pieces.length) return null;
+    var top = Math.max.apply(null, pieces.map(function(p) { return p.row; }));
+    var tile = pieces.filter(function(p) { return p.row === top && p.col === 0; })[0];
+    if (!tile) return null;
+    var x = 0, y = 0;
+    tile.points.forEach(function(pt) { x += pt[0]; y += pt[1]; });
+    var ll = normToLatLng(x / tile.points.length, y / tile.points.length);
+    return [tp3dMapToViewport(ll[0], ll[1])];
+}
+
+function tp3dSlidingTutorialCreate() {
+    return [
+        {
+            target: '#map',
+            title: 'Create a sliding puzzle',
+            text: 'We moved the map to <b>Mount Fuji</b> in Japan. Its big cone makes for great terrain.<br><br>' +
+                  'A sliding puzzle has square tiles in a frame with one slot left empty, so the tiles can ' +
+                  'slide around.<br><br>' +
+                  'You can exit this tutorial at any time with <b>✕</b> or <b>Esc</b>.'
+        },
+        {
+            target: '#drawBtn',
+            placement: 'right',
+            title: 'Draw your area',
+            text: 'Draw your area first, so you can see every setting change on the map right away.<br><br>' +
+                  'Click the <b>pencil</b> to start drawing.',
+            waitFor: tp3dWaitForPencilOrArea(),
+            waitText: 'Click the pencil',
+            buttons: [{ label: 'Draw it for me', onClick: tp3dPlaceFujiArea }],
+            skipIf: tp3dHasDrawnArea
+        },
+        {
+            target: '#map',
+            title: 'Draw your area',
+            text: 'Click and drag over the mountain to draw your area, then let go of the mouse. ' +
+                  'Keep the summit in the middle.<br><br>' +
+                  'If nothing happens, click the pencil again.',
+            demo: tp3dDemoDrawArea,
+            demoShape: 'rect',
+            demoGhostColor: TP3D_DRAWING_BLUE,
+            waitFor: tp3dTutorial.waitUntil(tp3dHasDrawnArea),
+            waitText: 'Draw on the map',
+            buttons: [{ label: 'Draw it for me', onClick: tp3dPlaceFujiArea }],
+            skipIf: tp3dHasDrawnArea
+        },
+        {
+            target: '.leaflet-control-layers',
+            title: 'See the terrain',
+            text: 'Click <b>Topographic</b> to see the mountains and valleys in your area.',
+            demo: tp3dDemoClickTopo,
+            waitFor: tp3dTutorial.waitUntil(tp3dIsTopoLayer),
+            waitText: 'Click Topographic',
+            skippable: true,
+            skipIf: tp3dIsTopoLayer,
+            onEnter: tp3dHoldLayersOpen,
+            onExit: tp3dReleaseLayersOpen
+        },
+        {
+            target: function() { return document.getElementById('lengthInput').closest('.field-row'); },
+            interactive: true,
+            placement: 'right',
+            title: 'Set the size',
+            text: 'This is the size of the <b>whole puzzle</b> in <b>mm</b>, length × width. The frame ' +
+                  'goes around it.<br><br>' +
+                  'We keep <b>100 × 100</b> for this tutorial.'
+        },
+        {
+            target: function() { return document.getElementById('colsInput').closest('.field-row'); },
+            placement: 'right',
+            title: 'Set the grid',
+            text: '<b>Grid</b> sets how many tiles your puzzle has: columns × rows. The blue squares on the ' +
+                  'map are your tiles.<br><br>' +
+                  'Set it to <b>3 × 3</b>.<br><br>' +
+                  '<span id="tp3dSlidingGridHint"></span>',
+            waitFor: tp3dTutorial.waitUntil(tp3dSlidingIs3x3),
+            waitText: 'Set the grid to 3 × 3',
+            buttons: [{ label: 'Set 3 × 3 for me', onClick: tp3dSlidingSet3x3 }],
+            skipIf: tp3dSlidingIs3x3,
+            onEnter: tp3dSlidingStartGridHint,
+            onExit: tp3dSlidingStopGridHint
+        },
+        {
+            target: '#map',
+            interactive: true,
+            title: 'Pick the empty slot',
+            text: 'The <b>red dashed</b> tile is the empty slot. It isn\'t generated, so the other tiles ' +
+                  'have room to slide.<br><br>' +
+                  'Click any tile to make it the empty one instead. This is optional.',
+            demo: tp3dDemoClickSlidingTile
+        },
+        {
+            target: '#map',
+            interactive: true,
+            title: 'Frame the peak',
+            text: 'Drag the handle in the middle of the box to move your area, or a corner to resize it, ' +
+                  'until the summit sits in the <b>middle</b> of the puzzle.',
+            demo: tp3dDemoMoveShape,
+            demoGhost: tp3dDemoMoveGhost,
+            demoGhostColor: TP3D_DRAWN_ORANGE
+        },
+        {
+            target: '.settings-gear-btn',
+            placement: 'bottom',
+            title: 'Corners and tolerance',
+            text: '<b>Corner Radius</b> and <b>Tolerance</b> are in the settings.<br><br>' +
+                  'Click <b>Settings</b>.',
+            waitFor: tp3dTutorial.waitForClick('.settings-gear-btn'),
+            waitText: 'Click Settings',
+            skippable: true,
+            skipIf: tp3dSettingsOpen
+        },
+        // Only shown when the settings were opened on the step above.
+        {
+            target: function() {
+                return ['#cornerRadiusInput', '#toleranceInput'].map(function(sel) {
+                    var input = tp3dInSettings(sel)();
+                    return input && input.closest('.field-row');
+                }).filter(Boolean);
+            },
+            interactive: true,
+            title: 'Corners and tolerance',
+            text: '<b>Corner Radius</b> rounds the corners of every tile, so they slide past each ' +
+                  'other more smoothly.<br><br>' +
+                  '<b>Tolerance</b> is the gap between the tiles and to the frame. Too small and they ' +
+                  'stick; too big and they wobble. I use <b>0.3 mm</b> on my Bambu Lab printers for ' +
+                  'the best results.<br><br>' +
+                  'We keep the defaults for this tutorial.',
+            onEnter: function() { if (window.tp3dActivateSettingsTab) window.tp3dActivateSettingsTab('puzzle'); },
+            skipIf: function() { return !tp3dSettingsOpen(); }
+        },
+        {
+            target: tp3dInSettings('.tp3d-modal-close-btn'),
+            title: 'Close the settings',
+            text: 'Your changes are saved right away. Close the settings to continue.',
+            waitFor: tp3dTutorial.waitUntil(function() { return !tp3dSettingsOpen(); }),
+            waitText: 'Close the settings',
+            skipIf: function() { return !tp3dSettingsOpen(); }
+        },
+        {
+            target: function() { return document.getElementById('resolutionSlider').parentElement; },
+            placement: 'right',
+            title: 'Resolution',
+            text: '<b>Resolution</b> sets how much terrain detail your puzzle gets. Higher values look ' +
+                  'sharper but take longer to generate.<br><br>' +
+                  'We keep <b>8</b>, so the ridges of the mountain come out crispy clean.'
+        },
+        {
+            target: '.element-source-switch-compact',
+            placement: 'bottom',
+            title: 'Color the terrain with ESA',
+            text: 'Enabling elements adds colors to your maps based on real world data. For this example ' +
+                  'we use <b>ESA</b> as a data source.<br><br>' +
+                  '<b>ESA</b> is made from satellite images and works for areas of any size, great for ' +
+                  'natural landscapes like this one.<br><br>' +
+                  'Click <b>ESA</b>.',
+            demo: tp3dDemoClickEsa,
+            waitFor: tp3dTutorial.waitUntil(function() { return !tp3dIsOsm(); }),
+            waitText: 'Click ESA',
+            skippable: true,
+            skipIf: function() { return !tp3dIsOsm(); }
+        },
+        {
+            target: function() {
+                return TP3D_PUZZLE_ELEMENTS.map(tp3dElementChipWrap).filter(Boolean);
+            },
+            placement: 'bottom',
+            title: 'Turn on Forest and Mountain',
+            text: 'Mount Fuji has <b>forest</b> on its lower slopes and bare rock, <b>Mountain</b>, on top.<br><br>' +
+                  'Click <b>Forest</b> and <b>Mountain</b> to switch them on. Green means on.',
+            onEnter: function() { tp3dAllElementsOff(true); },
+            demo: tp3dDemoPuzzleElements,
+            waitFor: tp3dTutorial.waitUntil(tp3dPuzzleElementsOn),
+            waitText: 'Turn on Forest and Mountain',
+            skippable: true,
+            skipIf: tp3dIsOsm
+        },
+        {
+            target: '.settings-gear-btn',
+            placement: 'bottom',
+            title: 'The frame',
+            text: 'Every sliding puzzle comes with a <b>frame</b> that keeps the tiles together. The dashed ' +
+                  'black line on the map is its outline.<br><br>' +
+                  'Its thickness, corners and text are in the settings, on the <b>Puzzle</b> tab. ' +
+                  'Click <b>Settings</b> to have a look. This is optional.',
+            waitFor: tp3dTutorial.waitForClick('.settings-gear-btn'),
+            waitText: 'Click Settings',
+            skippable: true,
+            skipIf: tp3dSettingsOpen
+        },
+        // Only shown when the settings were opened on the step above.
+        {
+            target: tp3dPlateTabPanel,
+            interactive: true,
+            title: 'Frame settings',
+            text: 'Set the frame\'s thickness, corner radius and text here. <b>Terrain on Frame</b> ' +
+                  'continues the map onto the frame.',
+            onEnter: tp3dShowPlateTab,
+            skipIf: function() { return !tp3dSettingsOpen(); }
+        },
+        {
+            target: tp3dInSettings('.tp3d-modal-close-btn'),
+            title: 'Close the settings',
+            text: 'Your changes are saved right away. Close the settings to continue.',
+            waitFor: tp3dTutorial.waitUntil(function() { return !tp3dSettingsOpen(); }),
+            waitText: 'Close the settings',
+            skipIf: function() { return !tp3dSettingsOpen(); }
+        },
+        {
+            target: ['#send', '.export-folder-pick'],
+            placement: 'right',
+            title: 'Generate your puzzle',
+            text: 'Click <b>Send to Blender</b> to generate your 8 tiles and the frame.',
+            waitFor: tp3dTutorial.waitForClick('#send'),
+            waitText: 'Click Send to Blender',
+            skippable: true
+        }
+    ];
+}
+
+var TP3D_SLIDING_TUTORIAL_MENU = {
+    button: '#tutorialBtn',
+    title: 'Sliding Puzzle Tutorials',
+    offerId: 'offer-sliding-puzzle-generator',
+    offerTitle: 'Sliding puzzle tutorial',
+    offerText: '<b>New to the Sliding Puzzle Generator?</b> An <b>interactive tutorial</b> walks you ' +
+               'through making a <b>3 × 3 sliding puzzle</b> of Mount Fuji: drawing the area, setting the ' +
+               'grid and empty slot, coloring the terrain and setting up the frame, right on this page.' +
+               '<br><br>It\'s completely <b>optional</b> — click <b>Tutorials</b> to start it, or skip it ' +
+               'and build your own puzzle. The button stays here at the top of the map for later.',
+    tutorials: [
+        {
+            id: 'sliding-puzzle-create',
+            title: 'Create a 3 x 3 Sliding Puzzle',
+            description: 'Turn Mount Fuji into an 8-tile 3D terrain sliding puzzle.',
+            prepare: function() {
+                tp3dResetPuzzleGenerator();
+                map.fitBounds(TP3D_FUJI_VIEW_BOUNDS);
+            },
+            steps: tp3dSlidingTutorialCreate
         }
     ]
 };
@@ -1272,7 +1573,9 @@ var TP3D_MAP_TUTORIAL_MENU = {
     ]
 };
 
-// TP3D_IS_PUZZLE_PAGE is set by both puzzle pages (also read by
-// settings_modal.js for its Puzzle tab).
-tp3dTutorialMenu(typeof TP3D_IS_PUZZLE_PAGE !== 'undefined' && TP3D_IS_PUZZLE_PAGE
-    ? TP3D_PUZZLE_TUTORIAL_MENU : TP3D_MAP_TUTORIAL_MENU);
+// TP3D_IS_PUZZLE_PAGE is set by both jigsaw puzzle pages (also read by
+// settings_modal.js for its Puzzle tab); the sliding puzzle page sets its
+// own TP3D_IS_SLIDING_PUZZLE_PAGE instead, since that tab is jigsaw-only.
+tp3dTutorialMenu(tp3dIsSlidingPuzzlePage() ? TP3D_SLIDING_TUTORIAL_MENU
+    : typeof TP3D_IS_PUZZLE_PAGE !== 'undefined' && TP3D_IS_PUZZLE_PAGE
+        ? TP3D_PUZZLE_TUTORIAL_MENU : TP3D_MAP_TUTORIAL_MENU);

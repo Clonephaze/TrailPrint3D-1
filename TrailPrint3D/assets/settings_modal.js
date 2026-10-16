@@ -918,15 +918,36 @@ function tp3dBuildElementsTab() {
     return wrap;
 }
 
-// Relocates the puzzle-cut field-rows (Tab Size, Jitter, Seed, Corner Radius, Tolerance)
-// out of their hidden sidebar container into this tab -- same elements, same
+// Relocates the puzzle-cut field-rows (Tab Size, Jitter, Seed, Corner Radius, Tolerance;
+// just Corner Radius and Tolerance on the sliding puzzle page) out of their hidden sidebar container into this tab -- same elements, same
 // ids, so the page's own saveState/restoreState/regeneratePuzzle listeners
 // keep working unchanged regardless of where they end up living in the DOM.
+//
+// Below a divider, the same relocation for the holder (jigsaw) / frame
+// (sliding) fields from #plateTabFieldsSource -- formerly their own Plate/
+// Frame Settings popup -- into their own #plateTabFields group.
 function tp3dBuildPuzzleTab() {
+    var wrap = tp3dRelocateFields('puzzleTabFieldsSource');
+    if (document.getElementById('plateTabFieldsSource')) {
+        var hr = document.createElement('hr');
+        hr.className = 'map-tab-divider';
+        wrap.appendChild(hr);
+        var plate = tp3dRelocateFields('plateTabFieldsSource');
+        plate.id = 'plateTabFields';
+        wrap.appendChild(plate);
+    }
+    return wrap;
+}
+
+// Moves every child of the hidden #sourceId container into a new fields
+// grid, and carries its classes over too (e.g. a page's initial
+// tab-fields-inactive).
+function tp3dRelocateFields(sourceId) {
     var wrap = document.createElement('div');
     wrap.className = 'map-tab-fields';
-    var source = document.getElementById('puzzleTabFieldsSource');
+    var source = document.getElementById(sourceId);
     if (source) {
+        source.classList.forEach(function(cls) { wrap.classList.add(cls); });
         while (source.firstElementChild) {
             wrap.appendChild(source.firstElementChild);
         }
@@ -986,7 +1007,9 @@ function tp3dBuildPuzzleTab() {
         { id: 'elements', label: 'Elements', build: tp3dBuildElementsTab },
         { id: 'map', label: 'Map', build: tp3dBuildMapTab }
     ];
-    if (typeof TP3D_IS_PUZZLE_PAGE !== 'undefined' && TP3D_IS_PUZZLE_PAGE) {
+    // The sliding puzzle page gets the tab too, for its own (fewer) fields.
+    if ((typeof TP3D_IS_PUZZLE_PAGE !== 'undefined' && TP3D_IS_PUZZLE_PAGE) ||
+            (typeof TP3D_IS_SLIDING_PUZZLE_PAGE !== 'undefined' && TP3D_IS_SLIDING_PUZZLE_PAGE)) {
         TABS.push({ id: 'puzzle', label: 'Puzzle', build: tp3dBuildPuzzleTab });
     }
     var panels = {};

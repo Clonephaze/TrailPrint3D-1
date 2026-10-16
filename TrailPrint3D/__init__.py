@@ -52,6 +52,8 @@ classes = [
     operators.TP3D_OT_info_video,
     operators.TP3D_OT_terrain_dummy,
     operators.TP3D_OT_magnet_holes,
+    # Must precede TP3D_OT_dovetail, whose targets CollectionProperty uses it.
+    operators.TP3D_PG_dovetail_target,
     operators.TP3D_OT_dovetail,
     operators.TP3D_OT_bottom_mark,
     operators.TP3D_OT_color_mountain,

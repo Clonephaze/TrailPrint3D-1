@@ -61,11 +61,14 @@ OUTER_EDGE_FIELDS = {
 # (field_object_name, base_angle) — the 90 deg X rotation already faces the
 # text outward, so no per-field flip.
 FRONT_FACE_FIELDS = {
+    # Same six spots, in the same order, as OUTER_EDGE_FIELDS' HEXAGON.
     "HEXAGON": [
-        ("t_name", 90),
-        ("t_length", 210),
-        ("t_elevation", 270),
-        ("t_duration", 330),
+        ("t_name", 90),  # N  — title
+        ("t_length", 150),  # NW — Text 1
+        ("t_elevation", 210),  # SW — Text 2
+        ("t_duration", 270),  # S  — Text 3
+        ("t_field4", 330),  # SE — Text 4
+        ("t_field5", 30),  # NE — Text 5
     ],
     "OCTAGON": [
         ("t_name", 90),
@@ -91,13 +94,17 @@ CURVED_RING_FIELDS = {
     ],
 }
 
-# (field_object_name, default_label, base_angle)
+# (field_object_name, default_label, base_angle, flip_180) — same six spots,
+# in the same order, as OUTER_EDGE_FIELDS' HEXAGON; the upper two are turned
+# 180 deg like there, so they read from outside instead of upside down.
 ON_MAP_FIELDS = {
     "HEXAGON": [
-        ("t_name", "Name", 90),
-        ("t_length", "Length", 210),
-        ("t_elevation", "Elevation", 270),
-        ("t_duration", "Duration", 330),
+        ("t_name", "Name", 90, False),  # N  — title
+        ("t_length", "Length", 150, True),  # NW — Text 1
+        ("t_elevation", "Elevation", 210, False),  # SW — Text 2
+        ("t_duration", "Duration", 270, False),  # S  — Text 3
+        ("t_field4", "Field4", 330, False),  # SE — Text 4
+        ("t_field5", "Field5", 30, True),  # NE — Text 5
     ],
 }
 
@@ -893,11 +900,11 @@ def apply_on_map_layout(map_obj, shape):
     text_objs = {}
     text_objs["t_name"] = create_text("t_name", "Name", (0, temp_y, 0.1), 1)
 
-    for field_name, default_label, base_angle in fields:
+    for field_name, default_label, base_angle, flip in fields:
         if field_name == "t_name":
             continue
         angle = base_angle
-        rot_z = math.radians(angle + 90)
+        rot_z = math.radians(angle + 90) + (math.pi if flip else 0)
         x = math.cos(math.radians(angle)) * (dist * math.cos(math.radians(30)))
         y = math.sin(math.radians(angle)) * (dist * math.cos(math.radians(30)))
         text_objs[field_name] = create_text(

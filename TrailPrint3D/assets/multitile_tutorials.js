@@ -252,7 +252,7 @@ function tp3dResetMultitileGenerator() {
 
     // Same defaults the page itself starts with: the static HTML's slider
     // values, and Size from the scene's Object Size (OBJ_SIZE, as on load).
-    setInput('subdivisionSlider', document.getElementById('subdivisionSlider').defaultValue || 1);
+    setInput('subdivisionSlider', document.getElementById('subdivisionSlider').defaultValue || 3);
     setInput('tileSpacing', document.getElementById('tileSpacing').defaultValue || 0);
     setInput('resolutionSlider', document.getElementById('resolutionSlider').defaultValue || 8);
     setInput('objSizeInput', typeof OBJ_SIZE !== 'undefined' ? OBJ_SIZE : 100);
@@ -464,8 +464,20 @@ function tp3dMtSampleFileLoader(fileName, inputId, mimeType, what) {
 var tp3dMtLoadSampleGpx = tp3dMtSampleFileLoader('BetweenLakes.gpx', 'gpxInput', 'application/gpx+xml', 'GPX file');
 var tp3dMtLoadSampleGeojson = tp3dMtSampleFileLoader('germany.json', 'geojsonInput', 'application/geo+json', 'GeoJSON file');
 
+// Switches every element off except elevation (through the chips' own toggle,
+// so Blender gets the same /toggle_element calls a click sends), whatever the
+// element source -- same as map_tutorials.js's tp3dAllElementsOff, which this
+// page doesn't load.
+function tp3dMtAllElementsOff() {
+    if (typeof TP3D_ELEMENT_STATE === 'undefined') return;
+    Object.keys(TP3D_ELEMENT_STATE).forEach(function(key) {
+        if (key !== 'elevation' && TP3D_ELEMENT_STATE[key]) tp3dToggleElement(key);
+    });
+}
+
 function tp3dHasMtGpx() { return typeof gpxPaths !== 'undefined' && gpxPaths.length > 0; }
-function tp3dHasMtGeojson() { return typeof geojsonPaths !== 'undefined' && geojsonPaths.length > 0; }
+// This page holds a single boundary (geojsonPath), unlike the map generator's list.
+function tp3dHasMtGeojson() { return typeof geojsonPath !== 'undefined' && !!geojsonPath; }
 
 // Lake Como / Ceresio area -- the region the sample GPX trail passes through.
 var TP3D_MT_LAKE_COMO_BOUNDS = [[45.8, 8.8], [46.1, 9.4]];
@@ -517,8 +529,9 @@ function tp3dMultitileTutorialGpx() {
             target: function() { return document.getElementById('tileSpacing').parentElement; },
             placement: 'right',
             title: 'Set the tile spacing',
-            text: 'Add a gap between the tiles so they can be mounted side by side without overlapping.<br><br>' +
-                  'Set it to <b>5 mm</b>.',
+            text: '<b>Tile Spacing</b> leaves a gap between neighboring tiles. The map skips the part in ' +
+                  'between, so the trail is cut where it crosses from one tile to the next.<br><br>' +
+                  'Set it to <b>5 mm</b> to see how the trail gets cut at the tile edge.',
             demo: tp3dMtDemoSlider('tileSpacing', TP3D_MT_SPACING),
             waitFor: tp3dMtWaitForSlider(function() { return tp3dMtSpacingValue() === TP3D_MT_SPACING; }),
             waitText: 'Set Tile Spacing to 5',
@@ -594,7 +607,7 @@ function tp3dMultitileTutorialCountry() {
             placement: 'right',
             title: 'Set the segments',
             text: '<b>Segments</b> sets how many tiles wide the country is split.<br><br>' +
-                  'Drag it to <b>2</b> to divide Germany into a western and an eastern tile.',
+                  'Drag it to <b>2</b>.',
             demo: tp3dMtDemoSlider('subdivisionSlider', TP3D_MT_SEGMENTS),
             waitFor: tp3dMtWaitForSlider(function() { return tp3dMtSegmentsValue() === TP3D_MT_SEGMENTS; }),
             waitText: 'Set Segments to 2',
@@ -607,13 +620,6 @@ function tp3dMultitileTutorialCountry() {
             text: 'The grid is now split into two columns. Tiles that lie fully outside Germany\'s border are ' +
                   'removed, and the rest follow its outline exactly.<br><br>' +
                   'You can drag the orange box to reposition or resize it if you want a different crop.'
-        },
-        {
-            target: '#totalSizeInfo',
-            placement: 'right',
-            title: 'Total map size',
-            text: 'The total display size of all tiles together is shown here. ' +
-                  'Adjust <b>Size (mm)</b> to change how big each individual tile is.'
         },
         {
             target: function() { return document.getElementById('resolutionSlider').parentElement; },
@@ -663,7 +669,10 @@ tp3dTutorialMenu({
             id: 'multitile-gpx',
             title: 'Spread a Trail (GPX file) across multiple tiles',
             description: 'Import a recorded route and let the grid automatically span all the tiles it covers.',
-            prepare: tp3dResetMultitileGenerator,
+            prepare: function() {
+                tp3dResetMultitileGenerator();
+                tp3dMtAllElementsOff();
+            },
             steps: tp3dMultitileTutorialGpx
         },
         {
