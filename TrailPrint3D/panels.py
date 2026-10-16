@@ -1322,10 +1322,14 @@ def _draw_api_box(layout, props, context):
             ),
             icon="FILE_FOLDER",
         )
-    if props.api in {"OPENTOPODATA", "TERRAIN-TILES", "MAPTERHORN"}:
-        col = box.column(align=True)
-        col.prop(props, "disableCache")
-        col.prop(props, "ccacheSize")
+    # disableCache applies to every API (it also skips the elevation results,
+    # OSM and satellite caches); ccacheSize only limits Opentopodata's point
+    # cache, so it's greyed out for the others.
+    col = box.column(align=True)
+    col.prop(props, "disableCache")
+    row = col.row(align=True)
+    row.enabled = props.api == "OPENTOPODATA"
+    row.prop(props, "ccacheSize")
     box.prop(props, "disableElevationOutlierFix")
     box.separator(factor=0.5)
     box.label(text=_("Elements (Water, forest, ...) runs on the Overpass API"))

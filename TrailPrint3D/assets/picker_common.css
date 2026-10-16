@@ -227,6 +227,12 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
    number of single-column fields), so this always lands on its own full
    row without any explicit row index needed. */
 .map-tab-divider { grid-column: 1 / -1; width: 100%; border: none; border-top: 1px solid var(--border); margin: 2px 0; }
+/* General tab's API setup hint -- a sentence, not a label/control pair. */
+.general-tab-note { grid-column: 1 / -1; font-size: 12px; }
+/* A Settings popup row whose `showWhen` doesn't match (tp3dRefreshMapTabVisibility). */
+.adv-field-row.locked { color: #666; cursor: not-allowed; }
+.adv-field-row.locked :is(input, select) { color: #666; background: var(--surface-panel); border-color: var(--surface-raised); cursor: not-allowed; }
+.general-cache-group { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 /* Cards wrap inside their tab rather than forcing horizontal scrolling. */
 .elements-grid { display: flex; flex-direction: column; gap: 14px; }
 /* OSM/ESA WorldCover switch (settings_modal.js's tp3dBuildElementSourceSwitch) --

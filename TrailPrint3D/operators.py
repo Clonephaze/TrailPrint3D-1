@@ -408,26 +408,7 @@ class TP3D_OT_clear_cache(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        if not os.path.exists(const.cache_dir):
-            const._ensure_dirs()
-            return {"FINISHED"}
-
-        import shutil
-
-        try:
-            shutil.rmtree(const.cache_dir)
-            print(f"Deleted cache directory: {const.cache_dir}")
-        except OSError as e:
-            print(f"Failed to delete cache directory: {e}")
-
-        # Clear the in-memory elevation cache so the load guard doesn't
-        # serve stale data after the files have been deleted.
-        const._elevation_cache.clear()
-
-        # Recreate the directory tree so save_elevation_cache() doesn't
-        # silently fail trying to write into a path that no longer exists.
-        const._ensure_dirs()
-
+        utils.clear_api_cache()
         return {"FINISHED"}
 
 

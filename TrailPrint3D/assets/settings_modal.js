@@ -9,7 +9,9 @@
 // which must run first) to already be defined. Entirely self-contained --
 // none of the 3 picker pages need any of this markup in their own HTML.
 //
-// Two tabs:
+// Tabs:
+//  - General: addon-wide options, not tied to one generation -- the
+//    elevation API, its cache toggle and Clear Cache (panels.py's API box).
 //  - Map: the handful of generation-wide fields that don't belong to any
 //    one element category (Elevation Scale, Path Thickness, ...).
 //  - Elements: every element category's individual sub-checkboxes and
@@ -98,18 +100,74 @@ var SETTINGS_MODAL_MAP_FIELDS = [
           'To make sure the Trail and Terrain match perfectly, enable this to Snap each point of the Trail to the Terrain'
       ] },
     { key: 'singleColorMode', source: 'SETTINGS_STATE', endpoint: 'update_setting',
-      label: 'SingleColorMode Trail', type: 'checkbox',
+      label: 'Single Extruder Mode Trail', type: 'checkbox',
       title: 'Enable this if you don\'t have a Multicolor printer',
       preview: 'https://trailprint3d.com/images/howto/SingleColorTrail.webp' },
     { key: 'singleColorModeHeight', source: 'SETTINGS_STATE', endpoint: 'update_setting',
-      label: 'SingleColorMode Trail Height', type: 'number', step: 0.05, min: 0, max: 10,
+      label: 'Single Extruder Mode Trail Height', type: 'number', step: 0.05, min: 0, max: 10,
       title: 'How far the SCM trail strip rises above the terrain surface (mm)',
       preview: 'https://trailprint3d.com/images/howto/SEM%20-%20Trail%20Height.webp',
       showWhen: { key: 'singleColorMode', equals: true } },
     { key: 'singleColorModeTolerance', source: 'SETTINGS_STATE', endpoint: 'update_setting',
-      label: 'SingleColorMode Tolerance', type: 'number', step: 0.05, min: 0,
-      title: 'Tolerance of the Trail for the SingleColorMode',
-      showWhen: { key: 'singleColorMode', equals: true } }
+      label: 'Single Extruder Mode Tolerance', type: 'number', step: 0.05, min: 0,
+      title: 'Tolerance of the Trail for the Single Extruder Mode',
+      showWhen: { key: 'singleColorMode', equals: true } },
+    { type: 'divider' },
+    // -- Texture (panels.py "6. Appearance") -- "Create a texture" itself
+    // stays sidebar-only; it's on by default.
+    { key: 'texIncludeTrail', source: 'SETTINGS_STATE', endpoint: 'update_setting',
+      label: 'Trail in Texture', type: 'checkbox',
+      title: 'Paint the trail into the texture (terrain under the trail coloured red)',
+      enabledWhen: tp3dTextureTrailRoadsEnabled },
+    { key: 'texIncludeRoads', source: 'SETTINGS_STATE', endpoint: 'update_setting',
+      label: 'Roads in Texture', type: 'checkbox',
+      title: 'Paint the roads into the texture (terrain under roads coloured black)',
+      enabledWhen: tp3dTextureTrailRoadsEnabled },
+    { key: 'texResolution', source: 'SETTINGS_STATE', endpoint: 'update_setting',
+      label: 'Texture Resolution', type: 'number', step: 1024, min: 1024, max: 8192,
+      title: 'Image resolution of the texture (px)',
+      enabledWhen: tp3dTexturePaintMode }
+];
+
+// The texture only exists in Paint mode (panels.py only offers "Create a
+// texture" there), and a SingleColorMode trail is its own object, so neither
+// it nor the roads can go into the texture then -- mirrors the `enabled`
+// conditions of panels.py's trail/road texture rows.
+function tp3dTexturePaintMode() {
+    return SETTINGS_STATE.elementMode === 'PAINT';
+}
+function tp3dTextureTrailRoadsEnabled() {
+    return tp3dTexturePaintMode() && MAP_TAB_CONTROL_VALUES.singleColorMode !== true;
+}
+
+// General tab -- mirrors panels.py's _draw_api_box. The per-API extras there
+// (Opentopodata dataset, OpenTopography key, DEM file path) stay
+// sidebar-only; API_SETUP_NOTES point there for the two that can't work
+// without them.
+var SETTINGS_MODAL_GENERAL_FIELDS = [
+    { key: 'api', source: 'SETTINGS_STATE', endpoint: 'update_setting',
+      label: 'Elevation API', type: 'select',
+      title: 'Which service the terrain elevation is downloaded from',
+      // Same order and identifiers as props.py's `api` EnumProperty.
+      options: [
+          ['MAPTERHORN', 'Mapterhorn'],
+          ['OPENTOPODATA', 'Opentopodata'],
+          ['OPEN-ELEVATION', 'Open-Elevation'],
+          ['TERRAIN-TILES', 'Terrain-Tiles'],
+          ['OPENTOPOGRAPHY', 'OpenTopography'],
+          ['LOCAL_DEM', 'Local DEM File']
+      ] },
+    { key: 'disableCache', source: 'SETTINGS_STATE', endpoint: 'update_setting',
+      label: 'Disable Cache', type: 'checkbox',
+      // Every API: besides the per-API tile/point caches it also skips the
+      // elevation results, OSM and satellite caches.
+      title: 'Always download fresh elevation, map element and satellite data instead of reusing cached results' }
+];
+var API_SETUP_NOTES = [
+    { text: 'ⓘ Needs an API key — set it in the TrailPrint3D addon preferences',
+      showWhen: { key: 'api', equals: 'OPENTOPOGRAPHY' } },
+    { text: 'ⓘ Needs a DEM file — pick it in Blender\'s TrailPrint3D sidebar (API section)',
+      showWhen: { key: 'api', equals: 'LOCAL_DEM' } }
 ];
 
 // { label, preview? } per element card -- preview is optional, add a URL
@@ -154,6 +212,14 @@ var SIMPLE_ELEMENT_FIELDS = {
 // mirroring panels.py's "5. Map Elements" layout (one el_wcMinFeatureArea
 // row above the whole _LANDCOVER_COLOR_ROWS box, not one per category).
 var LANDCOVER_ELEMENT_ORDER = ['water', 'forest', 'mountain', 'city', 'greenspace', 'farmland', 'glacier'];
+// OSM-only, next to Element Smoothing like panels.py's _osm_processing_box,
+// and greyed out outside Single Extruder mode the same way.
+var ELEMENT_TOLERANCE_FIELD = {
+    key: 'toleranceElements', source: 'ADVANCED_SETTINGS_STATE', endpoint: 'update_advanced_setting',
+    label: 'Element Tolerance', type: 'number', step: 0.01, min: 0, decimals: 2,
+    title: 'Clearance around the elements (water, forest, ...) in Single Extruder Mode',
+    enabledWhen: function() { return SETTINGS_STATE.elementMode === 'SINGLECOLORMODE_REMESH'; }
+};
 var WORLDCOVER_MIN_AREA_FIELD = {
     key: 'elWcMinFeatureArea', source: 'ADVANCED_SETTINGS_STATE', endpoint: 'update_advanced_setting',
     label: 'Min Feature Area', type: 'number', step: 0.5, min: 0,
@@ -571,27 +637,50 @@ function tp3dBuildRangeField(field, stateObj) {
 var MAP_TAB_CONTROL_VALUES = {};
 // { field, row } per built Map-tab row, so tp3dRefreshMapTabVisibility can
 // re-check every `showWhen` after any field's value changes, not just the
-// one that was just edited. Self-prunes rows the Elements tab has since
-// discarded (tp3dRebuildElementsTab, from the OSM/ESA WorldCover switch,
-// rebuilds WORLDCOVER_MIN_AREA_FIELD's own row from scratch every time)
-// instead of growing forever across repeated switches.
+// one that was just edited. Rows of a tab that gets rebuilt in place (e.g.
+// tp3dRebuildElementsTab, from the OSM/ESA WorldCover switch) are dropped by
+// tp3dClearTabPanel, so this doesn't grow forever across repeated switches.
+// Not pruned by isConnected: every tab is built detached, before it's
+// attached to the document, so that would drop each row before its first
+// visibility check.
 var MAP_TAB_ROWS = [];
 
+function tp3dClearTabPanel(panel) {
+    MAP_TAB_ROWS = MAP_TAB_ROWS.filter(function(entry) { return !panel.contains(entry.row); });
+    panel.innerHTML = '';
+}
+
+// A field row whose `showWhen` doesn't match, or whose `enabledWhen()` (for
+// conditions spanning several settings) returns false, is greyed out
+// (locked, its controls disabled) rather than hidden, so rows don't jump
+// around; an info note (an entry with `text` instead of a field key) is
+// hidden instead.
 function tp3dRefreshMapTabVisibility() {
-    MAP_TAB_ROWS = MAP_TAB_ROWS.filter(function(entry) { return entry.row.isConnected; });
     MAP_TAB_ROWS.forEach(function(entry) {
         var when = entry.field.showWhen;
-        var visible = !when || MAP_TAB_CONTROL_VALUES[when.key] === when.equals;
-        entry.row.style.display = visible ? '' : 'none';
+        var current = when ? MAP_TAB_CONTROL_VALUES[when.key] : undefined;
+        var active = !when || (when.in ? when.in.indexOf(current) !== -1 : current === when.equals);
+        if (active && entry.field.enabledWhen) active = entry.field.enabledWhen();
+        if (entry.field.text) {
+            entry.row.style.display = active ? '' : 'none';
+            return;
+        }
+        entry.row.classList.toggle('locked', !active);
+        entry.row.querySelectorAll('input, select, button').forEach(function(control) {
+            control.disabled = !active;
+        });
     });
 }
 
 // Builds one .adv-field-row for a SETTINGS_MODAL_MAP_FIELDS-shaped field
-// (number/checkbox/range) -- shared by tp3dBuildMapTab's own field list and
+// (number/checkbox/range/select -- a select takes `options: [[value, label]]`
+// and sends its value as a string) -- shared by tp3dBuildMapTab's own field
+// list, tp3dBuildGeneralTab's and
 // the WorldCover Elements tab's single Min Feature Area row below, so both
 // use the same look the Map tab already established. A field with
 // `showWhen: { key, equals }` (see tp3dRefreshMapTabVisibility) mirrors one
-// of panels.py's own conditional rows -- registered in MAP_TAB_ROWS
+// of panels.py's own conditional rows (`showWhen: { key, in: [...] }` for
+// "any of these values") -- registered in MAP_TAB_ROWS
 // regardless of tab, since the WorldCover Min Feature Area field has no
 // `showWhen` and just always shows. A checkbox field with `companion` (its
 // own number-field definition, no `label`/`type` of its own since it always
@@ -615,14 +704,27 @@ function tp3dBuildFieldRow(field) {
         return row;
     }
 
-    var input = document.createElement('input');
-    input.type = field.type;
+    var input;
+    if (field.type === 'select') {
+        input = document.createElement('select');
+        field.options.forEach(function(opt) {
+            var option = document.createElement('option');
+            option.value = opt[0];
+            option.textContent = opt[1];
+            input.appendChild(option);
+        });
+    } else {
+        input = document.createElement('input');
+        input.type = field.type;
+    }
     input.id = 'setting-' + field.key;
     label.htmlFor = input.id;
     // Lets a picker page find this field's input to push a value into it
     // (e.g. multitile's Dovetail toggle raising Extra Map Height).
     input.dataset.settingKey = field.key;
-    if (field.type === 'number') {
+    if (field.type === 'select') {
+        input.value = stateObj[field.key];
+    } else if (field.type === 'number') {
         if (field.step != null) input.step = field.step;
         if (field.min != null) input.min = field.min;
         if (field.max != null) input.max = field.max;
@@ -658,7 +760,9 @@ function tp3dBuildFieldRow(field) {
     }
 
     input.addEventListener('change', function() {
-        var value = field.type === 'checkbox' ? input.checked : parseFloat(input.value);
+        var value = field.type === 'checkbox' ? input.checked
+            : field.type === 'select' ? input.value
+            : parseFloat(input.value);
         if (field.decimals != null && typeof value === 'number') {
             value = parseFloat(value.toFixed(field.decimals));
             input.value = value;
@@ -692,6 +796,61 @@ function tp3dBuildMapTab() {
     });
     tp3dRefreshMapTabVisibility();
     return wrap;
+}
+
+function tp3dBuildGeneralTab() {
+    var wrap = document.createElement('div');
+    wrap.className = 'map-tab-fields';
+    // API on the left; Disable Cache with Clear Cache stacked below it on
+    // the right.
+    var apiField = SETTINGS_MODAL_GENERAL_FIELDS[0];
+    var cacheField = SETTINGS_MODAL_GENERAL_FIELDS[1];
+    wrap.appendChild(tp3dBuildFieldRow(apiField));
+    var cacheGroup = document.createElement('div');
+    cacheGroup.className = 'general-cache-group';
+    cacheGroup.appendChild(tp3dBuildFieldRow(cacheField));
+    cacheGroup.appendChild(tp3dBuildClearCacheRow());
+    wrap.appendChild(cacheGroup);
+
+    API_SETUP_NOTES.forEach(function(entry) {
+        var note = document.createElement('div');
+        note.className = 'adv-field-row warning-text general-tab-note';
+        note.textContent = entry.text;
+        MAP_TAB_ROWS.push({ field: entry, row: note });
+        wrap.appendChild(note);
+    });
+
+    tp3dRefreshMapTabVisibility();
+    return wrap;
+}
+
+// Clear Cache -- same as the sidebar's tp3d.clear_cache button. Sent as the
+// 'clearCache' key of /update_setting so Blender deletes the files on its
+// own main thread (utils.ui_state.apply_setting_update), not the server's.
+function tp3dBuildClearCacheRow() {
+    var row = document.createElement('div');
+    row.className = 'adv-field-row';
+    row.title = 'Delete all cached elevation and map data downloaded from the APIs';
+
+    var label = document.createElement('label');
+    label.textContent = 'Cached API Data';
+    row.appendChild(label);
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'element-mode-btn';
+    btn.textContent = 'Clear Cache';
+    btn.addEventListener('click', function() {
+        tp3dSendMapField({ key: 'clearCache', endpoint: 'update_setting' }, true);
+        btn.disabled = true;
+        btn.textContent = 'Cleared ✓';
+        setTimeout(function() {
+            btn.disabled = false;
+            btn.textContent = 'Clear Cache';
+        }, 2000);
+    });
+    row.appendChild(btn);
+    return row;
 }
 
 // Two-button OSM / ESA WorldCover switch at the top of the Elements tab --
@@ -765,6 +924,7 @@ function tp3dBuildElementModeSwitch() {
             SETTINGS_STATE.elementMode = opt[0];
             wrap.querySelectorAll('button').forEach(function(b) { b.classList.toggle('active', b === btn); });
             tp3dRefreshSingleExtruderFields();
+            tp3dRefreshMapTabVisibility(); // texture fields depend on elementMode
             tp3dSendMapField({ key: 'elementMode', endpoint: 'update_setting' }, opt[0]);
         });
         wrap.appendChild(btn);
@@ -877,15 +1037,13 @@ function tp3dBuildElementsTab() {
     var wrap = document.createElement('div');
     wrap.className = 'elements-grid';
 
-    // Paint/Single Extruder switch shares one two-column row with the
-    // source's own top-level option -- Element Smoothing under OSM, Min
-    // Feature Area under ESA WorldCover. See .element-options-row in
+    // Top: the source's own top-level option -- Element Smoothing under OSM,
+    // Min Feature Area under ESA WorldCover. See .element-options-row in
     // picker_common.css.
     var optionsRow = document.createElement('div');
     optionsRow.className = 'element-options-row';
     if (typeof ELEMENT_SOURCE !== 'undefined') {
         wrap.appendChild(tp3dBuildElementSourceSwitch());
-        optionsRow.appendChild(tp3dBuildElementModeSwitch());
     }
     optionsRow.appendChild(tp3dIsWorldCover()
         ? tp3dBuildFieldRow(WORLDCOVER_MIN_AREA_FIELD)
@@ -901,19 +1059,32 @@ function tp3dBuildElementsTab() {
         landcoverRow.className = 'elements-row';
         LANDCOVER_ELEMENT_ORDER.forEach(function(key) { landcoverRow.appendChild(tp3dBuildSimpleElementCard(key)); });
         wrap.appendChild(landcoverRow);
-        return wrap;
+    } else {
+        var simpleRow = document.createElement('div');
+        simpleRow.className = 'elements-row';
+        SIMPLE_ELEMENT_ORDER.forEach(function(key) { simpleRow.appendChild(tp3dBuildSimpleElementCard(key)); });
+        wrap.appendChild(simpleRow);
+
+        var compositeRow = document.createElement('div');
+        compositeRow.className = 'elements-row';
+        COMPOSITE_ELEMENT_ORDER.forEach(function(key) { compositeRow.appendChild(tp3dBuildCompositeElementCard(key)); });
+        compositeRow.appendChild(tp3dBuildSimpleElementCard('buildings'));
+        wrap.appendChild(compositeRow);
     }
 
-    var simpleRow = document.createElement('div');
-    simpleRow.className = 'elements-row';
-    SIMPLE_ELEMENT_ORDER.forEach(function(key) { simpleRow.appendChild(tp3dBuildSimpleElementCard(key)); });
-    wrap.appendChild(simpleRow);
-
-    var compositeRow = document.createElement('div');
-    compositeRow.className = 'elements-row';
-    COMPOSITE_ELEMENT_ORDER.forEach(function(key) { compositeRow.appendChild(tp3dBuildCompositeElementCard(key)); });
-    compositeRow.appendChild(tp3dBuildSimpleElementCard('buildings'));
-    wrap.appendChild(compositeRow);
+    // Bottom, below the element cards: the Paint/Single Extruder switch and
+    // the Element Tolerance it gates (OSM only, like the sidebar).
+    var modeRow = document.createElement('div');
+    modeRow.className = 'element-options-row';
+    if (typeof ELEMENT_SOURCE !== 'undefined') modeRow.appendChild(tp3dBuildElementModeSwitch());
+    if (!tp3dIsWorldCover()) modeRow.appendChild(tp3dBuildFieldRow(ELEMENT_TOLERANCE_FIELD));
+    if (modeRow.children.length) {
+        var hr = document.createElement('hr');
+        hr.className = 'map-tab-divider';
+        wrap.appendChild(hr);
+        wrap.appendChild(modeRow);
+    }
+    tp3dRefreshMapTabVisibility();
 
     return wrap;
 }
@@ -1004,6 +1175,7 @@ function tp3dRelocateFields(sourceId) {
     body.appendChild(right);
 
     var TABS = [
+        { id: 'general', label: 'General', build: tp3dBuildGeneralTab },
         { id: 'elements', label: 'Elements', build: tp3dBuildElementsTab },
         { id: 'map', label: 'Map', build: tp3dBuildMapTab }
     ];
@@ -1079,8 +1251,11 @@ function tp3dRelocateFields(sourceId) {
     // this modal right after the switch was clicked from inside it).
     window.tp3dRebuildElementsTab = function() {
         if (!panels.elements) return;
-        panels.elements.innerHTML = '';
+        tp3dClearTabPanel(panels.elements);
         panels.elements.appendChild(tp3dBuildElementsTab());
+        // SETTINGS_STATE was just resynced (e.g. WorldCover forcing Paint
+        // mode) -- the Map tab's texture fields depend on its elementMode.
+        tp3dRefreshMapTabVisibility();
         tp3dRepaintAllElementToggles();
     };
 
@@ -1091,8 +1266,11 @@ function tp3dRelocateFields(sourceId) {
     // there when the modal was first built.
     window.tp3dRebuildMapTab = function() {
         if (!panels.map) return;
-        panels.map.innerHTML = '';
+        tp3dClearTabPanel(panels.map);
         panels.map.appendChild(tp3dBuildMapTab());
+        // A history entry also restores the API -- same refresh for General.
+        tp3dClearTabPanel(panels.general);
+        panels.general.appendChild(tp3dBuildGeneralTab());
     };
 
     document.body.appendChild(modal);
