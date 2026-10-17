@@ -92,14 +92,6 @@ var SETTINGS_MODAL_MAP_FIELDS = [
       label: 'Trail Thickness', type: 'number', step: 0.01, min: 0.1, max: 5, decimals: 2,
       title: 'Thickness of the path in mm',
       preview: 'https://trailprint3d.com/images/howto/PathThicknessGif.webp' },
-    { key: 'overwritePathElevation', source: 'SETTINGS_STATE', endpoint: 'update_setting',
-      label: 'Snap Trail to Terrain', type: 'checkbox',
-      title: 'Cast each point of the trail onto the Terrain Mesh',
-      preview: 'https://trailprint3d.com/images/howto/SnapTrailToTerrain.jpg',
-      previewCaption: [
-          'GPX files usually have their own elevation data.. But sometimes they dont and sometimes they have their values from diffrent datasets.',
-          'To make sure the Trail and Terrain match perfectly, enable this to Snap each point of the Trail to the Terrain'
-      ] },
     // Normal / Single Extruder Mode / Paint Trail -- one switch over
     // singleColorMode and texIncludeTrail (tp3dBuildTrailAppearanceSwitch).
     { type: 'custom', build: tp3dBuildTrailAppearanceSwitch },
@@ -111,6 +103,7 @@ var SETTINGS_MODAL_MAP_FIELDS = [
     { key: 'singleColorModeTolerance', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Single Extruder Mode Tolerance', type: 'number', step: 0.05, min: 0,
       title: 'Tolerance of the Trail for the Single Extruder Mode',
+      preview: 'https://trailprint3d.com/images/howto/SEM%20-%20Trail%20Tolerance.webp',
       enabledWhen: tp3dTrailIsSingleExtruder }
 ];
 
@@ -119,7 +112,20 @@ var SETTINGS_MODAL_OTHER_FIELDS = [
     { key: 'texResolution', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Texture Resolution', type: 'number', step: 1024, min: 1024, max: 8192,
       title: 'Image resolution of the texture (px)',
-      enabledWhen: tp3dTexturePaintMode }
+      preview: 'https://trailprint3d.com/images/howto/TextureResolution.webp',
+      // Not OSM-only: WorldCover land cover is sampled into the same texture
+      // (utils/texture.py); the condition is Paint mode (generation/input.py).
+      previewCaption: 'Resolution of the texture the map is painted with in Paint mode — used for both OSM and ESA WorldCover.',
+      enabledWhen: tp3dTexturePaintMode },
+    { key: 'overwritePathElevation', source: 'SETTINGS_STATE', endpoint: 'update_setting',
+      label: 'Snap Trail to Terrain', type: 'checkbox',
+      title: 'Cast each point of the trail onto the Terrain Mesh — should usually always be enabled',
+      preview: 'https://trailprint3d.com/images/howto/SnapTrailToTerrain.jpg',
+      previewCaption: [
+          'GPX files usually have their own elevation data, but sometimes they don\'t, and sometimes their values come from a different dataset.',
+          'To make sure the trail and terrain match perfectly, enable this to snap each point of the trail onto the terrain.',
+          'This should usually always be enabled.'
+      ] }
 ];
 
 // The texture only exists in Paint mode (panels.py only offers "Create a
@@ -152,8 +158,8 @@ var TRAIL_APPEARANCE_OPTIONS = [
       preview: 'https://trailprint3d.com/images/howto/SingleColorTrail.webp' },
     { mode: 'PAINT', label: 'Paint Trail',
       title: 'Paint the trail into the texture (terrain under the trail coloured red)',
+      preview: 'https://trailprint3d.com/images/howto/PaintTrail.webp',
       caption: [
-          'Paint Trail',
           'Instead of a separate trail object, the trail is painted into the map\'s texture — the terrain under the trail is coloured red.',
           'Only available while the elements are in Paint mode (Elements tab).'
       ] }
@@ -337,7 +343,8 @@ var ELEMENT_TOLERANCE_FIELD = {
 var WORLDCOVER_MIN_AREA_FIELD = {
     key: 'elWcMinFeatureArea', source: 'ADVANCED_SETTINGS_STATE', endpoint: 'update_advanced_setting',
     label: 'Min Feature Area', type: 'number', step: 0.5, min: 0,
-    title: 'Smallest land-cover feature area to keep before it gets discarded'
+    title: 'Smallest land-cover feature area to keep before it gets discarded',
+    preview: 'https://trailprint3d.com/images/howto/ESA_MinFeatureSize.webp'
 };
 
 var COMPOSITE_ELEMENT_ORDER = ['water', 'roads'];
@@ -702,10 +709,14 @@ function tp3dBuildRoadsPaintField() {
         key: 'texIncludeRoads',
         label: 'Paint Roads',
         title: 'Paint the roads into the texture (terrain under roads coloured black)',
+        preview: 'https://trailprint3d.com/images/howto/PaintRoads.webp',
         enabledWhen: tp3dTextureTrailRoadsEnabled
     };
+    // With a preview this is a .preview-wrap around the <label> -- lock the
+    // label itself so the checklist's `label.locked` styling still applies.
     var checkbox = tp3dBuildCheckboxField(field);
-    MAP_TAB_ROWS.push({ field: field, row: checkbox });
+    var label = checkbox.tagName === 'LABEL' ? checkbox : checkbox.querySelector('label');
+    MAP_TAB_ROWS.push({ field: field, row: label });
     var checklist = document.createElement('div');
     checklist.className = 'card-checklist';
     checklist.appendChild(checkbox);
@@ -814,7 +825,9 @@ function tp3dRefreshMapTabVisibility() {
             return;
         }
         entry.row.classList.toggle('locked', !active);
-        entry.row.querySelectorAll('input, select, button').forEach(function(control) {
+        // The "?" preview stays clickable -- explaining a locked setting is
+        // exactly when it's useful.
+        entry.row.querySelectorAll('input, select, button:not(.preview-btn)').forEach(function(control) {
             control.disabled = !active;
         });
     });
@@ -1186,7 +1199,7 @@ function tp3dBuildOsmSmoothingToggle() {
 
     var label = document.createElement('label');
     label.textContent = 'Element Smoothing';
-    row.appendChild(label);
+    row.appendChild(tp3dWithPreview(label, 'https://trailprint3d.com/images/howto/ElementSmoothing.webp'));
 
     var current = ADVANCED_SETTINGS_STATE.colOsmSmoothing || 0;
     var isOn = current > 0;
