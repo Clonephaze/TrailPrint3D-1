@@ -227,12 +227,44 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
    number of single-column fields), so this always lands on its own full
    row without any explicit row index needed. */
 .map-tab-divider { grid-column: 1 / -1; width: 100%; border: none; border-top: 1px solid var(--border); margin: 2px 0; }
-/* General tab's API setup hint -- a sentence, not a label/control pair. */
-.general-tab-note { grid-column: 1 / -1; font-size: 12px; }
+/* Other tab's API setup hint -- a sentence, not a label/control pair. */
+.api-setup-note { grid-column: 1 / -1; font-size: 12px; }
 /* A Settings popup row whose `showWhen` doesn't match (tp3dRefreshMapTabVisibility). */
 .adv-field-row.locked { color: #666; cursor: not-allowed; }
 .adv-field-row.locked :is(input, select) { color: #666; background: var(--surface-panel); border-color: var(--surface-raised); cursor: not-allowed; }
-.general-cache-group { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* Other tab's one-line-per-API overview under the Elevation API dropdown. */
+.api-summary { grid-column: 1 / -1; margin: 0; display: grid; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.api-summary > div { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 8px; padding: 3px 6px; border-radius: 4px; }
+.api-summary dt { font-weight: bold; color: var(--text-secondary); }
+.api-summary dt a { color: inherit; text-decoration: none; }
+.api-summary dt a:hover { color: var(--accent); text-decoration: underline; }
+.api-summary dd { margin: 0; }
+.api-summary > div.active { background: var(--surface-raised); color: var(--text-primary); }
+.api-summary > div.active dt { color: var(--accent); }
+/* Map tab's three-way Trail Appearance switch spans both columns, with a
+   "?" after the options that have a preview. */
+.trail-appearance-row { grid-column: 1 / -1; }
+.trail-appearance-switch { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+/* One option = one pill (same look as .element-mode-btn); its "?" sits
+   inside as a small round button. */
+.trail-option { display: inline-flex; align-items: stretch; gap: 2px; padding-right: 6px;
+    min-height: var(--control-height);
+    background: var(--surface-raised); border: 1px solid var(--border); border-radius: 4px; }
+.trail-option > .preview-btn { align-self: center; }
+.trail-option:not(:has(.preview-btn)) { padding-right: 0; }
+.trail-option:hover:not(.active):not(.disabled) { background: #3d3d3d; border-color: var(--accent); }
+.trail-option.active { background: var(--accent); border-color: var(--accent); }
+.trail-option-btn { padding: 0 12px; font-size: 12px; font-weight: bold; letter-spacing: 0.2px;
+    background: none; border: 0; color: var(--text-secondary); cursor: pointer; }
+.trail-option:hover:not(.disabled) .trail-option-btn { color: var(--text-primary); }
+.trail-option.active .trail-option-btn { color: #fff; }
+.trail-option.disabled .trail-option-btn { opacity: 0.4; }
+.trail-option .preview-btn { width: 20px; height: 20px; min-width: 0; min-height: 0; border-radius: 50%; font-size: 11px;
+    background: rgba(0,0,0,0.25); border-color: transparent; }
+.trail-option.active .preview-btn { color: #fff; background: rgba(0,0,0,0.2); }
+/* Text-only preview (no image yet): the caption is the whole preview. */
+.settings-modal-right .preview-caption.preview-text-only { font-size: 13px; text-align: left; margin: auto 0; padding: 12px; line-height: 1.5; }
+.api-cache-group { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 /* Cards wrap inside their tab rather than forcing horizontal scrolling. */
 .elements-grid { display: flex; flex-direction: column; gap: 14px; }
 /* OSM/ESA WorldCover switch (settings_modal.js's tp3dBuildElementSourceSwitch) --
@@ -241,6 +273,13 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .element-source-label { font-size: 12px; font-weight: bold; color: var(--text-secondary); margin-bottom: 6px; }
 .element-source-switch { display: flex; gap: 6px; }
 .element-source-switch .shape-btn { flex: 1; padding: 8px 6px; font-size: 13px; }
+/* Each source button with its "?" laid over the right edge. */
+.element-source-option { position: relative; flex: 1; display: flex; min-width: 0; }
+.element-source-option .shape-btn { padding-left: 32px; padding-right: 32px; }
+.element-source-option .preview-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    width: 20px; height: 20px; min-width: 0; min-height: 0; border-radius: 50%; font-size: 11px;
+    background: rgba(0,0,0,0.25); border-color: transparent; }
+.element-source-option .shape-btn.active + .preview-btn { color: #fff; background: rgba(0,0,0,0.2); }
 /* Paint on Map / Single Extruder Mode switch (tp3dBuildElementModeSwitch) --
    a compact .adv-field-row (label left, small pill-pair right) rather than
    the full-width block the Element Source switch above uses, since this one

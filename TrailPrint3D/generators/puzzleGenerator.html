@@ -472,6 +472,12 @@
                     updateHolderVisibility();
                     updateTextAvailability();
                     updateHolderTextPreview();
+                    // Replace whatever trail is showing: a history entry
+                    // without one clears it, and one with a different trail
+                    // mustn't be drawn on top of the current one.
+                    gpxPaths = []; gpxNames = [];
+                    gpxLayer.clearLayers();
+                    updateGpxList();
                     if (s.gpxPaths && s.gpxPaths.length) {
                         gpxPaths = s.gpxPaths;
                         gpxNames = s.gpxNames || [];

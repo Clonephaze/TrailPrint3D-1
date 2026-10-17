@@ -366,12 +366,13 @@ _SETTINGS_ROW_FIELDS = {
     "plateBevel": ("plateBevel", float),
     "shellWallThickness": ("shellWallThickness", float),
     "handleStyle": ("handleStyle", str),
-    # Settings popup's Map tab, Texture section -- mirrors panels.py's
-    # "6. Appearance" box and the Advanced box's texture resolution.
+    # Settings popup's Map tab "Paint Trail" and Other tab texture
+    # resolution -- mirror panels.py's "6. Appearance" box and the Advanced
+    # box. "Paint Roads" sits on the Elements tab's Roads card instead, see
+    # _ADVANCED_SETTINGS_FIELDS.
     "texIncludeTrail": ("tex_include_trail", bool),
-    "texIncludeRoads": ("tex_include_roads", bool),
     "texResolution": ("tex_resolution", int),
-    # Settings popup's General tab -- mirrors panels.py's API box.
+    # Settings popup's Other tab, API section -- mirrors panels.py's API box.
     "api": ("api", str),
     "disableCache": ("disableCache", bool),
 }
@@ -417,7 +418,7 @@ def apply_setting_update(tp3d, key, value):
     ignored if unrecognized -- rather than setattr'ing whatever name the
     page sent, since the request body is client-controlled. The extra keys
     are 'exportFolder' (see _apply_export_folder) and 'clearCache' (the
-    General tab's Clear Cache button, *value* ignored).
+    Other tab's Clear Cache button, *value* ignored).
     """
     if key == "exportFolder":
         if not _apply_export_folder(value):
@@ -564,6 +565,12 @@ _ADVANCED_SETTINGS_FIELDS = [
         "key": "elSCutDepth",
         "attr": "el_sCutDepth",
         "type": float,
+        "group": "Roads",
+    },
+    {
+        "key": "texIncludeRoads",
+        "attr": "tex_include_roads",
+        "type": bool,
         "group": "Roads",
     },
 ]

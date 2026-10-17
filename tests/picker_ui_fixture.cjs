@@ -28,8 +28,8 @@ const elementStates = Object.fromEntries([
     'scree', 'glacier', 'buildings', 'ocean'
 ].map(key => [key, true]));
 const icon = '<svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M2 2h16v16H2z"/></svg>';
-const settingsState = {elementMode: 'PAINT', scaleElevation: 1, minThickness: 2, elementSource: 'OSM', api: 'MAPTERHORN', disableCache: false, texIncludeTrail: false, texIncludeRoads: false, texResolution: 2048};
-const advancedSettings = {_compositeMaster: {water: true, roads: true}, colWPondsActive: true, elSResidentialActive: true, toleranceElements: 0.12};
+const settingsState = {elementMode: 'PAINT', scaleElevation: 1, minThickness: 2, elementSource: 'OSM', api: 'MAPTERHORN', disableCache: false, texIncludeTrail: false, texResolution: 2048};
+const advancedSettings = {_compositeMaster: {water: true, roads: true}, colWPondsActive: true, elSResidentialActive: true, toleranceElements: 0.12, texIncludeRoads: false};
 function renderPage(index, port) {
     const tokens = {
         PORT: port, OBJSIZE: 100, DEM_BOUNDS_JS: 'var DEM_BOUNDS = null;',
