@@ -1124,11 +1124,19 @@ def _draw_post_process_box(layout, props, context):
         noise_settings.prop(props, "mountain_noise_amplitude")
         noise_settings.prop(props, "mountain_noise_scale")
         noise_settings.enabled = props.mountain_noise
-        if operators._mountain_manifold_selection_eligible(context):
-            col.prop(props, "color_height_SEM", icon="CHECKBOX_DEHLT" if not props.color_height_SEM else "CHECKBOX_HLT")
-            ch_sem_row = col.row(align=True)
-            ch_sem_row.prop(props, "toleranceElements", text=_("Tolerance"))
-            ch_sem_row.enabled = props.color_height_SEM
+        # Always shown, greyed out with the reason when the selection can't be
+        # split -- hiding it left a stale "on" that made Color by Height fail
+        # with no way to switch it off. `active` (not `enabled`) keeps it
+        # clickable for exactly that.
+        split_reason = operators._mountain_selection_split_reason(context)
+        sem_row = col.row(align=True)
+        sem_row.active = split_reason is None
+        sem_row.prop(props, "color_height_SEM", icon="CHECKBOX_DEHLT" if not props.color_height_SEM else "CHECKBOX_HLT")
+        ch_sem_row = col.row(align=True)
+        ch_sem_row.prop(props, "toleranceElements", text=_("Tolerance"))
+        ch_sem_row.enabled = props.color_height_SEM and split_reason is None
+        if split_reason is not None:
+            draw_wrapped_label(col, context, split_reason, icon="INFO")
         col.operator("tp3d.color_mountain", text=_("Color by Height"), icon="RNDCURVE")
         if has_height_bake_undo(context.object):
             col.operator(

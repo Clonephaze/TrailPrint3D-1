@@ -139,6 +139,27 @@ def test_blank_map_eligibility():
     assert operators._mountain_split_ineligible_reason(obj, tp3d)
 
 
+def test_leftover_paint_image_does_not_mark_map_painted():
+    # A deleted textured map leaves its "<mesh>_MMU_Paint" image behind; an
+    # untextured map that reuses the mesh name must still be splittable.
+    _clear_scene()
+    obj = _new_map()
+    tp3d = bpy.context.scene.tp3d
+    image = bpy.data.images.new(f"{obj.data.name}_MMU_Paint", width=1, height=1)
+    try:
+        assert operators._paint_texture_state(obj.data) is None
+        assert operators._mountain_split_ineligible_reason(obj, tp3d, True) is None
+
+        obj.data["3mf_is_paint_texture"] = True
+        assert operators._paint_texture_state(obj.data) == "texture"
+        # A complete paint texture can be split by height too.
+        assert operators._mountain_split_ineligible_reason(obj, tp3d, True) is None
+    finally:
+        bpy.data.images.remove(image)
+    assert operators._paint_texture_state(obj.data) == "incomplete"
+    assert operators._mountain_split_ineligible_reason(obj, tp3d)
+
+
 def test_material_helper_is_per_color():
     for name in ("MOUNTAIN", "HEIGHT_FF0040"):
         material = bpy.data.materials.get(name)
@@ -430,6 +451,40 @@ def test_split_commit_marks_both_pieces():
     assert cavity_radius > mountain_bottom_radius
 
 
+def test_textured_map_split_keeps_texture():
+    _clear_scene()
+    obj = _new_peak_map("TexturedPeak")
+    mesh_name = obj.data.name
+    obj.data.materials.clear()
+    obj.data.materials.append(_material(f"{mesh_name}_MMU_Paint", (1.0, 1.0, 1.0)))
+    image = bpy.data.images.new(f"{mesh_name}_MMU_Paint", width=4, height=4)
+    obj.data["3mf_is_paint_texture"] = True
+    obj.data["3mf_paint_extruder_colors"] = str({0: "#0DB30D"})
+    assert obj.data.uv_layers, "fixture needs UVs like a real textured map"
+    try:
+        assert operators._mountain_split_ineligible_reason(
+            obj, bpy.context.scene.tp3d, True
+        ) is None
+        mountain = operators._height_color_material((0.5, 0.5, 0.5))
+        mountain_obj = operators._apply_mountain_manifold(
+            obj, 0.0, mountain, 0.0, 0.5, 0.12
+        )
+        assert mountain_obj is not None
+        # The base is still the same painted map: same mesh name (the image
+        # is keyed on it), texture flag, UVs and texture material.
+        assert obj.data.name == mesh_name
+        assert operators._paint_texture_state(obj.data) == "texture"
+        assert obj.data.uv_layers
+        assert [mat.name for mat in obj.data.materials] == [f"{mesh_name}_MMU_Paint"]
+        assert _is_manifold(obj.data)
+        # The piece is a plain single-colour part.
+        assert operators._paint_texture_state(mountain_obj.data) is None
+        assert [mat.name for mat in mountain_obj.data.materials] == ["MOUNTAIN"]
+        assert _is_manifold(mountain_obj.data)
+    finally:
+        bpy.data.images.remove(image)
+
+
 def test_manifold_pieces_stack():
     _clear_scene()
     obj = _new_peak_map("StackedPeak")
@@ -548,11 +603,42 @@ def test_material_layers_stack_and_preserve_elements():
     ]
 
 
+def test_threshold_spans_lowest_terrain_to_top():
+    # 0 % = underside + Extra Map Height, 100 % = highest point -- measured
+    # from the mesh, whatever the (often misleading) lowestZ/highestZ say.
+    _clear_scene()
+    obj = _new_map("ThresholdRange")  # cube, z -1..1
+    obj["minThickness"] = 0.5
+    obj["lowestZ"] = 1500.0
+    obj["highestZ"] = 3000.0
+    obj.location.z = 4.0
+    bpy.context.view_layer.update()
+    assert operators._color_height_range(obj) == (-0.5, 1.0)
+    for percent, expected in ((0, -0.5), (50, 0.25), (100, 1.0)):
+        for key in ("lastMountianCut", "lastMountianNoiseAmp", "lastMountianNoiseScale", "lastMountianColor"):
+            if key in obj:
+                del obj[key]
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.tp3d.color_mountain(
+            mountain_treshold=percent,
+            mountain_color=(0.5, 0.5, 0.5),
+            color_height_SEM=False,
+            mountain_noise=False,
+            mountain_noise_amplitude=0.0,
+            mountain_noise_scale=0.5,
+        )
+        # The cut is in the map's own Z, independent of its location.
+        assert abs(obj["lastMountianCut"] - expected) < 1e-6, (percent, obj["lastMountianCut"])
+
+
 def test_already_applied_map_does_not_abort_selection():
     _clear_scene()
     first = _new_map("AlreadyApplied")
     second = _new_map("NeedsColor")
-    threshold = 0.8
+    # 60 % of the cube's lowest-terrain (-1) to top (1) range.
+    threshold = -1.0 + 2.0 * 0.6
     first["lastMountianCut"] = threshold
     first["lastMountianNoiseAmp"] = 0.0
     first["lastMountianNoiseScale"] = 0.5
@@ -576,6 +662,8 @@ def test_already_applied_map_does_not_abort_selection():
 
 _run("operator properties are registered", test_operator_properties_registered)
 _run("blank-map eligibility is conservative", test_blank_map_eligibility)
+_run("threshold spans lowest terrain to top", test_threshold_spans_lowest_terrain_to_top)
+_run("leftover paint image does not mark map painted", test_leftover_paint_image_does_not_mark_map_painted)
 _run("material helper is per color", test_material_helper_is_per_color)
 _run("material color round-trips all sRGB bytes", test_material_color_round_trips_all_srgb_bytes)
 _run("legacy material color is unchanged", test_legacy_material_color_is_unchanged)
@@ -591,6 +679,7 @@ _run(
 _run("degenerate split is non-destructive", test_degenerate_split_leaves_source_unchanged)
 _run("disconnected peaks remain one object", test_disconnected_peaks_stay_in_one_object)
 _run("split commit marks both pieces", test_split_commit_marks_both_pieces)
+_run("textured map split keeps texture", test_textured_map_split_keeps_texture)
 _run("manifold pieces stack", test_manifold_pieces_stack)
 _run(
     "manifold operator stacks three colors",

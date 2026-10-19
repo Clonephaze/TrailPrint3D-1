@@ -1341,15 +1341,31 @@ def _mountain_uniform_material(obj):
     return mesh.materials[index]
 
 
+def _paint_texture_state(mesh):
+    """"texture" for a map painted via an MMU_Paint texture, "incomplete" when
+    the mesh is flagged as one but its image is gone, else None.
+
+    The mesh flag is what marks a painted map. An image of that name without
+    the flag is a leftover: utils/texture.py only replaces it when a textured
+    map is regenerated, so it outlives a deleted textured map and would
+    otherwise mark an untextured map that reuses its mesh name as painted.
+    """
+    if not mesh.get("3mf_is_paint_texture"):
+        return None
+    return "texture" if bpy.data.images.get(f"{mesh.name}_MMU_Paint") else "incomplete"
+
+
 def _mountain_split_ineligible_reason(obj, tp3d, check_topology=False):
     if obj.type != "MESH" or obj.get("Object type") != "MAP":
         return _("Only generated map meshes can be split")
 
     mesh = obj.data
-    if mesh.get("3mf_is_paint_texture") or bpy.data.images.get(
-        f"{mesh.name}_MMU_Paint"
-    ):
-        return _("Maps with paint textures cannot be split")
+    # A textured map can be split: the base keeps its UVs and texture
+    # (_apply_mountain_manifold restores the mesh name the texture image is
+    # keyed on), the piece gets a plain material. Only a broken texture
+    # (flag without image) is refused.
+    if _paint_texture_state(mesh) == "incomplete":
+        return _("The map's paint texture is incomplete")
 
     element_mode = obj.get("elementMode", tp3d.elementMode)
     if element_mode == "SINGLECOLORMODE_REMESH":
@@ -1371,19 +1387,53 @@ def _mountain_split_ineligible_reason(obj, tp3d, check_topology=False):
     return None
 
 
-def _mountain_manifold_selection_eligible(context, check_topology=False):
+def _mountain_selection_split_reason(context, check_topology=False):
+    """Why the selected maps can't be split by height ("Single color" Color
+    by Height), prefixed with the map's name, or None if they all can."""
     maps = [
         obj
         for obj in context.selected_objects
         if obj.type == "MESH" and obj.get("Object type") == "MAP"
     ]
-    return bool(maps) and all(
-        _mountain_split_ineligible_reason(
+    if not maps:
+        return _("Select at least one Map object")
+    for obj in maps:
+        reason = _mountain_split_ineligible_reason(
             obj, context.scene.tp3d, check_topology=check_topology
         )
-        is None
-        for obj in maps
-    )
+        if reason is not None:
+            return f"{obj.name}: {reason}"
+    return None
+
+
+_COLOR_HEIGHT_RANGE_PROP = "colorHeightRange"
+
+
+def _color_height_range(obj):
+    """(low, high) in obj's local Z that Color by Height's 0-100 % threshold
+    spans: the lowest terrain level (underside + Extra Map Height) up to the
+    highest point.
+
+    Measured from the mesh rather than the "lowestZ"/"highestZ" metadata --
+    those hold unshifted elevations (single maps) or a stale scene value plus
+    the extrusion (generator-page tiles), so 100 % landed anywhere between the
+    real top and far above it. Stored on the map the first time, so pieces
+    split off it (which copy its custom properties) keep the same scale even
+    though their own underside sits higher.
+    """
+    stored = obj.get(_COLOR_HEIGHT_RANGE_PROP)
+    if stored is not None and len(stored) == 2:
+        return float(stored[0]), float(stored[1])
+    count = len(obj.data.vertices)
+    if not count:
+        return None
+    co = np.empty(count * 3, dtype=np.float64)
+    obj.data.vertices.foreach_get("co", co)
+    z = co[2::3]
+    bottom, top = float(z.min()), float(z.max())
+    low = min(bottom + float(obj.get("minThickness", 0.0) or 0.0), top)
+    obj[_COLOR_HEIGHT_RANGE_PROP] = (low, top)
+    return low, top
 
 
 def _mountain_noise_offset(x, y, noise_amplitude, noise_scale):
@@ -1529,11 +1579,25 @@ def _apply_mountain_manifold(
                 check_bm.free()
 
         new_base_mesh = base_work.data
+        # Applying the Boolean drops mesh-level custom properties -- carry the
+        # 3MF paint metadata over so a textured map stays textured (same as
+        # utils/mesh_ops.py does for split terrain pieces).
+        for key in (
+            "3mf_is_paint_texture",
+            "3mf_paint_default_extruder",
+            "3mf_paint_extruder_colors",
+        ):
+            if key in original_mesh:
+                new_base_mesh[key] = original_mesh[key]
         obj.data = new_base_mesh
         bpy.data.objects.remove(base_work, do_unlink=True)
         base_work = None
+        original_name = original_mesh.name
         if original_mesh.users == 0:
             bpy.data.meshes.remove(original_mesh)
+            # Keep the mesh name: a painted map's texture image is looked up
+            # as "<mesh name>_MMU_Paint" (utils/texture.py).
+            new_base_mesh.name = original_name
         obj.data.materials.clear()
         if base_mat is not None:
             obj.data.materials.append(base_mat)
@@ -1674,11 +1738,6 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
         selected_objects = context.selected_objects
         min_treshold = self.mountain_treshold
 
-        # Collect min/max from custom properties
-        min_z = None
-        max_z = None
-        minThickness = None
-
         if not selected_objects:
             self.report({"ERROR"}, _rpt("No object selected. Select a map first."))
             return {"CANCELLED"}
@@ -1704,25 +1763,30 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
                 self.report({"ERROR"}, "; ".join(problems))
                 return {"CANCELLED"}
 
-        for obj in selected_objects:
-            if "lowestZ" in obj and "highestZ" in obj and obj["highestZ"] != 0:
-                low = obj["lowestZ"]
-                high = obj["highestZ"]
-                minThickness = obj["minThickness"]
-                min_z = low if min_z is None else min(min_z, low)
-                max_z = high if max_z is None else max(max_z, high)
+        # One threshold height for the whole selection (in world Z, so tiles
+        # of one map get the same cut), as a percentage of the combined
+        # lowest-terrain-to-highest-point range -- converted back into each
+        # map's local Z in the loop below.
+        low_world = None
+        high_world = None
+        for obj in map_objects:
+            height_range = _color_height_range(obj)
+            if height_range is None:
+                continue
+            offset = obj.matrix_world.translation.z
+            low = height_range[0] + offset
+            high = height_range[1] + offset
+            low_world = low if low_world is None else min(low_world, low)
+            high_world = high if high_world is None else max(high_world, high)
 
-        # print(f"Lowest Z across objects: {min_z}, Highest Z: {max_z}")
-
-        if min_z is None or max_z is None:
+        if low_world is None or high_world <= low_world:
             self.report(
                 {"ERROR"},
                 _rpt("No valid map selected. Select a generated map first."),
             )
             return {"CANCELLED"}
 
-        # tres = (max_z-min_z)/100 * min_treshold + minThickness
-        tres = (max_z + minThickness) / 100 * min_treshold + 0.2  # + minThickness
+        tres_world = low_world + (high_world - low_world) * min_treshold / 100
         noise_amplitude = self.mountain_noise_amplitude if self.mountain_noise else 0.0
         noise_scale = self.mountain_noise_scale
 
@@ -1784,20 +1848,14 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
 
         # Iterate objects and faces
         for obj in selected_objects:
-            if (
-                obj.type != "MESH"
-                or obj.get("Object type") != "MAP"
-                or max_z == 0
-            ):
+            if obj.type != "MESH" or obj.get("Object type") != "MAP":
                 print("Not Applied")
                 continue
+            tres = tres_world - obj.matrix_world.translation.z
 
             mesh = obj.data
-            has_texture_flag = bool(mesh.get("3mf_is_paint_texture"))
-            has_texture_image = bool(
-                bpy.data.images.get(f"{mesh.name}_MMU_Paint")
-            )
-            if has_texture_flag != has_texture_image:
+            texture_state = _paint_texture_state(mesh)
+            if texture_state == "incomplete":
                 self.report(
                     {"ERROR"},
                     _(
@@ -1805,7 +1863,9 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
                     ).format(name=obj.name),
                 )
                 continue
-            is_texture_mode = has_texture_flag and has_texture_image
+            # "Single color" splits a textured map too (below) instead of
+            # painting the height band into its texture.
+            is_texture_mode = texture_state == "texture" and not self.color_height_SEM
 
             print("Apply Mountain Color")
 
