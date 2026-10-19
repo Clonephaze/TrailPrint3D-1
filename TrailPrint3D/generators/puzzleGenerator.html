@@ -1088,7 +1088,10 @@
                     finally {
                         pending--;
                         if (pending === 0 && gpxLayer.getBounds().isValid()) {
-                            map.fitBounds(gpxLayer.getBounds(), { padding: [50, 50] });
+                            if (coords === null) {
+                                placeShapeAroundBounds(gpxLayer.getBounds(), 0.8);
+                            }
+                            map.fitBounds(coords && rectLayer ? rectLayer.getBounds() : gpxLayer.getBounds(), { padding: [50, 50] });
                         }
                     }
                 };
