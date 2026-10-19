@@ -16,7 +16,12 @@ import numpy as np
 from bpy.app.translations import pgettext_iface as _
 from bpy.app.translations import pgettext_rpt as _rpt
 from bpy.app.translations import pgettext_tip as _tip
-from bpy.props import CollectionProperty, StringProperty  # type: ignore
+from bpy.props import (  # type: ignore
+    BoolVectorProperty,
+    CollectionProperty,
+    IntProperty,
+    StringProperty,
+)
 from mathutils import Euler, Quaternion, Vector, noise  # type: ignore
 
 from . import addon_preferences, export, utils
@@ -403,26 +408,7 @@ class TP3D_OT_clear_cache(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        if not os.path.exists(const.cache_dir):
-            const._ensure_dirs()
-            return {"FINISHED"}
-
-        import shutil
-
-        try:
-            shutil.rmtree(const.cache_dir)
-            print(f"Deleted cache directory: {const.cache_dir}")
-        except OSError as e:
-            print(f"Failed to delete cache directory: {e}")
-
-        # Clear the in-memory elevation cache so the load guard doesn't
-        # serve stale data after the files have been deleted.
-        const._elevation_cache.clear()
-
-        # Recreate the directory tree so save_elevation_cache() doesn't
-        # silently fail trying to write into a path that no longer exists.
-        const._ensure_dirs()
-
+        utils.clear_api_cache()
         return {"FINISHED"}
 
 
@@ -895,7 +881,7 @@ def dovetail_cutout(zobj, sides=None, obj_size=None):
         offset_x = math.cos(angle) * radius
         offset_y = math.sin(angle) * radius
         pos = zobj.location + Vector(
-            (offset_x, offset_y, bottom_local_z + dovetailHeight / 2)
+            (offset_x, offset_y, bottom_local_z + dovetailHeight / 2 - 0.01)
         )
         rotation = Euler((0, 0, angle - math.radians(90)), "XYZ")
 
@@ -946,13 +932,23 @@ def dovetail_cutout(zobj, sides=None, obj_size=None):
     zobj.select_set(True)
     bpy.context.view_layer.objects.active = zobj
 
+    from .utils.mesh_ops import is_mesh_manifold
+
+    # MANIFOLD silently no-ops on non-manifold or inconsistently wound
+    # input, so retry with EXACT if the mesh came back untouched.
+    n_verts = len(zobj.data.vertices)
+    solver = "MANIFOLD" if is_mesh_manifold(zobj) else "EXACT"
+
     bool_mod = zobj.modifiers.new(name="DovetailCutout", type="BOOLEAN")
     bool_mod.operation = "DIFFERENCE"
     bool_mod.object = merged_cylinders
+    bool_mod.solver = solver
 
     zobj["Dovetail"] = True
 
     bpy.ops.object.modifier_apply(modifier=bool_mod.name)
+    if solver == "MANIFOLD" and len(zobj.data.vertices) == n_verts:
+        utils.boolean_operation(zobj, merged_cylinders, "DIFFERENCE", solver="EXACT")
 
     # Cleanup - delete the merged cutter object
     bpy.data.objects.remove(merged_cylinders, do_unlink=True)
@@ -960,6 +956,16 @@ def dovetail_cutout(zobj, sides=None, obj_size=None):
     bpy.ops.object.select_all(action="DESELECT")
     zobj.select_set(False)
     return True
+
+
+class TP3D_PG_dovetail_target(bpy.types.PropertyGroup):
+    """One selected object in the Dovetail popup, with a toggle per edge."""
+
+    obj_name: StringProperty()
+    side_count: IntProperty()
+    # Sized for the largest supported shape (OCTAGON); only the first
+    # side_count entries are drawn and read.
+    sides: BoolVectorProperty(size=8, default=(True,) * 8)
 
 
 class TP3D_OT_dovetail(bpy.types.Operator):
@@ -970,6 +976,8 @@ class TP3D_OT_dovetail(bpy.types.Operator):
     _TYPES = {"MAP", "SHELL", "PLATE"}
     # Only shapes that tile/stack edge-to-edge make sense to dovetail-join.
     _SHAPES = {"SQUARE", "HEXAGON", "OCTAGON"}
+
+    targets: CollectionProperty(type=TP3D_PG_dovetail_target)
 
     @classmethod
     def poll(cls, context):
@@ -985,33 +993,111 @@ class TP3D_OT_dovetail(bpy.types.Operator):
 
         return True
 
-    def execute(self, context):
-
-        selected_objects = context.selected_objects
-
-        if not selected_objects:
-            utils.show_message_box("No objects selected")
-            return {"FINISHED"}
-
-        bpy.ops.object.select_all(action="DESELECT")
-        for zobj in selected_objects:
-            zobj.select_set(False)
-
-        for zobj in selected_objects:
-            if zobj.type != "MESH":
+    def invoke(self, context, event):
+        self.targets.clear()
+        for zobj in context.selected_objects:
+            if zobj.type != "MESH" or zobj.get("Dovetail"):
                 continue
-
-            if zobj.get("Dovetail"):
-                continue
-
             if zobj.get("Object type") not in self._TYPES or zobj.get("Shape") not in self._SHAPES:
                 continue
+            item = self.targets.add()
+            item.obj_name = zobj.name
+            item.side_count = len(dovetail_side_angles(zobj))
 
-            dovetail_cutout(zobj)
+        if not self.targets:
+            self.report({"ERROR"}, _rpt("The selected objects already have dovetail cutouts"))
+            return {"CANCELLED"}
 
-        bpy.context.view_layer.objects.active = selected_objects[0]
+        focus = context.active_object
+        if focus is None or focus.name not in {t.obj_name for t in self.targets}:
+            focus = bpy.data.objects.get(self.targets[0].obj_name)
+        self._frame_top_view(context, focus)
+
+        return context.window_manager.invoke_props_dialog(self, width=560)
+
+    @staticmethod
+    def _frame_top_view(context, obj):
+        """Switch the 3D viewport to an orthographic top view centred on
+        *obj*, so the side numbers in the popup can be matched to its edges."""
+        area = context.area
+        if (area is None or area.type != "VIEW_3D") and context.screen:
+            area = next((a for a in context.screen.areas if a.type == "VIEW_3D"), None)
+        if area is None or area.type != "VIEW_3D":
+            return
+        rv3d = area.spaces.active.region_3d
+
+        corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+        min_c = Vector(tuple(min(c[i] for c in corners) for i in range(3)))
+        max_c = Vector(tuple(max(c[i] for c in corners) for i in range(3)))
+        size = max(max_c.x - min_c.x, max_c.y - min_c.y)
+
+        rv3d.view_perspective = "ORTHO"
+        rv3d.view_rotation = Quaternion((1.0, 0.0, 0.0, 0.0))
+        rv3d.view_location = (min_c + max_c) / 2
+        rv3d.view_distance = size * 1.5
+        area.tag_redraw()
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text=_("Sides are numbered counter-clockwise (0° = +X)"), icon="INFO")
+
+        for item in self.targets:
+            zobj = bpy.data.objects.get(item.obj_name)
+            if zobj is None:
+                continue
+            box = layout.box()
+            box.label(text=item.obj_name, icon="OBJECT_DATA", translate=False)
+
+            # Place each checkbox where its edge sits in the top view (+X
+            # right, +Y up): one grid row per distinct edge height, and one
+            # of 5 columns from the edge's horizontal direction.
+            angles = dovetail_side_angles(zobj)
+            cells = {}
+            for i, angle in enumerate(angles):
+                row = round(math.sin(angle), 2) + 0.0  # + 0.0 folds -0.0 into 0.0
+                col = round(math.cos(angle) * 2) + 2
+                cells[(row, col)] = i
+            rows = sorted({r for r, _c in cells}, reverse=True)
+
+            grid = box.grid_flow(row_major=True, columns=5, even_columns=True, even_rows=True)
+            for row in rows:
+                for col in range(5):
+                    i = cells.get((row, col))
+                    if i is None:
+                        grid.label(text="")
+                        continue
+                    deg = round(math.degrees(angles[i])) % 360
+                    grid.prop(
+                        item,
+                        "sides",
+                        index=i,
+                        text=_("Side {n} ({deg}°)").format(n=i + 1, deg=deg),
+                        translate=False,
+                    )
+
+    def execute(self, context):
+
+        selected_objects = list(context.selected_objects)
+
+        bpy.ops.object.select_all(action="DESELECT")
+
+        cut_count = 0
+        for item in self.targets:
+            zobj = bpy.data.objects.get(item.obj_name)
+            if zobj is None or zobj.get("Dovetail"):
+                continue
+            sides = {i for i in range(item.side_count) if item.sides[i]}
+            if sides and dovetail_cutout(zobj, sides=sides):
+                cut_count += 1
+
+        if selected_objects:
+            context.view_layer.objects.active = selected_objects[0]
         for zobj in selected_objects:
             zobj.select_set(True)
+
+        if not cut_count:
+            self.report({"WARNING"}, _rpt("No dovetail cutouts were added"))
+            return {"CANCELLED"}
 
         print("Dovetail Added")
 

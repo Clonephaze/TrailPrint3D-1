@@ -366,6 +366,15 @@ _SETTINGS_ROW_FIELDS = {
     "plateBevel": ("plateBevel", float),
     "shellWallThickness": ("shellWallThickness", float),
     "handleStyle": ("handleStyle", str),
+    # Settings popup's Map tab "Paint Trail" and Other tab texture
+    # resolution -- mirror panels.py's "6. Appearance" box and the Advanced
+    # box. "Paint Roads" sits on the Elements tab's Roads card instead, see
+    # _ADVANCED_SETTINGS_FIELDS.
+    "texIncludeTrail": ("tex_include_trail", bool),
+    "texResolution": ("tex_resolution", int),
+    # Settings popup's Other tab, API section -- mirrors panels.py's API box.
+    "api": ("api", str),
+    "disableCache": ("disableCache", bool),
 }
 
 
@@ -410,12 +419,18 @@ def apply_setting_update(tp3d, key, value):
 
     *key* is checked against the _SETTINGS_ROW_FIELDS whitelist -- silently
     ignored if unrecognized -- rather than setattr'ing whatever name the
-    page sent, since the request body is client-controlled. 'exportFolder'
-    is the one extra key, see _apply_export_folder.
+    page sent, since the request body is client-controlled. The extra keys
+    are 'exportFolder' (see _apply_export_folder) and 'clearCache' (the
+    Other tab's Clear Cache button, *value* ignored).
     """
     if key == "exportFolder":
         if not _apply_export_folder(value):
             return
+    elif key == "clearCache":
+        from .elevation import clear_api_cache  # deferred to avoid circular import at load time
+
+        clear_api_cache()
+        return
     else:
         field = _SETTINGS_ROW_FIELDS.get(key)
         if not field:
@@ -458,6 +473,12 @@ _ADVANCED_SETTINGS_FIELDS = [
     {
         "key": "colOsmSmoothing",
         "attr": "col_osmSmoothing",
+        "type": float,
+        "group": "OSM",
+    },
+    {
+        "key": "toleranceElements",
+        "attr": "toleranceElements",
         "type": float,
         "group": "OSM",
     },
@@ -547,6 +568,12 @@ _ADVANCED_SETTINGS_FIELDS = [
         "key": "elSCutDepth",
         "attr": "el_sCutDepth",
         "type": float,
+        "group": "Roads",
+    },
+    {
+        "key": "texIncludeRoads",
+        "attr": "tex_include_roads",
+        "type": bool,
         "group": "Roads",
     },
 ]

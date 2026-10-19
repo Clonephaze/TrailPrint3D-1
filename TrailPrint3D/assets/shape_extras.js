@@ -62,7 +62,7 @@ var TEXT_FIELDS_BY_LAYOUT_SHAPE = {
         SQUARE: ['titlefield', 'textfield1', 'textfield2', 'textfield3']
     },
     FRONT_FACE: {
-        HEXAGON: ['titlefield', 'textfield1', 'textfield2', 'textfield3'],
+        HEXAGON: ['titlefield', 'textfield1', 'textfield2', 'textfield3', 'textfield4', 'textfield5'],
         OCTAGON: ['titlefield', 'textfield1', 'textfield2', 'textfield3'],
         SQUARE: ['titlefield', 'textfield1', 'textfield2', 'textfield3']
     },
@@ -70,7 +70,7 @@ var TEXT_FIELDS_BY_LAYOUT_SHAPE = {
         CIRCLE: ['titlefield', 'textfield1', 'textfield2', 'textfield3']
     },
     ON_MAP: {
-        HEXAGON: ['titlefield', 'textfield1', 'textfield2', 'textfield3']
+        HEXAGON: ['titlefield', 'textfield1', 'textfield2', 'textfield3', 'textfield4', 'textfield5']
     }
 };
 var FIELD_TO_ICON = {
@@ -537,12 +537,13 @@ var BACKPLATE_TEXT_SPOTS = {
         SQUARE: { titlefield: [90, 1], textfield1: [180, 0], textfield2: [270, 0], textfield3: [0, 0] }
     },
     FRONT_FACE: {
-        HEXAGON: { titlefield: [90], textfield1: [210], textfield2: [270], textfield3: [330] },
+        HEXAGON: { titlefield: [90], textfield1: [150], textfield2: [210], textfield3: [270], textfield4: [330], textfield5: [30] },
         OCTAGON: { titlefield: [90], textfield1: [225], textfield2: [270], textfield3: [315] },
         SQUARE: { titlefield: [90], textfield1: [180], textfield2: [270], textfield3: [0] }
     },
     CURVED: { CIRCLE: { titlefield: [90], textfield1: [180], textfield2: [270], textfield3: [0] } },
-    ON_MAP: { HEXAGON: { titlefield: [90], textfield1: [210], textfield2: [270], textfield3: [330] } }
+    ON_MAP: { HEXAGON: { titlefield: [90, 0], textfield1: [150, 1], textfield2: [210, 0], textfield3: [270, 0],
+                         textfield4: [330, 0], textfield5: [30, 1] } }
 };
 var BACKPLATE_FIELD_LABELS = {
     titlefield: 'Title', textfield1: 'Text 1', textfield2: 'Text 2', textfield3: 'Text 3',
@@ -792,7 +793,7 @@ function tp3dDrawBackplatePreview() {
             var rm = (size / 2 * 0.9) * Math.cos(Math.PI / 6);
             x = prop === 'titlefield' ? 0 : Math.cos(a) * rm;
             y = prop === 'titlefield' ? rm : Math.sin(a) * rm;
-            rot = prop === 'titlefield' ? 0 : angle + 90;
+            rot = prop === 'titlefield' ? 0 : angle + 90 + (flip ? 180 : 0);
         } else if (textLayout === 'FRONT_FACE') {
             // On the side wall -- seen from above, just outside the edge.
             var rf = tp3dRadiusAtAngle(outer, base, a) + mm * 0.9;

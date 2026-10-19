@@ -81,8 +81,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .export-folder-link:hover:not(:disabled) { color: var(--text-primary); text-decoration-color: currentColor; }
 .export-folder-link:disabled { cursor: progress; opacity: 0.6; }
 /* Generic modal chrome, shared by every popup dialog a picker page adds --
-   currently just the Settings popup, styled to match the puzzle pages' own
-   pre-existing (page-local) #plateSettingsModal look. */
+   currently just the Settings popup. */
 .tp3d-modal { display: none; position: fixed; inset: 0; z-index: var(--z-modal);
     padding: var(--space-4); background: rgba(12,15,20,0.72); align-items: center; justify-content: center; }
 .tp3d-modal.open { display: flex; }
@@ -228,6 +227,44 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
    number of single-column fields), so this always lands on its own full
    row without any explicit row index needed. */
 .map-tab-divider { grid-column: 1 / -1; width: 100%; border: none; border-top: 1px solid var(--border); margin: 2px 0; }
+/* Other tab's API setup hint -- a sentence, not a label/control pair. */
+.api-setup-note { grid-column: 1 / -1; font-size: 12px; }
+/* A Settings popup row whose `showWhen` doesn't match (tp3dRefreshMapTabVisibility). */
+.adv-field-row.locked { color: #666; cursor: not-allowed; }
+.adv-field-row.locked :is(input, select) { color: #666; background: var(--surface-panel); border-color: var(--surface-raised); cursor: not-allowed; }
+/* Other tab's one-line-per-API overview under the Elevation API dropdown. */
+.api-summary { grid-column: 1 / -1; margin: 0; display: grid; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.api-summary > div { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 8px; padding: 3px 6px; border-radius: 4px; }
+.api-summary dt { font-weight: bold; color: var(--text-secondary); }
+.api-summary dt a { color: inherit; text-decoration: none; }
+.api-summary dt a:hover { color: var(--accent); text-decoration: underline; }
+.api-summary dd { margin: 0; }
+.api-summary > div.active { background: var(--surface-raised); color: var(--text-primary); }
+.api-summary > div.active dt { color: var(--accent); }
+/* Map tab's three-way Trail Appearance switch spans both columns, with a
+   "?" after the options that have a preview. */
+.trail-appearance-row { grid-column: 1 / -1; }
+.trail-appearance-switch { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+/* One option = one pill (same look as .element-mode-btn); its "?" sits
+   inside as a small round button. */
+.trail-option { display: inline-flex; align-items: stretch; gap: 2px; padding-right: 6px;
+    min-height: var(--control-height);
+    background: var(--surface-raised); border: 1px solid var(--border); border-radius: 4px; }
+.trail-option > .preview-btn { align-self: center; }
+.trail-option:not(:has(.preview-btn)) { padding-right: 0; }
+.trail-option:hover:not(.active):not(.disabled) { background: #3d3d3d; border-color: var(--accent); }
+.trail-option.active { background: var(--accent); border-color: var(--accent); }
+.trail-option-btn { padding: 0 12px; font-size: 12px; font-weight: bold; letter-spacing: 0.2px;
+    background: none; border: 0; color: var(--text-secondary); cursor: pointer; }
+.trail-option:hover:not(.disabled) .trail-option-btn { color: var(--text-primary); }
+.trail-option.active .trail-option-btn { color: #fff; }
+.trail-option.disabled .trail-option-btn { opacity: 0.4; }
+.trail-option .preview-btn { width: 20px; height: 20px; min-width: 0; min-height: 0; border-radius: 50%; font-size: 11px;
+    background: rgba(0,0,0,0.25); border-color: transparent; }
+.trail-option.active .preview-btn { color: #fff; background: rgba(0,0,0,0.2); }
+/* Text-only preview (no image yet): the caption is the whole preview. */
+.settings-modal-right .preview-caption.preview-text-only { font-size: 13px; text-align: left; margin: auto 0; padding: 12px; line-height: 1.5; }
+.api-cache-group { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 /* Cards wrap inside their tab rather than forcing horizontal scrolling. */
 .elements-grid { display: flex; flex-direction: column; gap: 14px; }
 /* OSM/ESA WorldCover switch (settings_modal.js's tp3dBuildElementSourceSwitch) --
@@ -236,6 +273,13 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .element-source-label { font-size: 12px; font-weight: bold; color: var(--text-secondary); margin-bottom: 6px; }
 .element-source-switch { display: flex; gap: 6px; }
 .element-source-switch .shape-btn { flex: 1; padding: 8px 6px; font-size: 13px; }
+/* Each source button with its "?" laid over the right edge. */
+.element-source-option { position: relative; flex: 1; display: flex; min-width: 0; }
+.element-source-option .shape-btn { padding-left: 32px; padding-right: 32px; }
+.element-source-option .preview-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    width: 20px; height: 20px; min-width: 0; min-height: 0; border-radius: 50%; font-size: 11px;
+    background: rgba(0,0,0,0.25); border-color: transparent; }
+.element-source-option .shape-btn.active + .preview-btn { color: #fff; background: rgba(0,0,0,0.2); }
 /* Paint on Map / Single Extruder Mode switch (tp3dBuildElementModeSwitch) --
    a compact .adv-field-row (label left, small pill-pair right) rather than
    the full-width block the Element Source switch above uses, since this one
@@ -665,17 +709,18 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
 .btn-plate-settings { padding: 10px 20px; background: var(--surface-raised); color: var(--text-primary); border: 1px solid var(--border);
             border-radius: 4px; cursor: pointer; font-weight: bold; }
 .btn-plate-settings:hover { background: var(--border); border-color: var(--accent); }
-#plateSettingsModal { display: none; position: fixed; inset: 0; z-index: 2000;
-            background: rgba(0,0,0,0.6); align-items: center; justify-content: center; }
-#plateSettingsModal.open { display: flex; }
-#plateSettingsBox { background: var(--surface-panel); border: 1px solid var(--border); border-radius: 8px; width: 260px;
-            max-height: 85vh; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
-#plateSettingsBox .modal-header { display: flex; align-items: center; justify-content: space-between; }
-#plateSettingsBox .modal-header span { font-weight: bold; font-size: 14px; }
-#plateSettingsCloseBtn { background: none; border: none; color: var(--text-secondary); font-size: 18px; line-height: 1;
-            cursor: pointer; padding: 2px 6px; }
-#plateSettingsCloseBtn:hover { color: #fff; }
+/* Puzzle pages' holder/frame fields, below the divider in the Puzzle tab
+   (settings_modal.js's tp3dBuildPuzzleTab): the group spans the tab's both
+   columns, and its sections (#holderTextSection, #holderFlatRimSection) span
+   both of its own and lay out their rows on the same 2-column grid. */
+.map-tab-fields > .plate-tab-fields { grid-column: 1 / -1; }
+.plate-tab-fields > div:not(.field-row) { grid-column: 1 / -1; }
+.plate-tab-fields > #holderTextSection, .plate-tab-fields > #holderFlatRimSection {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 28px; row-gap: 16px; }
+.plate-tab-fields #holderTextPreview { grid-column: 1 / -1; }
+.tab-fields-note { display: none; font-size: 12px; color: var(--text-secondary); }
+.tab-fields-inactive > .tab-fields-note { display: block; }
+.tab-fields-inactive > :not(.tab-fields-note) { opacity: 0.4; pointer-events: none; }
 
 /* Shared form and layout primitives. Runtime visibility stays in JS. */
 button, input, select, textarea { font: inherit; }
@@ -776,10 +821,7 @@ input[aria-invalid=true] { border-color: var(--danger); }
 .element-card .card-icon.disabled, .element-chip.disabled { color: var(--text-muted); }
 .element-flyout { max-width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); overflow: auto; }
 .element-chip-wrap { display: flex; align-items: center; gap: 2px; }
-.tp3d-modal-box, #plateSettingsBox { border-radius: var(--radius-panel); }
-#plateSettingsModal { padding: var(--space-4); z-index: var(--z-modal); }
-#plateSettingsBox { max-width: 100%; max-height: calc(100dvh - 2rem); }
-#plateSettingsCloseBtn { min-width: 2rem; min-height: 2rem; }
+.tp3d-modal-box { border-radius: var(--radius-panel); }
 #status { text-align: left; font-size: 0.8125rem; line-height: 1.5; }
 #shapeImportRow { margin-top: 0; }
 #elementStatus { gap: var(--space-2); padding: var(--space-2); }

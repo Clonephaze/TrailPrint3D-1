@@ -110,7 +110,6 @@
                 <label for="holderEnabled">Generate Holder</label>
                 <input type="checkbox" id="holderEnabled">
             </div>
-            <button type="button" id="plateSettingsBtn" class="btn-plate-settings" style="display:none;">Plate Settings…</button>
         </div>
         <div id="prefetchInfo"></div>
         <button class="btn-clear" id="clearPrefetch" style="display:none;">Clear Prefetch</button>
@@ -170,12 +169,11 @@
     </div>
     </div>
 
-    <div id="plateSettingsModal">
-        <div id="plateSettingsBox">
-            <div class="modal-header">
-                <span>Plate Settings</span>
-                <button type="button" id="plateSettingsCloseBtn" title="Close">✕</button>
-            </div>
+    <!-- Moved into the Settings popup's "Puzzle" tab at page load, below a
+         divider under its other fields (see settings_modal.js's tp3dBuildPuzzleTab)
+         -- same ids, so the listeners below keep working. -->
+    <div id="plateTabFieldsSource" class="plate-tab-fields tab-fields-inactive" style="display:none;">
+            <div class="tab-fields-note" id="plateTabNote">Tick <b>Generate Holder</b> in the sidebar to use these settings.</div>
             <div class="field-row">
                 <label for="holderWallWidthInput">Frame Thickness</label>
                 <input type="number" id="holderWallWidthInput" min="1" max="20" step="1" value="10">
@@ -219,7 +217,6 @@
                 </div>
                 <div id="holderTextPreview"></div>
             </div>
-        </div>
     </div>
 
     <script>
@@ -475,6 +472,12 @@
                     updateHolderVisibility();
                     updateTextAvailability();
                     updateHolderTextPreview();
+                    // Replace whatever trail is showing: a history entry
+                    // without one clears it, and one with a different trail
+                    // mustn't be drawn on top of the current one.
+                    gpxPaths = []; gpxNames = [];
+                    gpxLayer.clearLayers();
+                    updateGpxList();
                     if (s.gpxPaths && s.gpxPaths.length) {
                         gpxPaths = s.gpxPaths;
                         gpxNames = s.gpxNames || [];
@@ -843,18 +846,12 @@
         // build_puzzle_holder's geometry server-side.
         var HOLDER_CLEARANCE_MM = 0.1;
 
+        // The holder fields on the Settings popup's Puzzle tab grey out (with a note
+        // pointing back at the checkbox) while no holder is generated.
         function updateHolderVisibility() {
             var enabled = document.getElementById('holderEnabled').checked;
-            document.getElementById('plateSettingsBtn').style.display = enabled ? 'block' : 'none';
-            if (!enabled) closePlateSettings();
-        }
-
-        function openPlateSettings() {
-            document.getElementById('plateSettingsModal').classList.add('open');
-        }
-
-        function closePlateSettings() {
-            document.getElementById('plateSettingsModal').classList.remove('open');
+            var fields = document.getElementById('plateTabNote').parentElement; // #plateTabFields once relocated
+            fields.classList.toggle('tab-fields-inactive', !enabled);
         }
 
         // Text is embossed directly into the holder's own flat rim --
@@ -1157,12 +1154,6 @@
         document.getElementById('holderFrameTerrainInput').addEventListener('change', function() {
             updateTextAvailability();
             saveState();
-        });
-
-        document.getElementById('plateSettingsBtn').addEventListener('click', openPlateSettings);
-        document.getElementById('plateSettingsCloseBtn').addEventListener('click', closePlateSettings);
-        document.getElementById('plateSettingsModal').addEventListener('click', function(e) {
-            if (e.target === this) closePlateSettings();
         });
 
         // leaflet-draw's own corner/move-marker dragging (enabled via

@@ -117,6 +117,28 @@ def save_elevation_cache():
     except OSError as e:
         print(f"Error saving elevation cache: {e!s}")
 
+def clear_api_cache():
+    """Delete every cached API response (elevation, OSM, tiles) -- shared by
+    the sidebar's Clear Cache operator and the generator pages' Settings
+    popup (utils.ui_state.apply_setting_update's 'clearCache' key)."""
+    import shutil
+
+    if os.path.exists(const.cache_dir):
+        try:
+            shutil.rmtree(const.cache_dir)
+            print(f"Deleted cache directory: {const.cache_dir}")
+        except OSError as e:
+            print(f"Failed to delete cache directory: {e}")
+
+    # Clear the in-memory elevation cache so the load guard doesn't
+    # serve stale data after the files have been deleted.
+    const._elevation_cache.clear()
+
+    # Recreate the directory tree so save_elevation_cache() doesn't
+    # silently fail trying to write into a path that no longer exists.
+    const._ensure_dirs()
+
+
 def get_cached_elevation(lat, lon, api_type="opentopodata"):
     """Get elevation from cache if available"""
     key = f"{lat:.5f}_{lon:.5f}_{api_type}"
