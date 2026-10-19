@@ -3368,6 +3368,8 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
         for request in mp.drain_pending_prefetch():
             self._start_prefetch(context, request)
+        if mp.drain_pending_3mf_install():
+            bpy.ops.tp3d.install_three_mf()
         mp.refresh_state_snapshots(
             element_states=utils.build_element_toggle_states(context.scene.tp3d),
             settings_state=utils.build_settings_row_state(context.scene.tp3d),
@@ -3996,6 +3998,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
         for request in mp.drain_pending_prefetch():
             self._start_prefetch(context, request)
+        if mp.drain_pending_3mf_install():
+            bpy.ops.tp3d.install_three_mf()
         # Keeps a later page reload (the OSM/ESA WorldCover switch,
         # settings_modal.js) in sync with whatever was just applied above --
         # see refresh_state_snapshots' own docstring.
@@ -4670,6 +4674,9 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
         # This page only sends the export-folder button's 'exportFolder'.
         for key, value in mp.drain_pending_settings():
             utils.apply_setting_update(context.scene.tp3d, key, value)
+        if mp.drain_pending_3mf_install():
+            bpy.ops.tp3d.install_three_mf()
+            mp.refresh_state_snapshots(settings_state=utils.build_settings_row_state(context.scene.tp3d))
         request = mp.drain_latest_model_preview()
         if request is not None:
             self._build_preview(context, request)
@@ -4823,6 +4830,9 @@ class TP3D_OT_backplate_generator(bpy.types.Operator):
         # This page only sends the export-folder button's 'exportFolder'.
         for key, value in mp.drain_pending_settings():
             utils.apply_setting_update(context.scene.tp3d, key, value)
+        if mp.drain_pending_3mf_install():
+            bpy.ops.tp3d.install_three_mf()
+            mp.refresh_state_snapshots(settings_state=utils.build_settings_row_state(context.scene.tp3d))
         request = mp.drain_latest_model_preview()
         if request is not None:
             self._build_preview(context, request)

@@ -56,6 +56,10 @@ _pending_advanced_settings: 'queue.Queue[tuple]' = queue.Queue()
 _pending_prefetch: 'queue.Queue[dict]' = queue.Queue()
 _prefetch_job: dict = {'status': 'idle', 'message': '', 'result': None}
 
+# POST /install_3mf_addon queued here -- drained by each generator operator's
+# modal() on the main thread (bpy.ops cannot run on the HTTP server's thread).
+_pending_3mf_install: 'queue.Queue[bool]' = queue.Queue()
+
 # 3D-preview pages (medalHolderGenerator.html): POST /request_model_preview
 # queues the page's current parameters; the calling operator's modal() builds
 # the model on the main thread (drain_latest_model_preview), writes it to
@@ -283,6 +287,19 @@ def drain_pending_advanced_settings() -> list:
     return updates
 
 
+def drain_pending_3mf_install() -> bool:
+    """True if the generator page asked for a 3MF addon install since the last
+    call (duplicate requests are collapsed -- only one install fires)."""
+    requested = False
+    while True:
+        try:
+            _pending_3mf_install.get_nowait()
+            requested = True
+        except queue.Empty:
+            break
+    return requested
+
+
 def refresh_state_snapshots(element_states: dict | None = None, settings_state: dict | None = None,
                              advanced_settings: dict | None = None, element_source: str | None = None) -> None:
     """Re-point the running server's cached page-load snapshots (ELEMENT_STATES/
@@ -342,6 +359,7 @@ _TUTORIAL_JS_PATH = _ASSETS_DIR / 'tutorial.js'
 _MAP_TUTORIALS_JS_PATH = _ASSETS_DIR / 'map_tutorials.js'
 _MULTITILE_TUTORIALS_JS_PATH = _ASSETS_DIR / 'multitile_tutorials.js'
 _EXPORT_FOLDER_JS_PATH = _ASSETS_DIR / 'export_folder.js'
+_THREEMF_PROMO_JS_PATH = _ASSETS_DIR / 'threemf_promo.js'
 
 _element_icons_js_cache: str | None = None
 
@@ -442,6 +460,7 @@ def _write_history(path: pathlib.Path, entries: list) -> None:
 
 
 _TUTORIAL_PROGRESS_PATH = pathlib.Path(const.tutorial_progress_path)
+_THREEMF_PROMO_DECLINED_PATH = pathlib.Path(const.threemf_promo_declined_path)
 
 # Sample files bundled with the addon (e.g. sample GPX tracks for tutorials),
 # served read-only by GET /get_sample_file?name=<file name>.
@@ -480,6 +499,23 @@ def _mark_tutorial_complete(tutorial_id: str) -> dict:
     except OSError as e:
         print(f"[TP3D picker] Failed to write tutorial progress {_TUTORIAL_PROGRESS_PATH}: {e}")
     return progress
+
+
+def _read_threemf_promo_declined() -> bool:
+    """True once the user has clicked 'No thanks' on any generator page."""
+    try:
+        data = json.loads(_THREEMF_PROMO_DECLINED_PATH.read_text(encoding='utf-8'))
+        return bool(data.get('declined'))
+    except (OSError, json.JSONDecodeError):
+        return False
+
+
+def _mark_threemf_promo_declined() -> None:
+    try:
+        _THREEMF_PROMO_DECLINED_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _THREEMF_PROMO_DECLINED_PATH.write_text(json.dumps({'declined': True}), encoding='utf-8')
+    except OSError as e:
+        print(f"[TP3D picker] Failed to write threemf promo state: {e}")
 
 
 # Saved "Defaults" per page (e.g. the Backplate Generator's): a list of
@@ -975,6 +1011,14 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == '/get_threemf_promo_state':
+            body = json.dumps({'declined': _read_threemf_promo_declined()}).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith('/get_history_render?'):
             from urllib.parse import parse_qs, urlparse
             query = parse_qs(urlparse(self.path).query)
@@ -1052,6 +1096,7 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__MAP_TUTORIALS_JS__', _MAP_TUTORIALS_JS_PATH.read_text(encoding='utf-8'))
             .replace('__MULTITILE_TUTORIALS_JS__', _MULTITILE_TUTORIALS_JS_PATH.read_text(encoding='utf-8'))
             .replace('__EXPORT_FOLDER_JS__', _EXPORT_FOLDER_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__THREEMF_PROMO_JS__', _THREEMF_PROMO_JS_PATH.read_text(encoding='utf-8'))
             .encode('utf-8')
         )
         self.send_response(200)
@@ -1224,6 +1269,26 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', str(len(resp)))
             self.end_headers()
             self.wfile.write(resp)
+            return
+        if self.path == '/set_threemf_promo_declined':
+            length = int(self.headers.get('Content-Length', 0))
+            self.rfile.read(length)
+            _mark_threemf_promo_declined()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', '2')
+            self.end_headers()
+            self.wfile.write(b'ok')
+            return
+        if self.path == '/install_3mf_addon':
+            length = int(self.headers.get('Content-Length', 0))
+            self.rfile.read(length)
+            _pending_3mf_install.put(True)
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', '2')
+            self.end_headers()
+            self.wfile.write(b'ok')
             return
         if self.path == '/save_history_entry':
             # assets/history_panel.js's tp3dPushHistory -- called by each
@@ -1483,7 +1548,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     the OSM and WorldCover chip/card sets.
     """
     global _active_server, _pending_toggles, _pending_settings, _pending_advanced_settings, _pending_prefetch
-    global _pending_model_previews
+    global _pending_model_previews, _pending_3mf_install
     if _active_server is not None:
         try:
             _active_server.shutdown()
@@ -1495,6 +1560,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     _pending_advanced_settings = queue.Queue()
     _pending_prefetch = queue.Queue()
     _pending_model_previews = queue.Queue()
+    _pending_3mf_install = queue.Queue()
     _model_preview_job.update(status='idle', message='', seq=None)
     # An in-flight worker from a previous session keeps a reference to the
     # OLD job dict only if it was handed the dict itself -- it's handed the
