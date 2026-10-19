@@ -374,7 +374,10 @@ def build_settings_row_state(tp3d=None):
     picker pages' SETTINGS_STATE snapshot."""
     if tp3d is None:
         tp3d = bpy.context.scene.tp3d
-    return {key: getattr(tp3d, attr) for key, (attr, _) in _SETTINGS_ROW_FIELDS.items()}
+    from .. import temp
+    state = {key: getattr(tp3d, attr) for key, (attr, _) in _SETTINGS_ROW_FIELDS.items()}
+    state['has3mf'] = temp.has3mf
+    return state
 
 
 def _apply_export_folder(value):
