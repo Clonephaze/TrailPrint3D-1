@@ -175,7 +175,19 @@ def export_selected_to_3mf(
             tag_solid_color_for_paint_export,
         )
 
-        map_dup = next((d for d in duplicates if d.get("Object type") == "MAP"), None)
+        # The palette comes from a *textured* map -- Color by Height mountain
+        # pieces are "MAP" objects too (copies of the map) but carry no paint
+        # texture, and picking one of those would skip all companions.
+        map_dup = next(
+            (
+                d
+                for d in duplicates
+                if d.get("Object type") == "MAP"
+                and d.type == "MESH"
+                and d.data.get("3mf_is_paint_texture")
+            ),
+            None,
+        )
         if map_dup is not None and map_dup.type == "MESH":
             try:
                 palette = ast.literal_eval(
@@ -219,6 +231,18 @@ def export_selected_to_3mf(
                         _ccol = material_to_srgb(
                             _own_mat or bpy.data.materials.get("BUILDINGS")
                         )
+                    elif (
+                        dup.get("IsMountainPiece")
+                        and dup.type == "MESH"
+                        and not dup.data.get("3mf_is_paint_texture")
+                        and dup.data.materials
+                        and dup.data.materials[0] is not None
+                    ):
+                        # Color by Height "Single color" piece: one solid
+                        # colour (its HEIGHT_xxxxxx material), which usually
+                        # isn't in the terrain's texture palette -- without
+                        # this the slicer prints it in extruder 1.
+                        _ccol = material_to_srgb(dup.data.materials[0])
                     else:
                         continue
                     _chex = _srgb_to_hex(*_ccol)
