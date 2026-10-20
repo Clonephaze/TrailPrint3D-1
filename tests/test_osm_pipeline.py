@@ -4,6 +4,7 @@ Covers:
   - Overpass HTTP request logic (retry, error handling, GET vs POST)
   - Per-tile parallel fetcher (_fetch_tiles_parallel)
   - Multi-kind parallel fetcher (_fetch_all_kinds_parallel)
+  - Combined-area OSM snapshots and background fetch overlap
   - Union query and element classifier (fetch_osm_combined)
   - coloring_main API surface
   - bmesh flood-fill loose-part splitting
@@ -78,6 +79,79 @@ def _make_response(status_code, body=None):
     r.status_code = status_code
     r.json.return_value = body if body is not None else {"elements": []}
     return r
+
+
+def test_combined_osm_fetch_snapshots_before_background_work():
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from TrailPrint3D.utils import terrain
+    from TrailPrint3D.utils.generation import terrain_gen
+
+    main_thread = threading.get_ident()
+    tp3d = SimpleNamespace(elementSource="OSM")
+    snapshot_settings = object()
+    tasks = [("WATER", [(47.0, 8.0, 47.1, 8.1)])]
+    expected = {"WATER": {"tile": ({"elements": []}, False)}}
+    osm_started = threading.Event()
+    elevation_work = threading.Event()
+
+    def _snapshot(actual_tp3d):
+        assert threading.get_ident() == main_thread
+        assert actual_tp3d is tp3d
+        return snapshot_settings
+
+    def _fetch(actual_tasks, semaphore, settings=None):
+        assert threading.get_ident() != main_thread
+        assert actual_tasks is tasks
+        assert settings is snapshot_settings
+        osm_started.set()
+        assert elevation_work.wait(5), "OSM must overlap elevation work"
+        return expected
+
+    with (
+        patch.object(terrain_gen, "bpy", SimpleNamespace(context=SimpleNamespace(
+            scene=SimpleNamespace(tp3d=tp3d)
+        ))),
+        patch.object(terrain_gen, "_rg_build_osm_kind_tasks", return_value=tasks),
+        patch.object(terrain_gen, "_rg_osm_fetch_settings", side_effect=_snapshot),
+        patch.object(terrain, "_fetch_all_kinds_parallel", side_effect=_fetch),
+    ):
+        fetch = terrain_gen.prepare_combined_osm_fetch(47.0, 47.1, 8.0, 8.1, 10.0)
+        # The prepared worker must no longer need any Blender context.
+        with patch.object(terrain_gen, "bpy", object()):
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(fetch)
+                try:
+                    assert osm_started.wait(5), "Background OSM fetch did not start"
+                    assert not future.done()
+                finally:
+                    elevation_work.set()
+                assert future.result(timeout=5) == expected
+
+
+def test_combined_osm_fetch_with_no_active_kinds():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from TrailPrint3D.utils import terrain
+    from TrailPrint3D.utils.generation import terrain_gen
+
+    tp3d = SimpleNamespace(elementSource="OSM")
+    with (
+        patch.object(terrain_gen, "bpy", SimpleNamespace(context=SimpleNamespace(
+            scene=SimpleNamespace(tp3d=tp3d)
+        ))),
+        patch.object(terrain_gen, "_rg_build_osm_kind_tasks", return_value=[]),
+        patch.object(terrain_gen, "_rg_osm_fetch_settings") as snapshot,
+        patch.object(terrain, "_fetch_all_kinds_parallel") as fetch,
+    ):
+        assert terrain_gen.prepare_combined_osm_fetch(47.0, 47.1, 8.0, 8.1, 10.0)() == {}
+        assert terrain_gen.fetch_combined_osm_data(47.0, 47.1, 8.0, 8.1, 10.0) == {}
+        snapshot.assert_not_called()
+        fetch.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -1102,6 +1176,10 @@ if __name__ == "__main__":
     _run("tile fetcher: semaphore caps peak concurrency", test_fetch_tiles_parallel_semaphore_caps_concurrency)
 
     # Multi-kind parallel fetcher
+    _run("combined fetch: snapshot on main thread, overlaps elevation",
+         test_combined_osm_fetch_snapshots_before_background_work)
+    _run("combined fetch: no active kinds performs no fetch",
+         test_combined_osm_fetch_with_no_active_kinds)
     _run("kind fetcher: all kinds fetched",               test_fetch_all_kinds_fetches_every_kind)
     _run("kind fetcher: failed kind → empty dict",        test_fetch_all_kinds_failed_kind_excluded)
     _run("kind fetcher: kinds genuinely concurrent",      test_fetch_all_kinds_actually_concurrent)

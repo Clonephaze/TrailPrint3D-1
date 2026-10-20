@@ -378,14 +378,17 @@ def _rtg_build_tile_preview(selected_objects):
     return valid, tiles_info, tile_size
 
 
-def _rtg_update_tile_preview_status(overlay, valid, tiles_info, tile_size, zobj):
-    """Advance the map-preview's per-tile status markers as the loop reaches zobj."""
+def _rtg_update_tile_preview_status(
+    overlay, valid, tiles_info, tile_size, zobj, status="active"
+):
+    """Set zobj's map-preview marker; other tiles keep their own status.
+
+    Callers mark a tile "done" only after it actually generated, so a failed
+    tile never shows as complete.
+    """
     if not tiles_info or zobj not in valid:
         return
-    idx = valid.index(zobj)
-    for k in range(idx):
-        tiles_info[k]["status"] = "done"
-    tiles_info[idx]["status"] = "active"
+    tiles_info[valid.index(zobj)]["status"] = status
     overlay.set_map_preview({"tiles": tiles_info, "tile_size": round(tile_size, 3)})
 
 
@@ -785,6 +788,10 @@ def runTileGeneration(
                 _progress.WarningsOverlay.add_warning(
                     _rpt("There was an error, see console for details.")
                 )
+                _rtg_update_tile_preview_status(
+                    overlay, _mp_valid, _mp_tiles_info, _mp_tile_size, zobj,
+                    status="pending",
+                )
                 continue
             except Exception as e:  # noqa: BLE001 - a single tile's bpy.ops/mesh-op failure shouldn't abort the whole batch
                 import traceback
@@ -795,14 +802,15 @@ def runTileGeneration(
                     _rpt("There was an error, see console for details."),
                     icon="error",
                 )
+                _rtg_update_tile_preview_status(
+                    overlay, _mp_valid, _mp_tiles_info, _mp_tile_size, zobj,
+                    status="pending",
+                )
                 continue
 
-        # Mark all tiles done in the preview
-        if _mp_tiles_info:
-            for _info in _mp_tiles_info:
-                _info["status"] = "done"
-            overlay.set_map_preview(
-                {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
+            _rtg_update_tile_preview_status(
+                overlay, _mp_valid, _mp_tiles_info, _mp_tile_size, zobj,
+                status="done",
             )
 
         bpy.context.view_layer.objects.active = selected_objects[0]
