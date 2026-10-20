@@ -21,7 +21,8 @@ const assets = {
     HISTORY_PANEL_JS: 'history_panel.js', RECT_EDITOR_JS: 'rect_editor.js',
     PREFETCH_JS: 'prefetch_layer.js', SHAPE_EXTRAS_JS: 'shape_extras.js',
     TUTORIAL_JS: 'tutorial.js', MAP_TUTORIALS_JS: 'map_tutorials.js',
-    EXPORT_FOLDER_JS: 'export_folder.js', MULTITILE_TUTORIALS_JS: 'multitile_tutorials.js'
+    EXPORT_FOLDER_JS: 'export_folder.js', MULTITILE_TUTORIALS_JS: 'multitile_tutorials.js',
+    THREEMF_PROMO_JS: 'threemf_promo.js'
 };
 const elementStates = Object.fromEntries([
     'water', 'forest', 'roads', 'city', 'greenspace', 'farmland',

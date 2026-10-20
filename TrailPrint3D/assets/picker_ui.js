@@ -21,6 +21,37 @@ function tp3dAlert(message, title) {
     modal.classList.add('open');
 }
 
+// Small self-dismissing note -- for hints that shouldn't block the page the
+// way tp3dAlert does (e.g. clicking a Premium-only option in the free
+// version). Shown just below *anchor* when given (kept inside the window),
+// else at the bottom centre; never takes clicks.
+var tp3dToastTimer = null;
+function tp3dToast(message, anchor) {
+    var toast = document.getElementById('tp3dToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'tp3dToast';
+        toast.className = 'tp3d-toast';
+        toast.setAttribute('role', 'status');
+        document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.left = '';
+    toast.style.top = '';
+    toast.classList.toggle('anchored', !!anchor);
+    toast.classList.add('show');
+    if (anchor) {
+        var rect = anchor.getBoundingClientRect();
+        var width = toast.offsetWidth;
+        var left = rect.left + rect.width / 2 - width / 2;
+        left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+        toast.style.left = left + 'px';
+        toast.style.top = (rect.bottom + 6) + 'px';
+    }
+    clearTimeout(tp3dToastTimer);
+    tp3dToastTimer = setTimeout(function() { toast.classList.remove('show'); }, 3000);
+}
+
 (function() {
     var dialogSelector = '.tp3d-modal';
     var toggleSelector = 'button.shape-btn, button.shape-toggle-btn, button.element-mode-btn, button.source-switch-btn, button[data-element-toggle]';

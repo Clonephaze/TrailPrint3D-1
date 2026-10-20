@@ -121,7 +121,9 @@ def smooth_terrain_top_z(x, y, z, iterations=2):
     import numpy as np  # type: ignore
 
     n = len(z)
-    if n < 4:
+    # 0 passes = unchanged -- the rasterize/resample round trip alone would
+    # still nudge every vertex.
+    if n < 4 or iterations <= 0:
         return z
 
     x_min, x_max = x.min(), x.max()

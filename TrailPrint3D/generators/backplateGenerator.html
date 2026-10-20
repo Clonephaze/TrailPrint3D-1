@@ -1040,7 +1040,10 @@ __COMMON_CSS__
                 const h = btn.dataset.handle;
                 btn.classList.toggle('active', h === handleStyle);
                 if (h !== 'NONE' && !PREMIUM) {
-                    btn.disabled = true;
+                    // Looks disabled but stays clickable, so the click can
+                    // show a short note why (see the click handler below).
+                    btn.classList.add('premium-locked');
+                    btn.setAttribute('aria-disabled', 'true');
                     btn.textContent = '🔒 ' + btn.textContent.replace(/^🔒 /, '');
                     btn.title = 'Medal handles are a Premium feature';
                 }
@@ -1059,6 +1062,10 @@ __COMMON_CSS__
         });
         document.querySelectorAll('#handleSwitch .element-mode-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
+                if (!PREMIUM && btn.dataset.handle !== 'NONE') {
+                    tp3dToast('🔒 Medal handles require the Premium version', btn);
+                    return;
+                }
                 handleStyle = btn.dataset.handle;
                 renderHandles();
                 schedulePreview();

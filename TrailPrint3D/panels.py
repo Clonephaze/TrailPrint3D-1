@@ -146,10 +146,12 @@ def _draw_header_and_update_banner(layout, props):
             )
 
     # --- Header ---
-    row = layout.row(align=True)
     if not temp.PREMIUMVERSION:
-        row.operator("tp3d.open_website", text=_("Patreon"), icon="FUND")
-    row.operator("tp3d.join_discord", text=_("Discord"), icon="URL")
+        layout.label(text=_("Upgrade to Premium"), icon="FUND")
+        row = layout.row(align=True)
+        row.operator("tp3d.open_website", text=_("Patreon"), icon="URL")
+        row.operator("tp3d.open_thangs", text=_("Thangs"), icon="URL")
+    layout.operator("tp3d.join_discord", text=_("Join our Discord"), icon="URL")
     version_str = ".".join(str(x) for x in const.ADDON_VERSION)
     if temp.PREMIUMVERSION:
         layout.label(
@@ -182,8 +184,8 @@ def _draw_generate_button(layout, props):
             )
 
     def _draw_terrain_generate(col, props):
-        premium = temp.PREMIUMVERSION and props.sScaleHor is not None
-        entry = _TERRAIN_GENERATORS.get(props.mapmode) if premium else None
+        available = props.sScaleHor is not None
+        entry = _TERRAIN_GENERATORS.get(props.mapmode) if available else None
 
         if entry:
             op_id, label, icon = entry
@@ -239,7 +241,7 @@ def _draw_terrain_settings(layout, props):
     row = col.row(align=True)
     row.label(icon="BLANK1")
     row.prop(props, "trailName", placeholder=_("Enter trail name"))
-    if props.sScaleHor is not None and temp.PREMIUMVERSION:
+    if props.sScaleHor is not None:
         box.prop(props, "mapmode", text=_("Mode"))
         boxer = box.box()
         if props.mapmode == "FROMPLANE":
@@ -297,13 +299,6 @@ def _draw_terrain_settings(layout, props):
         )
     else:
         col = box.column(align=True)
-        col.operator(
-            "tp3d.terrain_dummy",
-            text=_("Create Map from selected"),
-            icon="LOCKED",
-        )
-        col.operator("tp3d.terrain_dummy", text=_("Merge with Map"), icon="LOCKED")
-        col.operator("tp3d.terrain_dummy", text=_("Create Blank"), icon="LOCKED")
     col.separator(factor=1.0)
     if temp.PREMIUMVERSION:
         # pass
@@ -312,7 +307,7 @@ def _draw_terrain_settings(layout, props):
         col.operator(
             "tp3d.terrain_dummy",
             text=_("Multi Tile Generator"),
-            icon="WORLD",
+            icon="LOCKED",
         )
     col.operator("tp3d.map_generator", text=_("Map Generator"), icon="MESH_CIRCLE")
 
@@ -931,9 +926,10 @@ class TP3D_PT_generate(bpy.types.Panel):
         if temp.PREMIUMVERSION:
             row.prop(props, "generation_mode", expand=True)
         else:
+            # Terrain is part of the free version; only Multi stays Premium.
             row.prop_enum(props, "generation_mode", "GENERATION")
             row.operator("tp3d.terrain_dummy", text=_("Multi"), icon="LOCKED")
-            row.operator("tp3d.terrain_dummy", text=_("Terrain"), icon="LOCKED")
+            row.prop_enum(props, "generation_mode", "TERRAIN")
 
         # --- Shapely status warning ---
         _draw_shapely_warnings(layout)
@@ -1413,6 +1409,14 @@ def _draw_attribution_box(layout, props):
         icon="URL",
     ).url = "https://github.com/mapterhorn/mapterhorn"
     col.separator(factor=0.8)
+    thanks = box.column(align=True)
+    thanks.label(text=_("Special Thanks"), icon="FUND")
+    thanks.operator(
+        "wm.url_open",
+        text="Clonephaze — clonecore.net",
+        icon="URL",
+    ).url = "https://clonecore.net/"
+    thanks.separator(factor=0.8)
     disclaimer = box.column(align=True)
     disclaimer.scale_y = 0.75
     disclaimer.label(

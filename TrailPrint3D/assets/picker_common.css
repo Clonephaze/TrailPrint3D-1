@@ -178,31 +178,34 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
     border-radius: 4px; padding: 0; font-size: 11px; line-height: 1; color: var(--text-secondary); }
 .preview-btn:hover { background: rgba(255,255,255,0.08); border-color: var(--accent); color: var(--text-primary); }
 .preview-btn:active { background: rgba(255,255,255,0.16); }
-/* The Settings popup specifically: bigger box, a left tab column (Map /
-   Elements) and a right-hand preview panel that starts collapsed (no
-   preview picked yet -- box sized to just the left column, so it reads as
-   centered rather than leaving an empty gap) and grows smoothly open the
-   first time a `preview`-linked field is clicked (tp3dShowPreview adds
-   .preview-active to the box). */
-.settings-modal-box { width: 54rem; max-width: 100%; overflow: hidden; }
+/* The Settings popup specifically: bigger box, a top tab bar (Elements /
+   Map / ...) over a stack of titled section cards, and a right-hand preview
+   panel that starts collapsed (no preview picked yet -- box sized to just
+   the left column, so it reads as centered rather than leaving an empty
+   gap) and grows smoothly open the first time a `preview`-linked field is
+   clicked (tp3dShowPreview adds .preview-active to the box). */
+.settings-modal-box { width: 54rem; max-width: 100%; overflow: hidden; padding: 0; gap: 0;
+    --set-section-bg: #262a30; --set-section-border: #383e47;
+    --set-input-bg: #1b1e22; --set-input-border: #474f5b; --set-accent-tint: rgba(53,111,180,0.18); }
 .settings-modal-box.preview-active { width: 88rem; }
-.settings-modal-body { display: flex; gap: var(--space-4); height: min(42rem, calc(100dvh - 8rem)); min-height: 0; }
+.settings-modal-box > .modal-header { padding: 14px 16px 14px 20px; }
+.settings-modal-box > .modal-header span { font-size: 16px; font-weight: 600; }
+.settings-modal-body { display: flex; gap: var(--space-4); height: min(42rem, calc(100dvh - 8rem)); min-height: 0;
+    padding: 0 20px 20px; }
 .settings-modal-left { flex: 1 1 auto; display: flex; flex-direction: column;
     min-width: 0; min-height: 0; }
-.settings-modal-tabs { display: flex; gap: 4px; flex-shrink: 0; }
-.settings-modal-tab-btn { background: var(--surface-field); border: 1px solid var(--border); border-bottom: none;
-    border-radius: 4px 4px 0 0; color: var(--text-secondary); padding: 6px 14px; font-size: 12px; font-family: inherit;
-    cursor: pointer; }
-.settings-modal-tab-btn.active { background: var(--surface-base); border-color: var(--accent); color: var(--text-primary); }
-.settings-modal-tab-btn .tab-arrow { display: inline-block; transition: transform 0.2s ease; }
-.settings-modal-tab-btn.active .tab-arrow { transform: rotate(90deg); }
-.settings-modal-tab-panel { display: none; flex: 1; overflow-y: auto; border: 1px solid var(--border);
-    border-radius: 0 4px 4px 4px; padding: 12px; background: var(--surface-base); }
+.settings-modal-tabs { display: flex; gap: 2px; flex-shrink: 0; margin-bottom: 16px;
+    border-bottom: 1px solid var(--set-section-border); }
+.settings-modal-tabs .settings-modal-tab-btn { background: none; border: none; border-radius: 0; margin-bottom: -1px;
+    color: var(--text-muted); padding: 10px 16px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+.settings-modal-tabs .settings-modal-tab-btn:hover { color: var(--text-primary); }
+.settings-modal-tabs .settings-modal-tab-btn.active { color: var(--text-primary); box-shadow: inset 0 -2px 0 var(--accent); }
+.settings-modal-tab-panel { display: none; flex: 1; overflow-y: auto; padding-right: 6px; scrollbar-gutter: stable; }
 .settings-modal-tab-panel.active { display: block; }
 .settings-modal-right { flex: 1 1 40%; min-width: 0; min-height: 0;
-    position: relative; overflow: hidden; padding: var(--space-3); border: 1px solid var(--border);
-    border-radius: 4px; background: var(--surface-field); display: none; flex-direction: column; align-items: center;
-    justify-content: center; gap: 8px; color: #666; font-size: 11px; text-align: center;
+    position: relative; overflow: hidden; padding: var(--space-3); border: 1px solid var(--set-section-border);
+    border-radius: 10px; background: var(--set-section-bg); display: none; flex-direction: column; align-items: center;
+    justify-content: center; gap: 8px; color: var(--text-muted); font-size: 11px; text-align: center;
 }
 .settings-modal-right .preview-close-btn { position: absolute; top: 6px; right: 6px; z-index: 1;
     width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
@@ -218,15 +221,86 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
    caption never gets squeezed by the image's own flex:1 sizing above. */
 .settings-modal-right .preview-caption { flex-shrink: 0; font-size: 11px; color: var(--text-secondary); text-align: center;
     line-height: 1.4; }
-.map-tab-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: 28px; row-gap: 16px; align-content: start; }
-/* Spans both columns, separating the map-wide fields above from the
-   trail-specific ones below (tp3dBuildMapTab's { type: 'divider' } marker
-   in SETTINGS_MODAL_MAP_FIELDS). Grid auto-placement can't fit a 2-column
-   item into a row where column 1 is already taken (as it is after an odd
-   number of single-column fields), so this always lands on its own full
-   row without any explicit row index needed. */
-.map-tab-divider { grid-column: 1 / -1; width: 100%; border: none; border-top: 1px solid var(--border); margin: 2px 0; }
+/* Section cards (settings_modal.js's tp3dBuildSection): each tab is a
+   stack of them, each a title over a 3-column field grid (2 with
+   .settings-grid-2). A .settings-subsection is a smaller nested card for
+   fields that only matter in one mode (e.g. Single Extruder Mode). */
+.settings-sections { display: flex; flex-direction: column; gap: 14px; }
+.settings-section { background: var(--set-section-bg); border: 1px solid var(--set-section-border);
+    border-radius: 10px; padding: 16px 18px 18px; min-width: 0; }
+.settings-section-title { margin: 0 0 14px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+/* A whole card that doesn't apply right now (e.g. Print Mode under ESA WorldCover). */
+.settings-section.section-locked { opacity: 0.4; cursor: not-allowed; }
+.settings-section.section-locked * { pointer-events: none; }
+.settings-subsection { grid-column: span 2; min-width: 0; background: rgba(0,0,0,0.16);
+    border: 1px solid var(--set-section-border); border-radius: 8px; padding: 12px 14px 14px; }
+.settings-subsection .settings-section-title { font-size: 13px; margin-bottom: 10px; }
+/* A field sharing its grid row with a sub-card (Trail Thickness) lines up
+   with the sub-card's own fields: bottom-aligned, lifted by the sub-card's
+   bottom padding + border. */
+.settings-section .map-tab-fields > :has(+ .settings-subsection) { align-self: end; padding-bottom: 15px; }
+.settings-subsection:not(:has(.adv-field-row:not(.locked))) .settings-section-title { color: var(--text-muted); }
+.map-tab-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 20px; row-gap: 16px; align-content: start; }
+.map-tab-fields.settings-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* Field rows inside a card: label (+ "?") on top, full-width control below. */
+.settings-section :is(.adv-field-row, .field-row) { flex-direction: column; align-items: stretch;
+    justify-content: flex-start; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+.settings-section :is(.adv-field-row, .field-row) > :is(label, .preview-wrap),
+.settings-section .field-row > input[type=checkbox] { align-self: flex-start; }
+.settings-modal-box .settings-section :is(input[type=number], input[type=text], select) {
+    height: 36px; min-height: 36px; padding: 0 10px; font-size: 14px; color: var(--text-primary);
+    background: var(--set-input-bg); border: 1px solid var(--set-input-border); border-radius: 6px; }
+.settings-section :is(input[type=number], input[type=text], select):focus { border-color: var(--accent); }
+.settings-section .field-row > :is(input:not([type=checkbox]), select) { width: 100%; }
+.settings-section .adv-field-controls { min-height: 36px; }
+.settings-section .adv-field-controls > :is(input[type=number], select):first-child { flex: 1; min-width: 0; width: auto; }
+.settings-section .adv-field-controls > input[type=number]:not(:first-child) { width: 4.5rem; }
+/* Unit suffix inside a field, after the value (tp3dBuildFieldRow's `unit`). */
+.settings-section .adv-field-controls > .input-with-unit { position: relative; flex: 1; min-width: 0; display: flex; }
+.settings-modal-box .settings-section .input-with-unit > input { flex: 1; width: 100%; min-width: 0; padding-right: 38px; }
+.input-unit { position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    font-size: 13px; color: var(--text-muted); pointer-events: none; }
+/* Smooth Terrain's strength slider next to its switch. */
+.settings-section .adv-field-controls > .range-with-number { max-width: none; }
+.settings-modal-box .settings-section .range-with-number input[type=number] { width: 4rem; flex-shrink: 0; padding: 0 8px; }
+.settings-modal-box .settings-section .element-card .card-field input[type=number] { height: 30px; min-height: 30px; padding: 0 8px; font-size: 13px; }
+.settings-modal-box .settings-section .locked :is(input[type=number], input[type=text], select),
+.settings-modal-box .settings-section :is(input[type=number], input[type=text], select):disabled {
+    color: var(--text-muted); background: transparent; border-color: var(--set-section-border); }
+.settings-section .adv-field-row.locked { color: #6b7380; }
+/* On/off switch for the popup's checkboxes (settings_modal.js gives its own
+   ones .tp3d-switch; the puzzle pages' relocated .field-row checkboxes get
+   the same look here). */
+.settings-modal-box :is(input.tp3d-switch, .field-row > input)[type=checkbox] { appearance: none; -webkit-appearance: none;
+    position: relative; width: 38px; height: 22px; margin: 0; flex-shrink: 0; cursor: pointer;
+    background: var(--set-input-bg); border: 1px solid var(--set-input-border); border-radius: 999px; }
+.settings-modal-box :is(input.tp3d-switch, .field-row > input)[type=checkbox]::before { content: ''; position: absolute;
+    top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-muted);
+    transition: transform var(--motion), background-color var(--motion); }
+.settings-modal-box :is(input.tp3d-switch, .field-row > input)[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
+.settings-modal-box :is(input.tp3d-switch, .field-row > input)[type=checkbox]:checked::before { transform: translateX(16px); background: #fff; }
+.settings-modal-box :is(input.tp3d-switch, .field-row > input)[type=checkbox]:disabled { opacity: 0.45; cursor: not-allowed; }
+/* The small round "?" next to a label. */
+.settings-modal-box .preview-wrap { gap: 6px; }
+.settings-modal-box .preview-wrap > .preview-btn { width: 18px; height: 18px; min-width: 0; min-height: 0; border-radius: 50%;
+    background: none; border: 1px solid #5c6573; color: var(--text-muted); font-size: 10px; font-weight: 600; }
+.settings-modal-box .preview-wrap > .preview-btn:hover { border-color: var(--accent); color: var(--text-primary); background: none; }
+.settings-modal-box .element-mode-btn { min-height: 32px; padding: 0 14px; font-size: 12.5px; font-weight: 600; border-radius: 6px; }
+/* Segmented controls (Element Source, Paint/Single Extruder): one dark
+   track, the active option tinted and outlined in the accent colour. */
+.settings-modal-box :is(.element-source-switch, .element-mode-switch) { display: grid; grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 3px; background: var(--set-input-bg);
+    border: 1px solid var(--set-input-border); border-radius: 8px; }
+.settings-modal-box :is(.element-source-switch .shape-btn, .element-mode-switch .element-mode-btn) {
+    background: none; border: 1px solid transparent; border-radius: 6px; color: var(--text-secondary);
+    font-size: 13px; font-weight: 600; min-height: 34px; }
+.settings-modal-box :is(.element-source-switch .shape-btn, .element-mode-switch .element-mode-btn):hover:not(:disabled):not(.active) {
+    background: rgba(255,255,255,0.05); border-color: transparent; color: var(--text-primary); }
+.settings-modal-box :is(.element-source-switch .shape-btn, .element-mode-switch .element-mode-btn).active {
+    background: var(--set-accent-tint); border-color: var(--accent); color: #fff; }
+.settings-modal-box .element-mode-switch .element-mode-btn:disabled { background: none; border-color: transparent; }
+.element-source-block { grid-column: 1 / -1; }
 /* Other tab's API setup hint -- a sentence, not a label/control pair. */
 .api-setup-note { grid-column: 1 / -1; font-size: 12px; }
 /* A Settings popup row whose `showWhen` doesn't match (tp3dRefreshMapTabVisibility). */
@@ -241,67 +315,65 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .api-summary dd { margin: 0; }
 .api-summary > div.active { background: var(--surface-raised); color: var(--text-primary); }
 .api-summary > div.active dt { color: var(--accent); }
-/* Map tab's three-way Trail Appearance switch spans both columns, with a
-   "?" after the options that have a preview. */
+/* Map tab's three-way Trail Appearance switch: a full-width segmented
+   control, each option its name over a short description, with its "?"
+   (when it has a preview) in the top-right corner. */
 .trail-appearance-row { grid-column: 1 / -1; }
-.trail-appearance-switch { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
-/* One option = one pill (same look as .element-mode-btn); its "?" sits
-   inside as a small round button. */
-.trail-option { display: inline-flex; align-items: stretch; gap: 2px; padding-right: 6px;
-    min-height: var(--control-height);
-    background: var(--surface-raised); border: 1px solid var(--border); border-radius: 4px; }
-.trail-option > .preview-btn { align-self: center; }
-.trail-option:not(:has(.preview-btn)) { padding-right: 0; }
-.trail-option:hover:not(.active):not(.disabled) { background: #3d3d3d; border-color: var(--accent); }
-.trail-option.active { background: var(--accent); border-color: var(--accent); }
-.trail-option-btn { padding: 0 12px; font-size: 12px; font-weight: bold; letter-spacing: 0.2px;
-    background: none; border: 0; color: var(--text-secondary); cursor: pointer; }
-.trail-option:hover:not(.disabled) .trail-option-btn { color: var(--text-primary); }
-.trail-option.active .trail-option-btn { color: #fff; }
-.trail-option.disabled .trail-option-btn { opacity: 0.4; }
-.trail-option .preview-btn { width: 20px; height: 20px; min-width: 0; min-height: 0; border-radius: 50%; font-size: 11px;
-    background: rgba(0,0,0,0.25); border-color: transparent; }
-.trail-option.active .preview-btn { color: #fff; background: rgba(0,0,0,0.2); }
+.trail-appearance-switch { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 3px;
+    background: var(--set-input-bg); border: 1px solid var(--set-input-border); border-radius: 8px; }
+.trail-option { position: relative; display: flex; min-width: 0; border: 1px solid transparent; border-radius: 6px; }
+.trail-option:hover:not(.active):not(.disabled) { background: rgba(255,255,255,0.05); }
+.trail-option.active { background: var(--set-accent-tint); border-color: var(--accent); }
+.trail-option-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 9px 26px; background: none; border: 0; color: var(--text-secondary); text-align: center; cursor: pointer; }
+.trail-option-name { font-size: 13px; font-weight: 600; }
+.trail-option-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.3; }
+.trail-option:hover:not(.disabled) .trail-option-btn, .trail-option.active .trail-option-btn { color: var(--text-primary); }
+.trail-option.disabled .trail-option-btn { opacity: 0.45; }
+.trail-option > .preview-btn { position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; min-width: 0; min-height: 0;
+    border-radius: 50%; padding: 0; font-size: 10px; font-weight: 600; background: none; border: 1px solid #5c6573; color: var(--text-muted); }
+.trail-option > .preview-btn:hover { border-color: var(--accent); color: var(--text-primary); background: none; }
 /* Text-only preview (no image yet): the caption is the whole preview. */
 .settings-modal-right .preview-caption.preview-text-only { font-size: 13px; text-align: left; margin: auto 0; padding: 12px; line-height: 1.5; }
 .api-cache-group { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-/* Cards wrap inside their tab rather than forcing horizontal scrolling. */
-.elements-grid { display: flex; flex-direction: column; gap: 14px; }
+/* Cards wrap inside their section rather than forcing horizontal scrolling. */
+.map-tab-fields.elements-grid { display: flex; flex-direction: column; gap: 10px; }
+/* Cards grow to fill each row instead of leaving one orphan on its own. */
+.elements-grid .element-card { flex: 1 1 6rem; width: auto; max-width: 12rem; }
+.elements-grid .element-card.composite { flex: 2 1 14rem; max-width: none; }
 /* OSM/ESA WorldCover switch (settings_modal.js's tp3dBuildElementSourceSwitch) --
-   same look as the sidebar's Draw/Extend .shape-btn pair, just full-width
-   at the top of the Elements tab instead of floating over the map. */
-.element-source-label { font-size: 12px; font-weight: bold; color: var(--text-secondary); margin-bottom: 6px; }
-.element-source-switch { display: flex; gap: 6px; }
+   a segmented control (see the .settings-modal-box segmented rules above),
+   full-width at the top of the Elements tab. */
 .element-source-switch .shape-btn { flex: 1; padding: 8px 6px; font-size: 13px; }
 /* Each source button with its "?" laid over the right edge. */
 .element-source-option { position: relative; flex: 1; display: flex; min-width: 0; }
 .element-source-option .shape-btn { padding-left: 32px; padding-right: 32px; }
 .element-source-option .preview-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-    width: 20px; height: 20px; min-width: 0; min-height: 0; border-radius: 50%; font-size: 11px;
-    background: rgba(0,0,0,0.25); border-color: transparent; }
-.element-source-option .shape-btn.active + .preview-btn { color: #fff; background: rgba(0,0,0,0.2); }
-/* Paint on Map / Single Extruder Mode switch (tp3dBuildElementModeSwitch) --
-   a compact .adv-field-row (label left, small pill-pair right) rather than
-   the full-width block the Element Source switch above uses, since this one
-   stays on screen even while disabled under ESA WorldCover and shouldn't
-   dominate the tab. */
-.element-mode-row { margin: 2px 0 8px; }
-/* Paint/Single Extruder switch and the source's own top-level option
-   (Element Smoothing under OSM, Min Feature Area under ESA WorldCover) side
-   by side, one per column (tp3dBuildElementsTab). Each row packs left
-   (label, then its control right after it) so neither control drifts toward
-   the other column -- and so Element Smoothing's On/Off button stays put
-   while its slider shows/hides. */
-.element-options-row { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center; }
-.element-options-row > .adv-field-row { justify-content: flex-start; }
+    width: 18px; height: 18px; min-width: 0; min-height: 0; border-radius: 50%; font-size: 10px; font-weight: 600;
+    background: none; border: 1px solid #5c6573; color: var(--text-muted); }
+.element-source-option .preview-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+.element-source-option .shape-btn.active + .preview-btn { color: #fff; }
 .element-mode-switch { display: flex; gap: 4px; flex-shrink: 0; }
 .element-mode-btn { padding: 3px 8px; font-size: 10px; font-weight: bold; letter-spacing: 0.2px;
     background: var(--surface-raised); color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
 .element-mode-btn:hover:not(:disabled):not(.active) { background: #3d3d3d; border-color: var(--accent); color: var(--text-primary); }
 .element-mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .element-mode-btn:disabled { opacity: 0.4; cursor: not-allowed; background: var(--surface-field); color: #666; border-color: var(--surface-raised); }
+/* tp3dToast (picker_ui.js): small self-dismissing note, bottom centre or just
+   below the element it's about. */
+.tp3d-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 3000;
+    max-width: min(320px, calc(100vw - 16px)); padding: 7px 12px; background: rgba(32,32,32,0.95);
+    border: 1px solid #cc8a2e; border-radius: 4px; color: var(--text-primary); font-size: 12px;
+    pointer-events: none; opacity: 0; transition: opacity 0.25s; }
+.tp3d-toast.anchored { bottom: auto; transform: none; }
+.tp3d-toast.show { opacity: 1; }
+/* A Premium-only option in the free version: looks disabled, but stays
+   clickable so the click can show why (e.g. the Backplate Generator's medal
+   handles). */
+.element-mode-btn.premium-locked,
+.element-mode-btn.premium-locked:hover { opacity: 0.4; cursor: pointer; background: var(--surface-field); color: #666; border-color: var(--surface-raised); }
 .elements-row { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 10px; }
-.element-card { background: var(--surface-panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
+.element-card { background: rgba(0,0,0,0.16); border: 1px solid var(--set-section-border, var(--border)); border-radius: 8px; padding: 10px 12px;
     display: flex; flex-direction: column; align-items: center; gap: 6px; width: 7.5rem; min-width: 0; max-width: 100%; }
 .element-card.composite { width: 14rem; align-items: stretch; }
 /* Visible, raised button chrome at rest (not just on :hover) -- a bare
@@ -858,7 +930,8 @@ input[aria-invalid=true] { border-color: var(--danger); }
 }
 @media (max-width: 48rem) {
     #sidebar { width: 15rem; padding: var(--space-3); }
-    .map-tab-fields, .element-options-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+    .map-tab-fields, .map-tab-fields.settings-grid-2, .trail-appearance-switch { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+    .settings-subsection { grid-column: 1 / -1; }
     .adv-field-row { flex-wrap: wrap; }
     .element-card { flex: 1 1 7.5rem; }
     .element-card.composite { flex-basis: 14rem; }

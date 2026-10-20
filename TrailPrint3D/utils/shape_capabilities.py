@@ -74,15 +74,25 @@ def text_layout_items(self, context):
     ]
 
 
+# Blender only borrows the strings an items callback returns -- Python has to
+# keep them alive, or the dropdown shows freed memory (flickering or garbage
+# text like a bare "%s (Premium)"). The labels above are module constants;
+# the formatted Premium label isn't, so the built lists are cached here.
+_PLATE_ITEMS_CACHE = {}
+
+
 def plate_mode_items(self, context):
     """EnumProperty items callback — depends on self.shape and Premium state."""
     shape = self.shape or "HEXAGON"
-    valid = PLATE_MODES_BY_SHAPE.get(shape, ("NONE",))
-    items = []
-    for i, ident in enumerate(valid):
-        label, desc = _PLATE_LABELS[ident]
-        if ident == "SHELL" and not temp.PREMIUMVERSION:
-            items.append((ident, _("%s (Premium)") % label, desc, "LOCKED", i))
-        else:
-            items.append((ident, label, desc, "NONE", i))
+    key = (shape, temp.PREMIUMVERSION)
+    items = _PLATE_ITEMS_CACHE.get(key)
+    if items is None:
+        items = []
+        for i, ident in enumerate(PLATE_MODES_BY_SHAPE.get(shape, ("NONE",))):
+            label, desc = _PLATE_LABELS[ident]
+            if ident == "SHELL" and not temp.PREMIUMVERSION:
+                items.append((ident, _("%s (Premium)") % label, desc, "LOCKED", i))
+            else:
+                items.append((ident, label, desc, "NONE", i))
+        _PLATE_ITEMS_CACHE[key] = items
     return items

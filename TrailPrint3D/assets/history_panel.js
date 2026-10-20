@@ -89,18 +89,15 @@ function tp3dRenderShapeThumbnail(opts) {
     var rows = opts.rows > 0 ? opts.rows : 0;
     var cols = opts.cols > 0 ? opts.cols : 0;
 
-    // tp3d.shapeRotation (Settings modal's Map tab -- see
-    // SETTINGS_MODAL_MAP_FIELDS in settings_modal.js) rotates the generated
-    // shape CCW around its center in true north-up map space, same
-    // convention as regularPolygonPoints()/rotatePointsDeg() in
-    // map_generator.html and Blender-side shapely rotate() calls.
-    // MAP_TAB_CONTROL_VALUES (settings_modal.js, global) is read directly
-    // here rather than threaded through *opts* -- it's kept live-updated by
-    // every picker page already, including the ones with no visible Shape
-    // Rotation control of their own.
+    // tp3d.shapeRotation (set in Blender's sidebar -- the Settings modal no
+    // longer has a field for it) rotates the generated shape CCW around its
+    // center in true north-up map space, same convention as
+    // regularPolygonPoints()/rotatePointsDeg() in map_generator.html and
+    // Blender-side shapely rotate() calls. Read from the page's
+    // SETTINGS_STATE snapshot rather than threaded through *opts*.
     var rotationDeg = 0;
-    if (typeof MAP_TAB_CONTROL_VALUES !== 'undefined') {
-        var rv = parseFloat(MAP_TAB_CONTROL_VALUES.shapeRotation);
+    if (typeof SETTINGS_STATE !== 'undefined') {
+        var rv = parseFloat(SETTINGS_STATE.shapeRotation);
         if (!isNaN(rv)) rotationDeg = rv;
     }
     var rotationRad = rotationDeg * Math.PI / 180;

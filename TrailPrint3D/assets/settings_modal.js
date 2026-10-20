@@ -58,20 +58,23 @@ var TP3D_SETTINGS_TAB = 'elements';
 // `if props.smoothTerrainTop` / `if props.singleColorMode` branches in
 // panels.py. Elevation Mode itself is deliberately left out -- Fixed Height
 // mode is a niche option not worth the extra control here.
+//
+// `{ type: 'section', title }` starts a new titled card (tp3dBuildFieldList);
+// `{ type: 'subsection', title, fields }` nests a smaller card inside the
+// current one for fields that only matter in one mode.
 var SETTINGS_MODAL_MAP_FIELDS = [
     // -- Terrain (panels.py "4. Terrain") --
+    { type: 'section', title: 'Terrain & Geometry' },
     { key: 'scaleElevation', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Elevation Scale', type: 'number', step: 0.1, min: 0,
       title: 'Multiplier to the Elevation',
       preview: 'https://trailprint3d.com/images/howto/ElevationScaleGif.webp' },
     { key: 'minThickness', source: 'SETTINGS_STATE', endpoint: 'update_setting',
-      label: 'Extra Map Height', type: 'number', step: 0.5, min: 0.5,
+      label: 'Extra Map Height', type: 'number', step: 0.5, min: 0.5, unit: 'mm',
       title: 'Extra height added to the map, below the terrain',
       preview: 'https://trailprint3d.com/images/howto/ExtraMapHeight.webp' },
-    { key: 'shapeRotation', source: 'SETTINGS_STATE', endpoint: 'update_setting',
-      label: 'Shape Rotation', type: 'number', step: 1, min: -360, max: 360,
-      title: 'Rotate the shape around the trail/map center',
-      preview: 'https://trailprint3d.com/images/howto/ShapeRotation.webp' },
+    // Shape Rotation is deliberately left out -- it stays a Blender-sidebar
+    // setting (history_panel.js reads it from SETTINGS_STATE instead).
     { key: 'smoothTerrainTop', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Smooth Terrain', type: 'checkbox',
       title: 'Smooth the terrain -- useful if it looks blocky or has grid lines',
@@ -82,33 +85,34 @@ var SETTINGS_MODAL_MAP_FIELDS = [
       // separate showWhen row, mirroring panels.py's own smoothRow, which
       // puts smoothTerrainTop and smoothTerrainStrength side by side.
       companion: { key: 'smoothTerrainStrength', source: 'SETTINGS_STATE', endpoint: 'update_setting',
-                   step: 1, min: 1, max: 10,
+                   type: 'range', label: 'Smoothing strength', step: 1, min: 0, max: 10,
                    title: 'Number of smoothing passes -- higher is smoother but less detailed' } },
-    // Divider: spans both grid columns (see tp3dBuildMapTab/.map-tab-divider),
-    // separating the terrain fields above from the trail-specific ones below.
-    { type: 'divider' },
     // -- Trail (panels.py "3. Trail") --
+    { type: 'section', title: 'Trail' },
+    // Normal / Single Extruder Mode / Paint Trail -- one switch over
+    // singleColorMode and texIncludeTrail (tp3dBuildTrailAppearanceSwitch).
+    { type: 'custom', build: tp3dBuildTrailAppearanceSwitch },
     { key: 'pathThickness', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Trail Thickness', type: 'number', step: 0.01, min: 0.1, max: 5, decimals: 2,
       title: 'Thickness of the path in mm',
       preview: 'https://trailprint3d.com/images/howto/PathThicknessGif.webp' },
-    // Normal / Single Extruder Mode / Paint Trail -- one switch over
-    // singleColorMode and texIncludeTrail (tp3dBuildTrailAppearanceSwitch).
-    { type: 'custom', build: tp3dBuildTrailAppearanceSwitch },
-    { key: 'singleColorModeHeight', source: 'SETTINGS_STATE', endpoint: 'update_setting',
-      label: 'Single Extruder Mode Trail Height', type: 'number', step: 0.05, min: 0, max: 10,
-      title: 'How far the SCM trail strip rises above the terrain surface (mm)',
-      preview: 'https://trailprint3d.com/images/howto/SEM%20-%20Trail%20Height.webp',
-      enabledWhen: tp3dTrailIsSingleExtruder },
-    { key: 'singleColorModeTolerance', source: 'SETTINGS_STATE', endpoint: 'update_setting',
-      label: 'Single Extruder Mode Tolerance', type: 'number', step: 0.05, min: 0,
-      title: 'Tolerance of the Trail for the Single Extruder Mode',
-      preview: 'https://trailprint3d.com/images/howto/SEM%20-%20Trail%20Tolerance.webp',
-      enabledWhen: tp3dTrailIsSingleExtruder }
+    { type: 'subsection', title: 'Single Extruder Mode', fields: [
+        { key: 'singleColorModeHeight', source: 'SETTINGS_STATE', endpoint: 'update_setting',
+          label: 'Trail Height', type: 'number', step: 0.05, min: 0, max: 10,
+          title: 'How far the SCM trail strip rises above the terrain surface (mm)',
+          preview: 'https://trailprint3d.com/images/howto/SEM%20-%20Trail%20Height.webp',
+          enabledWhen: tp3dTrailIsSingleExtruder },
+        { key: 'singleColorModeTolerance', source: 'SETTINGS_STATE', endpoint: 'update_setting',
+          label: 'Tolerance', type: 'number', step: 0.05, min: 0,
+          title: 'Tolerance of the Trail for the Single Extruder Mode',
+          preview: 'https://trailprint3d.com/images/howto/SEM%20-%20Trail%20Tolerance.webp',
+          enabledWhen: tp3dTrailIsSingleExtruder }
+    ] }
 ];
 
 // Other tab -- rarely changed settings that don't fit the other tabs.
 var SETTINGS_MODAL_OTHER_FIELDS = [
+    { type: 'section', title: 'Texture & Trail' },
     { key: 'texResolution', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Texture Resolution', type: 'number', step: 1024, min: 1024, max: 8192,
       title: 'Image resolution of the texture (px)',
@@ -150,13 +154,14 @@ function tp3dTrailIsSingleExtruder() {
 // Single Extruder mode -- mirrors panels.py's `enabled` conditions for
 // those two flags. `preview`/`caption` add a "?" right after that option
 // (caption only = a text-only preview, see tp3dShowPreview).
+// `desc` is the short line shown under each option's name.
 var TRAIL_APPEARANCE_OPTIONS = [
-    { mode: 'NORMAL', label: 'Normal',
+    { mode: 'NORMAL', label: 'Normal', desc: 'Print trail together with map',
       title: 'The trail is its own object' },
-    { mode: 'SCM', label: 'Single Extruder Mode',
+    { mode: 'SCM', label: 'Single Extruder Mode', desc: 'Print the Trail Separately',
       title: 'Enable this if you don\'t have a Multicolor printer',
       preview: 'https://trailprint3d.com/images/howto/SingleColorTrail.webp' },
-    { mode: 'PAINT', label: 'Paint Trail',
+    { mode: 'PAINT', label: 'Paint Trail', desc: 'Painted into the map texture',
       title: 'Paint the trail into the texture (terrain under the trail coloured red)',
       preview: 'https://trailprint3d.com/images/howto/PaintTrail.webp',
       caption: [
@@ -189,8 +194,15 @@ function tp3dBuildTrailAppearanceSwitch() {
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'trail-option-btn';
-        btn.textContent = opt.label;
         btn.title = opt.title;
+        var name = document.createElement('span');
+        name.className = 'trail-option-name';
+        name.textContent = opt.label;
+        var desc = document.createElement('span');
+        desc.className = 'trail-option-desc';
+        desc.textContent = opt.desc || '';
+        btn.appendChild(name);
+        btn.appendChild(desc);
         btn.addEventListener('click', function() { select(opt.mode); });
         pill.appendChild(btn);
         if (opt.preview || opt.caption) pill.appendChild(tp3dMakePreviewButton(opt.preview, opt.caption));
@@ -357,10 +369,10 @@ var COMPOSITE_ELEMENTS = {
             { key: 'elOActive', label: 'Ocean' }
         ],
         numberFields: [
-            { key: 'colWArea', label: 'Lake/Pond Threshold', step: 0.1, min: 0 },
-            { key: 'colWStreamWidth', label: 'River Width', step: 0.1, min: 0.1, max: 100 },
-            { key: 'elOMinIslandArea', label: 'Min Island Area', step: 0.5, min: 0 },
-            { key: 'elORdpEpsilon', label: 'Coastline Simplify', step: 0.01, min: 0, max: 2 }
+            { key: 'colWArea', label: 'Lake/Pond Threshold (in mm²)', step: 0.1, min: 0 },
+            { key: 'colWStreamWidth', label: 'River Width (multiplicator)', step: 0.1, min: 0.1, max: 100 },
+            { key: 'elOMinIslandArea', label: 'Min Island Area (in mm²)', step: 0.5, min: 0 },
+            { key: 'elORdpEpsilon', label: 'Ocean Simplify', step: 0.01, min: 0, max: 2 }
         ],
         extraFields: tp3dBuildWaterFlattenFields
     },
@@ -877,6 +889,8 @@ function tp3dBuildFieldRow(field) {
     } else {
         input = document.createElement('input');
         input.type = field.type;
+        // Drawn as an on/off switch (.tp3d-switch in picker_common.css).
+        if (field.type === 'checkbox') input.className = 'tp3d-switch';
     }
     input.id = 'setting-' + field.key;
     label.htmlFor = input.id;
@@ -897,13 +911,38 @@ function tp3dBuildFieldRow(field) {
 
     var controls = document.createElement('div');
     controls.className = 'adv-field-controls';
-    controls.appendChild(input);
+    // `unit` ('mm', '°', ...) is shown inside the field, after the value.
+    if (field.unit) {
+        var unitWrap = document.createElement('span');
+        unitWrap.className = 'input-with-unit';
+        var unit = document.createElement('span');
+        unit.className = 'input-unit';
+        unit.setAttribute('aria-hidden', 'true');
+        unit.textContent = field.unit;
+        unitWrap.appendChild(input);
+        unitWrap.appendChild(unit);
+        controls.appendChild(unitWrap);
+    } else {
+        controls.appendChild(input);
+    }
 
-    var companionInput = null;
-    if (field.companion) {
+    var showCompanion = null;
+    if (field.companion && field.companion.type === 'range') {
+        // A slider + value pair (tp3dBuildRangeField), shown only while the
+        // checkbox is on. Hidden via style.display -- .range-with-number's
+        // own display:flex would override the `hidden` attribute.
+        var rangeComp = field.companion;
+        var rangeState = rangeComp.source === 'SETTINGS_STATE' ? SETTINGS_STATE : ADVANCED_SETTINGS_STATE;
+        var rangeWrap = tp3dBuildRangeField(rangeComp, rangeState);
+        rangeWrap.title = rangeComp.title || '';
+        rangeWrap.style.display = input.checked ? '' : 'none';
+        controls.appendChild(rangeWrap);
+        showCompanion = function(on) { rangeWrap.style.display = on ? '' : 'none'; };
+    } else if (field.companion) {
         var comp = field.companion;
         var compState = comp.source === 'SETTINGS_STATE' ? SETTINGS_STATE : ADVANCED_SETTINGS_STATE;
-        companionInput = document.createElement('input');
+        var companionInput = document.createElement('input');
+        showCompanion = function(on) { companionInput.hidden = !on; };
         companionInput.type = 'number';
         companionInput.setAttribute('aria-label', comp.title || field.label + ' strength');
         companionInput.title = comp.title || '';
@@ -930,7 +969,7 @@ function tp3dBuildFieldRow(field) {
         }
         MAP_TAB_CONTROL_VALUES[field.key] = value;
         tp3dRefreshMapTabVisibility();
-        if (companionInput) companionInput.hidden = !value;
+        if (showCompanion) showCompanion(value);
         tp3dSendMapField(field, value);
         // Optional per-page hook (e.g. premium/map_generator_pe.html's rotated
         // shape-preview overlay) -- most pages don't define this, so it's a
@@ -947,36 +986,66 @@ function tp3dBuildMapTab() {
     return tp3dBuildFieldList(SETTINGS_MODAL_MAP_FIELDS);
 }
 
-// API section on top, then the remaining Other fields below a divider.
+// API section on top, then the remaining Other fields in their own card.
 function tp3dBuildOtherTab() {
     var wrap = document.createElement('div');
-    wrap.className = 'map-tab-fields';
-    tp3dAppendApiSection(wrap);
-    var hr = document.createElement('hr');
-    hr.className = 'map-tab-divider';
-    wrap.appendChild(hr);
+    wrap.className = 'settings-sections';
+    var api = tp3dBuildSection('Elevation Data', 'settings-grid-2');
+    tp3dAppendApiSection(api.grid);
+    wrap.appendChild(api.card);
     var rest = tp3dBuildFieldList(SETTINGS_MODAL_OTHER_FIELDS);
     while (rest.firstChild) wrap.appendChild(rest.firstChild);
     tp3dRefreshMapTabVisibility();
     return wrap;
 }
 
-// A tab of plain field rows (and `{ type: 'divider' }` separators).
+// One titled card of the Settings popup -- every tab is a stack of these.
+// Returns the card and the field grid inside it that rows go into.
+// *gridClass* adds a layout variant to that grid (e.g. settings-grid-2).
+function tp3dBuildSection(title, gridClass, cardClass) {
+    var card = document.createElement('section');
+    card.className = cardClass || 'settings-section';
+    if (title) {
+        var heading = document.createElement('h3');
+        heading.className = 'settings-section-title';
+        heading.textContent = title;
+        card.appendChild(heading);
+    }
+    var grid = document.createElement('div');
+    grid.className = 'map-tab-fields' + (gridClass ? ' ' + gridClass : '');
+    card.appendChild(grid);
+    return { card: card, grid: grid };
+}
+
+// A tab of section cards, from a flat list of field rows with
+// `{ type: 'section', title }` markers between them (and
+// `{ type: 'subsection', title, fields }` for a nested card).
 function tp3dBuildFieldList(fields) {
     var wrap = document.createElement('div');
-    wrap.className = 'map-tab-fields';
+    wrap.className = 'settings-sections';
+    var grid = null;
+    function startSection(title) {
+        var section = tp3dBuildSection(title);
+        wrap.appendChild(section.card);
+        grid = section.grid;
+    }
     fields.forEach(function(field) {
+        if (field.type === 'section') {
+            startSection(field.title);
+            return;
+        }
+        if (!grid) startSection(null);
         if (field.type === 'custom') {
-            wrap.appendChild(field.build());
+            grid.appendChild(field.build());
             return;
         }
-        if (field.type === 'divider') {
-            var hr = document.createElement('hr');
-            hr.className = 'map-tab-divider';
-            wrap.appendChild(hr);
+        if (field.type === 'subsection') {
+            var sub = tp3dBuildSection(field.title, 'settings-grid-2', 'settings-subsection');
+            field.fields.forEach(function(subField) { sub.grid.appendChild(tp3dBuildFieldRow(subField)); });
+            grid.appendChild(sub.card);
             return;
         }
-        wrap.appendChild(tp3dBuildFieldRow(field));
+        grid.appendChild(tp3dBuildFieldRow(field));
     });
     tp3dRefreshMapTabVisibility();
     return wrap;
@@ -1081,16 +1150,11 @@ function tp3dBuildClearCacheRow() {
 // actual switch (POST /update_setting, poll, re-sync + repaint) lives in
 // element_status.js's tp3dSwitchElementSource, shared with the compact pill
 // toggle in the element-status row itself -- this just builds the buttons
-// and wires them to it. Returns the whole labeled block (heading + button
-// pair), not just the buttons.
+// and wires them to it. Returns the button pair's wrapping block.
 function tp3dBuildElementSourceSwitch() {
+    // Titled by its section card (tp3dBuildElementsTab).
     var block = document.createElement('div');
     block.className = 'element-source-block';
-
-    var heading = document.createElement('div');
-    heading.className = 'element-source-label';
-    heading.textContent = 'Element Source';
-    block.appendChild(heading);
 
     var wrap = document.createElement('div');
     wrap.className = 'element-source-switch';
@@ -1281,20 +1345,21 @@ function tp3dBuildOsmSmoothingToggle() {
 
 function tp3dBuildElementsTab() {
     var wrap = document.createElement('div');
-    wrap.className = 'elements-grid';
+    wrap.className = 'settings-sections';
 
-    // Top: the source's own top-level option -- Element Smoothing under OSM,
-    // Min Feature Area under ESA WorldCover. See .element-options-row in
-    // picker_common.css.
-    var optionsRow = document.createElement('div');
-    optionsRow.className = 'element-options-row';
+    // Top card: the source switch, then the source's own top-level option --
+    // Element Smoothing under OSM, Min Feature Area under ESA WorldCover.
+    var sourceSection = tp3dBuildSection('Element Source', 'settings-grid-2');
     if (typeof ELEMENT_SOURCE !== 'undefined') {
-        wrap.appendChild(tp3dBuildElementSourceSwitch());
+        sourceSection.grid.appendChild(tp3dBuildElementSourceSwitch());
     }
-    optionsRow.appendChild(tp3dIsWorldCover()
+    sourceSection.grid.appendChild(tp3dIsWorldCover()
         ? tp3dBuildFieldRow(WORLDCOVER_MIN_AREA_FIELD)
         : tp3dBuildOsmSmoothingToggle());
-    wrap.appendChild(optionsRow);
+    wrap.appendChild(sourceSection.card);
+
+    var cardsSection = tp3dBuildSection('Elements', 'elements-grid');
+    wrap.appendChild(cardsSection.card);
 
     // ESA WorldCover has none of OSM's per-category thresholds or
     // Water/Roads composites -- one shared Min Feature Area field (in the
@@ -1304,32 +1369,32 @@ function tp3dBuildElementsTab() {
         var landcoverRow = document.createElement('div');
         landcoverRow.className = 'elements-row';
         LANDCOVER_ELEMENT_ORDER.forEach(function(key) { landcoverRow.appendChild(tp3dBuildSimpleElementCard(key)); });
-        wrap.appendChild(landcoverRow);
+        cardsSection.grid.appendChild(landcoverRow);
     } else {
         var simpleRow = document.createElement('div');
         simpleRow.className = 'elements-row';
         SIMPLE_ELEMENT_ORDER.forEach(function(key) { simpleRow.appendChild(tp3dBuildSimpleElementCard(key)); });
-        wrap.appendChild(simpleRow);
+        cardsSection.grid.appendChild(simpleRow);
 
         var compositeRow = document.createElement('div');
         compositeRow.className = 'elements-row';
         COMPOSITE_ELEMENT_ORDER.forEach(function(key) { compositeRow.appendChild(tp3dBuildCompositeElementCard(key)); });
         compositeRow.appendChild(tp3dBuildSimpleElementCard('buildings'));
-        wrap.appendChild(compositeRow);
+        cardsSection.grid.appendChild(compositeRow);
     }
 
-    // Bottom, below the element cards: the Paint/Single Extruder switch and
-    // the Element Tolerance it gates (OSM only, like the sidebar).
-    var modeRow = document.createElement('div');
-    modeRow.className = 'element-options-row';
-    if (typeof ELEMENT_SOURCE !== 'undefined') modeRow.appendChild(tp3dBuildElementModeSwitch());
-    if (!tp3dIsWorldCover()) modeRow.appendChild(tp3dBuildFieldRow(ELEMENT_TOLERANCE_FIELD));
-    if (modeRow.children.length) {
-        var hr = document.createElement('hr');
-        hr.className = 'map-tab-divider';
-        wrap.appendChild(hr);
-        wrap.appendChild(modeRow);
+    // Bottom card: the Paint/Single Extruder switch and the Element
+    // Tolerance it gates (OSM only, like the sidebar).
+    var modeSection = tp3dBuildSection('Print Mode', 'settings-grid-2');
+    if (typeof ELEMENT_SOURCE !== 'undefined') modeSection.grid.appendChild(tp3dBuildElementModeSwitch());
+    if (!tp3dIsWorldCover()) modeSection.grid.appendChild(tp3dBuildFieldRow(ELEMENT_TOLERANCE_FIELD));
+    // ESA WorldCover has no Paint/Single Extruder split -- the whole card is
+    // greyed out (its buttons are already disabled).
+    if (tp3dIsWorldCover()) {
+        modeSection.card.classList.add('section-locked');
+        modeSection.card.title = 'Only available for OpenStreetMap';
     }
+    if (modeSection.grid.children.length) wrap.appendChild(modeSection.card);
     tp3dRefreshMapTabVisibility();
 
     return wrap;
@@ -1340,36 +1405,36 @@ function tp3dBuildElementsTab() {
 // ids, so the page's own saveState/restoreState/regeneratePuzzle listeners
 // keep working unchanged regardless of where they end up living in the DOM.
 //
-// Below a divider, the same relocation for the holder (jigsaw) / frame
+// In a second card, the same relocation for the holder (jigsaw) / frame
 // (sliding) fields from #plateTabFieldsSource -- formerly their own Plate/
 // Frame Settings popup -- into their own #plateTabFields group.
 function tp3dBuildPuzzleTab() {
-    var wrap = tp3dRelocateFields('puzzleTabFieldsSource');
+    var wrap = document.createElement('div');
+    wrap.className = 'settings-sections';
+    var sliding = typeof TP3D_IS_SLIDING_PUZZLE_PAGE !== 'undefined' && TP3D_IS_SLIDING_PUZZLE_PAGE;
+    var pieces = tp3dBuildSection(sliding ? 'Tiles' : 'Puzzle Pieces');
+    tp3dRelocateFields('puzzleTabFieldsSource', pieces.grid);
+    wrap.appendChild(pieces.card);
     if (document.getElementById('plateTabFieldsSource')) {
-        var hr = document.createElement('hr');
-        hr.className = 'map-tab-divider';
-        wrap.appendChild(hr);
-        var plate = tp3dRelocateFields('plateTabFieldsSource');
-        plate.id = 'plateTabFields';
-        wrap.appendChild(plate);
+        var plate = tp3dBuildSection(sliding ? 'Frame' : 'Holder');
+        tp3dRelocateFields('plateTabFieldsSource', plate.grid);
+        plate.grid.id = 'plateTabFields';
+        wrap.appendChild(plate.card);
     }
     return wrap;
 }
 
-// Moves every child of the hidden #sourceId container into a new fields
-// grid, and carries its classes over too (e.g. a page's initial
+// Moves every child of the hidden #sourceId container into the fields
+// *grid*, and carries its classes over too (e.g. a page's initial
 // tab-fields-inactive).
-function tp3dRelocateFields(sourceId) {
-    var wrap = document.createElement('div');
-    wrap.className = 'map-tab-fields';
+function tp3dRelocateFields(sourceId, grid) {
     var source = document.getElementById(sourceId);
     if (source) {
-        source.classList.forEach(function(cls) { wrap.classList.add(cls); });
+        source.classList.forEach(function(cls) { grid.classList.add(cls); });
         while (source.firstElementChild) {
-            wrap.appendChild(source.firstElementChild);
+            grid.appendChild(source.firstElementChild);
         }
     }
-    return wrap;
 }
 
 (function renderSettingsModal() {
@@ -1456,11 +1521,7 @@ function tp3dRelocateFields(sourceId) {
         btn.id = 'settings-tab-' + tab.id;
         btn.setAttribute('role', 'tab');
         btn.setAttribute('aria-controls', 'settings-panel-' + tab.id);
-        var arrow = document.createElement('span');
-        arrow.className = 'tab-arrow';
-        arrow.textContent = '▶';
-        btn.appendChild(arrow);
-        btn.appendChild(document.createTextNode(' ' + tab.label));
+        btn.textContent = tab.label;
         btn.addEventListener('click', function() {
             activateTab(tab.id);
             saveState(); // persists TP3D_SETTINGS_TAB via the page's own state blob

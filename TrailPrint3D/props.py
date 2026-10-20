@@ -29,7 +29,19 @@ from .utils.shape_capabilities import (
 )
 
 
+# Blender only borrows the strings an items callback returns; Python must keep
+# them alive or the dropdown shows freed memory (flickering/garbage text).
+# The descriptions below are built fresh on each call, so every distinct list
+# is kept here (one entry per profile set -- tiny).
+_SLICER_PROFILE_ITEMS_CACHE = {}
+
+
 def _slicer_profile_items(self, context) -> list[tuple[str, str, str]]:
+    items = _slicer_profile_items_uncached()
+    return _SLICER_PROFILE_ITEMS_CACHE.setdefault(tuple(items), items)
+
+
+def _slicer_profile_items_uncached() -> list[tuple[str, str, str]]:
     # Combine the description parts into one string
     desc = (
         "Use the built-in Bambu A1 template. "
@@ -1005,7 +1017,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
                 "FIXED",
                 _("Fixed Height"),
                 _(
-                    "Terrain height is scaled so that the highest point is set to a specific height above the lowest point. Lets you set a fixed terrain height in mm."
+                    "Terrain height is scaled so that the lowest to the highest point spans 10 mm (Target Height, adjustable). Elevation Scale is then applied on top of that."
                 ),
             ),
         ],
@@ -1030,7 +1042,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     smoothTerrainStrength: IntProperty(
         name=_("Strength"),
         default=2,
-        min=1,
+        min=0,
         max=10,
         description=_tip(
             "Number of smoothing passes applied to the terrain top surface. Higher = smoother but less detailed"

@@ -333,6 +333,21 @@ class TP3D_OT_join_discord(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class TP3D_OT_open_thangs(bpy.types.Operator):
+    bl_idname = "tp3d.open_thangs"
+    bl_label = _("Thangs")
+    bl_description = _tip("Get the Premium Version on Thangs")
+
+    def execute(self, context):
+        utils.open_website(
+            self,
+            context,
+            "https://thangs.com/designer/EmGi/3d-model/"
+            "TrailPrint3D%20Premium%20Version%20%7C%20Blender%20Addon-1587024",
+        )
+        return {"FINISHED"}
+
+
 # Operator to open a website
 class TP3D_OT_info_video(bpy.types.Operator):
     bl_idname = "tp3d.info_video"
@@ -1269,10 +1284,435 @@ class TP3D_OT_bottom_mark(bpy.types.Operator):
 class TP3D_OT_terrain_dummy(bpy.types.Operator):
     bl_idname = "tp3d.terrain_dummy"
     bl_label = _("Premium Feature")
+    bl_description = _tip("Requires the Premium version")
+
+    def invoke(self, context, event):
+        # A small popup instead of a status-bar line nobody notices; it
+        # closes on its own on the next click anywhere.
+        def draw(menu, _context):
+            layout = menu.layout
+            layout.label(text=_("This Feature is Exclusive for Patreon Supporters"))
+            row = layout.row(align=True)
+            row.operator("tp3d.open_website", text=_("Patreon"), icon="URL")
+            row.operator("tp3d.open_thangs", text=_("Thangs"), icon="URL")
+
+        # popup_menu always opens at the mouse -- warp the cursor to the
+        # window centre first so it appears centred. Not warped back: the
+        # popup closes as soon as the mouse moves far away from it.
+        window = context.window
+        if window is not None:
+            window.cursor_warp(window.width // 2, window.height // 2)
+        context.window_manager.popup_menu(draw, title=_("Premium Feature"), icon="LOCKED")
+        return {"FINISHED"}
 
     def execute(self, context):
+        # Scripts / background runs have no popup to show.
         self.report({"INFO"}, _rpt("This Feature is Exclusive for Patreon Supporters"))
         return {"FINISHED"}
+
+
+# --- Terrain tab (moved from premium/operators_pe.py -- part of the free version) ---
+
+class TP3D_OT_terrain(bpy.types.Operator):
+    bl_idname = "tp3d.terrain"
+    bl_label = _("Generate Terrain from Selected")
+    bl_description = _tip("Create a Terrain based on the previously created Path (of this Session)")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+
+        utils.runTileGeneration()
+
+
+        
+        return {'FINISHED'}
+    
+class TP3D_OT_generate_just_trail(bpy.types.Operator):
+    bl_idname = "tp3d.generate_just_trail"
+    bl_label = _("Generate Just Trail")
+    bl_description = _tip("Generate Just the Trail into your Current Setup")
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    # Optional, for scripts: overrides the scene's GPX file. The dialog edits
+    # the scene's file_path directly instead -- that's what both the browse
+    # button (tp3d.pick_gpx_file) writes and generateJustTrail reads.
+    trailPath: StringProperty(name=_("GPX Trail Path"), default="")  # type: ignore
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column()
+        col.label(text=_("GPX File Selection:"))
+        row = col.row(align=True)
+        row.label(icon="BLANK1")
+        row.prop(context.scene.tp3d, "file_path", text="", placeholder=_("Select GPX file"))
+        row.operator("tp3d.pick_gpx_file", text="", icon="FILEBROWSER")
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        from .utils.mesh_ops import single_color_mode_curve  # deferred, like the other mesh helpers
+
+        if self.trailPath:
+            context.scene.tp3d.file_path = self.trailPath
+        if not context.scene.tp3d.file_path:
+            self.report({'ERROR'}, _rpt("Choose a GPX file"))
+            return {'CANCELLED'}
+
+        map_objects = [
+            obj for obj in context.selected_objects
+            if obj.get("Object type") == "MAP"
+        ]
+
+        trail = utils.generateJustTrail()
+        if trail is None:
+            self.report({'ERROR'}, _rpt("Could not create the trail from the GPX file."))
+            return {'CANCELLED'}
+
+        if context.scene.tp3d.singleColorMode:
+            for Mapobject in map_objects:
+                trail_copy = trail.copy()
+                trail_copy.data = trail.data.copy()
+                bpy.context.collection.objects.link(trail_copy)
+                result = single_color_mode_curve(trail_copy, Mapobject, False)
+                if result is None:
+                    continue
+
+                mat = bpy.data.materials.get("TRAIL")
+                trail_copy.data.materials.clear()
+                trail_copy.data.materials.append(mat)
+
+
+        return {'FINISHED'}
+
+class TP3D_OT_merge_with_map(bpy.types.Operator):
+    bl_idname = "tp3d.merge_with_map"
+    bl_label = _("Merge with Map")
+    bl_description = _tip("Select Maps first, then the object you want to merge")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+
+        selected = bpy.context.selected_objects #Ideally one or multiple maps
+        active = bpy.context.view_layer.objects.active #The object you want to merge with the Trail
+
+        if len(selected) >= 2:
+            for obj in selected:
+                if obj != active and not utils.merge_active_with_map(obj, active):
+                    return {'FINISHED'}
+
+        return {'FINISHED'}
+
+class TP3D_OT_from_center_generation(bpy.types.Operator):
+    bl_idname = "tp3d.from_center_generation"
+    bl_label = _("From Center Generation")
+    bl_description = _tip("Generate just the Map without any Trail")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        
+        utils.runGeneration(2)
+        
+        return {'FINISHED'}
+
+class TP3D_OT_2point_generation(bpy.types.Operator):
+    bl_idname = "tp3d.2point_generation"
+    bl_label = _("JustMap Generation")
+    bl_description = _tip("Generate just the Map without any Trail, using two coordinate points")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        
+        utils.runGeneration(3)
+        
+        return {'FINISHED'}
+    
+class TP3D_OT_pick_geojson_file(bpy.types.Operator):
+    bl_idname = "tp3d.pick_geojson_file"
+    bl_label = _("Use GeoJSON File(s)")
+    bl_description = _tip("Import one or more GeoJSON boundaries (Polygon/MultiPolygon). Select several (Ctrl/Shift-click) to merge adjacent boundaries -- e.g. two neighbouring departements -- into one shape")
+
+    directory: StringProperty(subtype='DIR_PATH', options={'HIDDEN', 'SKIP_SAVE'})  # type: ignore
+    files: CollectionProperty(type=bpy.types.OperatorFileListElement, options={'HIDDEN', 'SKIP_SAVE'})  # type: ignore
+    filter_glob: StringProperty(default="*.geojson;*.json", options={'HIDDEN'})  # type: ignore
+
+    def execute(self, context):
+        from .utils import io_geojson  # deferred: needs Shapely, see _draw_shapely_warnings
+        from .utils.geo import haversine
+
+        tp3d = context.scene.tp3d
+
+        filepaths = [os.path.join(self.directory, f.name) for f in self.files if f.name]
+        if not filepaths:
+            self.report({'ERROR'}, _rpt("No file selected."))
+            return {'CANCELLED'}
+
+        # "|" (never valid in a Windows/POSIX filename) joins multiple paths
+        # into the single existing geojsonFilePath string -- a single-file
+        # pick round-trips unchanged (no "|" to split on).
+        tp3d.geojsonFilePath = "|".join(filepaths)
+
+        try:
+            polygon = io_geojson.read_geojson_files(filepaths)
+        except Exception as e:
+            print(f"Could not parse GeoJSON: {e}")
+            self.report({'ERROR'}, _rpt("Could not parse GeoJSON"))
+            return {'CANCELLED'}
+
+        west, south, east, north = polygon.bounds
+        tp3d.geojsonAreaKm = max(
+            haversine(south, west, south, east),
+            haversine(south, west, north, west),
+        )
+        tp3d.geojsonPointCount = io_geojson.count_boundary_points(polygon)
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
+class TP3D_OT_geojson_generation(bpy.types.Operator):
+    bl_idname = "tp3d.geojson_generation"
+    bl_label = _("Generate from GeoJSON Boundary")
+    bl_description = _tip("Generate a terrain clipped to the imported GeoJSON boundary")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from .utils import io_geojson  # deferred: needs Shapely, see _draw_shapely_warnings
+
+        tp3d = context.scene.tp3d
+        filepath = tp3d.geojsonFilePath
+
+        if not filepath:
+            self.report({'ERROR'}, _rpt("No GeoJSON file selected."))
+            return {'CANCELLED'}
+
+        filepaths = filepath.split("|")
+
+        try:
+            polygon = io_geojson.read_geojson_files(filepaths)
+            tile = io_geojson.build_tile_from_polygon(
+                polygon,
+                tp3d.objSize,
+                tp3d.num_subdivisions,
+                name=_("GeoJSON_Boundary"),
+                simplify_tolerance=tp3d.geojsonSimplifyTolerance,
+            )
+        except Exception as e:
+            utils.show_message_box(_("Could not build terrain from GeoJSON. See the console for details."))
+            print(f"Could not build terrain from GeoJSON: {e}")
+            return {'CANCELLED'}
+
+        if tile is None:
+            utils.show_message_box(_("GeoJSON boundary produced an empty/degenerate shape. See the console for details."))
+            self.report({'ERROR'}, _rpt("GeoJSON boundary produced an empty/degenerate shape."))
+            return {'CANCELLED'}
+
+        tp3d.geojsonPointCount = len(tile.data.vertices)
+        tp3d.geojsonAreaKm = tp3d.get("sMapInKm", 0)
+
+        # Reset the viewport to a straight top-down view before framing --
+        # zoom_camera_to_objects only fits the current view, it doesn't
+        # reorient it, so a previously rotated/orbited view would still show
+        # the (geographically correct, north = +Y) boundary sideways or
+        # upside-down relative to the screen. Use Blender's own "View Axis
+        # Top" operator (same as pressing Numpad 7) rather than a hand-picked
+        # quaternion -- it's the one guaranteed-correct way to get a literal
+        # top-down, north-up view.
+        try:
+            area = next(a for a in bpy.context.screen.areas if a.type == 'VIEW_3D')
+            region = next(r for r in area.regions if r.type == 'WINDOW')
+            with bpy.context.temp_override(area=area, region=region):
+                bpy.ops.view3d.view_axis(type='TOP')
+            # Switch to Material Preview so element colors (water, forest...)
+            # are visible immediately instead of the flat grey Solid default.
+            for space in area.spaces:
+                if space.type == 'VIEW_3D':
+                    space.shading.type = 'MATERIAL'
+        except StopIteration:
+            pass
+
+        utils.zoom_camera_to_objects([tile])
+        utils.runTileGeneration()
+
+        return {'FINISHED'}
+
+
+class TP3D_OT_create_blank(bpy.types.Operator):
+    bl_idname = "tp3d.create_blank"
+    bl_label = _("Create Blank")
+    bl_description = _tip("Create a Blank Shape with your selected Settings")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.tp3d
+
+        size =  props.get('objSize', 100)
+        shape = (props.shape)
+        xTerrainOffset = 0
+        yTerrainOffset = 0
+        num_subdivisions = props.get('num_subdivisions', 4)
+        shapeRotation = props.shapeRotation
+
+        cursor_location = bpy.context.scene.cursor.location
+        centerx = cursor_location.x
+        centery = cursor_location.y
+
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in bpy.context.selected_objects:
+            obj.select_set(False)
+        MapObject = None
+        if shape == "HEXAGON": #hexagon
+            MapObject = utils.create_hexagon(size/2, num_subdivisions)
+        elif shape == "SQUARE": #rectangle
+            rHeight = props.get('rectangleHeight', size)
+            MapObject = utils.create_rectangle(size, rHeight, num_subdivisions)
+        elif shape == "HEXAGON INNER TEXT" or shape == "HEXAGON OUTER TEXT" or shape == "HEXAGON FRONT TEXT": #Hexagon with inner text
+            utils.show_message_box("Cant create Blank of a Text Shape")
+            return {'FINISHED'}
+        elif shape == "HEART": #Heart
+            MapObject = utils.create_heart(size/2, num_subdivisions)
+        elif shape == "OCTAGON": #Octagon
+            MapObject = utils.create_octagon(size/2, num_subdivisions)
+        elif shape == "CIRCLE": #circle
+            MapObject = utils.create_circle(size/2, num_subdivisions)
+        elif shape == "ELLIPSE": #Ellipse
+            MapObject = utils.create_ellipse(size/2, 0.75, num_subdivisions)
+        elif shape == "OCTAGON OUTER TEXT" or shape == "MEDAL": #Octagon with outer text
+            utils.show_message_box("Cant create Blank of a Text Shape")
+            return {'FINISHED'}
+        else:
+            MapObject = utils.create_hexagon(size/2, num_subdivisions)
+
+        if MapObject is None:
+            utils.show_message_box("Failed to create MapObject")
+            return {'FINISHED'}
+
+        #SHAPE ROTATION
+        MapObject.rotation_euler[2] += shapeRotation * (3.14159265 / 180)
+        MapObject.select_set(True)
+        bpy.context.view_layer.objects.active = MapObject
+        bpy.ops.object.transform_apply(location = False, rotation=True, scale = False)
+        #move object to the center of the path
+
+        targetx = centerx + xTerrainOffset
+        targety = centery + yTerrainOffset
+
+        utils.transform_MapObject(MapObject, targetx, targety)
+
+        utils.writeMetadata(MapObject)
+        MapObject["lowestZ"] = 0
+        MapObject["highestZ"] = 0
+
+        MapObject.name = "T"
+
+        return {'FINISHED'}
+    
+class TP3D_OT_extend_tile(bpy.types.Operator):
+    bl_idname = "tp3d.extend_tile"
+    bl_label = _("Extend Tile")
+    bl_description = _tip("Creates Copies of the Selected Tile around it")
+    bl_options = {'REGISTER', 'UNDO'}
+
+
+    def execute(self, context):
+        props = context.scene.tp3d
+
+        dist = props.tileSpacing
+        shapeRotation = props.shapeRotation
+
+        selected_objects = context.selected_objects
+
+        if not selected_objects:
+            utils.show_message_box("No objects selected")
+            return{'FINISHED'}
+        
+        bpy.ops.object.select_all(action='DESELECT')
+        for zobj in selected_objects:
+            zobj.select_set(False)
+
+        for tobj in selected_objects:
+
+            if not tobj:
+                utils.show_message_box("No Map selected.")
+            else:
+                if "Shape" not in tobj.keys() or tobj["Shape"] != "HEXAGON" and tobj["Shape"] != "SQUARE":  # noqa: SIM118
+                    utils.show_message_box("No valid Shape to Extend.")
+                else:
+                    #Estimate object size using bounding box
+                    bbox = [Vector(corner) for corner in tobj.bound_box]
+                    size = max((bbox[6] - bbox[0]).length, 0.001)
+                    size = tobj["objSize"]
+
+                    if tobj["Shape"] == "HEXAGON":
+                        radius = size * 0.866 + dist
+                        angle_step = math.radians(60)
+                        angle_offset = math.radians(30) + math.radians(shapeRotation)
+                        copies = 6
+                    elif tobj["Shape"] == "SQUARE":
+                        radius = size + dist
+                        angle_step = math.radians(90) + math.radians(shapeRotation)
+                        angle_offset = 0
+                        copies = 4
+                    else:
+                        continue
+
+                    #Check scene for existing positions
+                    def is_position_occupied(position, threshold=0.01, tobj=tobj):
+                        for other in bpy.context.scene.objects:
+                            if other == tobj:
+                                continue
+                            if (other.location - position).length < threshold and "Object type" in other.keys() and other["Object type"] == "MAP":  # noqa: SIM118
+                                return True
+                        return False
+                    
+                    bpy.ops.object.select_all(action='DESELECT')
+                    tobj.select_set(False)
+
+                    #Place 6 surrounding objects
+                    for k in range(copies):
+                        angle = k * angle_step + angle_offset
+                        offset = Vector((
+                            math.cos(angle) * radius,
+                            math.sin(angle) * radius,
+                            0
+                        ))
+                        new_pos = tobj.location + offset
+                        num_subdivisions = props.get('num_subdivisions', 4)
+
+                        if not is_position_occupied(new_pos):
+                            if "Shape" in tobj.keys() and tobj["Shape"] == "HEXAGON": #hexagon  # noqa: SIM118
+                                MapObject = utils.create_hexagon(size/2, num_subdivisions)
+                                if MapObject is None:
+                                    utils.show_message_box("Failed to create MapObject")
+                                    return {'FINISHED'}
+                                utils.transform_MapObject(MapObject, new_pos.x, new_pos.y)
+                                MapObject.rotation_euler[2] += shapeRotation * (3.14159265 / 180)
+                                bpy.ops.object.select_all(action='DESELECT')
+                                MapObject.select_set(False)
+                                utils.writeMetadata(MapObject)
+                                MapObject["lowestZ"] = 0
+                                MapObject["highestZ"] = 0
+                            elif tobj["Shape"] == "SQUARE": #rectangle
+                                rHeight = tobj.get("rectangleHeight", size)
+                                MapObject = utils.create_rectangle(size, rHeight, num_subdivisions)
+                                if MapObject is None:
+                                    utils.show_message_box("Failed to create MapObject")
+                                    return {'FINISHED'}
+                                utils.transform_MapObject(MapObject, new_pos.x, new_pos.y)
+                                MapObject.rotation_euler[2] += shapeRotation * (3.14159265 / 180)
+                                bpy.ops.object.select_all(action='DESELECT')
+                                MapObject.select_set(False)
+                                utils.writeMetadata(MapObject)
+                                MapObject["lowestZ"] = 0
+                                MapObject["highestZ"] = 0
+                            else:
+                                continue
+                            MapObject.name = tobj.name
+
+        return {'FINISHED'}
+
 
 
 _HEIGHT_COLOR_MATERIALS_PROP = "heightColorMaterials"
