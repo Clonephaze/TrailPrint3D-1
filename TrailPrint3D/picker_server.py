@@ -97,24 +97,26 @@ def _pick_folder_dialog(initial: str) -> str:
     env = dict(os.environ, TP3D_INITIAL_DIR=initial if initial and os.path.isdir(initial) else '')
     flags = 0
     if sys.platform == 'win32':
+        env['TP3D_FOLDER_PICKER_SOURCE'] = str(
+            pathlib.Path(__file__).parent / 'assets' / 'windows_folder_picker.cs')
         # Windows won't let a background process bring a window to the front,
         # so the dialog used to open behind the browser now and then. Owning
         # it by a *shown* TopMost window fixes that: owned windows always sit
         # above their owner. The owner is fully transparent and off the
         # taskbar, centered on screen so the dialog opens there too.
         ps = (
+            "$ErrorActionPreference = 'Stop'; "
             "Add-Type -AssemblyName System.Windows.Forms; "
+            "Add-Type -Path $env:TP3D_FOLDER_PICKER_SOURCE; "
             "$owner = New-Object System.Windows.Forms.Form; "
             "$owner.TopMost = $true; $owner.ShowInTaskbar = $false; $owner.Opacity = 0; "
             "$owner.FormBorderStyle = 'None'; $owner.StartPosition = 'CenterScreen'; "
             "$owner.Width = 1; $owner.Height = 1; "
+            "try { "
             "$owner.Show(); $owner.Activate(); "
-            "$b = New-Object System.Windows.Forms.FolderBrowserDialog; "
-            f"$b.Description = '{title}'; "
-            "$b.ShowNewFolderButton = $true; "
-            "if ($env:TP3D_INITIAL_DIR) { $b.SelectedPath = $env:TP3D_INITIAL_DIR }; "
-            "$r = $b.ShowDialog($owner); $owner.Close(); "
-            "if ($r -eq 'OK') { Write-Output $b.SelectedPath }"
+            f"$path = [TP3DFolderPicker]::Pick($owner.Handle, $env:TP3D_INITIAL_DIR, '{title}'); "
+            "if ($path) { Write-Output $path } "
+            "} finally { $owner.Dispose() }"
         )
         cmd = ['powershell', '-NoProfile', '-NonInteractive', '-STA', '-Command',
                '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; ' + ps]
@@ -135,15 +137,19 @@ def _pick_folder_dialog(initial: str) -> str:
         print("[TP3D picker] no folder dialog available (install zenity or kdialog)")
         return ''
     try:
-        proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.DEVNULL, env=env, creationflags=flags)
+        proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE, env=env, creationflags=flags)
     except OSError as e:
         print(f"[TP3D picker] folder dialog failed: {e}")
         return ''
     _export_folder_job.update(pid=proc.pid)
     try:
-        out, _unused = proc.communicate()
+        out, err = proc.communicate()
     finally:
         _export_folder_job.update(pid=None)
+    if proc.returncode:
+        print(f"[TP3D picker] folder dialog exited with code {proc.returncode}: "
+              f"{err.decode('utf-8', errors='replace').strip()}")
+        return ''
     path = out.decode('utf-8', errors='replace').strip()
     return path if path and os.path.isdir(path) else ''
 
