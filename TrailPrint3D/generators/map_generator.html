@@ -155,6 +155,7 @@
 
         var currentShape = 'rectangle';
         var drawMode = 'corner'; // 'corner' | 'center' -- how the drawn area is drawn/edited
+        var TP3D_SHAPE_ROTATION_DEG = parseInt(SETTINGS_STATE.shapeRotation, 10) || 0;
         var coords = null;
         var shapeCenter = null; // {lat, lng} -- fixed center for 'center' mode edits; unused in 'corner' mode
         var rectLayer = null; // the single L.Rectangle currently in drawnItems, if any
@@ -167,6 +168,7 @@
         var svgShapeName = null;
         var svgAspect = 1; // width/height parsed from the imported SVG's own viewBox/width+height
         var svgDataUrl = null; // data: URI of the raw SVG, used as the L.imageOverlay preview source
+        var svgShapeOverlay = null;
 
         __LOCATION_PANEL_JS__
 
@@ -306,6 +308,7 @@
                 baseLayer: activeBaseLayerName,
                 settingsTab: TP3D_SETTINGS_TAB,
                 shape: currentShape,
+                shapeRotation: TP3D_SHAPE_ROTATION_DEG,
                 plateMode: plateMode,
                 textLayout: textLayout,
                 drawMode: drawMode,
@@ -391,6 +394,7 @@
                             b.classList.toggle('active', b.getAttribute('data-shape') === s.shape);
                         });
                     }
+                    if (s.shapeRotation != null) tp3dSetShapeRotation(s.shapeRotation);
                     // Re-validated against the restored shape by
                     // tp3dRefreshShapeExtras (via updateStatus below).
                     if (s.plateMode) plateMode = s.plateMode;
@@ -575,6 +579,32 @@
         }
 
         function tp3dOnShapeChanged() { renderShapePreview(); }
+        function tp3dOnShapeRotationChanged() { renderShapePreview(); }
+        function tp3dCanRotateShape() { return currentShape !== 'circle' && geojsonPaths.length === 0; }
+        function tp3dRotationHandleBounds() { return coords; }
+        function tp3dRotationHandlePoints() {
+            var bounds = effectiveBounds(coords);
+            return currentShape === 'svg'
+                ? tp3dProjectedShapePoints(
+                    svgInscribedBounds(bounds, svgAspect), 'rectangle',
+                    TP3D_SHAPE_ROTATION_DEG, coords
+                )
+                : tp3dProjectedShapePoints(bounds, currentShape, TP3D_SHAPE_ROTATION_DEG);
+        }
+        function tp3dSetShapeRotation(value, persist) {
+            var degrees = Number(value);
+            if (!Number.isFinite(degrees)) return;
+            TP3D_SHAPE_ROTATION_DEG = Math.max(-360, Math.min(360, Math.round(degrees)));
+            SETTINGS_STATE.shapeRotation = TP3D_SHAPE_ROTATION_DEG;
+            var input = document.querySelector('input[data-setting-key="shapeRotation"]');
+            if (input) input.value = String(TP3D_SHAPE_ROTATION_DEG);
+            tp3dOnShapeRotationChanged();
+            if (persist) saveState();
+        }
+        window.tp3dOnMapFieldChanged = function(key, value) {
+            if (key === 'shapeRotation') tp3dSetShapeRotation(value, true);
+        };
+        map.on('zoomend', function() { tp3dApplySvgRotation(svgShapeOverlay); });
         function tp3dRectStyle() {
             return { weight: currentShape === 'rectangle' ? 3 : 2, fill: currentShape === 'rectangle', fillOpacity: 0.3 };
         }
@@ -590,25 +620,10 @@
         // only ever builds a true regular circle/octagon/square from a single
         // size (utils.create_circle/create_octagon/create_rectangle(size,size)),
         // so a stretched drawn box would just get silently resized server-side
-        // anyway. Squaring it here instead makes the picker's own preview (and
-        // whatever's actually sent) match that up front. Uses an equirectangular
-        // meters-per-degree approximation -- good enough for this UI preview,
-        // since the backend re-derives the real scale itself from the sent
-        // bounds via convert_to_neutral_coordinates.
+        // anyway. Squaring it in projected coordinates makes both the preview
+        // and the bounds sent to Blender match the generation plane.
         function squareBoundsFromRect(b) {
-            var midLat = (b.north + b.south) / 2;
-            var metersPerDegLat = 111320;
-            var metersPerDegLng = 111320 * Math.cos(midLat * Math.PI / 180);
-            var latSpanM = (b.north - b.south) * metersPerDegLat;
-            var lngSpanM = (b.east - b.west) * metersPerDegLng;
-            var sideM = Math.min(latSpanM, lngSpanM);
-            var halfLatDeg = (sideM / metersPerDegLat) / 2;
-            var halfLngDeg = metersPerDegLng > 0 ? (sideM / metersPerDegLng) / 2 : 0;
-            var centerLat = midLat, centerLng = (b.east + b.west) / 2;
-            return {
-                north: centerLat + halfLatDeg, south: centerLat - halfLatDeg,
-                east: centerLng + halfLngDeg, west: centerLng - halfLngDeg, type: b.type
-            };
+            return tp3dSquareProjectedBounds(b);
         }
 
         // The bounds actually used for the preview shape and the /confirm
@@ -943,6 +958,8 @@
             rectLayer = null;
             coords = null;
             shapeCenter = null;
+            svgShapeOverlay = null;
+            syncRotationHandlePosition();
         }
 
         document.getElementById('deleteBtn').addEventListener('click', function() {
@@ -1013,17 +1030,35 @@
 
         function renderShapePreview() {
             shapePreview.clearLayers();
-            if (!coords || currentShape === 'rectangle') return;
-            if (currentShape === 'svg') {
-                if (!svgDataUrl) return;
-                var ib = svgInscribedBounds(effectiveBounds(coords), svgAspect);
-                L.imageOverlay(svgDataUrl, [[ib.south, ib.west], [ib.north, ib.east]], { opacity: 1 })
-                    .addTo(shapePreview);
+            svgShapeOverlay = null;
+            if (!coords) {
+                syncRotationHandlePosition();
                 return;
             }
-            makeShapeLayer(effectiveBounds(coords), currentShape, {
+            if (currentShape === 'svg') {
+                if (!svgDataUrl) {
+                    syncRotationHandlePosition();
+                    return;
+                }
+                var ib = svgInscribedBounds(effectiveBounds(coords), svgAspect);
+                svgShapeOverlay = L.imageOverlay(
+                    svgDataUrl, [[ib.south, ib.west], [ib.north, ib.east]], { opacity: 1 }
+                ).addTo(shapePreview);
+                tp3dApplySvgRotation(svgShapeOverlay);
+                syncRotationHandlePosition();
+                return;
+            }
+            if (currentShape === 'rectangle' && !TP3D_SHAPE_ROTATION_DEG) {
+                syncRotationHandlePosition();
+                return;
+            }
+            var style = {
                 color: '#007bff', weight: 1.5, opacity: 0.9, fill: true, fillOpacity: 0.12
-            }).addTo(shapePreview);
+            };
+            L.polygon(tp3dProjectedShapePoints(
+                effectiveBounds(coords), currentShape, TP3D_SHAPE_ROTATION_DEG
+            ), style).addTo(shapePreview);
+            syncRotationHandlePosition();
         }
 
         // leaflet-draw's own corner/move-marker dragging (enabled via
@@ -1096,7 +1131,8 @@
                 svg_path: svgShapePath,
                 excluded_ids: tp3dPrefetchExcludedIds(),
                 resolution: parseInt(document.getElementById('resolutionSlider').value) || 8,
-                objSize: parseFloat(document.getElementById('objSizeInput').value) || 100
+                objSize: parseFloat(document.getElementById('objSizeInput').value) || 100,
+                shapeRotation: TP3D_SHAPE_ROTATION_DEG
             };
 
             if (coords) {

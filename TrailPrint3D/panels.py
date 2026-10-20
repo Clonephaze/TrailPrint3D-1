@@ -548,10 +548,6 @@ def _draw_terrain_box(layout, props):
         "scaleElevation" if props.elevationMode == "PROPORTIONAL" else "fixedHeightMM",
     )
     col.prop(props, "minThickness")
-    col.prop(props, "shapeRotation")
-    row = col.row(align=True)
-    row.prop(props, "xTerrainOffset", text=_("X Offset"))
-    row.prop(props, "yTerrainOffset", text=_("Y Offset"))
     smoothRow = col.row(align=True)
     smoothRow.prop(
         props,
@@ -1028,9 +1024,11 @@ def _draw_advanced_generation_box(layout, props):
     if box is None:
         return
     box.label(text=_("Advanced Shape Settings"), icon="MESH_DATA")
-    row = box.row(align=True)
-    row.label(icon="BLANK1")
-    row.prop(props, "shapeRotation")
+    col = box.column(align=True)
+    col.prop(props, "shapeRotation")
+    row = col.row(align=True)
+    row.prop(props, "xTerrainOffset", text=_("X Offset"))
+    row.prop(props, "yTerrainOffset", text=_("Y Offset"))
     box.separator(type="LINE")
     box.label(text=_("Advanced Trail Settings"), icon="IPO_LINEAR")
     row = box.row(align=True)

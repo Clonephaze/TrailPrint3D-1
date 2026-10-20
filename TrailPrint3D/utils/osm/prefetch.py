@@ -31,73 +31,13 @@ _LINE_KINDS = frozenset({"STREETS", "COASTLINE"})
 # --------------------------------------------------------------------------
 
 
-def _mercator(lat, lon):
-    return (
-        math.radians(lon),
-        math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)),
-    )
-
-
-def _inverse_mercator(x, y):
-    return (
-        math.degrees(2 * math.atan(math.exp(y)) - math.pi / 2),
-        math.degrees(x),
-    )
-
-
 def tile_bbox(bounds, shape, rotation_deg=0):
-    """(min_lat, min_lon, max_lat, max_lon) of the tile the generator would
-    build for a picker selection -- mirrors TP3D_OT_map_generator's
-    _apply_result_body (padded generation area when shapeRotation != 0, and
-    each shape's own outline extents), so this bbox matches
-    compute_and_store_tile_bounds() and therefore the generator's cache keys.
+    """Return the picker bounds that define the complete data-fetch area.
 
-    Works in unit-radius Mercator space; every shape scales linearly, so the
-    result is independent of the scene's horizontal scale.
+    Keep ``shape`` and ``rotation_deg`` in the signature for existing callers;
+    the outline is fitted inside these bounds and must not expand prefetch.
     """
-    from ..primitives import (
-        circle_polygon,
-        hexagon_polygon,
-        octagon_polygon,
-        rectangle_polygon,
-    )
-
-    x1, y1 = _mercator(bounds["south"], bounds["west"])
-    x2, y2 = _mercator(bounds["north"], bounds["east"])
-    tile_w, tile_h = abs(x2 - x1), abs(y2 - y1)
-    center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
-    diameter = max(tile_w, tile_h)
-
-    # "geojson": the tile is the imported polygon's own bbox -- shapeRotation
-    # never applies to it (see TP3D_OT_map_picker's GeoJSON branch).
-    # "exact": the puzzle/multi-tile pickers send the precise area they will
-    # generate, which is never rotated or reshaped.
-    if rotation_deg != 0 and shape not in ("circle", "geojson", "exact"):
-        rot = math.radians(rotation_deg)
-        cos_r, sin_r = abs(math.cos(rot)), abs(math.sin(rot))
-        gen_diameter = diameter * (cos_r + sin_r)
-        gen_w = tile_w * cos_r + tile_h * sin_r
-        gen_h = tile_w * sin_r + tile_h * cos_r
-    else:
-        gen_diameter, gen_w, gen_h = diameter, tile_w, tile_h
-
-    if shape == "circle":
-        poly = circle_polygon(diameter / 2, 64)
-    elif shape == "octagon":
-        poly = octagon_polygon(gen_diameter / 2)
-    elif shape == "hexagon":
-        poly = hexagon_polygon(gen_diameter / 2)
-    elif shape in ("square", "svg"):
-        # svg: the real outline is aspect-preserving inside gen_diameter, so
-        # this is only an upper bound -- worst case a cache miss later.
-        poly = rectangle_polygon(gen_diameter, gen_diameter)
-    else:
-        poly = rectangle_polygon(gen_w, gen_h)
-
-    min_x, min_y, max_x, max_y = poly.bounds
-    min_lat, min_lon = _inverse_mercator(center_x + min_x, center_y + min_y)
-    max_lat, max_lon = _inverse_mercator(center_x + max_x, center_y + max_y)
-    return min_lat, min_lon, max_lat, max_lon
+    return bounds["south"], bounds["west"], bounds["north"], bounds["east"]
 
 
 def plan_prefetch(tp3d, payload):

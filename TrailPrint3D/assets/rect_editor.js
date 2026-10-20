@@ -30,6 +30,11 @@
 //       per page (e.g. a lighter fillOpacity on puzzle pages so piece cuts
 //       stay visible, or a weight/fill that depends on `currentShape` on
 //       pages with more than one selectable shape).
+// Rotation-capable pages may additionally provide:
+//   TP3D_SHAPE_ROTATION_DEG, tp3dSetShapeRotation(degrees),
+//   tp3dCanRotateShape(), tp3dRotationHandleBounds()
+//       The optional rotation handle remains absent on pages without these
+//       hooks, including puzzle configurators.
 //
 // The two picker pages that offer an importable "svg" shape (map_generator.html,
 // premium/map_generator_pe.html) additionally declare svgShapePath,
@@ -40,6 +45,150 @@
 // selection across reopens, from restoreState's re-fetched-content handler).
 function boundsCenter(b) {
     return { lat: (b.north + b.south) / 2, lng: (b.east + b.west) / 2 };
+}
+
+var rotationHandleLayer = null;
+var rotationHandleDragging = false;
+if (typeof TP3D_SHAPE_ROTATION_DEG !== 'undefined' &&
+        typeof tp3dSetShapeRotation === 'function') {
+    rotationHandleLayer = new L.FeatureGroup();
+    map.addLayer(rotationHandleLayer);
+}
+
+function tp3dProjectedBoundsCenter(bounds, zoom) {
+    var northWest = map.project([bounds.north, bounds.west], zoom);
+    var southEast = map.project([bounds.south, bounds.east], zoom);
+    var center = map.unproject([
+        (northWest.x + southEast.x) / 2,
+        (northWest.y + southEast.y) / 2
+    ], zoom);
+    return { lat: center.lat, lng: center.lng };
+}
+
+function tp3dSquareProjectedBounds(bounds) {
+    var northWest = map.project([bounds.north, bounds.west], 0);
+    var southEast = map.project([bounds.south, bounds.east], 0);
+    var centerX = (northWest.x + southEast.x) / 2;
+    var centerY = (northWest.y + southEast.y) / 2;
+    var halfSide = Math.min(
+        Math.abs(southEast.x - northWest.x),
+        Math.abs(southEast.y - northWest.y)
+    ) / 2;
+    var northWestSquare = map.unproject([centerX - halfSide, centerY - halfSide], 0);
+    var southEastSquare = map.unproject([centerX + halfSide, centerY + halfSide], 0);
+    return {
+        north: northWestSquare.lat,
+        south: southEastSquare.lat,
+        east: southEastSquare.lng,
+        west: northWestSquare.lng,
+        type: bounds.type
+    };
+}
+
+function tp3dProjectedShapePoints(bounds, shape, degrees, fitBounds) {
+    var northWest = map.project([bounds.north, bounds.west], 0);
+    var southEast = map.project([bounds.south, bounds.east], 0);
+    var centerX = (northWest.x + southEast.x) / 2;
+    var centerY = (northWest.y + southEast.y) / 2;
+    var width = Math.abs(southEast.x - northWest.x);
+    var height = Math.abs(southEast.y - northWest.y);
+    var halfWidth = width / 2;
+    var halfHeight = height / 2;
+    var radius = Math.max(halfWidth, halfHeight);
+    var points;
+
+    if (shape === 'hexagon') {
+        points = [];
+        for (var i = 0; i < 6; i++) {
+            var hexAngle = i * Math.PI / 3;
+            points.push([radius * Math.cos(hexAngle), radius * Math.sin(hexAngle)]);
+        }
+    } else if (shape === 'octagon') {
+        var bevel = radius * (Math.SQRT2 - 1);
+        points = [
+            [radius, bevel], [bevel, radius], [-bevel, radius], [-radius, bevel],
+            [-radius, -bevel], [-bevel, -radius], [bevel, -radius], [radius, -bevel]
+        ];
+    } else if (shape === 'circle') {
+        points = [];
+        for (var circleIndex = 0; circleIndex < 48; circleIndex++) {
+            var circleAngle = circleIndex * 2 * Math.PI / 48;
+            points.push([radius * Math.cos(circleAngle), radius * Math.sin(circleAngle)]);
+        }
+    } else if (shape === 'square') {
+        points = [
+            [-radius, -radius], [radius, -radius], [radius, radius], [-radius, radius]
+        ];
+    } else {
+        points = [
+            [-halfWidth, -halfHeight], [halfWidth, -halfHeight],
+            [halfWidth, halfHeight], [-halfWidth, halfHeight]
+        ];
+    }
+
+    var degreesValue = shape === 'circle' ? 0 : Number(degrees || 0);
+    var angle = degreesValue * Math.PI / 180;
+    var cos = Math.cos(angle), sin = Math.sin(angle);
+    var rotated = points.map(function(point) {
+        return [
+            point[0] * cos - point[1] * sin,
+            point[0] * sin + point[1] * cos
+        ];
+    });
+    if (Math.abs(degreesValue % 360) > 1e-8) {
+        var minX = Math.min.apply(null, rotated.map(function(point) { return point[0]; }));
+        var maxX = Math.max.apply(null, rotated.map(function(point) { return point[0]; }));
+        var minY = Math.min.apply(null, rotated.map(function(point) { return point[1]; }));
+        var maxY = Math.max.apply(null, rotated.map(function(point) { return point[1]; }));
+        var fitNorthWest = fitBounds
+            ? map.project([fitBounds.north, fitBounds.west], 0) : northWest;
+        var fitSouthEast = fitBounds
+            ? map.project([fitBounds.south, fitBounds.east], 0) : southEast;
+        var fit = Math.min(
+            1,
+            Math.abs(fitSouthEast.x - fitNorthWest.x) / (maxX - minX),
+            Math.abs(fitSouthEast.y - fitNorthWest.y) / (maxY - minY)
+        ) * 0.999;
+        rotated = rotated.map(function(point) {
+            return [point[0] * fit, point[1] * fit];
+        });
+    }
+    return rotated.map(function(point) {
+        var latlng = map.unproject([centerX + point[0], centerY - point[1]], 0);
+        return [latlng.lat, latlng.lng];
+    });
+}
+
+function tp3dApplySvgRotation(overlay) {
+    if (!overlay) return;
+    requestAnimationFrame(function() {
+        var image = overlay.getElement();
+        if (!image) return;
+        var shapeBounds = typeof tp3dRotationHandleBounds === 'function'
+            ? tp3dRotationHandleBounds() : coords;
+        if (!shapeBounds) return;
+        var overlayBounds = overlay.getBounds();
+        var overlayNorthWest = map.project(overlayBounds.getNorthWest(), 0);
+        var overlaySouthEast = map.project(overlayBounds.getSouthEast(), 0);
+        var shapeNorthWest = map.project([shapeBounds.north, shapeBounds.west], 0);
+        var shapeSouthEast = map.project([shapeBounds.south, shapeBounds.east], 0);
+        var width = Math.abs(overlaySouthEast.x - overlayNorthWest.x);
+        var height = Math.abs(overlaySouthEast.y - overlayNorthWest.y);
+        var shapeWidth = Math.abs(shapeSouthEast.x - shapeNorthWest.x);
+        var shapeHeight = Math.abs(shapeSouthEast.y - shapeNorthWest.y);
+        var degrees = Number(TP3D_SHAPE_ROTATION_DEG || 0);
+        var angle = degrees * Math.PI / 180;
+        var rotatedWidth = width * Math.abs(Math.cos(angle)) + height * Math.abs(Math.sin(angle));
+        var rotatedHeight = width * Math.abs(Math.sin(angle)) + height * Math.abs(Math.cos(angle));
+        var fit = Math.min(1, shapeWidth / rotatedWidth, shapeHeight / rotatedHeight);
+        if (Math.abs(degrees % 360) > 1e-8) fit *= 0.999;
+        var transform = image.style.transform
+            .replace(/\s*rotate\([^)]*\)/g, '')
+            .replace(/\s*scale\([^)]*\)/g, '');
+        image.style.transformOrigin = 'center center';
+        image.style.transform = transform + ' rotate(' +
+            (-degrees) + 'deg) scale(' + fit + ')';
+    });
 }
 
 function previewDrawnRect(bounds) {
@@ -129,6 +278,7 @@ function syncShapeAfterEdgeChange() {
     if (rectLayer) rectLayer.setBounds([[coords.south, coords.west], [coords.north, coords.east]]);
     if (syncCenterHandles) syncCenterHandles();
     syncMoveHandlePosition();
+    syncRotationHandlePosition();
     tp3dOnShapeChanged();
 }
 
@@ -139,6 +289,124 @@ function syncShapeAfterEdgeChange() {
 function syncMoveHandlePosition() {
     if (!coords) return;
     moveHandleLayer.eachLayer(function(m) { m.setLatLng(boundsCenter(coords)); });
+}
+
+function rotationHandlePosition() {
+    var shapeBounds = typeof tp3dRotationHandleBounds === 'function'
+        ? tp3dRotationHandleBounds() : coords;
+    if (!shapeBounds) return null;
+    var zoom = map.getZoom();
+    var centerLatLng = tp3dProjectedBoundsCenter(shapeBounds, zoom);
+    var center = map.project([centerLatLng.lat, centerLatLng.lng], zoom);
+    var points = tp3dRotationHandlePoints();
+    if (!points.length) return null;
+    var angle = Number(TP3D_SHAPE_ROTATION_DEG || 0) * Math.PI / 180;
+    var cos = Math.cos(angle), sin = Math.sin(angle);
+    var right = -Infinity, top = -Infinity;
+    // Undo rotation to find the shape's own box, not its screen-aligned bbox.
+    points.forEach(function(point) {
+        var projected = map.project(point, zoom);
+        var x = projected.x - center.x, y = center.y - projected.y;
+        right = Math.max(right, x * cos + y * sin);
+        top = Math.max(top, -x * sin + y * cos);
+    });
+    var gap = 25 / Math.SQRT2;
+    var x = right + gap, y = top + gap;
+    return {
+        center: centerLatLng,
+        handle: map.unproject([
+            center.x + x * cos - y * sin,
+            center.y - x * sin - y * cos
+        ], zoom)
+    };
+}
+
+function syncRotationHandlePosition() {
+    if (!rotationHandleLayer) return;
+    rotationHandleLayer.eachLayer(function(marker) {
+        var element = marker.getElement();
+        var svg = element && element.querySelector('svg');
+        if (!svg) return;
+        svg.style.transformOrigin = 'center';
+        svg.style.transformBox = 'view-box';
+        svg.style.rotate = -Number(TP3D_SHAPE_ROTATION_DEG || 0) + 'deg';
+    });
+    if (rotationHandleDragging) return;
+    if (!coords) {
+        rotationHandleLayer.clearLayers();
+        return;
+    }
+    if (typeof tp3dCanRotateShape === 'function' && !tp3dCanRotateShape()) {
+        rotationHandleLayer.clearLayers();
+        return;
+    }
+    var position = rotationHandlePosition();
+    if (!position) return;
+    var layers = [];
+    rotationHandleLayer.eachLayer(function(layer) { layers.push(layer); });
+    if (layers.length < 1) {
+        bindRotationHandle();
+        return;
+    }
+    layers[0].setLatLng(position.handle);
+}
+
+function bindRotationHandle() {
+    if (!rotationHandleLayer) return;
+    rotationHandleLayer.clearLayers();
+    if (!coords || (typeof tp3dCanRotateShape === 'function' && !tp3dCanRotateShape())) return;
+    var position = rotationHandlePosition();
+    if (!position) return;
+    var marker = L.marker(position.handle, {
+        draggable: true,
+        icon: L.divIcon({
+            className: 'rotation-handle',
+            iconSize: [30, 30],
+            iconAnchor: [15, 15],
+            html: '<svg fill="#ffffff" version="1.1" id="Layer_1" xmlns:x="&amp;ns_extend;" xmlns:i="&amp;ns_ai;" xmlns:graph="&amp;ns_graphs;" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="201px" height="201px" viewBox="-1.2 -1.2 26.40 26.40" enable-background="new 0 0 24 24" xml:space="preserve" transform="rotate(90)" stroke="#ffffff" stroke-width="0.00024000000000000003"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round" stroke="#000000" stroke-width="1.44"> <metadata> <sfw xmlns="&amp;ns_sfw;"> <slices> </slices> <slicesourcebounds width="505" height="984" bottomleftorigin="true" x="0" y="-984"> </slicesourcebounds> </sfw> </metadata> <g> <g> <g> <path d="M18,12c-0.3,0-0.5-0.1-0.7-0.3c-0.4-0.4-0.4-1,0-1.4l5-5c0.4-0.4,1-0.4,1.4,0s0.4,1,0,1.4l-5,5C18.5,11.9,18.3,12,18,12z "></path> </g> </g> <g> <g> <path d="M23,7c-0.3,0-0.5-0.1-0.7-0.3l-5-5c-0.4-0.4-0.4-1,0-1.4s1-0.4,1.4,0l5,5c0.4,0.4,0.4,1,0,1.4C23.5,6.9,23.3,7,23,7z"></path> </g> </g> <g> <g> <path d="M6,24c-0.3,0-0.5-0.1-0.7-0.3l-5-5c-0.4-0.4-0.4-1,0-1.4s1-0.4,1.4,0l5,5c0.4,0.4,0.4,1,0,1.4C6.5,23.9,6.3,24,6,24z"></path> </g> </g> <g> <g> <path d="M6,24c-0.3,0-0.5-0.1-0.7-0.3c-0.4-0.4-0.4-1,0-1.4l5-5c0.4-0.4,1-0.4,1.4,0s0.4,1,0,1.4l-5,5C6.5,23.9,6.3,24,6,24z"></path> </g> </g> <g> <g> <path d="M6,24c-0.6,0-1-0.4-1-1V12c0-3.9,3.1-7,7-7h11c0.6,0,1,0.4,1,1s-0.4,1-1,1H12c-2.8,0-5,2.2-5,5v11C7,23.6,6.6,24,6,24z"></path> </g> </g> </g> </g><g id="SVGRepo_iconCarrier"> <metadata> <sfw xmlns="&amp;ns_sfw;"> <slices> </slices> <slicesourcebounds width="505" height="984" bottomleftorigin="true" x="0" y="-984"> </slicesourcebounds> </sfw> </metadata> <g> <g> <g> <path d="M18,12c-0.3,0-0.5-0.1-0.7-0.3c-0.4-0.4-0.4-1,0-1.4l5-5c0.4-0.4,1-0.4,1.4,0s0.4,1,0,1.4l-5,5C18.5,11.9,18.3,12,18,12z "></path> </g> </g> <g> <g> <path d="M23,7c-0.3,0-0.5-0.1-0.7-0.3l-5-5c-0.4-0.4-0.4-1,0-1.4s1-0.4,1.4,0l5,5c0.4,0.4,0.4,1,0,1.4C23.5,6.9,23.3,7,23,7z"></path> </g> </g> <g> <g> <path d="M6,24c-0.3,0-0.5-0.1-0.7-0.3l-5-5c-0.4-0.4-0.4-1,0-1.4s1-0.4,1.4,0l5,5c0.4,0.4,0.4,1,0,1.4C6.5,23.9,6.3,24,6,24z"></path> </g> </g> <g> <g> <path d="M6,24c-0.3,0-0.5-0.1-0.7-0.3c-0.4-0.4-0.4-1,0-1.4l5-5c0.4-0.4,1-0.4,1.4,0s0.4,1,0,1.4l-5,5C6.5,23.9,6.3,24,6,24z"></path> </g> </g> <g> <g> <path d="M6,24c-0.6,0-1-0.4-1-1V12c0-3.9,3.1-7,7-7h11c0.6,0,1,0.4,1,1s-0.4,1-1,1H12c-2.8,0-5,2.2-5,5v11C7,23.6,6.6,24,6,24z"></path> </g> </g> </g> </g></svg>'
+        })
+    });
+    marker.on('click', function(e) {
+        if (!e.originalEvent || !e.originalEvent.altKey) return;
+        e.originalEvent.preventDefault();
+        e.originalEvent.stopPropagation();
+        tp3dSetShapeRotation(0, true);
+    });
+    var rotationDragStart = null;
+    marker.on('dragstart', function(e) {
+        position = rotationHandlePosition();
+        rotationHandleDragging = true;
+        var center = map.project(position.center, map.getZoom());
+        var point = map.project(e.target.getLatLng(), map.getZoom());
+        rotationDragStart = {
+            angle: Math.atan2(point.y - center.y, point.x - center.x),
+            degrees: Number(TP3D_SHAPE_ROTATION_DEG || 0)
+        };
+    });
+    marker.on('drag', function(e) {
+        var bounds = typeof tp3dRotationHandleBounds === 'function'
+            ? tp3dRotationHandleBounds() : coords;
+        if (!bounds || !rotationDragStart) return;
+        var center = map.project(position.center, map.getZoom());
+        var point = map.project(e.target.getLatLng(), map.getZoom());
+        var angle = Math.atan2(point.y - center.y, point.x - center.x);
+        var delta = (angle - rotationDragStart.angle) * 180 / Math.PI;
+        var degrees = ((Math.round(rotationDragStart.degrees - delta) + 180) % 360 + 360) % 360 - 180;
+        tp3dSetShapeRotation(degrees);
+    });
+    marker.on('dragend', function() {
+        rotationHandleDragging = false;
+        rotationDragStart = null;
+        syncRotationHandlePosition();
+        saveState();
+        if (typeof updateStatus === 'function') updateStatus();
+    });
+    rotationHandleLayer.addLayer(marker);
+    syncRotationHandlePosition();
+}
+
+if (rotationHandleLayer) {
+    map.on('zoomend moveend', syncRotationHandlePosition);
 }
 
 function moveHandleIcon() {
@@ -159,6 +427,7 @@ function moveHandleIcon() {
 // directly.
 function bindMoveHandle() {
     moveHandleLayer.clearLayers();
+    bindRotationHandle();
     if (!coords) return;
     var wasCornerEditing = false;
     var dragStart = null, startCoords = null, startCenter = null;
@@ -450,22 +719,25 @@ function computeSvgAspectFromMarkup(svgText) {
 // stretching it to fill a square box -- matches how the backend's own
 // create_custom_svg (primitives.polygon_from_svg -> clean_and_union_geometry)
 // scales the SVG uniformly to its longest dimension rather than independently
-// on each axis. Same equirectangular meters-per-degree approximation
-// squareBoundsFromRect uses elsewhere, good enough for this preview since the
-// backend re-derives the actual mesh itself from the real SVG geometry.
+// on each axis, using the same projected plane as the generated map.
 function svgInscribedBounds(b, aspect) {
-    var midLat = (b.north + b.south) / 2;
-    var metersPerDegLat = 111320;
-    var metersPerDegLng = 111320 * Math.cos(midLat * Math.PI / 180);
-    var sideM = (b.north - b.south) * metersPerDegLat;
-    var wM = aspect >= 1 ? sideM : sideM * aspect;
-    var hM = aspect >= 1 ? sideM / aspect : sideM;
-    var halfLatDeg = (hM / metersPerDegLat) / 2;
-    var halfLngDeg = metersPerDegLng > 0 ? (wM / metersPerDegLng) / 2 : 0;
-    var centerLat = midLat, centerLng = (b.east + b.west) / 2;
+    var northWest = map.project([b.north, b.west], 0);
+    var southEast = map.project([b.south, b.east], 0);
+    var centerX = (northWest.x + southEast.x) / 2;
+    var centerY = (northWest.y + southEast.y) / 2;
+    var side = Math.min(
+        Math.abs(southEast.x - northWest.x),
+        Math.abs(southEast.y - northWest.y)
+    );
+    var width = aspect >= 1 ? side : side * aspect;
+    var height = aspect >= 1 ? side / aspect : side;
+    var imageNorthWest = map.unproject([centerX - width / 2, centerY - height / 2], 0);
+    var imageSouthEast = map.unproject([centerX + width / 2, centerY + height / 2], 0);
     return {
-        north: centerLat + halfLatDeg, south: centerLat - halfLatDeg,
-        east: centerLng + halfLngDeg, west: centerLng - halfLngDeg
+        north: imageNorthWest.lat,
+        south: imageSouthEast.lat,
+        east: imageSouthEast.lng,
+        west: imageNorthWest.lng
     };
 }
 
@@ -505,29 +777,25 @@ function placeSvgBoxInViewport(fraction) {
 // Auto-places a drawn shape of the current type centered on *b* (an
 // L.LatLngBounds, e.g. an imported GPX trail's) so that *b* takes up about
 // *fraction* of it -- e.g. 0.8 leaves a 10% margin on each side. The box is
-// always square, sized off *b*'s longer side (in meters), whatever the
-// current shape. Same equirectangular meters-per-degree
-// approximation as squareBoundsFromRect/svgInscribedBounds. Replaces
-// whatever was previously drawn; callers decide whether that's appropriate.
+// always square in the projected map plane, sized off *b*'s longer side.
+// Replaces whatever was previously drawn; callers decide whether that's appropriate.
 function placeShapeAroundBounds(b, fraction) {
-    var midLat = (b.getNorth() + b.getSouth()) / 2;
-    var midLng = (b.getEast() + b.getWest()) / 2;
-    var metersPerDegLat = 111320;
-    var metersPerDegLng = 111320 * Math.cos(midLat * Math.PI / 180);
-    if (metersPerDegLng <= 0) return;
-    var wM = (b.getEast() - b.getWest()) * metersPerDegLng;
-    var hM = (b.getNorth() - b.getSouth()) * metersPerDegLat;
-    var longest = Math.max(wM, hM);
-    if (longest <= 0) return;
-    var boxW = longest / fraction, boxH = boxW;
-    var halfLat = (boxH / metersPerDegLat) / 2;
-    var halfLng = (boxW / metersPerDegLng) / 2;
+    var northWest = map.project([b.getNorth(), b.getWest()], 0);
+    var southEast = map.project([b.getSouth(), b.getEast()], 0);
+    var width = Math.abs(southEast.x - northWest.x);
+    var height = Math.abs(southEast.y - northWest.y);
+    var side = Math.max(width, height) / fraction;
+    if (!(side > 0)) return;
+    var centerX = (northWest.x + southEast.x) / 2;
+    var centerY = (northWest.y + southEast.y) / 2;
+    var north = map.unproject([centerX - side / 2, centerY - side / 2], 0);
+    var south = map.unproject([centerX + side / 2, centerY + side / 2], 0);
     editHandles.clearLayers();
     moveHandleLayer.clearLayers();
     syncCenterHandles = null;
     coords = {
-        north: midLat + halfLat, south: midLat - halfLat,
-        east: midLng + halfLng, west: midLng - halfLng,
+        north: north.lat, south: south.lat,
+        east: south.lng, west: north.lng,
         type: currentShape
     };
     var rect = previewDrawnRect(coords);

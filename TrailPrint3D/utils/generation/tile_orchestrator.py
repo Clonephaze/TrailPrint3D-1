@@ -1,3 +1,4 @@
+import json
 import math
 import time
 
@@ -338,8 +339,9 @@ def _rtg_build_tile_preview(selected_objects):
     Mirrors createTerrainFromSelected's own per-tile skip conditions exactly:
     must be MESH, objType absent OR == "MAP", and not already processed
     (highestZ/lowestZ both already set). Returns (valid_objs, tiles_info,
-    tile_size) -- tiles_info stays empty when there's fewer than 2 valid
-    tiles, since a single tile has nothing to preview against.
+    tile_size). Shared grid rotation is removed from display coordinates only,
+    keeping the schematic aligned with its unrotated tile icons. tiles_info
+    stays empty when there's fewer than 2 valid tiles.
     """
     valid = [
         obj
@@ -351,10 +353,23 @@ def _rtg_build_tile_preview(selected_objects):
     tile_size = float(valid[0].get("objSize", 1.0)) if valid else 1.0
     tiles_info = []
     if len(valid) >= 2:
+        grid_transform = valid[0].get("GridTransform")
+        angle = (
+            math.radians(json.loads(grid_transform)["degrees"])
+            if grid_transform else 0.0
+        )
+        cos, sin = math.cos(angle), math.sin(angle)
+        origin_x, origin_y = valid[0].location.x, valid[0].location.y
         tiles_info = [
             {
-                "bx": round(float(obj.location.x), 3),
-                "by": round(float(obj.location.y), 3),
+                "bx": round(
+                    (obj.location.x - origin_x) * cos
+                    + (obj.location.y - origin_y) * sin, 3
+                ),
+                "by": round(
+                    -(obj.location.x - origin_x) * sin
+                    + (obj.location.y - origin_y) * cos, 3
+                ),
                 "status": "pending",
                 "shape": obj.get("Shape", "square").lower().split()[0],
             }

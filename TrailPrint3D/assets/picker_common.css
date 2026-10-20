@@ -438,6 +438,9 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
 .move-handle { width: 22px; height: 22px; background: var(--accent); border: 2px solid #fff; border-radius: 50%;
     box-shadow: 0 0 3px rgba(0,0,0,0.6); cursor: move; display: flex; align-items: center; justify-content: center; }
 .move-handle svg { pointer-events: none; }
+.rotation-handle { width: 24px; height: 24px; background: transparent; border: none;
+    box-shadow: none; cursor: grab; display: flex; align-items: center; justify-content: center; }
+.rotation-handle svg { width: 18px; height: 18px; pointer-events: none; }
 .btn-send { padding: 12px 20px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: auto; }
 .btn-send:disabled { background: var(--border); cursor: not-allowed; }
 #status { padding: 10px; background: var(--surface-field); border-radius: 4px; font-size: 12px; text-align: center; }

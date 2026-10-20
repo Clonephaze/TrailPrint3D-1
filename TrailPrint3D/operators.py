@@ -3231,6 +3231,14 @@ def _collect_existing_maps():
                 entry["polygon"] = json.loads(obj["BoundaryPolygon"])
             except (json.JSONDecodeError, TypeError):
                 pass
+        if obj.get("TilePolygon"):
+            try:
+                entry["polygon"] = json.loads(obj["TilePolygon"])
+                if obj.get("GridSourceBounds") and obj.get("GridTransform"):
+                    entry["grid_source_bounds"] = json.loads(obj["GridSourceBounds"])
+                    entry["grid_transform"] = json.loads(obj["GridTransform"])
+            except (json.JSONDecodeError, TypeError) as exc:
+                print(f"[TrailPrint3D] Could not read grid outline for {obj.name}: {exc}")
         maps.append(entry)
     return maps
 
@@ -4287,6 +4295,10 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             props.geojson_path = geojson_paths[0]
             self._apply_shape_extra(props, data)
         else:
+            if data.get("shapeRotation") is not None:
+                props.shapeRotation = max(
+                    -360, min(360, int(data["shapeRotation"]))
+                )
             shape_name = data.get("type", "rectangle")
             props.shape = self._TYPE_MAP.get(shape_name, "SQUARE")
             self._apply_shape_extra(props, data)
@@ -4311,25 +4323,31 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
             diameter = max(tile_w, tile_h)
 
-            # When shapeRotation != 0, generate over a larger (padded) area
-            # than what was actually drawn, so real terrain/OSM content
-            # exists to reveal at the rotated shape's corners -- then cut
-            # down to the TRUE (unpadded) shape, rotated, in one boolean
-            # pass once generation finishes (see needs_shape_cut below,
-            # after runTileGeneration/GPX merge). A rotated rectangle's own
-            # axis-aligned bounding box grows by up to sqrt(2)x at 45
-            # degrees; circle is rotation-invariant so it's never padded/cut.
-            needs_shape_cut = props.shapeRotation != 0 and shape_name != "circle"
-            if needs_shape_cut:
-                _rot_rad = math.radians(props.shapeRotation)
-                _cos, _sin = abs(math.cos(_rot_rad)), abs(math.sin(_rot_rad))
-                gen_diameter = diameter * (_cos + _sin)
-                gen_tile_w = tile_w * _cos + tile_h * _sin
-                gen_tile_h = tile_w * _sin + tile_h * _cos
-            else:
-                gen_diameter, gen_tile_w, gen_tile_h = diameter, tile_w, tile_h
+            # The drawn bounds are the complete elevation/data area. Rotation
+            # is applied only to the final outline, fitted inside those bounds.
+            needs_shape_cut = props.shapeRotation % 360 != 0 and shape_name != "circle"
+            svg_path = data.get("svg_path")
+            if shape_name == "svg":
+                if not svg_path:
+                    print("No SVG file selected.")
+                    _progress.WarningsOverlay.add_warning(
+                        _rpt("No SVG file selected."), "error"
+                    )
+                    raise GenerationError
+                props.customFilePath = svg_path
 
-            if shape_name == "circle":
+            if needs_shape_cut:
+                blank = utils.create_rectangle(
+                    tile_w, tile_h, props.num_subdivisions
+                )
+                if blank is None:
+                    print("Failed to create map data area.")
+                    _progress.WarningsOverlay.add_warning(
+                        _rpt("Failed to create rectangle shape."), "error"
+                    )
+                    raise GenerationError
+                blank["Shape"] = "SQUARE"
+            elif shape_name == "circle":
                 blank = utils.create_circle(diameter / 2, props.num_subdivisions)
                 if blank is None:
                     print("Failed to create circle shape.")
@@ -4339,7 +4357,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                     raise GenerationError
                 blank["Shape"] = "CIRCLE"
             elif shape_name == "octagon":
-                blank = utils.create_octagon(gen_diameter / 2, props.num_subdivisions)
+                blank = utils.create_octagon(diameter / 2, props.num_subdivisions)
                 if blank is None:
                     print("Failed to create octagon shape.")
                     _progress.WarningsOverlay.add_warning(
@@ -4348,7 +4366,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                     raise GenerationError
                 blank["Shape"] = "OCTAGON"
             elif shape_name == "hexagon":
-                blank = utils.create_hexagon(gen_diameter / 2, props.num_subdivisions)
+                blank = utils.create_hexagon(diameter / 2, props.num_subdivisions)
                 if blank is None:
                     print("Failed to create hexagon shape.")
                     _progress.WarningsOverlay.add_warning(
@@ -4357,18 +4375,11 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                     raise GenerationError
                 blank["Shape"] = "HEXAGON"
             elif shape_name == "svg":
-                svg_path = data.get("svg_path")
-                if not svg_path:
-                    print("No SVG file selected.")
-                    _progress.WarningsOverlay.add_warning(
-                        _rpt("No SVG file selected."), "error"
-                    )
-                    raise GenerationError
                 # Same helper (and the same uniform, aspect-preserving
                 # target_size scaling) the sidebar's Shape="SVG" option uses
                 # -- see primitives.create_custom_svg/polygon_from_svg.
                 blank = utils.create_custom_svg(
-                    svg_path, gen_diameter, props.num_subdivisions
+                    svg_path, diameter, props.num_subdivisions
                 )
                 if blank is None:
                     print("SVG file produced an empty/degenerate shape.")
@@ -4377,16 +4388,13 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                     )
                     raise GenerationError
                 blank["Shape"] = "SVG"
-                # Keeps the sidebar's own Shape=SVG file field in sync, so
-                # reopening it later shows the file this tile actually used.
-                props.customFilePath = svg_path
             elif shape_name == "square":
                 # Unlike 'rectangle' below, width and height are forced equal here
                 # -- the picker already squares the drawn area for every shape but
                 # Rectangle (see map_generator.html's effectiveBounds), this just
                 # doesn't additionally trust that to already be exact.
                 blank = utils.create_rectangle(
-                    gen_diameter, gen_diameter, props.num_subdivisions
+                    diameter, diameter, props.num_subdivisions
                 )
                 if blank is None:
                     print("Failed to create square shape.")
@@ -4397,7 +4405,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 blank["Shape"] = "SQUARE"
             else:
                 blank = utils.create_rectangle(
-                    gen_tile_w, gen_tile_h, props.num_subdivisions
+                    tile_w, tile_h, props.num_subdivisions
                 )
                 if blank is None:
                     print("Failed to create rectangle shape.")
@@ -4489,12 +4497,18 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # above, either from the elevation-preview loop or, for a GeoJSON
         # boundary, internally by build_tile_from_polygon), not an older
         # neighbor's -- there's no seam to protect.
-        tile_gen = utils.runTileGeneration(
-            manage_overlay=False,
-            skip_bottom_recess=True,
-            progress_start=0.33,
-            progress_end=0.92,
-        )
+        requested_shape_rotation = props.shapeRotation
+        props.shapeRotation = 0
+        try:
+            tile_gen = utils.runTileGeneration(
+                manage_overlay=False,
+                skip_bottom_recess=True,
+                progress_start=0.33,
+                progress_end=0.92,
+            )
+        finally:
+            props.shapeRotation = requested_shape_rotation
+        blank["shapeRotation"] = requested_shape_rotation
 
         if gpx_paths:
             from .utils.osm import gen as _osm_gen
@@ -4506,23 +4520,12 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             if not bpy.app.debug:
                 utils.remove_objects(trails)
 
-        # shapeRotation only rotates the SHAPE (the tile's outer cut), not the
-        # terrain/elements inside it -- elevation (elevation.get_tile_elevation)
-        # samples real-world data at each vertex's own position and road/water
-        # clipping (roads.py's map_footprint intersection) clips at the map's
-        # current boundary, so actually rotating the blank before/during
-        # generation would rotate (and, for elevation, distort) the content
-        # itself, not just its outline. Instead, the blank above was built
-        # OVERSIZED (needs_shape_cut's gen_diameter/gen_tile_w/gen_tile_h) and
-        # left unrotated all the way through generation, so terrain/elements
-        # come out normally oriented; here, once everything is finished and
-        # merged, it's trimmed down with a single boolean INTERSECT against a
-        # tall prism of the TRUE (unpadded) shape rotated by shapeRotation --
-        # same "flat cookie-cutter prism, boolean INTERSECT" technique
-        # elements.py's _build_outline_cutter uses to trim trail tubes to the
-        # map boundary.
+        # Rotation is applied only to the final outline. Terrain and elements
+        # were generated with shapeRotation temporarily disabled so they keep
+        # their geographic orientation. The fitted cutter stays inside the
+        # drawn data bounds.
         if needs_shape_cut:
-            from shapely.affinity import rotate as _shp_rotate
+            from shapely.affinity import rotate as _shp_rotate, scale as _shp_scale
 
             from .utils import geometry2d as _g2d
             from .utils.mesh_ops import (
@@ -4571,20 +4574,42 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 true_poly = rectangle_polygon(diameter, diameter)
             else:
                 true_poly = rectangle_polygon(tile_w, tile_h)
+            blank["map_polygon_wkt"] = true_poly.wkt
             rotated_poly = _shp_rotate(true_poly, props.shapeRotation, origin=(0, 0))
+            min_x, min_y, max_x, max_y = rotated_poly.bounds
+            fit_scale = min(
+                1.0,
+                tile_w / (max_x - min_x) if max_x > min_x else 1.0,
+                tile_h / (max_y - min_y) if max_y > min_y else 1.0,
+            ) * 0.999
+            rotated_poly = _shp_scale(
+                rotated_poly, xfact=fit_scale, yfact=fit_scale, origin=(0, 0)
+            )
 
             verts, faces = [], []
             _extrude_flat_polygon(_g2d, rotated_poly, -1e4, 1e4, verts, faces)
-            if verts:
-                cutter_mesh = bpy.data.meshes.new("ShapeRotationCutter")
-                cutter_mesh.from_pydata(verts, [], faces)
-                cutter_mesh.update()
-                _clean_solid_mesh(cutter_mesh)
-                cutter_obj = bpy.data.objects.new("ShapeRotationCutter", cutter_mesh)
-                bpy.context.collection.objects.link(cutter_obj)
-                cutter_obj.location = (center_x, center_y, 0)
+            if not verts:
+                _progress.WarningsOverlay.add_warning(
+                    _rpt("Could not create the rotated shape cutter."), "error"
+                )
+                raise GenerationError
+            cutter_mesh = bpy.data.meshes.new("ShapeRotationCutter")
+            cutter_mesh.from_pydata(verts, [], faces)
+            cutter_mesh.update()
+            _clean_solid_mesh(cutter_mesh)
+            cutter_obj = bpy.data.objects.new("ShapeRotationCutter", cutter_mesh)
+            bpy.context.collection.objects.link(cutter_obj)
+            cutter_obj.location = (center_x, center_y, 0)
+            try:
                 boolean_operation(blank, cutter_obj, "INTERSECT")
+            finally:
                 bpy.data.objects.remove(cutter_obj, do_unlink=True)
+            blank["Shape"] = {
+                "octagon": "OCTAGON",
+                "hexagon": "HEXAGON",
+                "svg": "SVG",
+                "square": "SQUARE",
+            }.get(shape_name, "SQUARE")
 
         # Shape Extras (text/plate/shell) -- only now, once the tile has its
         # final outline (see _rtg_add_shape_extras for why this can't run
