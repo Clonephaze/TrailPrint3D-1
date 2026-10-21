@@ -640,7 +640,6 @@ def _draw_element_box(layout, props):
                 oceanCol = col.column(align=True)
                 oceanCol.enabled = props.el_oActive
                 oceanCol.prop(props, "el_oMinIslandArea")
-                oceanCol.prop(props, "el_oRdpEpsilon")
 
                 # Both Single Extruder and Paint on Map modes honour these
                 # (see terrain.py), so they're shown in every mode. Insert
@@ -1036,6 +1035,14 @@ def _draw_advanced_generation_box(layout, props):
         row = box.row(align=True)
         row.label(icon="BLANK1")
         row.prop(props, "tex_resolution")
+
+    if props.elementSource == "OSM":
+        box.separator(type="LINE")
+        box.label(text=_("Advanced Element Settings"), icon="OUTLINER_OB_MESH")
+        row = box.row(align=True)
+        row.label(icon="BLANK1")
+        row.enabled = props.el_oActive
+        row.prop(props, "el_oRdpEpsilon")
 
 
 def _draw_pin_box(layout, props, context):

@@ -352,6 +352,12 @@ var ELEMENT_TOLERANCE_FIELD = {
     title: 'Clearance around the elements (water, forest, ...) in Single Extruder Mode',
     enabledWhen: function() { return SETTINGS_STATE.elementMode === 'SINGLECOLORMODE_REMESH'; }
 };
+var COASTLINE_SIMPLIFY_FIELD = {
+    key: 'elORdpEpsilon', source: 'ADVANCED_SETTINGS_STATE', endpoint: 'update_advanced_setting',
+    label: 'Coastline Simplify', type: 'number', step: 0.01, min: 0, max: 2, decimals: 3,
+    manualDefault: 0.1,
+    title: 'Check to enter a manual Douglas-Peucker coastline tolerance (map units). Unchecked uses 0: automatic simplification scaled with Element Smoothing, not disabled simplification. Positive values are used as-is, followed by Element Smoothing as usual. Higher values remove detail, may delete thin features, and can introduce self-intersections. Use 0.001 to effectively disable simplification.'
+};
 var WORLDCOVER_MIN_AREA_FIELD = {
     key: 'elWcMinFeatureArea', source: 'ADVANCED_SETTINGS_STATE', endpoint: 'update_advanced_setting',
     label: 'Min Feature Area', type: 'number', step: 0.5, min: 0,
@@ -371,8 +377,7 @@ var COMPOSITE_ELEMENTS = {
         numberFields: [
             { key: 'colWArea', label: 'Lake/Pond Threshold (in mm²)', step: 0.1, min: 0 },
             { key: 'colWStreamWidth', label: 'River Width (multiplicator)', step: 0.1, min: 0.1, max: 100 },
-            { key: 'elOMinIslandArea', label: 'Min Island Area (in mm²)', step: 0.5, min: 0 },
-            { key: 'elORdpEpsilon', label: 'Ocean Simplify', step: 0.01, min: 0, max: 2 }
+            { key: 'elOMinIslandArea', label: 'Min Island Area (in mm²)', step: 0.5, min: 0 }
         ],
         extraFields: tp3dBuildWaterFlattenFields
     },
@@ -842,6 +847,9 @@ function tp3dRefreshMapTabVisibility() {
         entry.row.querySelectorAll('input, select, button:not(.preview-btn)').forEach(function(control) {
             control.disabled = !active;
         });
+        if (entry.field.manualDefault != null && active) {
+            entry.row.querySelector('input[type=number]').disabled = !entry.row.querySelector('input[type=checkbox]').checked;
+        }
     });
 }
 
@@ -855,7 +863,9 @@ function tp3dRefreshMapTabVisibility() {
 // of panels.py's own conditional rows (`showWhen: { key, in: [...] }` for
 // "any of these values") -- registered in MAP_TAB_ROWS
 // regardless of tab, since the WorldCover Min Feature Area field has no
-// `showWhen` and just always shows. A checkbox field with `companion` (its
+// `showWhen` and just always shows. A number field with `manualDefault`
+// gets a checkbox: unchecked sends zero, checked restores the last positive
+// value (or manualDefault). A checkbox field with `companion` (its
 // own number-field definition, no `label`/`type` of its own since it always
 // shares the checkbox's row) instead gets that number input placed right
 // next to its own checkbox, shown only while the checkbox is on -- mirrors
@@ -911,6 +921,22 @@ function tp3dBuildFieldRow(field) {
 
     var controls = document.createElement('div');
     controls.className = 'adv-field-controls';
+    var manualToggle = null;
+    var manualValue;
+    if (field.manualDefault != null) {
+        manualValue = Number(input.value) > 0 ? Number(input.value) : field.manualDefault;
+        manualToggle = document.createElement('input');
+        manualToggle.type = 'checkbox';
+        manualToggle.checked = Number(input.value) > 0;
+        manualToggle.setAttribute('aria-label', 'Use manual ' + field.label);
+        manualToggle.title = row.title;
+        input.disabled = !manualToggle.checked;
+        manualToggle.addEventListener('change', function() {
+            input.value = manualToggle.checked ? manualValue : 0;
+            input.dispatchEvent(new Event('change'));
+        });
+        controls.appendChild(manualToggle);
+    }
     // `unit` ('mm', '°', ...) is shown inside the field, after the value.
     if (field.unit) {
         var unitWrap = document.createElement('span');
@@ -963,9 +989,22 @@ function tp3dBuildFieldRow(field) {
         var value = field.type === 'checkbox' ? input.checked
             : field.type === 'select' ? input.value
             : parseFloat(input.value);
+        if (manualToggle) {
+            input.setCustomValidity('');
+            if (!Number.isFinite(value) || value < 0) {
+                input.setCustomValidity('Enter a non-negative number.');
+                input.reportValidity();
+                return;
+            }
+        }
         if (field.decimals != null && typeof value === 'number') {
             value = parseFloat(value.toFixed(field.decimals));
             input.value = value;
+        }
+        if (manualToggle) {
+            manualToggle.checked = value > 0;
+            if (value > 0) manualValue = value;
+            stateObj[field.key] = value;
         }
         MAP_TAB_CONTROL_VALUES[field.key] = value;
         tp3dRefreshMapTabVisibility();
@@ -1383,7 +1422,7 @@ function tp3dBuildElementsTab() {
         cardsSection.grid.appendChild(compositeRow);
     }
 
-    // Bottom card: the Paint/Single Extruder switch and the Element
+    // The Paint/Single Extruder switch and the Element
     // Tolerance it gates (OSM only, like the sidebar).
     var modeSection = tp3dBuildSection('Print Mode', 'settings-grid-2');
     if (typeof ELEMENT_SOURCE !== 'undefined') modeSection.grid.appendChild(tp3dBuildElementModeSwitch());
@@ -1395,6 +1434,11 @@ function tp3dBuildElementsTab() {
         modeSection.card.title = 'Only available for OpenStreetMap';
     }
     if (modeSection.grid.children.length) wrap.appendChild(modeSection.card);
+    if (!tp3dIsWorldCover()) {
+        var advancedSection = tp3dBuildSection('Advanced Element Settings', 'settings-grid-2');
+        advancedSection.grid.appendChild(tp3dBuildFieldRow(COASTLINE_SIMPLIFY_FIELD));
+        wrap.appendChild(advancedSection.card);
+    }
     tp3dRefreshMapTabVisibility();
 
     return wrap;

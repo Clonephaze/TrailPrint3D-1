@@ -1446,12 +1446,12 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     )  # type: ignore
     el_oRdpEpsilon: FloatProperty(
         name=_("Coastline Simplify"),
-        default=0.1,
+        default=0.0,
         min=0.0,
         soft_max=2.0,
         precision=3,
         description=_tip(
-            "Douglas-Peucker simplification tolerance (map units) applied to the coastline before building the ocean. Higher = fewer points but can introduce self-intersections on convoluted coasts. Set to 0 to disable simplification. Testing aid."
+            "Douglas-Peucker tolerance (map units) applied to the coastline before building the ocean. 0 = automatic, scaled with Element Smoothing. A specific value is used as-is. Higher values remove more detail, can delete thin features like docks or spits, and can introduce self-intersections on convoluted coasts. To effectively disable simplification, enter a very small value such as 0.001."
         ),
     )  # type: ignore
     el_wcMinFeatureArea: FloatProperty(
