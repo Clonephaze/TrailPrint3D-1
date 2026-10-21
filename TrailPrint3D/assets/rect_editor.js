@@ -302,16 +302,18 @@ function rotationHandlePosition() {
     if (!points.length) return null;
     var angle = Number(TP3D_SHAPE_ROTATION_DEG || 0) * Math.PI / 180;
     var cos = Math.cos(angle), sin = Math.sin(angle);
-    var right = -Infinity, top = -Infinity;
+    var right = -Infinity, top = -Infinity, bottom = Infinity;
     // Undo rotation to find the shape's own box, not its screen-aligned bbox.
     points.forEach(function(point) {
         var projected = map.project(point, zoom);
         var x = projected.x - center.x, y = center.y - projected.y;
         right = Math.max(right, x * cos + y * sin);
-        top = Math.max(top, -x * sin + y * cos);
+        var localY = -x * sin + y * cos;
+        top = Math.max(top, localY);
+        bottom = Math.min(bottom, localY);
     });
-    var gap = 25 / Math.SQRT2;
-    var x = right + gap, y = top + gap;
+    var gap = 25;
+    var x = right + gap, y = (top + bottom) / 2;
     return {
         center: centerLatLng,
         handle: map.unproject([
@@ -363,7 +365,7 @@ function bindRotationHandle() {
             className: 'rotation-handle',
             iconSize: [30, 30],
             iconAnchor: [15, 15],
-            html: '<svg fill="#ffffff" version="1.1" id="Layer_1" xmlns:x="&amp;ns_extend;" xmlns:i="&amp;ns_ai;" xmlns:graph="&amp;ns_graphs;" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="201px" height="201px" viewBox="-1.2 -1.2 26.40 26.40" enable-background="new 0 0 24 24" xml:space="preserve" transform="rotate(90)" stroke="#ffffff" stroke-width="0.00024000000000000003"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round" stroke="#000000" stroke-width="1.44"> <metadata> <sfw xmlns="&amp;ns_sfw;"> <slices> </slices> <slicesourcebounds width="505" height="984" bottomleftorigin="true" x="0" y="-984"> </slicesourcebounds> </sfw> </metadata> <g> <g> <g> <path d="M18,12c-0.3,0-0.5-0.1-0.7-0.3c-0.4-0.4-0.4-1,0-1.4l5-5c0.4-0.4,1-0.4,1.4,0s0.4,1,0,1.4l-5,5C18.5,11.9,18.3,12,18,12z "></path> </g> </g> <g> <g> <path d="M23,7c-0.3,0-0.5-0.1-0.7-0.3l-5-5c-0.4-0.4-0.4-1,0-1.4s1-0.4,1.4,0l5,5c0.4,0.4,0.4,1,0,1.4C23.5,6.9,23.3,7,23,7z"></path> </g> </g> <g> <g> <path d="M6,24c-0.3,0-0.5-0.1-0.7-0.3l-5-5c-0.4-0.4-0.4-1,0-1.4s1-0.4,1.4,0l5,5c0.4,0.4,0.4,1,0,1.4C6.5,23.9,6.3,24,6,24z"></path> </g> </g> <g> <g> <path d="M6,24c-0.3,0-0.5-0.1-0.7-0.3c-0.4-0.4-0.4-1,0-1.4l5-5c0.4-0.4,1-0.4,1.4,0s0.4,1,0,1.4l-5,5C6.5,23.9,6.3,24,6,24z"></path> </g> </g> <g> <g> <path d="M6,24c-0.6,0-1-0.4-1-1V12c0-3.9,3.1-7,7-7h11c0.6,0,1,0.4,1,1s-0.4,1-1,1H12c-2.8,0-5,2.2-5,5v11C7,23.6,6.6,24,6,24z"></path> </g> </g> </g> </g><g id="SVGRepo_iconCarrier"> <metadata> <sfw xmlns="&amp;ns_sfw;"> <slices> </slices> <slicesourcebounds width="505" height="984" bottomleftorigin="true" x="0" y="-984"> </slicesourcebounds> </sfw> </metadata> <g> <g> <g> <path d="M18,12c-0.3,0-0.5-0.1-0.7-0.3c-0.4-0.4-0.4-1,0-1.4l5-5c0.4-0.4,1-0.4,1.4,0s0.4,1,0,1.4l-5,5C18.5,11.9,18.3,12,18,12z "></path> </g> </g> <g> <g> <path d="M23,7c-0.3,0-0.5-0.1-0.7-0.3l-5-5c-0.4-0.4-0.4-1,0-1.4s1-0.4,1.4,0l5,5c0.4,0.4,0.4,1,0,1.4C23.5,6.9,23.3,7,23,7z"></path> </g> </g> <g> <g> <path d="M6,24c-0.3,0-0.5-0.1-0.7-0.3l-5-5c-0.4-0.4-0.4-1,0-1.4s1-0.4,1.4,0l5,5c0.4,0.4,0.4,1,0,1.4C6.5,23.9,6.3,24,6,24z"></path> </g> </g> <g> <g> <path d="M6,24c-0.3,0-0.5-0.1-0.7-0.3c-0.4-0.4-0.4-1,0-1.4l5-5c0.4-0.4,1-0.4,1.4,0s0.4,1,0,1.4l-5,5C6.5,23.9,6.3,24,6,24z"></path> </g> </g> <g> <g> <path d="M6,24c-0.6,0-1-0.4-1-1V12c0-3.9,3.1-7,7-7h11c0.6,0,1,0.4,1,1s-0.4,1-1,1H12c-2.8,0-5,2.2-5,5v11C7,23.6,6.6,24,6,24z"></path> </g> </g> </g> </g></svg>'
+            html: '<svg fill="#ffffff" version="1.1" id="Layer_1" width="86.153366" height="181.74644" viewBox="-1.2 -1.2 11.315666 23.871175" enable-background="new 0 0 24 24" xml:space="preserve" stroke="#ffffff" stroke-width="0.00024" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:ns="&amp;#38;ns_sfw;"><defs   id="defs22" /><g   id="SVGRepo_iconCarrier"   transform="translate(-7.5400526,-1.2641641)"> <metadata id="metadata11"> <ns:sfw> <ns:slices> </ns:slices> <ns:slicesourcebounds width="505" height="984" bottomleftorigin="true" x="0" y="-984"> </ns:slicesourcebounds> </ns:sfw> </metadata>  <path id="path11" d="m 14.606411,23.008225 c 0.152893,-0.152893 0.244742,-0.366913 0.244743,-0.611542 -10e-7,-0.489256 -0.367029,-0.856284 -0.856285,-0.856285 l -4.0363662,1e-6 5.2594512,-5.259451 c 2.385125,-2.385125 2.385125,-6.176777 -1e-6,-8.5619022 L 9.9585028,2.4595956 h 4.0363662 c 0.489257,0 0.856285,-0.367027 0.856284,-0.856284 0,-0.489257 -0.367027,-0.85628397 -0.856284,-0.85628497 H 8.0884208 c -0.253988,-0.07247 -0.52237,-0.01245 -0.751955,0.181518 -0.02305,0.01923 -0.04594,0.04029 -0.06888,0.06322 -0.02293,0.02293 -0.04399,0.04583 -0.06322,0.06888 -0.193914,0.22951 -0.253874,0.497725 -0.181517,0.751642 v 5.9067615 c 0,0.4892571 0.367027,0.8562844 0.856284,0.8562844 0.489257,7e-7 0.856285,-0.3670273 0.856285,-0.8562844 l -1e-6,-4.0363655 5.2594502,5.2594504 c 1.712398,1.712398 1.712398,4.403337 1e-6,6.115734 l -5.2594512,5.25945 v -4.036366 c 0,-0.489256 -0.367028,-0.856284 -0.856284,-0.856284 -0.244629,0 -0.428071,0.06127 -0.611542,0.244743 -0.183471,0.183471 -0.244741,0.366915 -0.244743,0.611541 l 1e-6,5.906762 c -0.07973,0.279773 0.0012,0.576981 0.244743,0.820514 0.243607,0.243607 0.540981,0.32459 0.820827,0.244743 h 5.9064482 c 0.244628,0 0.458649,-0.09185 0.611542,-0.244742 z" style="fill:#ffffff;fill-opacity:1;stroke:#000000;stroke-width:1.31343284;stroke-linecap:square;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;paint-order:markers stroke fill" /></g></svg>'
         })
     });
     marker.on('click', function(e) {
