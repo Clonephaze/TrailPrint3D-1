@@ -444,6 +444,10 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
 .btn-send { padding: 12px 20px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: auto; }
 .btn-send:disabled { background: var(--border); cursor: not-allowed; }
 #status { padding: 10px; background: var(--surface-field); border-radius: 4px; font-size: 12px; text-align: center; }
+/* Total size + rotation lines under #status (see tp3dSetSizeReadout in
+   assets/rect_editor.js). */
+#totalSizeInfo { font-size: 11px; color: var(--text-secondary); text-align: center; margin-top: -8px; white-space: pre-line; }
+#totalSizeInfo:empty { display: none; }
 .sidebar-divider { width: 100%; border: none; border-top: 1px solid var(--border); margin: 0; }
 #advancedSection { border: 1px solid var(--border); border-radius: 4px; }
 #advancedSection summary { padding: 8px 10px; font-size: 12px; font-weight: bold; color: var(--text-secondary);

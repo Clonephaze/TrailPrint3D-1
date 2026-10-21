@@ -743,6 +743,73 @@ function svgInscribedBounds(b, aspect) {
     };
 }
 
+// Fills the sidebar's #totalSizeInfo readout (map_generator.html,
+// premium/map_generator_pe.html, premium/multitile_generator.html) --
+// empties it (hidden via :empty) when there's nothing to size yet.
+// rotationDeg null = rotation doesn't apply to the current shape.
+// scaleDenominator = ground meters per printed meter (the N in 1:N).
+function tp3dSetSizeReadout(widthMm, heightMm, rotationDeg, scaleDenominator) {
+    var el = document.getElementById('totalSizeInfo');
+    if (!el) return;
+    if (!(widthMm > 0) || !(heightMm > 0)) { el.textContent = ''; return; }
+    var text = 'Total size: ' + Math.round(widthMm) + ' × ' + Math.round(heightMm) + ' mm'
+        + '\nRotation: ' + (rotationDeg == null ? 'n/a' : rotationDeg + '°');
+    if (scaleDenominator > 0) {
+        // 3 significant figures -- a print scale is never meaningful beyond that.
+        var magnitude = Math.pow(10, Math.max(0, Math.floor(Math.log10(scaleDenominator)) - 2));
+        text += '\nScale: 1:' + (Math.round(scaleDenominator / magnitude) * magnitude).toLocaleString('en-US');
+    }
+    el.textContent = text;
+}
+
+// 1:N print scale at latitude *lat* (degrees), for a map whose Mercator
+// x-axis (longitude in radians) prints at *mmPerRadian*. Mercator is only
+// true-scale along one parallel, so this is the scale at that latitude.
+function tp3dScaleDenominator(mmPerRadian, lat) {
+    var earthRadiusM = 6371000; // same as constants.R (backend Mercator projection)
+    if (!(mmPerRadian > 0)) return 0;
+    return earthRadiusM * Math.cos(lat * Math.PI / 180) * 1000 / mmPerRadian;
+}
+
+// Printed footprint of the single-tile map pages (map_generator.html,
+// premium/map_generator_pe.html), mirroring the backend's map picker
+// (operators.py): sScaleHor = objSize / max(width, height) of the sent
+// bounds in Web Mercator -- the same linear plane as map.project(_, 0) --
+// and a rotated outline is fitted inside those bounds
+// (tp3dProjectedShapePoints applies that same fit). A GeoJSON boundary wins
+// over a drawn area there, and is sized from its combined bbox.
+function tp3dUpdateMapSizeReadout() {
+    var objSize = parseFloat(document.getElementById('objSizeInput').value) || 0;
+    var frame = null, points = null, rotation = null;
+    var geojsonBounds = geojsonLayer.getBounds();
+    if (geojsonPaths.length && geojsonBounds.isValid()) {
+        frame = { north: geojsonBounds.getNorth(), south: geojsonBounds.getSouth(),
+                  east: geojsonBounds.getEast(), west: geojsonBounds.getWest() };
+        points = [[frame.north, frame.west], [frame.south, frame.east]];
+    } else if (coords && (currentShape !== 'svg' || svgShapePath)) {
+        frame = effectiveBounds(coords);
+        rotation = tp3dCanRotateShape() ? TP3D_SHAPE_ROTATION_DEG : null;
+        points = currentShape === 'svg'
+            ? tp3dProjectedShapePoints(svgInscribedBounds(frame, svgAspect), 'rectangle', rotation || 0, frame)
+            : tp3dProjectedShapePoints(frame, currentShape, rotation || 0);
+    }
+    if (!frame || !(objSize > 0)) { tp3dSetSizeReadout(0, 0, null); return; }
+    var northWest = map.project([frame.north, frame.west], 0);
+    var southEast = map.project([frame.south, frame.east], 0);
+    var extent = Math.max(Math.abs(southEast.x - northWest.x), Math.abs(southEast.y - northWest.y));
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    points.forEach(function(point) {
+        var p = map.project(point, 0);
+        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    });
+    var scale = extent > 0 ? objSize / extent : 0;
+    // Zoom 0 spans the full 2*PI radians of longitude across 256 px.
+    var centerLat = tp3dProjectedBoundsCenter(frame, 0).lat;
+    tp3dSetSizeReadout((maxX - minX) * scale, (maxY - minY) * scale, rotation,
+        tp3dScaleDenominator(scale * 256 / (2 * Math.PI), centerLat));
+}
+
 // Auto-places a fresh box centered on the current viewport, sized to
 // *fraction* of it on each axis, so an imported SVG shape is immediately
 // visible without the user having to scroll to find it or draw an area

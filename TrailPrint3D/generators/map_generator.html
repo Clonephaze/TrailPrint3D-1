@@ -73,6 +73,7 @@
         <button class="btn-clear" id="clearPrefetch" style="display:none;">Clear Prefetch</button>
         <hr class="sidebar-divider">
         <div id="status" role="status" aria-live="polite">Draw a shape to begin.</div>
+        <div id="totalSizeInfo"></div>
         <div id="exportFolderSlot"></div>
         <button id="send" class="btn-send" disabled>Send to Blender</button>
     </div>
@@ -661,6 +662,7 @@
             } else {
                 document.getElementById('status').textContent = 'Draw a shape to begin.';
             }
+            tp3dUpdateMapSizeReadout();
         }
 
         function bindLiveEdit(layer) {
@@ -975,6 +977,7 @@
         });
 
         document.getElementById('objSizeInput').addEventListener('input', function() {
+            tp3dUpdateMapSizeReadout();
             saveState();
         });
 
@@ -1029,6 +1032,7 @@
         }
 
         function renderShapePreview() {
+            tp3dUpdateMapSizeReadout();
             shapePreview.clearLayers();
             svgShapeOverlay = null;
             if (!coords) {
