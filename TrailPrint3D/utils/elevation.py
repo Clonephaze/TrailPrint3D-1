@@ -6,6 +6,7 @@ import struct
 import time
 import zipfile
 import zlib
+from array import array
 from datetime import datetime, timezone
 
 import bpy  # type: ignore
@@ -16,6 +17,21 @@ from bpy.app.translations import pgettext_rpt as _rpt
 from .. import constants as const
 from .. import progress as _progress
 from ..utils.dataclasses import GenerationContext
+
+
+_run_elevation_cache = None
+
+
+def begin_run_cache():
+    """Start an in-memory elevation cache scoped to one generation batch."""
+    global _run_elevation_cache
+    _run_elevation_cache = {}
+
+
+def end_run_cache():
+    """Discard elevation results retained for the current generation batch."""
+    global _run_elevation_cache
+    _run_elevation_cache = None
 
 
 def load_counter():
@@ -950,6 +966,36 @@ def compute_and_store_tile_bounds(gen_or_obj):
     return world_verts, num_subdivisions, disable_cache, minLat, maxLat, minLon, maxLon
 
 
+def get_tile_elevation_ranges(obj, elevations, scale_hor):
+    """Return raw and Mercator-corrected elevation ranges, both in meters.
+
+    Uses bulk mesh coordinates without fetching elevations again. The corrected
+    range can be scaled after the batch-wide Fixed Height factor is known.
+    """
+    import numpy as np
+
+    n_verts = len(obj.data.vertices)
+    if n_verts == 0 or len(elevations) != n_verts:
+        raise ValueError("Elevation values must match a non-empty tile mesh.")
+    if not math.isfinite(scale_hor) or scale_hor <= 0:
+        raise ValueError("Horizontal scale must be positive and finite.")
+
+    coords = np.empty(n_verts * 3, dtype=np.float64)
+    obj.data.vertices.foreach_get("co", coords)
+    coords = coords.reshape((n_verts, 3))
+    matrix_y = np.array(obj.matrix_world[1], dtype=np.float64)
+    world_y = coords @ matrix_y[:3] + matrix_y[3]
+    lat_rad = 2.0 * np.arctan(
+        np.exp(world_y / (const.R * scale_hor))
+    ) - np.pi / 2.0
+    values = np.asarray(elevations, dtype=np.float64)
+    corrected = values / np.cos(lat_rad)
+    return (
+        (float(values.min()), float(values.max())),
+        (float(corrected.min()), float(corrected.max())),
+    )
+
+
 def get_tile_elevation(gen_or_obj, progress_cb=None):
     """Fetch terrain elevation for all mesh vertices and return (elevations, diff).
 
@@ -983,6 +1029,43 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
     # Key on geographic bounds + API + subdivision count so the same map on
     # re-generation skips all tile fetching / PNG parsing.
     _cache_path = _elevation_results_key(minLat, maxLat, minLon, maxLon, api, num_subdivisions)
+
+    def _finish_elevation_results(elevations):
+        if not bpy.context.scene.tp3d.disableElevationOutlierFix:
+            elevations, _fixed_count = fix_invalid_elevations(elevations)
+        else:
+            _fixed_count = 0
+        if _fixed_count > 0:
+            print(f"Fixed {_fixed_count} invalid elevation value(s)")
+            if gen is not None:
+                gen.runtime.buggyData = 1
+
+        lowest_elevation = min(elevations)
+        highest_elevation = max(elevations)
+        diff = highest_elevation - lowest_elevation
+        tp3d = bpy.context.scene.tp3d
+        tp3d["o_verticesMap"] = str(len(mesh.vertices))
+        tp3d["lowestElevation"] = lowest_elevation
+        tp3d["highestElevation"] = highest_elevation
+        tp3d.sAdditionalExtrusion = lowest_elevation
+        if gen is not None:
+            gen.runtime.tileVerts = elevations
+            gen.runtime.elDiff = diff
+        return elevations, diff
+
+    if _run_elevation_cache is not None:
+        _run_cached = _run_elevation_cache.get(_cache_path)
+        if _run_cached is not None:
+            if len(_run_cached) == len(world_verts):
+                print(f"Elevation run cache hit ({len(_run_cached)} verts) — skipping API fetch")
+                elevations, diff = _finish_elevation_results(list(_run_cached))
+                return elevations, diff
+            print(
+                f"Elevation run cache vertex count mismatch ({len(_run_cached)} "
+                f"vs {len(world_verts)}) — refetching"
+            )
+            del _run_elevation_cache[_cache_path]
+
     if not disable_cache and os.path.exists(_cache_path):
         try:
             with open(_cache_path, "rb") as _f:
@@ -991,26 +1074,9 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
             elevations = list(struct.unpack_from(f"<{_n}f", _raw, 4))
             if len(elevations) == len(world_verts):
                 print(f"Elevation cache hit ({_n} verts) — skipping API fetch")
-                if not bpy.context.scene.tp3d.disableElevationOutlierFix:
-                    elevations, _fixed_count = fix_invalid_elevations(elevations)
-                else:
-                    _fixed_count = 0
-                if _fixed_count > 0:
-                    print(f"Fixed {_fixed_count} invalid cached elevation value(s)")
-                    gen.runtime.buggyData = 1
-                    if gen is not None:
-                        gen.runtime.buggyData = 1
-                lowestElevation = min(elevations)
-                highestElevation = max(elevations)
-                additionalExtrusion = lowestElevation
-                diff = highestElevation - lowestElevation
-                bpy.context.scene.tp3d["o_verticesMap"] = str(len(mesh.vertices))
-                bpy.context.scene.tp3d.lowestElevation = lowestElevation
-                bpy.context.scene.tp3d.highestElevation = highestElevation
-                bpy.context.scene.tp3d.sAdditionalExtrusion = additionalExtrusion
-                if gen is not None:
-                    gen.runtime.tileVerts = elevations
-                    gen.runtime.elDiff = diff
+                elevations, diff = _finish_elevation_results(elevations)
+                if _run_elevation_cache is not None and any(elevations):
+                    _run_elevation_cache[_cache_path] = array("f", elevations)
                 return elevations, diff
             else:
                 print(f"Elevation cache vertex count mismatch ({len(elevations)} vs {len(world_verts)}) — refetching")
@@ -1047,16 +1113,7 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
         # Free memory after processing chunk
         del chunk_elevations
 
-    if not bpy.context.scene.tp3d.disableElevationOutlierFix:
-        elevations, _fixed_count = fix_invalid_elevations(elevations)
-    else:
-        _fixed_count = 0
-    if _fixed_count > 0:
-        print(f"Fixed {_fixed_count} invalid elevation value(s)")
-        if gen is not None:
-            gen.runtime.buggyData = 1
-
-    save_elevation_cache()
+    elevations, diff = _finish_elevation_results(elevations)
 
     # Save results cache for future re-generations of the same map.
     # Skip if all elevations are zero — indicates a completely failed fetch.
@@ -1065,26 +1122,19 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
     if _elev_min == 0.0 and _elev_max == 0.0:
         print("Elevation results are all zero — skipping cache write to avoid caching a failed fetch")
     else:
-        try:
-            os.makedirs(const.elevation_results_dir, exist_ok=True)
-            _n = len(elevations)
-            _packed = struct.pack("<I", _n) + struct.pack(f"<{_n}f", *elevations)
-            with open(_cache_path, "wb") as _f:
-                _f.write(zlib.compress(_packed, level=1))
-        except (OSError, struct.error, zlib.error) as _e:
-            print(f"Elevation cache write error: {_e}")
+        if _run_elevation_cache is not None:
+            _run_elevation_cache[_cache_path] = array("f", elevations)
+        if not (_run_elevation_cache is not None and disable_cache):
+            try:
+                os.makedirs(const.elevation_results_dir, exist_ok=True)
+                _n = len(elevations)
+                _packed = struct.pack("<I", _n) + struct.pack(f"<{_n}f", *elevations)
+                with open(_cache_path, "wb") as _f:
+                    _f.write(zlib.compress(_packed, level=1))
+            except (OSError, struct.error, zlib.error) as _e:
+                print(f"Elevation cache write error: {_e}")
 
-    lowestElevation = min(elevations)
-    highestElevation = max(elevations)
-    additionalExtrusion = lowestElevation
-    diff = highestElevation - lowestElevation
-
-    bpy.context.scene.tp3d["o_verticesMap"] = str(len(mesh.vertices))
-    bpy.context.scene.tp3d.lowestElevation = lowestElevation
-    bpy.context.scene.tp3d.highestElevation = highestElevation
-    bpy.context.scene.tp3d.sAdditionalExtrusion = additionalExtrusion
-    if gen is not None:
-        gen.runtime.tileVerts = elevations
-        gen.runtime.elDiff = diff
+    if not (_run_elevation_cache is not None and disable_cache):
+        save_elevation_cache()
 
     return elevations, diff

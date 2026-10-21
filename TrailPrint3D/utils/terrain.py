@@ -11,7 +11,7 @@ from bpy.app.translations import pgettext_iface as _
 from bpy.app.translations import pgettext_rpt as _rpt
 from mathutils import Vector  # type: ignore
 from shapely import clip_by_rect
-from shapely.geometry import LineString, Point, Polygon, box
+from shapely.geometry import LineString, MultiLineString, Point, Polygon, box
 
 from .. import progress as _progress
 from .dataclasses import GenerationContext
@@ -1919,6 +1919,9 @@ def _polygonize_ocean_faces(open_chains, closed_loops, bbox_bl, rdp_eps=0.0):
     together only the faces tagged "ocean" naturally leaves a hole wherever
     an untagged land face sits inside that union.
 
+    Simplification preserves topology across all chains, and water-side
+    probes stay within local edge clearance so narrow straits remain water.
+
     open_chains  -- chains crossing the tile boundary, in OSM land-is-left
                     direction (land on the left of travel, ocean on the right)
     closed_loops -- island/landmass loops fully or partially inside the tile
@@ -1952,16 +1955,15 @@ def _polygonize_ocean_faces(open_chains, closed_loops, bbox_bl, rdp_eps=0.0):
         c = clip_by_rect(ln, min_x, min_y, max_x, max_y)
         if c.is_empty:
             continue
-        if rdp_eps > 0:
-            c = c.simplify(rdp_eps)
-            if c.is_empty:
-                continue
         if c.geom_type == "LineString":
             clipped.append(c)
         elif c.geom_type == "MultiLineString":
             clipped.extend(g for g in c.geoms if not g.is_empty)
     if not clipped:
         return []
+    if rdp_eps > 0:
+        # Simplify together so a mainland shortcut cannot swallow nearby islands.
+        clipped = list(MultiLineString(clipped).simplify(rdp_eps).geoms)
 
     boundary = tile_box.boundary
     noded = union_all(clipped + [boundary])
@@ -1974,28 +1976,48 @@ def _polygonize_ocean_faces(open_chains, closed_loops, bbox_bl, rdp_eps=0.0):
     tree = STRtree(faces)
     eps = max(max_x - min_x, max_y - min_y, 1.0) * 1e-4
 
-    def _right_probe(p1, p2):
+    segments = []
+    probe_indices = []
+    for ln in clipped:
+        coords = list(ln.coords)
+        step = max(1, len(coords) // 6)
+        for i, (p1, p2) in enumerate(zip(coords, coords[1:])):
+            if p1 == p2:
+                continue
+            if i % step == 0:
+                probe_indices.append(len(segments))
+            segments.append(LineString([p1, p2]))
+    corners = list(boundary.coords)
+    segments.extend(LineString([p1, p2]) for p1, p2 in zip(corners, corners[1:]))
+    segment_tree = STRtree(segments)
+
+    def _right_probe(segment_idx):
+        p1, p2 = segments[segment_idx].coords
         dx, dy = p2[0] - p1[0], p2[1] - p1[1]
         length = math.hypot(dx, dy)
-        if length == 0:
-            return None
         mx, my = (p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0
+        midpoint = Point(mx, my)
+        distance = eps
+        # A tile-sized offset can jump across a narrow strait onto mainland.
+        # Stay within half the clearance to every other coast/tile edge.
+        for idx in segment_tree.query(box(mx - eps, my - eps, mx + eps, my + eps)):
+            if int(idx) != segment_idx:
+                distance = min(distance, midpoint.distance(segments[int(idx)]) / 2.0)
+        if distance == 0:
+            return None
         nx, ny = dy / length, -dx / length  # right-hand normal of travel dir
-        return Point(mx + nx * eps, my + ny * eps)
+        return Point(mx + nx * distance, my + ny * distance)
 
     ocean_idx = set()
-    for ln in clipped:  # use clipped — inside the bbox so probes hit actual faces
-        coords = list(ln.coords)
-        step = max(1, len(coords) // 6)  # spread probes along the chain
-        for i in range(0, len(coords) - 1, step):
-            probe = _right_probe(coords[i], coords[i + 1])
-            if probe is None:
-                continue
-            # STRtree predicate kwarg is broken in Blender's Shapely build;
-            # use bbox-only query then filter manually.
-            for idx in tree.query(probe):
-                if faces[int(idx)].contains(probe):
-                    ocean_idx.add(int(idx))
+    for segment_idx in probe_indices:
+        probe = _right_probe(segment_idx)
+        if probe is None:
+            continue
+        # STRtree predicate kwarg is broken in Blender's Shapely build;
+        # use bbox-only query then filter manually.
+        for idx in tree.query(probe):
+            if faces[int(idx)].contains(probe):
+                ocean_idx.add(int(idx))
 
     if not ocean_idx:
         return []

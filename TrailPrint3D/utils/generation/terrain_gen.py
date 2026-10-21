@@ -279,6 +279,30 @@ def _rg_start_osm_prefetch(gen: GenerationContext):
     gen.fetch.fetchResult = result
 
 
+def prepare_combined_osm_fetch(min_lat, max_lat, min_lon, max_lon, map_km):
+    """Snapshot Blender settings and return a worker-safe combined-area fetch.
+
+    Call this on the main thread, then run the returned callable either inline
+    or in a background executor to overlap OSM with elevation fetching.
+    """
+    from ..terrain import _fetch_all_kinds_parallel
+
+    tp3d = bpy.context.scene.tp3d
+    active_kind_tasks = _rg_build_osm_kind_tasks(
+        min_lat, max_lat, min_lon, max_lon, map_km, tp3d.elementSource, tp3d,
+    )
+    fetch_settings = _rg_osm_fetch_settings(tp3d) if active_kind_tasks else None
+
+    def _fetch():
+        if not active_kind_tasks:
+            return {}
+        return _fetch_all_kinds_parallel(
+            active_kind_tasks, threading.Semaphore(1), settings=fetch_settings
+        )
+
+    return _fetch
+
+
 def fetch_combined_osm_data(min_lat, max_lat, min_lon, max_lon, map_km):
     """Fetch every active OSM kind once for a combined multi-tile bbox.
 
@@ -301,21 +325,9 @@ def fetch_combined_osm_data(min_lat, max_lat, min_lon, max_lon, map_km):
     _fetch_all_kinds_parallel produces -- pass straight into every physical
     tile's _rg_build_terrain_elements(gen, prefetched_osm=...).
     """
-    from ..terrain import (
-        _fetch_all_kinds_parallel,  # deferred to avoid circular import at load time
-    )
-
-    tp3d = bpy.context.scene.tp3d
-    _active_kind_tasks = _rg_build_osm_kind_tasks(
-        min_lat, max_lat, min_lon, max_lon, map_km, tp3d.elementSource, tp3d,
-    )
-    if not _active_kind_tasks:
-        return {}
-
-    _fetch_settings = _rg_osm_fetch_settings(tp3d)
-    return _fetch_all_kinds_parallel(
-        _active_kind_tasks, threading.Semaphore(1), settings=_fetch_settings
-    )
+    return prepare_combined_osm_fetch(
+        min_lat, max_lat, min_lon, max_lon, map_km
+    )()
 
 
 def _rg_start_satellite_prefetch(gen: GenerationContext):
