@@ -214,8 +214,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .settings-modal-right .preview-close-btn:hover { background: rgba(0,0,0,0.75); border-color: var(--accent); color: #fff; }
 .settings-modal-box.preview-active .settings-modal-left { flex: 1 1 60%; }
 .settings-modal-box.preview-active .settings-modal-right { display: flex; }
+/* Natural size (shrinking if needed) rather than growing to fill the panel --
+   otherwise the image box takes the whole height and the caption ends up
+   pinned to the bottom instead of right below the picture. */
 .settings-modal-right img, .settings-modal-right video {
-    flex: 1; min-height: 0; max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; }
+    flex: 0 1 auto; min-height: 0; max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; }
 /* Optional caption (tp3dShowPreview's second argument) shown below the
    image -- stays out of the image's way (flex-shrink:0) so a multi-line
    caption never gets squeezed by the image's own flex:1 sizing above. */
@@ -359,6 +362,15 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .element-mode-btn:hover:not(:disabled):not(.active) { background: #3d3d3d; border-color: var(--accent); color: var(--text-primary); }
 .element-mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .element-mode-btn:disabled { opacity: 0.4; cursor: not-allowed; background: var(--surface-field); color: #666; border-color: var(--surface-raised); }
+/* tp3dToggleImagePopover (picker_ui.js): image hint next to a sidebar "?". */
+.tp3d-img-popover { position: fixed; z-index: 3000; display: none; flex-direction: column; gap: 6px;
+    width: min(560px, calc(100vw - 16px)); padding: 10px; background: var(--surface-panel);
+    border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,0.45); }
+.tp3d-img-popover.open { display: flex; }
+.tp3d-img-popover img { width: 100%; max-height: 75vh; object-fit: contain; border-radius: 4px; }
+.tp3d-img-popover-caption { font-size: 13px; line-height: 1.45; color: var(--text-secondary); }
+/* The sidebar "?" sits inline after its label/readout. */
+.sidebar-preview-btn { margin-left: 6px; vertical-align: middle; }
 /* tp3dToast (picker_ui.js): small self-dismissing note, bottom centre or just
    below the element it's about. */
 .tp3d-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 3000;

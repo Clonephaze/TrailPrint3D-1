@@ -68,7 +68,8 @@ var SETTINGS_MODAL_MAP_FIELDS = [
     { key: 'scaleElevation', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Elevation Scale', type: 'number', step: 0.1, min: 0,
       title: 'Multiplier to the Elevation',
-      preview: 'https://trailprint3d.com/images/howto/ElevationScaleGif.webp' },
+      preview: 'https://trailprint3d.com/images/howto/ElevationScaleGif.webp',
+      previewCaption: 'Multiplier to the scale of the elevation.' },
     { key: 'minThickness', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Extra Map Height', type: 'number', step: 0.5, min: 0.5, unit: 'mm',
       title: 'Extra height added to the map, below the terrain',
@@ -95,17 +96,20 @@ var SETTINGS_MODAL_MAP_FIELDS = [
     { key: 'pathThickness', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Trail Thickness', type: 'number', step: 0.01, min: 0.1, max: 5, decimals: 2,
       title: 'Thickness of the path in mm',
-      preview: 'https://trailprint3d.com/images/howto/PathThicknessGif.webp' },
+      preview: 'https://trailprint3d.com/images/howto/PathThicknessGif.webp',
+      previewCaption: 'Thickness of the trail in mm.' },
     { type: 'subsection', title: 'Single Extruder Mode', fields: [
         { key: 'singleColorModeHeight', source: 'SETTINGS_STATE', endpoint: 'update_setting',
           label: 'Trail Height', type: 'number', step: 0.05, min: 0, max: 10,
           title: 'How far the SCM trail strip rises above the terrain surface (mm)',
           preview: 'https://trailprint3d.com/images/howto/SEM%20-%20Trail%20Height.webp',
+          previewCaption: 'How far the trail sticks out of the map in Single Extruder Mode.',
           enabledWhen: tp3dTrailIsSingleExtruder },
         { key: 'singleColorModeTolerance', source: 'SETTINGS_STATE', endpoint: 'update_setting',
           label: 'Tolerance', type: 'number', step: 0.05, min: 0,
           title: 'Tolerance of the Trail for the Single Extruder Mode',
           preview: 'https://trailprint3d.com/images/howto/SEM%20-%20Trail%20Tolerance.webp',
+          previewCaption: 'Tolerance of the trail to the map in Single Extruder Mode.',
           enabledWhen: tp3dTrailIsSingleExtruder }
     ] }
 ];
@@ -160,14 +164,12 @@ var TRAIL_APPEARANCE_OPTIONS = [
       title: 'The trail is its own object' },
     { mode: 'SCM', label: 'Single Extruder Mode', desc: 'Print the Trail Separately',
       title: 'Enable this if you don\'t have a Multicolor printer',
-      preview: 'https://trailprint3d.com/images/howto/SingleColorTrail.webp' },
+      preview: 'https://trailprint3d.com/images/howto/SingleColorTrail.webp',
+      caption: 'Print the trail separately and put it into the cutout afterwards.' },
     { mode: 'PAINT', label: 'Paint Trail', desc: 'Painted into the map texture',
       title: 'Paint the trail into the texture (terrain under the trail coloured red)',
       preview: 'https://trailprint3d.com/images/howto/PaintTrail.webp',
-      caption: [
-          'Instead of a separate trail object, the trail is painted into the map\'s texture — the terrain under the trail is coloured red.',
-          'Only available while the elements are in Paint mode (Elements tab).'
-      ] }
+      caption: 'Paint the trail onto the map instead of creating it as a separate object.' }
 ];
 function tp3dBuildTrailAppearanceSwitch() {
     var row = document.createElement('div');
@@ -325,16 +327,23 @@ var ELEMENT_CARD_LABELS = {
 // instead (tp3dBuildElementsTab), sitting to the right of Roads rather
 // than crowding the small single-field cards up top.
 var SIMPLE_ELEMENT_ORDER = ['forest', 'scree', 'city', 'greenspace', 'farmland', 'glacier'];
+// Shared by every element's area threshold (and Water's Lake/Pond one).
+var ELEMENT_THRESHOLD_PREVIEW = 'https://trailprint3d.com/images/howto/ElementTreshold.webp';
+var ELEMENT_THRESHOLD_CAPTION = 'Filter out smaller occurrences of the elements for simpler printing.';
 var SIMPLE_ELEMENT_FIELDS = {
-    forest: [{ key: 'colFArea', label: 'Area Threshold', step: 0.5, min: 0 }],
-    scree: [{ key: 'colScrArea', label: 'Area Threshold', step: 0.5, min: 0 }],
-    city: [{ key: 'colCArea', label: 'Area Threshold', step: 0.5, min: 0 }],
-    greenspace: [{ key: 'colGrArea', label: 'Area Threshold', step: 0.5, min: 0 }],
-    farmland: [{ key: 'colFaArea', label: 'Area Threshold', step: 0.5, min: 0 }],
-    glacier: [{ key: 'colGlArea', label: 'Area Threshold', step: 0.5, min: 0 }],
+    forest: [{ key: 'colFArea', label: 'Area Threshold', step: 0.5, min: 0, preview: ELEMENT_THRESHOLD_PREVIEW, previewCaption: ELEMENT_THRESHOLD_CAPTION }],
+    scree: [{ key: 'colScrArea', label: 'Area Threshold', step: 0.5, min: 0, preview: ELEMENT_THRESHOLD_PREVIEW, previewCaption: ELEMENT_THRESHOLD_CAPTION }],
+    city: [{ key: 'colCArea', label: 'Area Threshold', step: 0.5, min: 0, preview: ELEMENT_THRESHOLD_PREVIEW, previewCaption: ELEMENT_THRESHOLD_CAPTION }],
+    greenspace: [{ key: 'colGrArea', label: 'Area Threshold', step: 0.5, min: 0, preview: ELEMENT_THRESHOLD_PREVIEW, previewCaption: ELEMENT_THRESHOLD_CAPTION }],
+    farmland: [{ key: 'colFaArea', label: 'Area Threshold', step: 0.5, min: 0, preview: ELEMENT_THRESHOLD_PREVIEW, previewCaption: ELEMENT_THRESHOLD_CAPTION }],
+    glacier: [{ key: 'colGlArea', label: 'Area Threshold', step: 0.5, min: 0, preview: ELEMENT_THRESHOLD_PREVIEW, previewCaption: ELEMENT_THRESHOLD_CAPTION }],
     buildings: [
-        { key: 'elBHeightMultiplier', label: 'Height Multiplier', step: 0.1, min: 0.01 },
-        { key: 'elBMinPrintMM', label: 'Min Footprint (mm)', step: 0.01, min: 0 }
+        { key: 'elBHeightMultiplier', label: 'Height Multiplier', step: 0.1, min: 0.01,
+          preview: 'https://trailprint3d.com/images/howto/BuildingsHeight.webp',
+          previewCaption: 'Multiplier to the height of the buildings.' },
+        { key: 'elBMinPrintMM', label: 'Min Footprint (mm)', step: 0.01, min: 0,
+          preview: 'https://trailprint3d.com/images/howto/BuildingSizeFootprint.webp',
+          previewCaption: 'Filter out buildings whose footprint is below this size.' }
     ]
 };
 
@@ -350,6 +359,8 @@ var ELEMENT_TOLERANCE_FIELD = {
     key: 'toleranceElements', source: 'ADVANCED_SETTINGS_STATE', endpoint: 'update_advanced_setting',
     label: 'Element Tolerance', type: 'number', step: 0.01, min: 0, decimals: 2,
     title: 'Clearance around the elements (water, forest, ...) in Single Extruder Mode',
+    preview: 'https://trailprint3d.com/images/howto/ElementTolerance.webp',
+    previewCaption: 'Tolerance between the elements.',
     enabledWhen: function() { return SETTINGS_STATE.elementMode === 'SINGLECOLORMODE_REMESH'; }
 };
 var WORLDCOVER_MIN_AREA_FIELD = {
@@ -369,10 +380,11 @@ var COMPOSITE_ELEMENTS = {
             { key: 'elOActive', label: 'Ocean' }
         ],
         numberFields: [
-            { key: 'colWArea', label: 'Lake/Pond Threshold (in mm²)', step: 0.1, min: 0 },
+            { key: 'colWArea', label: 'Lake/Pond Threshold (in mm²)', step: 0.1, min: 0, preview: ELEMENT_THRESHOLD_PREVIEW, previewCaption: ELEMENT_THRESHOLD_CAPTION },
             { key: 'colWStreamWidth', label: 'River Width (multiplicator)', step: 0.1, min: 0.1, max: 100 },
             { key: 'elOMinIslandArea', label: 'Min Island Area (in mm²)', step: 0.5, min: 0 },
-            { key: 'elORdpEpsilon', label: 'Ocean Simplify', step: 0.01, min: 0, max: 2 }
+            { key: 'elORdpEpsilon', label: 'Ocean Simplify', step: 0.01, min: 0, max: 2,
+              preview: 'https://trailprint3d.com/images/howto/CoastlineSimplify.webp' }
         ],
         extraFields: tp3dBuildWaterFlattenFields
     },
@@ -391,8 +403,12 @@ var COMPOSITE_ELEMENTS = {
         ],
         numberFields: [
             { key: 'elSMultiplier', label: 'Width Multiplier', step: 0.1, min: 0 },
-            { key: 'elSHeight', label: 'Height', step: 0.05, min: 0 },
-            { key: 'elSCutTolerance', label: 'Cut Tolerance', step: 0.05, min: 0, singleExtruderOnly: true }
+            { key: 'elSHeight', label: 'Height', step: 0.05, min: 0,
+              preview: 'https://trailprint3d.com/images/howto/RoadHeight.webp',
+              previewCaption: 'How high the roads stick out of the map.' },
+            { key: 'elSCutTolerance', label: 'Cut Tolerance', step: 0.05, min: 0, singleExtruderOnly: true,
+              preview: 'https://trailprint3d.com/images/howto/RoadCutTolerance.webp',
+              previewCaption: 'Tolerance for the roads in Single Extruder Mode.' }
         ],
         extraFields: tp3dBuildRoadsPaintField
     }
@@ -669,14 +685,18 @@ function tp3dBuildWaterFlattenFields() {
     var flatten = tp3dBuildCheckboxField({
         key: 'colWFlattenTop',
         label: 'Flatten Water Surface',
-        title: "Flatten each water body's surface to its own median height instead of following every terrain bump"
+        title: "Flatten each water body's surface to its own median height instead of following every terrain bump",
+        preview: 'https://trailprint3d.com/images/howto/FlatttenWater.webp',
+        previewCaption: 'Flatten out the sometimes uneven water surface that comes from the data source.'
     });
     var insert = tp3dBuildNumberField({
         key: 'colWInsert',
         label: 'Insert (mm)',
         step: 0.1,
         min: 0,
-        title: 'Sink the water this many mm lower in Z'
+        title: 'Sink the water this many mm lower in Z',
+        preview: 'https://trailprint3d.com/images/howto/WaterInsert.webp',
+        previewCaption: 'Insert the water deeper into the part for a unique look.'
     });
     var insertInput = insert.querySelector('input');
     // Mirrors panels.py's INFO label: generation caps Insert to Extra Map
@@ -722,6 +742,7 @@ function tp3dBuildRoadsPaintField() {
         label: 'Paint Roads',
         title: 'Paint the roads into the texture (terrain under roads coloured black)',
         preview: 'https://trailprint3d.com/images/howto/PaintRoads.webp',
+        previewCaption: 'Paint the roads onto the map instead of creating a separate object.',
         enabledWhen: tp3dTextureTrailRoadsEnabled
     };
     // With a preview this is a .preview-wrap around the <label> -- lock the
@@ -1263,7 +1284,8 @@ function tp3dBuildOsmSmoothingToggle() {
 
     var label = document.createElement('label');
     label.textContent = 'Element Smoothing';
-    row.appendChild(tp3dWithPreview(label, 'https://trailprint3d.com/images/howto/ElementSmoothing.webp'));
+    row.appendChild(tp3dWithPreview(label, 'https://trailprint3d.com/images/howto/ElementSmoothing.webp',
+        'Smooth the outline of the elements so they are easier to print.'));
 
     var current = ADVANCED_SETTINGS_STATE.colOsmSmoothing || 0;
     var isOn = current > 0;
