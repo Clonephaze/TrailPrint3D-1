@@ -52,16 +52,6 @@ classes = [
     operators.TP3D_OT_open_thangs,
     operators.TP3D_OT_info_video,
     operators.TP3D_OT_terrain_dummy,
-    # Terrain tab -- moved from premium/operators_pe.py into the free version.
-    operators.TP3D_OT_terrain,
-    operators.TP3D_OT_generate_just_trail,
-    operators.TP3D_OT_merge_with_map,
-    operators.TP3D_OT_from_center_generation,
-    operators.TP3D_OT_2point_generation,
-    operators.TP3D_OT_pick_geojson_file,
-    operators.TP3D_OT_geojson_generation,
-    operators.TP3D_OT_create_blank,
-    operators.TP3D_OT_extend_tile,
     operators.TP3D_OT_magnet_holes,
     # Must precede TP3D_OT_dovetail, whose targets CollectionProperty uses it.
     operators.TP3D_PG_dovetail_target,
@@ -103,9 +93,18 @@ classes = [
 ]
 
 _PREMIUM_CLASS_NAMES = [
+    "TP3D_OT_terrain",
     "TP3D_OT_chain_generation",
     "TP3D_OT_city_coords",
+    "TP3D_OT_merge_with_map",
+    "TP3D_OT_generate_just_trail",
+    "TP3D_OT_from_center_generation",
     "TP3D_OT_from_center_generation_with_trail",
+    "TP3D_OT_2point_generation",
+    "TP3D_OT_pick_geojson_file",
+    "TP3D_OT_geojson_generation",
+    "TP3D_OT_create_blank",
+    "TP3D_OT_extend_tile",
     "TP3D_OT_import_height_map",
     "TP3D_OT_popup_heightmap",
     "TP3D_OT_map_picker",
