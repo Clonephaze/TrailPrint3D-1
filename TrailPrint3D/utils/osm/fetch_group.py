@@ -317,6 +317,7 @@ def fetch_osm_combined(
     semaphore=None,
     max_cache_age_hours=720,
     tile_progress=None,
+    progress_callback=None,
 ):
     """Fetch all requested OSM kinds for one tile bbox in a single Overpass request.
 
@@ -336,6 +337,9 @@ def fetch_osm_combined(
     tile_progress : optional (index, total) tuple — this tile's 1-based
                 position among all tiles in the current batch, used only to
                 annotate the console log (e.g. "(5/43)")
+    progress_callback : optional callable(str) for short, user-facing status
+                messages (reading cache, waiting for Overpass, download size,
+                processing).  Called from this worker thread.
 
     Returns
     -------
@@ -350,6 +354,16 @@ def fetch_osm_combined(
         disable_cache = bpy.context.scene.tp3d.disableCache
         api_retries = bpy.context.scene.tp3d.apiRetries
 
+    # " (tile 2/4)" -- only worth showing when there is more than one tile.
+    tile_label = (
+        f" (tile {tile_progress[0]}/{tile_progress[1]})"
+        if tile_progress and tile_progress[1] > 1 else ""
+    )
+
+    def report(message):
+        if progress_callback is not None:
+            progress_callback(message)
+
     result: dict = {}
     missing: list = []
     for kind in kinds:
@@ -357,6 +371,7 @@ def fetch_osm_combined(
         if not disable_cache and os.path.exists(cache_path):
             age_hours = (time.time() - os.path.getmtime(cache_path)) / 3600
             if age_hours < max_cache_age_hours:
+                report(f"Reading cached {kind.title()}{tile_label}…")
                 try:
                     with open(cache_path, "r", encoding="utf-8") as fh:
                         data = json.load(fh)
@@ -389,6 +404,13 @@ def fetch_osm_combined(
     )
 
     # ── 3. Network request (hold semaphore only here) ─────────────────────
+    # Only pass the progress kwargs when wanted, so callers/tests that patch
+    # _overpass_request with the older signature keep working.
+    progress_kwargs = (
+        {"progress_callback": progress_callback, "progress_label": tile_label}
+        if progress_callback is not None else {}
+    )
+    report(f"Waiting for Overpass{tile_label}…")
     if semaphore is not None:
         with semaphore:
             data = _overpass_request(
@@ -397,6 +419,7 @@ def fetch_osm_combined(
                 method="POST",
                 timeout=120,
                 max_retries=api_retries,
+                **progress_kwargs,
             )
     else:
         data = _overpass_request(
@@ -405,6 +428,7 @@ def fetch_osm_combined(
             method="POST",
             timeout=120,
             max_retries=api_retries,
+            **progress_kwargs,
         )
 
     if data is None:
@@ -415,6 +439,7 @@ def fetch_osm_combined(
 
     # ── 4. Split response elements by kind ───────────────────────────────
     elements = data.get("elements", [])
+    report(f"Processing {len(elements):,} OSM objects{tile_label}…")
 
     # Index all node elements by id for O(1) lookup
     all_nodes: dict = {e["id"]: e for e in elements if e.get("type") == "node"}

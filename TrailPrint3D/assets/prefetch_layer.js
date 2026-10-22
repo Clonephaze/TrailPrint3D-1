@@ -448,7 +448,10 @@ function pollPrefetch(startedAt) {
                 setPrefetchBusy(false);
                 document.getElementById('status').textContent = 'Prefetch timed out.';
             } else {
-                setPrefetchBusy(true, job.message || 'Fetching…');
+                // Elapsed time ticks even while the backend sits in one long
+                // step (e.g. Overpass still running the query), so it never looks stuck.
+                var secs = Math.round((Date.now() - startedAt) / 1000);
+                setPrefetchBusy(true, (job.message || 'Fetching…') + ' · ' + secs + 's');
                 prefetchPollTimer = setTimeout(function() { pollPrefetch(startedAt); }, 700);
             }
         })

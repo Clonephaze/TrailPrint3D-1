@@ -233,6 +233,28 @@ def test_overpass_request_log_callback_called_on_error():
     assert messages, "log_callback should have been called on HTTP error"
 
 
+def test_overpass_request_progress_callback_streams_body():
+    """progress_callback streams the body and reports the downloaded size."""
+    import json
+    from unittest.mock import patch
+
+    from TrailPrint3D.utils.osm.fetch_utils import _overpass_request
+
+    data = {"elements": [{"type": "node", "id": 1}]}
+    resp = _make_response(200, data)
+    body = json.dumps(data).encode("utf-8")
+    resp.iter_content.return_value = [body[:10], body[10:]]
+    messages = []
+    with patch("TrailPrint3D.utils.osm.fetch_utils.requests.post", return_value=resp) as mp, \
+         patch("TrailPrint3D.utils.osm.fetch_utils.time.sleep"):
+        result = _overpass_request("query", "https://example.com", max_retries=1,
+                                   progress_callback=messages.append)
+
+    assert result == data
+    assert mp.call_args.kwargs.get("stream") is True
+    assert any(m.startswith("Downloading") for m in messages), messages
+
+
 def test_overpass_request_get_method():
     """method='GET' uses requests.get, not requests.post."""
     from unittest.mock import patch
@@ -1232,6 +1254,7 @@ if __name__ == "__main__":
     _run("overpass request: exhausted retries → None",    test_overpass_request_exhausted_returns_none)
     _run("overpass request: Timeout triggers retry",      test_overpass_request_timeout_triggers_retry)
     _run("overpass request: log_callback fired on error", test_overpass_request_log_callback_called_on_error)
+    _run("overpass request: progress_callback streams body", test_overpass_request_progress_callback_streams_body)
     _run("overpass request: GET method uses requests.get",test_overpass_request_get_method)
 
     # Per-tile parallel fetcher

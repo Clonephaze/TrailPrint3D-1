@@ -160,14 +160,18 @@ def run_prefetch(plan, job):
     picker_server.set_prefetch_job for the reader side."""
     from ..terrain import _fetch_all_kinds_parallel
 
+    def report(message):
+        job.update(message=message)
+
     try:
         job.update(status="running", message="Fetching elements…")
         # Semaphore(1): one live Overpass request at a time, like the generator.
         fetched = _fetch_all_kinds_parallel(
-            plan["kind_tasks"], threading.Semaphore(1), settings=plan["settings"]
+            plan["kind_tasks"], threading.Semaphore(1), settings=plan["settings"],
+            progress_callback=report,
         )
         job.update(message="Building preview…")
-        features, truncated = features_from_tiles(fetched)
+        features, truncated = features_from_tiles(fetched, progress_callback=report)
         counts = {}
         for feature in features:
             counts[feature["kind"]] = counts.get(feature["kind"], 0) + 1
@@ -236,8 +240,11 @@ def _clean_ring(coords, tolerance, closed):
     return pts if len(pts) >= (3 if closed else 2) else None
 
 
-def features_from_tiles(fetched):
+def features_from_tiles(fetched, progress_callback=None):
     """{kind: {bbox: (data, from_cache)}} -> ([feature, ...], truncated).
+
+    *progress_callback*, if given, gets a short status message as each kind
+    is processed.
 
     A feature is {"id": "way/1", "kind", "line": bool, "name", "sub", "rings":
     [[[lat, lon], ...], ...]}. Relations carry every outer AND inner ring in
@@ -317,6 +324,8 @@ def features_from_tiles(fetched):
     truncated = False
 
     for kind, tiles in fetched.items():
+        if progress_callback is not None:
+            progress_callback(f"Building preview: {kind.title()}…")
         for bbox, (data, _from_cache) in tiles.items():
             elements = data.get("elements", ())
             nodes = {e["id"]: e for e in elements if e.get("type") == "node"}

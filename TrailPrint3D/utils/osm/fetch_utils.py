@@ -1,3 +1,4 @@
+import json
 import time
 from typing import NamedTuple
 
@@ -72,8 +73,31 @@ def requested_highway_tags(tier_active: "dict[str, bool]", mapsize: float) -> se
     return requested
 
 
+def _read_with_progress(response, progress_callback, label):
+    """Read a streamed response body, reporting the downloaded size about
+    twice a second via *progress_callback*."""
+    chunks = []
+    received = 0
+    last_report = 0.0
+    for chunk in response.iter_content(chunk_size=65536):
+        chunks.append(chunk)
+        received += len(chunk)
+        now = time.monotonic()
+        if now - last_report >= 0.5:
+            progress_callback(f"Downloading{label}… {received / 1e6:.1f} MB")
+            last_report = now
+    return b"".join(chunks)
+
+
 def _overpass_request(
-    query, overpass_url, method="POST", timeout=60, max_retries=3, log_callback=None
+    query,
+    overpass_url,
+    method="POST",
+    timeout=60,
+    max_retries=3,
+    log_callback=None,
+    progress_callback=None,
+    progress_label="",
 ):
     """Make one Overpass API request with retry/backoff.
 
@@ -86,17 +110,26 @@ def _overpass_request(
     max_retries  : total attempts before giving up
     log_callback : optional callable(str) for progress messages — called from
                    whatever thread this runs on, so keep it thread-safe.
+    progress_callback : optional callable(str), same threading rules. When
+                   given, the body is streamed and the downloaded size is
+                   reported while it arrives; it also receives the retry
+                   messages if no log_callback is given.
+    progress_label : text appended to "Downloading" in those messages
+                   (e.g. " (tile 2/4)").
 
     Returns the parsed JSON dict on success, or None on failure.
     """
+    log_callback = log_callback or progress_callback
     for attempt in range(max_retries):
         try:
+            stream = progress_callback is not None
             if method == "POST":
                 response = requests.post(
                     overpass_url,
                     data={"data": query},
                     headers={"User-Agent": "TrailPrint3D_3.00", "Accept": "*/*"},
                     timeout=timeout,
+                    stream=stream,
                 )
             else:
                 response = requests.get(
@@ -104,10 +137,15 @@ def _overpass_request(
                     params={"data": query},
                     headers={"User-Agent": "TrailPrint3D_3.00", "Accept": "*/*"},
                     timeout=timeout,
+                    stream=stream,
                 )
 
             if response.status_code == 200:
                 try:
+                    if stream:
+                        return json.loads(
+                            _read_with_progress(response, progress_callback, progress_label)
+                        )
                     return response.json()
                 except ValueError:
                     print(f"Attempt {attempt + 1}: Invalid JSON response")

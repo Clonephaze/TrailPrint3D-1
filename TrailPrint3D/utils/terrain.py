@@ -235,7 +235,9 @@ def _fetch_tiles_parallel(tasks, kind, semaphore, settings=None, max_workers=4):
     return results
 
 
-def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_workers=4):
+def _fetch_all_kinds_parallel(
+    kind_task_pairs, semaphore, settings=None, max_workers=4, progress_callback=None
+):
     """Fetch all active OSM kinds — all tiles in one parallel batch.
 
     Each unique tile bbox is fetched with a **single** Overpass union request
@@ -254,6 +256,8 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
     settings        : OsmFetchSettings snapshot read on the main thread.  Passed
                       through so worker threads never touch bpy.context.
     max_workers     : thread-pool size (default 4; one request per tile now)
+    progress_callback : optional callable(str), forwarded to fetch_osm_combined
+                      for user-facing status messages (called from workers).
 
     Returns
     -------
@@ -274,6 +278,10 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
 
     total_tiles = len(tile_kinds)
     tile_counter = [0]  # mutable cell shared across worker threads, guarded by `lock`
+    # Only passed when set, so mocks of fetch_osm_combined without it still work.
+    extra_kwargs = (
+        {"progress_callback": progress_callback} if progress_callback is not None else {}
+    )
 
     def _fetch_tile(bbox, kinds):
         with lock:
@@ -286,7 +294,8 @@ def _fetch_all_kinds_parallel(kind_task_pairs, semaphore, settings=None, max_wor
             semaphore.acquire()
         try:
             tile_result = fetch_osm_combined(
-                bbox, kinds, settings=settings, tile_progress=tile_progress
+                bbox, kinds, settings=settings, tile_progress=tile_progress,
+                **extra_kwargs,
             )
         except (OSError, ValueError, KeyError) as e:
             print(f"[_fetch_all_kinds_parallel] tile {bbox} failed: {e}")
