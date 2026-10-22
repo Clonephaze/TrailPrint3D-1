@@ -1002,7 +1002,11 @@ def _rg_apply_single_color_mode(
             ]
 
             _active_scm_keys = [k for k in TERRAIN_PRIORITY_ORDER if terrain.get(k)]
-            _n_scm = max(1, len(_active_scm_keys))
+            if not _active_scm_keys:
+                # No area elements (e.g. roads only) -- nothing to remesh or
+                # subtract; road cutting runs separately afterwards.
+                return
+            _n_scm = len(_active_scm_keys)
             _scm_done = 0
 
             # Shared bottom so every element piece and its recess slot to the same depth.

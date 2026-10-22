@@ -116,7 +116,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
 
     _ot_api_key = get_prefs().openTopographyApiKey
 
-    if elementMode and el_sActive and el_sHeight == 0:
+    if elementMode == "PAINT" and el_sActive and el_sHeight == 0:
         raise ValidationError(
             _("Road Height is 0 in Paint mode — this produces degenerate geometry. Set Road Height above 0 or disable roads.")
         )

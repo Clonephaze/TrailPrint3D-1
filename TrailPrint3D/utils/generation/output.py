@@ -247,7 +247,7 @@ def _rg_export(gen: GenerationContext):
                 export_to_STL(tcrv, exportformat)
         export_to_STL(gen.runtime.mapObject, exportformat)
 
-        if elements and gen.settings.elementMode == "SINGLECOLORMODE":
+        if elements and gen.settings.elementMode in ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH"):
             for elem_obj in elements.values():
                 if (
                     elem_obj

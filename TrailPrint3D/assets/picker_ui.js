@@ -52,6 +52,67 @@ function tp3dToast(message, anchor) {
     tp3dToastTimer = setTimeout(function() { toast.classList.remove('show'); }, 3000);
 }
 
+// Image hint for controls outside the Settings popup (which has its own
+// preview panel) -- e.g. the sidebar's Resolution/Size. Any button with
+// data-preview-img="url" (and optionally data-preview-caption) opens a small
+// floating card next to it; a click anywhere else, Escape, or the same button
+// again closes it.
+function tp3dToggleImagePopover(anchor) {
+    var pop = document.getElementById('tp3dImagePopover');
+    if (pop && pop.classList.contains('open') && pop.tp3dAnchor === anchor) {
+        tp3dCloseImagePopover();
+        return;
+    }
+    if (!pop) {
+        pop = document.createElement('div');
+        pop.id = 'tp3dImagePopover';
+        pop.className = 'tp3d-img-popover';
+        pop.setAttribute('role', 'dialog');
+        document.body.appendChild(pop);
+    }
+    pop.innerHTML = '';
+    var img = document.createElement('img');
+    img.src = anchor.dataset.previewImg;
+    img.alt = 'Preview';
+    pop.appendChild(img);
+    if (anchor.dataset.previewCaption) {
+        var caption = document.createElement('div');
+        caption.className = 'tp3d-img-popover-caption';
+        caption.textContent = anchor.dataset.previewCaption;
+        pop.appendChild(caption);
+    }
+    pop.tp3dAnchor = anchor;
+    pop.classList.add('open');
+    // Right of the "?" (the sidebar sits on the left), kept inside the window;
+    // re-placed once the image knows its height.
+    function place() {
+        var rect = anchor.getBoundingClientRect();
+        var left = Math.min(rect.right + 12, window.innerWidth - pop.offsetWidth - 8);
+        var top = Math.min(Math.max(8, rect.top - 12), window.innerHeight - pop.offsetHeight - 8);
+        pop.style.left = Math.max(8, left) + 'px';
+        pop.style.top = Math.max(8, top) + 'px';
+    }
+    place();
+    img.addEventListener('load', place);
+}
+function tp3dCloseImagePopover() {
+    var pop = document.getElementById('tp3dImagePopover');
+    if (pop) pop.classList.remove('open');
+}
+document.addEventListener('click', function(event) {
+    var btn = event.target.closest && event.target.closest('[data-preview-img]');
+    if (btn) {
+        event.preventDefault();
+        event.stopPropagation();
+        tp3dToggleImagePopover(btn);
+    } else if (!(event.target.closest && event.target.closest('#tp3dImagePopover'))) {
+        tp3dCloseImagePopover();
+    }
+});
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') tp3dCloseImagePopover();
+});
+
 (function() {
     var dialogSelector = '.tp3d-modal';
     var toggleSelector = 'button.shape-btn, button.shape-toggle-btn, button.element-mode-btn, button.source-switch-btn, button[data-element-toggle]';

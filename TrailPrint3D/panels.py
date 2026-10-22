@@ -174,6 +174,15 @@ _TERRAIN_GENERATORS = {
 }
 
 
+def _effective_generation_mode(props):
+    """The sidebar's generation mode -- always "GENERATION" in the free
+    version, so a file saved with Multi/Terrain active (e.g. from Premium)
+    can't open those locked tabs' settings and buttons there."""
+    if temp.PREMIUMVERSION:
+        return props.generation_mode
+    return "GENERATION"
+
+
 def _draw_generate_button(layout, props):
     def _draw_multi_generate(col):
         if temp.PREMIUMVERSION:
@@ -184,8 +193,8 @@ def _draw_generate_button(layout, props):
             )
 
     def _draw_terrain_generate(col, props):
-        available = props.sScaleHor is not None
-        entry = _TERRAIN_GENERATORS.get(props.mapmode) if available else None
+        premium = temp.PREMIUMVERSION and props.sScaleHor is not None
+        entry = _TERRAIN_GENERATORS.get(props.mapmode) if premium else None
 
         if entry:
             op_id, label, icon = entry
@@ -198,7 +207,7 @@ def _draw_generate_button(layout, props):
     col = layout.column()
     col.scale_y = 1.4
 
-    mode = props.generation_mode
+    mode = _effective_generation_mode(props)
     if mode == "GENERATION":
         col.operator("tp3d.run_generation", icon="DISC")
     elif mode == "MULTI":
@@ -241,7 +250,7 @@ def _draw_terrain_settings(layout, props):
     row = col.row(align=True)
     row.label(icon="BLANK1")
     row.prop(props, "trailName", placeholder=_("Enter trail name"))
-    if props.sScaleHor is not None:
+    if props.sScaleHor is not None and temp.PREMIUMVERSION:
         box.prop(props, "mapmode", text=_("Mode"))
         boxer = box.box()
         if props.mapmode == "FROMPLANE":
@@ -299,6 +308,13 @@ def _draw_terrain_settings(layout, props):
         )
     else:
         col = box.column(align=True)
+        col.operator(
+            "tp3d.terrain_dummy",
+            text=_("Create Map from selected"),
+            icon="LOCKED",
+        )
+        col.operator("tp3d.terrain_dummy", text=_("Merge with Map"), icon="LOCKED")
+        col.operator("tp3d.terrain_dummy", text=_("Create Blank"), icon="LOCKED")
     col.separator(factor=1.0)
     if temp.PREMIUMVERSION:
         # pass
@@ -321,7 +337,7 @@ def _draw_source_box(layout, props):
         help_key="TP3D_PT_help_source",
     )
     col = box.column(align=True)
-    if props.generation_mode == "GENERATION":
+    if _effective_generation_mode(props) == "GENERATION":
         col.label(text=_("GPX File Selection:"))
         row = col.row(align=True)
         row.label(icon="BLANK1")
@@ -921,10 +937,9 @@ class TP3D_PT_generate(bpy.types.Panel):
         if temp.PREMIUMVERSION:
             row.prop(props, "generation_mode", expand=True)
         else:
-            # Terrain is part of the free version; only Multi stays Premium.
             row.prop_enum(props, "generation_mode", "GENERATION")
             row.operator("tp3d.terrain_dummy", text=_("Multi"), icon="LOCKED")
-            row.prop_enum(props, "generation_mode", "TERRAIN")
+            row.operator("tp3d.terrain_dummy", text=_("Terrain"), icon="LOCKED")
 
         # --- Shapely status warning ---
         _draw_shapely_warnings(layout)
@@ -943,7 +958,7 @@ class TP3D_PT_generate(bpy.types.Panel):
         )
         if props.general_settings_expanded:
             # --- Settings ---
-            if props.generation_mode == "TERRAIN":
+            if _effective_generation_mode(props) == "TERRAIN":
                 _draw_terrain_settings(layout, props)
             else:
                 # 1. Source
