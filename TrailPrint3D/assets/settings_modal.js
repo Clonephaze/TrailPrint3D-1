@@ -368,6 +368,9 @@ var COASTLINE_SIMPLIFY_FIELD = {
     key: 'elORdpEpsilon', source: 'ADVANCED_SETTINGS_STATE', endpoint: 'update_advanced_setting',
     label: 'Coastline Simplify', type: 'number', step: 0.01, min: 0, max: 2, decimals: 3,
     manualDefault: 0.1,
+    preview: 'https://trailprint3d.com/images/howto/CoastlineSimplify.webp',
+    // Coastlines come from OSM -- nothing to simplify for ESA WorldCover.
+    enabledWhen: function() { return !tp3dIsWorldCover(); },
     title: 'Check to enter a manual Douglas-Peucker coastline tolerance (map units). Unchecked uses 0: automatic simplification scaled with Element Smoothing, not disabled simplification. Positive values are used as-is, followed by Element Smoothing as usual. Higher values remove detail, may delete thin features, and can introduce self-intersections. Use 0.001 to effectively disable simplification.'
 };
 var WORLDCOVER_MIN_AREA_FIELD = {
@@ -1214,6 +1217,9 @@ function tp3dBuildOtherTab() {
     wrap.appendChild(api.card);
     var rest = tp3dBuildFieldList(SETTINGS_MODAL_OTHER_FIELDS);
     while (rest.firstChild) wrap.appendChild(rest.firstChild);
+    var advancedSection = tp3dBuildSection('Advanced Element Settings', 'settings-grid-2');
+    advancedSection.grid.appendChild(tp3dBuildFieldRow(COASTLINE_SIMPLIFY_FIELD));
+    wrap.appendChild(advancedSection.card);
     tp3dRefreshMapTabVisibility();
     return wrap;
 }
@@ -1615,11 +1621,6 @@ function tp3dBuildElementsTab() {
         modeSection.card.title = 'Only available for OpenStreetMap';
     }
     if (modeSection.grid.children.length) wrap.appendChild(modeSection.card);
-    if (!tp3dIsWorldCover()) {
-        var advancedSection = tp3dBuildSection('Advanced Element Settings', 'settings-grid-2');
-        advancedSection.grid.appendChild(tp3dBuildFieldRow(COASTLINE_SIMPLIFY_FIELD));
-        wrap.appendChild(advancedSection.card);
-    }
     tp3dRefreshMapTabVisibility();
 
     return wrap;
