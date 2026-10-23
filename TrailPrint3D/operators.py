@@ -3586,6 +3586,11 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         holder_data = data.get("holder") or {}
         frame_terrain_requested = bool(holder_data.get("frameTerrain"))
         frame_margin = float(holder_data.get("wallWidth") or 4.0) + tolerance / 2
+        puzzle_rotation = float(data.get("shapeRotation") or 0)
+        # bbox already covers the rotated puzzle, but a rotated rim's corners
+        # stick out past that bbox by more than frame_margin itself.
+        _rot = math.radians(puzzle_rotation)
+        frame_margin *= abs(math.cos(_rot)) + abs(math.sin(_rot))
         rows_n = int(data.get("rows") or 0)
         cols_n = int(data.get("cols") or 0)
         shape_name = data.get("shape")
@@ -3662,6 +3667,15 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # the (possibly bigger) blank.
         puzzle_min_x, puzzle_max_x = min(x1, x2), max(x1, x2)
         puzzle_min_y, puzzle_max_y = min(y1, y2), max(y1, y2)
+        # bbox is the ROTATED footprint's bounds; scale_bbox is the puzzle's
+        # own unrotated footprint, which piece origins are laid out in.
+        sx1, sy1, _unused = utils.convert_to_blender_coordinates(
+            scale_bbox["south"], scale_bbox["west"], 0, 0
+        )
+        sx2, sy2, _unused = utils.convert_to_blender_coordinates(
+            scale_bbox["north"], scale_bbox["east"], 0, 0
+        )
+        puzzle_size = (abs(sx2 - sx1), abs(sy2 - sy1))
 
         # Clear whatever previously-generated content already occupies this
         # spot first, same reasoning as runGeneration's own "Phase 7" (
@@ -3882,6 +3896,8 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             overlay=overlay,
             progress_start=0.75,
             progress_end=0.85,
+            rotation_deg=puzzle_rotation,
+            puzzle_size=puzzle_size,
         )
 
         if trails:
@@ -3951,6 +3967,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
                     # above) isn't extended with this yet, so frame_terrain_
                     # requested is only ever actually consumed here.
                     frame_terrain_obj=blank if frame_terrain_requested else None,
+                    rotation_deg=puzzle_rotation,
                 )
             if holder_obj is not None:
                 holder_obj.name = f"{puzzle_name}_Holder"

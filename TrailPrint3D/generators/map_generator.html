@@ -595,7 +595,7 @@
                 : tp3dProjectedShapePoints(bounds, currentShape, TP3D_SHAPE_ROTATION_DEG);
         }
         function tp3dRotatedEditHandlePoints() {
-            if (!coords || !tp3dCanRotateShape() || TP3D_SHAPE_ROTATION_DEG % 360 === 0) return null;
+            if (!coords || !tp3dCanRotateShape()) return null;
             return tp3dProjectedShapePoints(
                 effectiveBounds(coords), 'rectangle', TP3D_SHAPE_ROTATION_DEG
             );
@@ -640,6 +640,32 @@
         // shape gets squared first so what you see is what gets generated.
         function effectiveBounds(b) {
             return currentShape === 'rectangle' ? b : squareBoundsFromRect(b);
+        }
+
+        // Every gesture is locked to 1:1 for those shapes (rect_editor.js's
+        // tp3dSquareLocked), so the orange box matches the blue preview.
+        function tp3dKeepSquare() { return currentShape !== 'rectangle'; }
+
+        // Squares an area drawn/restored while Rectangle was active, e.g.
+        // right after switching shapes. Tolerance-checked so an already-square
+        // box (every edit while locked) isn't rebound mid-drag.
+        function tp3dSquareCoords() {
+            var northWest = map.project([coords.north, coords.west], 0);
+            var southEast = map.project([coords.south, coords.east], 0);
+            var width = Math.abs(southEast.x - northWest.x);
+            var height = Math.abs(southEast.y - northWest.y);
+            if (Math.abs(width - height) <= 1e-9 * Math.max(width, height)) return;
+            var squared = squareBoundsFromRect(coords);
+            coords = { north: squared.north, south: squared.south, east: squared.east, west: squared.west, type: currentShape };
+            if (shapeCenter) shapeCenter = tp3dProjectedBoundsCenter(coords, 0);
+            if (!rectLayer) return;
+            rectLayer.setBounds([[coords.south, coords.west], [coords.north, coords.east]]);
+            // leaflet-draw's markers don't follow external setBounds calls.
+            if (rectLayer.editing && rectLayer.editing.enabled()) {
+                rectLayer.editing.disable();
+                bindLiveEdit(rectLayer);
+            }
+            syncMoveHandlePosition();
         }
 
         // svgInscribedBounds/placeSvgBoxInViewport/clearSvgShapeImport live in
@@ -1050,11 +1076,15 @@
                 syncRotationHandlePosition();
                 return;
             }
+            if (tp3dKeepSquare()) tp3dSquareCoords();
             var rectStyle = tp3dRectStyle();
             var hasRotation = tp3dCanRotateShape() && TP3D_SHAPE_ROTATION_DEG % 360 !== 0;
+            // Rectangle has no separate blue preview -- its box (or the rotated
+            // outline below) is the shape itself, so it takes the preview's blue.
+            var frameColor = currentShape === 'rectangle' ? '#007bff' : '#E97826';
             if (rectLayer) {
                 rectLayer.setStyle({
-                    color: '#E97826', weight: rectStyle.weight,
+                    color: frameColor, weight: rectStyle.weight,
                     opacity: hasRotation ? 0 : 1,
                     fill: rectStyle.fill,
                     fillOpacity: hasRotation ? 0 : rectStyle.fillOpacity
@@ -1064,7 +1094,7 @@
                 L.polygon(tp3dProjectedShapePoints(
                     effectiveBounds(coords), 'rectangle', TP3D_SHAPE_ROTATION_DEG
                 ), {
-                    color: '#E97826', weight: rectStyle.weight, opacity: 1,
+                    color: frameColor, weight: rectStyle.weight, opacity: 1,
                     fill: rectStyle.fill, fillOpacity: rectStyle.fillOpacity,
                     interactive: false
                 }).addTo(shapePreview);
@@ -1084,7 +1114,7 @@
                 syncRotationHandlePosition();
                 return;
             }
-            if (currentShape === 'rectangle' && TP3D_SHAPE_ROTATION_DEG % 360 === 0) {
+            if (currentShape === 'rectangle') {
                 syncRotationHandlePosition();
                 return;
             }

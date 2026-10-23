@@ -125,7 +125,8 @@ var SETTINGS_MODAL_OTHER_FIELDS = [
       // Not OSM-only: WorldCover land cover is sampled into the same texture
       // (utils/texture.py); the condition is Paint mode (generation/input.py).
       previewCaption: 'Resolution of the texture the map is painted with in Paint mode — used for both OSM and ESA WorldCover.',
-      enabledWhen: tp3dTexturePaintMode },
+      enabledWhen: tp3dTextureAvailable,
+      lockedTitle: tp3dNo3mfTitle },
     { key: 'overwritePathElevation', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Snap Trail to Terrain', type: 'checkbox',
       title: 'Cast each point of the trail onto the Terrain Mesh — should usually always be enabled',
@@ -144,8 +145,21 @@ var SETTINGS_MODAL_OTHER_FIELDS = [
 function tp3dTexturePaintMode() {
     return SETTINGS_STATE.elementMode === 'PAINT';
 }
+// The texture itself also needs the 3MF addon: tex_use_texture defaults to
+// temp.has3mf (props.py) and panels.py only draws the Appearance box with it.
+// SETTINGS_STATE.has3mf flips live once threemf_promo.js's install finishes.
+function tp3dHas3mf() {
+    return !!SETTINGS_STATE.has3mf;
+}
+function tp3dTextureAvailable() {
+    return tp3dHas3mf() && tp3dTexturePaintMode();
+}
 function tp3dTextureTrailRoadsEnabled() {
-    return tp3dTexturePaintMode() && MAP_TAB_CONTROL_VALUES.singleColorMode !== true;
+    return tp3dTextureAvailable() && MAP_TAB_CONTROL_VALUES.singleColorMode !== true;
+}
+var TP3D_NO_3MF_TITLE = 'Requires the free 3MF addon';
+function tp3dNo3mfTitle() {
+    return tp3dHas3mf() ? '' : TP3D_NO_3MF_TITLE;
 }
 // Single Extruder elements force a Single Extruder trail too -- panels.py
 // shows singleColorMode checked and locked then, with Height/Tolerance live.
@@ -237,14 +251,21 @@ function tp3dBuildTrailAppearanceSwitch() {
     // Repainted by tp3dRefreshMapTabVisibility via the `apply` hook, so it
     // follows the Elements tab's Paint/Single Extruder switch too. Only the
     // option buttons get locked -- the "?" previews stay clickable.
+    // Paint Trail alone also locks without the 3MF addon (no texture to
+    // paint into), showing Normal -- what Blender then actually builds.
+    var paintTitle = buttons.PAINT.title;
     MAP_TAB_ROWS.push({ field: { apply: function() {
         var forcedScm = !tp3dTexturePaintMode();
+        var noPaint = !tp3dHas3mf();
         var shown = forcedScm ? 'SCM' : current();
+        if (shown === 'PAINT' && noPaint) shown = 'NORMAL';
         Object.keys(buttons).forEach(function(mode) {
+            var locked = forcedScm || (mode === 'PAINT' && noPaint);
             options[mode].classList.toggle('active', mode === shown);
-            options[mode].classList.toggle('disabled', forcedScm);
-            buttons[mode].disabled = forcedScm;
+            options[mode].classList.toggle('disabled', locked);
+            buttons[mode].disabled = locked;
         });
+        buttons.PAINT.title = noPaint ? TP3D_NO_3MF_TITLE : paintTitle;
         wrap.title = forcedScm ? 'Locked: the elements are in Single Extruder mode (Elements tab)' : '';
     } }, row: row });
     return row;
@@ -907,7 +928,8 @@ function tp3dBuildRoadsPaintField() {
         title: 'Paint the roads into the texture (terrain under roads coloured black)',
         preview: 'https://trailprint3d.com/images/howto/PaintRoads.webp',
         previewCaption: 'Paint the roads onto the map instead of creating a separate object.',
-        enabledWhen: tp3dTextureTrailRoadsEnabled
+        enabledWhen: tp3dTextureTrailRoadsEnabled,
+        lockedTitle: tp3dNo3mfTitle
     };
     // With a preview this is a .preview-wrap around the <label> -- lock the
     // label itself so the checklist's `label.locked` styling still applies.
@@ -1022,6 +1044,12 @@ function tp3dRefreshMapTabVisibility() {
             return;
         }
         entry.row.classList.toggle('locked', !active);
+        // `lockedTitle()` -- why the row is locked, as its tooltip (empty
+        // when that reason doesn't apply, keeping the row's own title).
+        if (entry.field.lockedTitle) {
+            if (entry.baseTitle === undefined) entry.baseTitle = entry.row.title;
+            entry.row.title = (!active && entry.field.lockedTitle()) || entry.baseTitle;
+        }
         // The "?" preview stays clickable -- explaining a locked setting is
         // exactly when it's useful.
         entry.row.querySelectorAll('input, select, button:not(.preview-btn)').forEach(function(control) {

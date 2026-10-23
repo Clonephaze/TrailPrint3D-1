@@ -1972,7 +1972,14 @@ def _polygonize_ocean_faces(open_chains, closed_loops, bbox_bl, rdp_eps=0.0):
         return []
     if rdp_eps > 0:
         # Simplify together so a mainland shortcut cannot swallow nearby islands.
-        clipped = list(MultiLineString(clipped).simplify(rdp_eps).geoms)
+        # GEOS may hand back a single LineString (or empty) instead of a Multi.
+        simplified = MultiLineString(clipped).simplify(rdp_eps)
+        if simplified.is_empty:
+            return []
+        if simplified.geom_type == "LineString":
+            clipped = [simplified]
+        else:
+            clipped = [g for g in simplified.geoms if not g.is_empty]
 
     boundary = tile_box.boundary
     noded = union_all(clipped + [boundary])

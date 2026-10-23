@@ -1501,6 +1501,8 @@ def cut_into_puzzle_pieces(
     overlay=None,
     progress_start=0.0,
     progress_end=1.0,
+    rotation_deg=0.0,
+    puzzle_size=None,
 ):
     """Cut a single finished map tile into separate jigsaw puzzle piece objects.
 
@@ -1558,6 +1560,13 @@ def cut_into_puzzle_pieces(
     each piece's bevel completes, rather than a single static message for
     the whole cutting pass.
 
+    `rotation_deg` / `puzzle_size` -- the puzzle's own shapeRotation (CCW,
+    degrees) and its UNROTATED (width, height). The pieces' [0, 1] points
+    already describe the rotated layout over the rotated bounding box, but
+    each piece's origin is placed at its raster cell center, which has to be
+    computed in the unrotated grid and then rotated about the puzzle center
+    -- otherwise every origin lands where it would be at rotation 0.
+
     Returns `(piece_objs, seam_polys)` -- the list of newly created piece
     objects, and the list of each survivor's own true (pre-tolerance-shrink)
     world-space Shapely polygon in the same order, for callers that want the
@@ -1605,6 +1614,10 @@ def cut_into_puzzle_pieces(
     # into its neighbors.
     rows_total = max((p.get("row", 0) for p in pieces), default=0) + 1
     cols_total = max((p.get("col", 0) for p in pieces), default=0) + 1
+    grid_cx, grid_cy = (x_min + x_max) / 2, (y_min + y_max) / 2
+    grid_w, grid_h = puzzle_size if puzzle_size else (x_max - x_min, y_max - y_min)
+    grid_cos = math.cos(math.radians(rotation_deg or 0.0))
+    grid_sin = math.sin(math.radians(rotation_deg or 0.0))
     _orig_cursor_loc = bpy.context.scene.cursor.location.copy()
 
     # DEBUG ONLY: flat (z=0) copies of each piece's actual cutter polygon
@@ -1768,8 +1781,10 @@ def cut_into_puzzle_pieces(
             # center, and not this shape's own bounding-box center, which tabs/
             # blanks skew off-center) is also what callers like BottomText rely
             # on obj.location for afterward.
-            bpy.context.scene.cursor.location.x = x_min + (col + 0.5) / cols_total * (x_max - x_min)
-            bpy.context.scene.cursor.location.y = y_min + (row + 0.5) / rows_total * (y_max - y_min)
+            cell_dx = ((col + 0.5) / cols_total - 0.5) * grid_w
+            cell_dy = ((row + 0.5) / rows_total - 0.5) * grid_h
+            bpy.context.scene.cursor.location.x = grid_cx + cell_dx * grid_cos - cell_dy * grid_sin
+            bpy.context.scene.cursor.location.y = grid_cy + cell_dx * grid_sin + cell_dy * grid_cos
             set_origin_to_3d_cursor(piece_obj)
 
             _bevel_bottom_edges(piece_obj, bevel_width)
@@ -2067,9 +2082,16 @@ def build_puzzle_holder(
     seam_width=0.6,
     seam_depth=0.4,
     frame_terrain_obj=None,
+    rotation_deg=0.0,
 ):
     """Build a rounded-rectangle tray sized to hold an already-generated
         jigsaw puzzle (cut_into_puzzle_pieces' output).
+
+        *rotation_deg* -- the puzzle's own shapeRotation (CCW, degrees). The
+        footprint is measured in the puzzle's UNROTATED frame and the holder
+        object is rotated by the same angle, so a rotated puzzle gets a
+        matching rotated tray instead of one sized to its (larger) world-axis
+        bounding box.
 
         The combined world-space XY bounding box of every object in *piece_objs*
         reconstructs the puzzle's true assembled footprint -- every outer grid
@@ -2130,6 +2152,7 @@ def build_puzzle_holder(
         Reuses the same flat-prism + boolean technique as
         `cut_into_puzzle_pieces` / `single_color_mode_curve`.
     """
+    from shapely.affinity import rotate as _shapely_rotate
     from shapely.affinity import translate as _shapely_translate
 
     from . import geometry2d as g2d  # deferred to avoid circular import at load time
@@ -2165,6 +2188,34 @@ def build_puzzle_holder(
     puzzle_w = x_max - x_min
     puzzle_h = y_max - y_min
     center_x, center_y = (x_min + x_max) / 2, (y_min + y_max) / 2
+
+    rotation_rad = math.radians(rotation_deg or 0.0)
+    cos_r, sin_r = math.cos(rotation_rad), math.sin(rotation_rad)
+
+    def _world_to_local(x, y):
+        # World XY -> the holder's own unrotated, puzzle-centered frame.
+        dx, dy = x - center_x, y - center_y
+        return dx * cos_r + dy * sin_r, -dx * sin_r + dy * cos_r
+
+    if abs(rotation_rad) > 1e-9:
+        # The world-axis bbox above only gives the rotated puzzle's CENTER
+        # (a rotated rectangle's bbox stays centered on it); its true
+        # width/height come from the pieces' own vertices measured in the
+        # unrotated frame instead.
+        lx_min = ly_min = float("inf")
+        lx_max = ly_max = float("-inf")
+        for obj in objs:
+            mw = obj.matrix_world
+            for v in obj.data.vertices:
+                w = mw @ v.co
+                lx, ly = _world_to_local(w.x, w.y)
+                lx_min, lx_max = min(lx_min, lx), max(lx_max, lx)
+                ly_min, ly_max = min(ly_min, ly), max(ly_max, ly)
+        puzzle_w = lx_max - lx_min
+        puzzle_h = ly_max - ly_min
+        lcx, lcy = (lx_min + lx_max) / 2, (ly_min + ly_max) / 2
+        center_x += lcx * cos_r - lcy * sin_r
+        center_y += lcx * sin_r + lcy * cos_r
 
     pocket_w = puzzle_w + clearance
     pocket_h = puzzle_h + clearance
@@ -2243,14 +2294,15 @@ def build_puzzle_holder(
 
     if piece_seam_polys:
         # Seam polygons are in the same world space as piece_objs' own bound
-        # boxes -- shift into the holder's local frame (centered on the
-        # puzzle) before building ribbon/pocket geometry from them.
+        # boxes -- shift (and un-rotate) into the holder's local frame
+        # (centered on the puzzle) before building ribbon/pocket geometry
+        # from them.
         seam_lines = []
         for poly in piece_seam_polys:
             for part in g2d.iter_polygons(poly):
                 for ring in [part.exterior] + list(part.interiors):
                     seam_lines.append(
-                        [(x - center_x, y - center_y) for x, y in ring.coords]
+                        [_world_to_local(x, y) for x, y in ring.coords]
                     )
         seam_ribbon = (
             g2d.polylines_to_ribbon(seam_lines, seam_width / 2, quad_segs=4)
@@ -2302,16 +2354,21 @@ def build_puzzle_holder(
     # rest) lands exactly on world Z=0 -- the same plane the puzzle pieces
     # themselves sit on.
     holder_obj.location = (center_x, center_y, -floor_thickness)
+    holder_obj.rotation_euler.z = rotation_rad
     bpy.context.view_layer.update()
 
     if frame_terrain_obj is not None:
         # Must run AFTER holder_obj.location is set above -- the annulus
         # cutter below is built in WORLD coordinates (world_outer/world_pocket,
-        # shifted by center_x/center_y), so it can only UNION correctly
-        # against a holder_obj that's already sitting at its own real world
-        # position.
-        world_outer = _shapely_translate(outer_poly, xoff=center_x, yoff=center_y)
-        world_pocket = _shapely_translate(pocket_poly, xoff=center_x, yoff=center_y)
+        # rotated and shifted to the holder's own transform), so it can only
+        # UNION correctly against a holder_obj that's already sitting at its
+        # own real world position.
+        def _to_world(poly):
+            rotated = _shapely_rotate(poly, rotation_rad, origin=(0, 0), use_radians=True)
+            return _shapely_translate(rotated, xoff=center_x, yoff=center_y)
+
+        world_outer = _to_world(outer_poly)
+        world_pocket = _to_world(pocket_poly)
         annulus = g2d.validate(world_outer.difference(world_pocket))
 
         ft_corners = [

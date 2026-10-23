@@ -884,15 +884,13 @@
             if (persist) saveState();
         }
 
-        function tp3dAfterRotatedEditCornerDrag(originalBounds, resizedBounds, mode) {
-            var original = tp3dPuzzleProjectedBounds(originalBounds);
-            var resized = tp3dPuzzleProjectedBounds(resizedBounds);
-            var widthRatio = (resized.maxX - resized.minX) / (original.maxX - original.minX);
-            var heightRatio = (resized.maxY - resized.minY) / (original.maxY - original.minY);
+        // Handle drags hold the puzzle to Length:Width and never change those
+        // fields -- resizing on the map only changes how much terrain the
+        // fixed-size puzzle covers.
+        function tp3dEditAspectRatio() {
             var length = parseFloat(document.getElementById('lengthInput').value) || 0;
             var width = parseFloat(document.getElementById('widthInput').value) || 0;
-            if (length > 0) document.getElementById('lengthInput').value = length * widthRatio;
-            if (width > 0) document.getElementById('widthInput').value = width * heightRatio;
+            return length > 0 && width > 0 ? length / width : null;
         }
 
         function normToLatLng(nx, ny) {
@@ -1311,6 +1309,7 @@
                 excluded_ids: tp3dPrefetchExcludedIds(),
                 bbox: tp3dRotatedPuzzleBounds(),
                 scale_bbox: puzzleGeoBbox(coords, sendGeo.frac),
+                shapeRotation: TP3D_SHAPE_ROTATION_DEG,
                 pieces: pieces.map(function(p) {
                     return { row: p.row, col: p.col, points: p.puzzlePoints.map(tp3dPuzzlePointToPayload) };
                 }),

@@ -38,6 +38,13 @@
 //   tp3dRotatedEditHandlePoints()
 //       Optional rotated corner handles for pages that want edit markers to
 //       follow the rotated preview rather than the axis-aligned edit layer.
+//   tp3dEditAspectRatio()
+//       Optional; projected width/height the rotated edit handles hold the
+//       frame to (null = free resize). Without it, every shape but Rectangle
+//       stays 1:1. Puzzle pages return Length/Width here.
+//   tp3dKeepSquare()
+//       Optional; returning true locks every draw/resize gesture to 1:1 as
+//       if Shift were held (e.g. map pages for every shape but Rectangle).
 //
 // The two picker pages that offer an importable "svg" shape (map_generator.html,
 // premium/map_generator_pe.html) additionally declare svgShapePath,
@@ -220,7 +227,14 @@ function tp3dPuzzleEditHandleLatLngs(pieces, bounds, degrees) {
     var rotatedBounds = tp3dRotatedPuzzleProjectedBounds(bounds, degrees);
     var centerX = (rotatedBounds.minX + rotatedBounds.maxX) / 2;
     var centerY = (rotatedBounds.minY + rotatedBounds.maxY) / 2;
-    var directions = [[-1, 1], [1, 1], [1, -1], [-1, -1]];
+    // The puzzle's own SW/SE/NE/NW diagonals (y-up), rotated with it --
+    // applyRotatedEditCornerDrag treats each handle as that local corner, so
+    // picking by screen diagonals instead mislabels them past ~45 degrees.
+    var angle = Number(degrees || 0) * Math.PI / 180;
+    var cos = Math.cos(angle), sin = Math.sin(angle);
+    var directions = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(function(local) {
+        return [local[0] * cos - local[1] * sin, -(local[0] * sin + local[1] * cos)];
+    });
     return directions.map(function(direction) {
         var selected = points[0], best = -Infinity;
         points.forEach(function(point) {
@@ -334,7 +348,7 @@ function applyEdgeDrag(edge, value) {
 // mirrors both the opposite lat edge and the opposite lng edge
 // around shapeCenter.
 function applyCornerDrag(corner, latlng) {
-    if (tp3dShiftHeld) {
+    if (tp3dSquareLocked()) {
         applySquareCornerDrag(corner, latlng);
         return;
     }
@@ -378,6 +392,11 @@ var tp3dAltHeld = false;
         tp3dAltHeld = false;
     });
 })();
+
+// Shift, or a page whose current shape is always 1:1 (tp3dKeepSquare).
+function tp3dSquareLocked() {
+    return tp3dShiftHeld || (typeof tp3dKeepSquare === 'function' && tp3dKeepSquare());
+}
 
 // Smallest box a Shift-drag can collapse to, in zoom-0 projected px (~15 m at
 // the equator) -- keeps a 'center'-mode box from going zero-size, like
@@ -433,7 +452,7 @@ function applySquareCornerDrag(corner, latlng) {
 // Returns identical north/south when latlng === center either way, so
 // finalizeCenterShape's zero-size click guard still works.
 function centerDrawBounds(center, latlng) {
-    if (tp3dShiftHeld) {
+    if (tp3dSquareLocked()) {
         var c = map.project(L.latLng(center), 0);
         var p = map.project(L.latLng(latlng), 0);
         var half = Math.max(Math.abs(p.x - c.x), Math.abs(p.y - c.y));
@@ -460,7 +479,7 @@ function tp3dPatchDrawLibs() {
     if (L.Draw && L.Draw.Rectangle && !L.Draw.Rectangle.prototype._tp3dShiftSquare) {
         var origDrawShape = L.Draw.Rectangle.prototype._drawShape;
         L.Draw.Rectangle.prototype._drawShape = function(latlng) {
-            if (tp3dShiftHeld && this._startLatLng) {
+            if (tp3dSquareLocked() && this._startLatLng) {
                 latlng = tp3dSquareFromAnchor(this._startLatLng, latlng);
             }
             return origDrawShape.call(this, latlng);
@@ -471,12 +490,32 @@ function tp3dPatchDrawLibs() {
         var origMarkerDrag = L.Edit.Rectangle.prototype._onMarkerDrag;
         L.Edit.Rectangle.prototype._onMarkerDrag = function(e) {
             var marker = e.target;
-            if (tp3dShiftHeld && this._oppositeCorner && marker !== this._moveMarker) {
+            if (tp3dSquareLocked() && this._oppositeCorner && marker !== this._moveMarker) {
                 marker.setLatLng(tp3dSquareFromAnchor(this._oppositeCorner, marker.getLatLng()));
             }
             return origMarkerDrag.call(this, e);
         };
         L.Edit.Rectangle.prototype._tp3dShiftSquare = true;
+    }
+    // L.Draggable refuses to start a drag while Shift is down (reserved for
+    // box zoom, which tp3dInstallShiftSquare disables anyway), so Shift held
+    // *before* grabbing a handle did nothing. Marker handles (rotation, move,
+    // corners) only: shiftKey is shadowed for that one call so Shift-then-grab
+    // works -- tp3dShiftHeld was already set by the capture-phase tracker.
+    if (L.Draggable && !L.Draggable.prototype._tp3dShiftGrab) {
+        var origDown = L.Draggable.prototype._onDown;
+        L.Draggable.prototype._onDown = function(e) {
+            if (!e.shiftKey || !L.DomUtil.hasClass(this._element, 'leaflet-marker-icon')) {
+                return origDown.call(this, e);
+            }
+            Object.defineProperty(e, 'shiftKey', { value: false, configurable: true });
+            try {
+                return origDown.call(this, e);
+            } finally {
+                delete e.shiftKey;
+            }
+        };
+        L.Draggable.prototype._tp3dShiftGrab = true;
     }
 }
 
@@ -504,35 +543,69 @@ function getRotatedEditHandlePoints() {
     return points && points.length === 4 ? points : null;
 }
 
+// The true rotated frame corners (SW, SE, NE, NW) the edit handles stand in
+// for. Puzzle handles sit on the piece outline, which can be inset from the
+// frame (rounded corners, hex/radial pieces), so their frame is the rotated
+// tp3dRotationHandleBounds() itself; elsewhere the handles are the corners.
+function getRotatedEditFramePoints() {
+    if (typeof tp3dPuzzleEditHandlePoints !== 'function') return getRotatedEditHandlePoints();
+    return tp3dProjectedShapePoints(tp3dRotationHandleBounds(), 'rectangle', TP3D_SHAPE_ROTATION_DEG);
+}
+
 function applyRotatedEditCornerDrag(corner, latlng, mode) {
     var points = getRotatedEditHandlePoints();
     if (!points) return;
+    var frame = getRotatedEditFramePoints();
     var originalBounds = tp3dRotationHandleBounds();
     var cornerIndex = { SW: 0, SE: 1, NE: 2, NW: 3 }[corner];
-    var opposite = map.project(points[(cornerIndex + 2) % 4], 0);
-    var target = map.project(latlng, 0);
-    var center = mode === 'center'
-        ? map.project(tp3dProjectedBoundsCenter(tp3dRotationHandleBounds(), 0), 0)
-        : L.point((opposite.x + target.x) / 2, (opposite.y + target.y) / 2);
-    var dx = target.x - center.x;
-    var dy = center.y - target.y;
+    // Moves the frame corner by the cursor, keeping the handle's own inset
+    // from it -- treating the inset handle as the corner itself made the
+    // shape creep by that inset on every drag event.
+    var handle = map.project(points[cornerIndex], 0);
+    var frameCorner = map.project(frame[cornerIndex], 0);
+    var cursor = map.project(latlng, 0);
+    var target = L.point(cursor.x + frameCorner.x - handle.x, cursor.y + frameCorner.y - handle.y);
     var angle = Number(TP3D_SHAPE_ROTATION_DEG) * Math.PI / 180;
     var cos = Math.cos(angle), sin = Math.sin(angle);
     var signs = { SW: [-1, -1], SE: [1, -1], NE: [1, 1], NW: [-1, 1] }[corner];
-    var localX = dx * cos + dy * sin;
-    var localY = -dx * sin + dy * cos;
-    var halfWidth = Math.max(signs[0] * localX, 1e-4);
-    var halfHeight = Math.max(signs[1] * localY, 1e-4);
-    if (currentShape !== 'rectangle') halfWidth = halfHeight = Math.max(halfWidth, halfHeight);
+    // width/height to hold the frame to, or null for a free resize.
+    var aspect = typeof tp3dEditAspectRatio === 'function'
+        ? tp3dEditAspectRatio()
+        : (currentShape !== 'rectangle' ? 1 : null);
+    function lockAspect() {
+        if (!(aspect > 0)) return;
+        halfWidth = Math.max(halfWidth, aspect * halfHeight);
+        halfHeight = halfWidth / aspect;
+    }
+    var center, halfWidth, halfHeight, dx, dy;
+    if (mode === 'center') {
+        center = map.project(tp3dProjectedBoundsCenter(originalBounds, 0), 0);
+        dx = target.x - center.x;
+        dy = center.y - target.y;
+        halfWidth = Math.max(signs[0] * (dx * cos + dy * sin), 1e-4);
+        halfHeight = Math.max(signs[1] * (-dx * sin + dy * cos), 1e-4);
+        lockAspect();
+    } else {
+        // Sized from the fixed opposite frame corner, so an aspect-locked
+        // shape grows away from it instead of around the drag's midpoint.
+        var opposite = map.project(frame[(cornerIndex + 2) % 4], 0);
+        dx = target.x - opposite.x;
+        dy = opposite.y - target.y;
+        halfWidth = Math.max(signs[0] * (dx * cos + dy * sin), 2e-4) / 2;
+        halfHeight = Math.max(signs[1] * (-dx * sin + dy * cos), 2e-4) / 2;
+        lockAspect();
+        var offsetX = signs[0] * halfWidth, offsetY = signs[1] * halfHeight;
+        center = L.point(
+            opposite.x + offsetX * cos - offsetY * sin,
+            opposite.y - (offsetX * sin + offsetY * cos)
+        );
+    }
     var northWest = map.unproject([center.x - halfWidth, center.y - halfHeight], 0);
     var southEast = map.unproject([center.x + halfWidth, center.y + halfHeight], 0);
     coords = {
         north: northWest.lat, south: southEast.lat,
         east: southEast.lng, west: northWest.lng, type: currentShape
     };
-    if (typeof tp3dAfterRotatedEditCornerDrag === 'function') {
-        tp3dAfterRotatedEditCornerDrag(originalBounds, coords, mode);
-    }
     if (mode === 'center') {
         var fixedCenter = map.unproject(center, 0);
         shapeCenter = { lat: fixedCenter.lat, lng: fixedCenter.lng };

@@ -236,6 +236,9 @@
         if (typeof SETTINGS_STATE !== 'undefined') {
             SETTINGS_STATE.has3mf = true;
         }
+        // Unlocks the settings modal's texture fields (settings_modal.js) --
+        // absent on pages without that modal.
+        if (typeof tp3dRefreshMapTabVisibility === 'function') tp3dRefreshMapTabVisibility();
     }
 
     // ── Decline flow ──────────────────────────────────────────────────────────
