@@ -35,6 +35,9 @@
 //   tp3dCanRotateShape(), tp3dRotationHandleBounds()
 //       The optional rotation handle remains absent on pages without these
 //       hooks, including puzzle configurators.
+//   tp3dRotatedEditHandlePoints()
+//       Optional rotated corner handles for pages that want edit markers to
+//       follow the rotated preview rather than the axis-aligned edit layer.
 //
 // The two picker pages that offer an importable "svg" shape (map_generator.html,
 // premium/map_generator_pe.html) additionally declare svgShapePath,
@@ -85,7 +88,7 @@ function tp3dSquareProjectedBounds(bounds) {
     };
 }
 
-function tp3dProjectedShapePoints(bounds, shape, degrees, fitBounds) {
+function tp3dProjectedShapePoints(bounds, shape, degrees) {
     var northWest = map.project([bounds.north, bounds.west], 0);
     var southEast = map.project([bounds.south, bounds.east], 0);
     var centerX = (northWest.x + southEast.x) / 2;
@@ -135,28 +138,114 @@ function tp3dProjectedShapePoints(bounds, shape, degrees, fitBounds) {
             point[0] * sin + point[1] * cos
         ];
     });
-    if (Math.abs(degreesValue % 360) > 1e-8) {
-        var minX = Math.min.apply(null, rotated.map(function(point) { return point[0]; }));
-        var maxX = Math.max.apply(null, rotated.map(function(point) { return point[0]; }));
-        var minY = Math.min.apply(null, rotated.map(function(point) { return point[1]; }));
-        var maxY = Math.max.apply(null, rotated.map(function(point) { return point[1]; }));
-        var fitNorthWest = fitBounds
-            ? map.project([fitBounds.north, fitBounds.west], 0) : northWest;
-        var fitSouthEast = fitBounds
-            ? map.project([fitBounds.south, fitBounds.east], 0) : southEast;
-        var fit = Math.min(
-            1,
-            Math.abs(fitSouthEast.x - fitNorthWest.x) / (maxX - minX),
-            Math.abs(fitSouthEast.y - fitNorthWest.y) / (maxY - minY)
-        ) * 0.999;
-        rotated = rotated.map(function(point) {
-            return [point[0] * fit, point[1] * fit];
-        });
-    }
     return rotated.map(function(point) {
         var latlng = map.unproject([centerX + point[0], centerY - point[1]], 0);
         return [latlng.lat, latlng.lng];
     });
+}
+
+function tp3dPuzzleProjectedBounds(bounds) {
+    var northWest = map.project([bounds.north, bounds.west], 0);
+    var southEast = map.project([bounds.south, bounds.east], 0);
+    return {
+        minX: Math.min(northWest.x, southEast.x),
+        maxX: Math.max(northWest.x, southEast.x),
+        minY: Math.min(northWest.y, southEast.y),
+        maxY: Math.max(northWest.y, southEast.y)
+    };
+}
+
+function tp3dRotatePuzzleProjectedPoint(point, bounds, degrees) {
+    var centerX = (bounds.minX + bounds.maxX) / 2;
+    var centerY = (bounds.minY + bounds.maxY) / 2;
+    var dx = point.x - centerX;
+    var dy = centerY - point.y;
+    var angle = Number(degrees || 0) * Math.PI / 180;
+    var cos = Math.cos(angle), sin = Math.sin(angle);
+    return {
+        x: centerX + dx * cos - dy * sin,
+        y: centerY - (dx * sin + dy * cos)
+    };
+}
+
+function tp3dNormalizedPuzzleProjectedPoint(point, bounds, degrees) {
+    return tp3dRotatePuzzleProjectedPoint({
+        x: bounds.minX + point[0] * (bounds.maxX - bounds.minX),
+        y: bounds.maxY - point[1] * (bounds.maxY - bounds.minY)
+    }, bounds, degrees);
+}
+
+function tp3dRotatedPuzzleProjectedBounds(bounds, degrees) {
+    var corners = [
+        { x: bounds.minX, y: bounds.minY },
+        { x: bounds.maxX, y: bounds.minY },
+        { x: bounds.maxX, y: bounds.maxY },
+        { x: bounds.minX, y: bounds.maxY }
+    ].map(function(point) { return tp3dRotatePuzzleProjectedPoint(point, bounds, degrees); });
+    return {
+        minX: Math.min.apply(null, corners.map(function(point) { return point.x; })),
+        maxX: Math.max.apply(null, corners.map(function(point) { return point.x; })),
+        minY: Math.min.apply(null, corners.map(function(point) { return point.y; })),
+        maxY: Math.max.apply(null, corners.map(function(point) { return point.y; }))
+    };
+}
+
+function tp3dPuzzleOutlineProjectedPoints(pieces, bounds, degrees) {
+    var points = [];
+    pieces.forEach(function(piece) {
+        (piece.puzzlePoints || []).forEach(function(point) {
+            points.push(tp3dNormalizedPuzzleProjectedPoint(point, bounds, degrees));
+        });
+    });
+    points.sort(function(a, b) { return a.x - b.x || a.y - b.y; });
+    function cross(origin, a, b) {
+        return (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x);
+    }
+    var lower = [];
+    points.forEach(function(point) {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
+        lower.push(point);
+    });
+    var upper = [];
+    points.slice().reverse().forEach(function(point) {
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
+        upper.push(point);
+    });
+    return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+
+function tp3dPuzzleEditHandleLatLngs(pieces, bounds, degrees) {
+    var points = tp3dPuzzleOutlineProjectedPoints(pieces, bounds, degrees);
+    if (points.length < 4) return null;
+    var rotatedBounds = tp3dRotatedPuzzleProjectedBounds(bounds, degrees);
+    var centerX = (rotatedBounds.minX + rotatedBounds.maxX) / 2;
+    var centerY = (rotatedBounds.minY + rotatedBounds.maxY) / 2;
+    var directions = [[-1, 1], [1, 1], [1, -1], [-1, -1]];
+    return directions.map(function(direction) {
+        var selected = points[0], best = -Infinity;
+        points.forEach(function(point) {
+            var score = direction[0] * (point.x - centerX) + direction[1] * (point.y - centerY);
+            if (score > best) { selected = point; best = score; }
+        });
+        var latlng = map.unproject([selected.x, selected.y], 0);
+        return [latlng.lat, latlng.lng];
+    });
+}
+
+function tp3dPuzzleOutlineLatLngs(pieces, bounds, degrees) {
+    return tp3dPuzzleOutlineProjectedPoints(pieces, bounds, degrees).map(function(point) {
+        var latlng = map.unproject([point.x, point.y], 0);
+        return [latlng.lat, latlng.lng];
+    });
+}
+
+function tp3dPuzzleProjectedBoundsToGeographic(bounds) {
+    var northWest = map.unproject([bounds.minX, bounds.minY], 0);
+    var southEast = map.unproject([bounds.maxX, bounds.maxY], 0);
+    return {
+        north: northWest.lat, south: southEast.lat,
+        east: southEast.lng, west: northWest.lng
+    };
 }
 
 function tp3dApplySvgRotation(overlay) {
@@ -164,30 +253,10 @@ function tp3dApplySvgRotation(overlay) {
     requestAnimationFrame(function() {
         var image = overlay.getElement();
         if (!image) return;
-        var shapeBounds = typeof tp3dRotationHandleBounds === 'function'
-            ? tp3dRotationHandleBounds() : coords;
-        if (!shapeBounds) return;
-        var overlayBounds = overlay.getBounds();
-        var overlayNorthWest = map.project(overlayBounds.getNorthWest(), 0);
-        var overlaySouthEast = map.project(overlayBounds.getSouthEast(), 0);
-        var shapeNorthWest = map.project([shapeBounds.north, shapeBounds.west], 0);
-        var shapeSouthEast = map.project([shapeBounds.south, shapeBounds.east], 0);
-        var width = Math.abs(overlaySouthEast.x - overlayNorthWest.x);
-        var height = Math.abs(overlaySouthEast.y - overlayNorthWest.y);
-        var shapeWidth = Math.abs(shapeSouthEast.x - shapeNorthWest.x);
-        var shapeHeight = Math.abs(shapeSouthEast.y - shapeNorthWest.y);
         var degrees = Number(TP3D_SHAPE_ROTATION_DEG || 0);
-        var angle = degrees * Math.PI / 180;
-        var rotatedWidth = width * Math.abs(Math.cos(angle)) + height * Math.abs(Math.sin(angle));
-        var rotatedHeight = width * Math.abs(Math.sin(angle)) + height * Math.abs(Math.cos(angle));
-        var fit = Math.min(1, shapeWidth / rotatedWidth, shapeHeight / rotatedHeight);
-        if (Math.abs(degrees % 360) > 1e-8) fit *= 0.999;
-        var transform = image.style.transform
-            .replace(/\s*rotate\([^)]*\)/g, '')
-            .replace(/\s*scale\([^)]*\)/g, '');
+        var transform = image.style.transform.replace(/\s*rotate\([^)]*\)/g, '');
         image.style.transformOrigin = 'center center';
-        image.style.transform = transform + ' rotate(' +
-            (-degrees) + 'deg) scale(' + fit + ')';
+        image.style.transform = transform + ' rotate(' + (-degrees) + 'deg)';
     });
 }
 
@@ -426,6 +495,96 @@ else window.addEventListener('load', tp3dInstallShiftSquare);
 // border-drag (bindCornerDrag below) can keep them in sync too
 // without needing to know anything about them directly.
 var syncCenterHandles = null;
+var rotatedCornerHandles = [];
+var rotatedCornerEditActive = false;
+
+function getRotatedEditHandlePoints() {
+    if (typeof tp3dRotatedEditHandlePoints !== 'function') return null;
+    var points = tp3dRotatedEditHandlePoints();
+    return points && points.length === 4 ? points : null;
+}
+
+function applyRotatedEditCornerDrag(corner, latlng, mode) {
+    var points = getRotatedEditHandlePoints();
+    if (!points) return;
+    var originalBounds = tp3dRotationHandleBounds();
+    var cornerIndex = { SW: 0, SE: 1, NE: 2, NW: 3 }[corner];
+    var opposite = map.project(points[(cornerIndex + 2) % 4], 0);
+    var target = map.project(latlng, 0);
+    var center = mode === 'center'
+        ? map.project(tp3dProjectedBoundsCenter(tp3dRotationHandleBounds(), 0), 0)
+        : L.point((opposite.x + target.x) / 2, (opposite.y + target.y) / 2);
+    var dx = target.x - center.x;
+    var dy = center.y - target.y;
+    var angle = Number(TP3D_SHAPE_ROTATION_DEG) * Math.PI / 180;
+    var cos = Math.cos(angle), sin = Math.sin(angle);
+    var signs = { SW: [-1, -1], SE: [1, -1], NE: [1, 1], NW: [-1, 1] }[corner];
+    var localX = dx * cos + dy * sin;
+    var localY = -dx * sin + dy * cos;
+    var halfWidth = Math.max(signs[0] * localX, 1e-4);
+    var halfHeight = Math.max(signs[1] * localY, 1e-4);
+    if (currentShape !== 'rectangle') halfWidth = halfHeight = Math.max(halfWidth, halfHeight);
+    var northWest = map.unproject([center.x - halfWidth, center.y - halfHeight], 0);
+    var southEast = map.unproject([center.x + halfWidth, center.y + halfHeight], 0);
+    coords = {
+        north: northWest.lat, south: southEast.lat,
+        east: southEast.lng, west: northWest.lng, type: currentShape
+    };
+    if (typeof tp3dAfterRotatedEditCornerDrag === 'function') {
+        tp3dAfterRotatedEditCornerDrag(originalBounds, coords, mode);
+    }
+    if (mode === 'center') {
+        var fixedCenter = map.unproject(center, 0);
+        shapeCenter = { lat: fixedCenter.lat, lng: fixedCenter.lng };
+    }
+}
+
+function clearRotatedCornerEditHandles() {
+    rotatedCornerHandles = [];
+    rotatedCornerEditActive = false;
+    editHandles.clearLayers();
+}
+
+function syncRotatedCornerEditHandles() {
+    var points = getRotatedEditHandlePoints();
+    if (!coords || !rectLayer || drawMode !== 'corner' || !points) {
+        if (rotatedCornerEditActive) {
+            clearRotatedCornerEditHandles();
+            if (drawMode === 'corner' && coords && rectLayer) bindLiveEdit(rectLayer);
+        }
+        if (syncCenterHandles) syncCenterHandles();
+        return;
+    }
+
+    if (!rotatedCornerEditActive || !editHandles.hasLayer(rotatedCornerHandles[0])) {
+        if (rectLayer.editing && rectLayer.editing.enabled()) rectLayer.editing.disable();
+        editHandles.clearLayers();
+        rotatedCornerHandles = [];
+        rotatedCornerEditActive = true;
+        ['SW', 'SE', 'NE', 'NW'].forEach(function(corner, index) {
+            var marker = L.marker(points[index], {
+                draggable: true,
+                icon: L.divIcon({
+                    className: 'edge-handle',
+                    iconSize: [10, 10],
+                    iconAnchor: [5, 5]
+                })
+            });
+            marker.on('drag', function(e) {
+                applyRotatedEditCornerDrag(corner, e.target.getLatLng(), 'corner');
+                syncShapeAfterEdgeChange();
+            });
+            marker.on('dragend', saveState);
+            rotatedCornerHandles.push(marker);
+            editHandles.addLayer(marker);
+        });
+    } else {
+        rotatedCornerHandles.forEach(function(marker, index) {
+            marker.setLatLng(points[index]);
+        });
+    }
+    if (syncCenterHandles) syncCenterHandles();
+}
 
 function syncShapeAfterEdgeChange() {
     if (rectLayer) rectLayer.setBounds([[coords.south, coords.west], [coords.north, coords.east]]);
@@ -630,6 +789,7 @@ function bindCornerDrag(layer) {
     layer.off('mousedown', layer._tp3dCornerDown);
     layer._tp3dCornerDown = function(e) {
         L.DomEvent.stopPropagation(e);
+        if (typeof tp3dPuzzleEditHandlePoints === 'function' && getRotatedEditHandlePoints()) return;
         var wasCornerEditing = drawMode === 'corner' && layer.editing && layer.editing.enabled();
         if (wasCornerEditing) layer.editing.disable();
         var corner = nearestCorner(e.latlng, coords);
@@ -763,16 +923,32 @@ function bindCenterEdit() {
     var swHandle = L.marker([coords.south, coords.west], { draggable: true, icon: handleIcon() });
 
     syncCenterHandles = function() {
-        neHandle.setLatLng([coords.north, coords.east]);
-        nwHandle.setLatLng([coords.north, coords.west]);
-        seHandle.setLatLng([coords.south, coords.east]);
-        swHandle.setLatLng([coords.south, coords.west]);
+        var points = getRotatedEditHandlePoints();
+        if (points) {
+            swHandle.setLatLng(points[0]);
+            seHandle.setLatLng(points[1]);
+            neHandle.setLatLng(points[2]);
+            nwHandle.setLatLng(points[3]);
+        } else {
+            neHandle.setLatLng([coords.north, coords.east]);
+            nwHandle.setLatLng([coords.north, coords.west]);
+            seHandle.setLatLng([coords.south, coords.east]);
+            swHandle.setLatLng([coords.south, coords.west]);
+        }
     };
 
-    neHandle.on('drag', function(e) { applyCornerDrag('NE', e.target.getLatLng()); syncShapeAfterEdgeChange(); });
-    nwHandle.on('drag', function(e) { applyCornerDrag('NW', e.target.getLatLng()); syncShapeAfterEdgeChange(); });
-    seHandle.on('drag', function(e) { applyCornerDrag('SE', e.target.getLatLng()); syncShapeAfterEdgeChange(); });
-    swHandle.on('drag', function(e) { applyCornerDrag('SW', e.target.getLatLng()); syncShapeAfterEdgeChange(); });
+    function onCenterCornerDrag(corner, event) {
+        if (getRotatedEditHandlePoints()) {
+            applyRotatedEditCornerDrag(corner, event.target.getLatLng(), 'center');
+        } else {
+            applyCornerDrag(corner, event.target.getLatLng());
+        }
+        syncShapeAfterEdgeChange();
+    }
+    neHandle.on('drag', function(e) { onCenterCornerDrag('NE', e); });
+    nwHandle.on('drag', function(e) { onCenterCornerDrag('NW', e); });
+    seHandle.on('drag', function(e) { onCenterCornerDrag('SE', e); });
+    swHandle.on('drag', function(e) { onCenterCornerDrag('SW', e); });
     [neHandle, nwHandle, seHandle, swHandle].forEach(function(h) {
         h.on('dragend', saveState);
         editHandles.addLayer(h);
@@ -785,6 +961,7 @@ function bindCenterEdit() {
 // center-to-corner just drops back to leaflet-draw's own handles.
 function setDrawMode(mode) {
     var wasArmed = drawArmed;
+    clearRotatedCornerEditHandles();
     drawMode = mode;
     document.querySelectorAll('.draw-mode-btn').forEach(function(b) {
         b.classList.toggle('active', b.getAttribute('data-mode') === mode);
@@ -795,7 +972,8 @@ function setDrawMode(mode) {
         // selected mode instead of leaving the old mode's handler
         // active underneath.
         armDraw();
-    } else if (coords && rectLayer) {
+    }
+    if (coords && rectLayer) {
         if (mode === 'center') {
             shapeCenter = boundsCenter(coords);
             if (rectLayer.editing) rectLayer.editing.disable();
@@ -808,6 +986,7 @@ function setDrawMode(mode) {
         }
         bindCornerDrag(rectLayer);
         bindMoveHandle();
+        syncRotatedCornerEditHandles();
     }
     saveState();
 }
@@ -921,8 +1100,8 @@ function tp3dScaleDenominator(mmPerRadian, lat) {
 // premium/map_generator_pe.html), mirroring the backend's map picker
 // (operators.py): sScaleHor = objSize / max(width, height) of the sent
 // bounds in Web Mercator -- the same linear plane as map.project(_, 0) --
-// and a rotated outline is fitted inside those bounds
-// (tp3dProjectedShapePoints applies that same fit). A GeoJSON boundary wins
+// and the rotated outline retains its drawn dimensions
+// (tp3dProjectedShapePoints applies that same rotation). A GeoJSON boundary wins
 // over a drawn area there, and is sized from its combined bbox.
 function tp3dUpdateMapSizeReadout() {
     var objSize = parseFloat(document.getElementById('objSizeInput').value) || 0;
@@ -936,7 +1115,7 @@ function tp3dUpdateMapSizeReadout() {
         frame = effectiveBounds(coords);
         rotation = tp3dCanRotateShape() ? TP3D_SHAPE_ROTATION_DEG : null;
         points = currentShape === 'svg'
-            ? tp3dProjectedShapePoints(svgInscribedBounds(frame, svgAspect), 'rectangle', rotation || 0, frame)
+            ? tp3dProjectedShapePoints(svgInscribedBounds(frame, svgAspect), 'rectangle', rotation || 0)
             : tp3dProjectedShapePoints(frame, currentShape, rotation || 0);
     }
     if (!frame || !(objSize > 0)) { tp3dSetSizeReadout(0, 0, null); return; }

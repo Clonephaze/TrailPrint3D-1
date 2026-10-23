@@ -3574,6 +3574,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             )
 
         bbox = data.get("bbox")
+        scale_bbox = data.get("scale_bbox") or bbox
         pieces = data.get("pieces") or []
         gpx_paths = data.get("gpx_paths", [])
         tolerance = float(data.get("tolerance", 0.3) or 0.3)
@@ -3629,16 +3630,17 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # whatever sScaleHor was left over from a previous generation, then
         # fixing sScaleHor afterward) is what put the tile in the wrong place.
         #
-        # The drawn rectangle (bbox) is always used exactly as drawn -- the
-        # picker's Length/Width confine which sub-area of it the jigsaw GRID
-        # covers (baked into each piece's normalized points client-side) AND
-        # set the real-world scale below, via the same larger-of-the-two-axes
-        # "cover fit" the picker's own computePuzzleGeometry uses -- NOT the
-        # Blender sidebar's Object Size, which is unrelated to what the user
-        # actually typed into the picker page.
-        nx1, ny1, _unused = convert_to_neutral_coordinates(south, west, 0, 0)
-        nx2, ny2, _unused = convert_to_neutral_coordinates(north, east, 0, 0)
-        neutral_extent = max(abs(nx2 - nx1), abs(ny2 - ny1))
+        # bbox covers the rotated footprint, while scale_bbox preserves the
+        # original puzzle dimensions so rotation cannot shrink the model.
+        # Both bounds come from the picker's Length/Width cover-fit, not the
+        # Blender sidebar's unrelated Object Size when those fields are set.
+        scale_nx1, scale_ny1, _unused = convert_to_neutral_coordinates(
+            scale_bbox["south"], scale_bbox["west"], 0, 0
+        )
+        scale_nx2, scale_ny2, _unused = convert_to_neutral_coordinates(
+            scale_bbox["north"], scale_bbox["east"], 0, 0
+        )
+        neutral_extent = max(abs(scale_nx2 - scale_nx1), abs(scale_ny2 - scale_ny1))
         length_mm = float(data.get("length") or 0)
         width_mm = float(data.get("width") or 0)
         target_mm = (
@@ -3721,7 +3723,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         # size -- this metadata gets copied verbatim onto every piece by
         # cut_into_puzzle_pieces, so it needs to describe the puzzle, not the
         # fetch tile.
-        blank["objSize"] = max(tile_w, tile_h)
+        blank["objSize"] = target_mm
         blank["Shape"] = "SQUARE"
         blank["objType"] = "MAP"
         blank["edge_south"], blank["edge_north"] = south, north
@@ -4359,9 +4361,9 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
             diameter = max(tile_w, tile_h)
 
-            # The drawn bounds are the complete elevation/data area. Rotation
-            # is applied only to the final outline, fitted inside those bounds.
             needs_shape_cut = props.shapeRotation % 360 != 0 and shape_name != "circle"
+            rotation_poly = None
+            rotated_poly = None
             svg_path = data.get("svg_path")
             if shape_name == "svg":
                 if not svg_path:
@@ -4373,8 +4375,44 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 props.customFilePath = svg_path
 
             if needs_shape_cut:
+                from shapely.affinity import rotate as _shp_rotate
+
+                from .utils.primitives import (
+                    hexagon_polygon,
+                    octagon_polygon,
+                    polygon_from_svg,
+                    rectangle_polygon,
+                )
+
+                if shape_name == "octagon":
+                    rotation_poly = octagon_polygon(diameter / 2)
+                elif shape_name == "hexagon":
+                    rotation_poly = hexagon_polygon(diameter / 2)
+                elif shape_name == "svg":
+                    rotation_poly = polygon_from_svg(svg_path, diameter)
+                elif shape_name == "square":
+                    rotation_poly = rectangle_polygon(diameter, diameter)
+                else:
+                    rotation_poly = rectangle_polygon(tile_w, tile_h)
+
+                if rotation_poly is None or rotation_poly.is_empty:
+                    _progress.WarningsOverlay.add_warning(
+                        _rpt("Could not create the rotated shape cutter."), "error"
+                    )
+                    raise GenerationError
+                rotated_poly = _shp_rotate(
+                    rotation_poly, props.shapeRotation, origin=(0, 0)
+                )
+                min_x, min_y, max_x, max_y = rotated_poly.bounds
+                if max_x <= min_x or max_y <= min_y:
+                    _progress.WarningsOverlay.add_warning(
+                        _rpt("Could not create the rotated shape cutter."), "error"
+                    )
+                    raise GenerationError
                 blank = utils.create_rectangle(
-                    tile_w, tile_h, props.num_subdivisions
+                    (max_x - min_x) * 1.002,
+                    (max_y - min_y) * 1.002,
+                    props.num_subdivisions,
                 )
                 if blank is None:
                     print("Failed to create map data area.")
@@ -4556,24 +4594,16 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             if not bpy.app.debug:
                 utils.remove_objects(trails)
 
-        # Rotation is applied only to the final outline. Terrain and elements
-        # were generated with shapeRotation temporarily disabled so they keep
-        # their geographic orientation. The fitted cutter stays inside the
-        # drawn data bounds.
+        # Terrain and elements were generated with shapeRotation temporarily
+        # disabled so they keep their geographic orientation. The data mesh
+        # covers the full rotated footprint; the cutter preserves the shape's
+        # drawn size instead of shrinking it to fit the original box.
         if needs_shape_cut:
-            from shapely.affinity import rotate as _shp_rotate, scale as _shp_scale
-
             from .utils import geometry2d as _g2d
             from .utils.mesh_ops import (
                 _clean_solid_mesh,
                 _extrude_flat_polygon,
                 boolean_operation,
-            )
-            from .utils.primitives import (
-                hexagon_polygon,
-                octagon_polygon,
-                polygon_from_svg,
-                rectangle_polygon,
             )
 
             shape_name = data.get("type", "rectangle")
@@ -4596,31 +4626,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
 
             x1, y1, _unused = utils.convert_to_blender_coordinates(south, west, 0, 0)
             x2, y2, _unused = utils.convert_to_blender_coordinates(north, east, 0, 0)
-            tile_w, tile_h = abs(x2 - x1), abs(y2 - y1)
             center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
-            diameter = max(tile_w, tile_h)
-
-            if shape_name == "octagon":
-                true_poly = octagon_polygon(diameter / 2)
-            elif shape_name == "hexagon":
-                true_poly = hexagon_polygon(diameter / 2)
-            elif shape_name == "svg":
-                true_poly = polygon_from_svg(data.get("svg_path"), diameter)
-            elif shape_name == "square":
-                true_poly = rectangle_polygon(diameter, diameter)
-            else:
-                true_poly = rectangle_polygon(tile_w, tile_h)
-            blank["map_polygon_wkt"] = true_poly.wkt
-            rotated_poly = _shp_rotate(true_poly, props.shapeRotation, origin=(0, 0))
-            min_x, min_y, max_x, max_y = rotated_poly.bounds
-            fit_scale = min(
-                1.0,
-                tile_w / (max_x - min_x) if max_x > min_x else 1.0,
-                tile_h / (max_y - min_y) if max_y > min_y else 1.0,
-            ) * 0.999
-            rotated_poly = _shp_scale(
-                rotated_poly, xfact=fit_scale, yfact=fit_scale, origin=(0, 0)
-            )
+            blank["map_polygon_wkt"] = rotation_poly.wkt
 
             verts, faces = [], []
             _extrude_flat_polygon(_g2d, rotated_poly, -1e4, 1e4, verts, faces)
@@ -4656,6 +4663,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 o for o in bpy.data.objects if o not in objs_before and o is not blank
             ]
             try:
+                tile_gen.settings.shapeRotation = requested_shape_rotation
                 if tile_gen.settings.shape.endswith(" TEXT") and gpx_paths:
                     self._apply_trail_stats(
                         props, gpx_paths, data.get("gpx_names") or []

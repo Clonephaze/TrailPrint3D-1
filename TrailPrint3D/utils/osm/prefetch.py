@@ -32,12 +32,49 @@ _LINE_KINDS = frozenset({"STREETS", "COASTLINE"})
 
 
 def tile_bbox(bounds, shape, rotation_deg=0):
-    """Return the picker bounds that define the complete data-fetch area.
+    """Return geographic bounds for the shape's full projected data area."""
+    south, west = bounds["south"], bounds["west"]
+    north, east = bounds["north"], bounds["east"]
+    if shape in {"exact", "geojson"}:
+        return south, west, north, east
 
-    Keep ``shape`` and ``rotation_deg`` in the signature for existing callers;
-    the outline is fitted inside these bounds and must not expand prefetch.
-    """
-    return bounds["south"], bounds["west"], bounds["north"], bounds["east"]
+    radius = const.R
+
+    def project(lat, lon):
+        lat_radians = math.radians(lat)
+        return (
+            radius * math.radians(lon),
+            radius * math.log(math.tan(math.pi / 4 + lat_radians / 2)),
+        )
+
+    x1, y1 = project(south, west)
+    x2, y2 = project(north, east)
+    center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+    width, height = abs(x2 - x1), abs(y2 - y1)
+    if shape != "rectangle":
+        width = height = max(width, height)
+
+    degrees = 0 if shape == "circle" else float(rotation_deg or 0) % 360
+    angle = math.radians(degrees)
+    rotated_width = width * abs(math.cos(angle)) + height * abs(math.sin(angle))
+    rotated_height = width * abs(math.sin(angle)) + height * abs(math.cos(angle))
+    if degrees:
+        rotated_width *= 1.002
+        rotated_height *= 1.002
+
+    def unproject(x, y):
+        return (
+            math.degrees(2 * math.atan(math.exp(y / radius)) - math.pi / 2),
+            math.degrees(x / radius),
+        )
+
+    min_lat, min_lon = unproject(
+        center_x - rotated_width / 2, center_y - rotated_height / 2
+    )
+    max_lat, max_lon = unproject(
+        center_x + rotated_width / 2, center_y + rotated_height / 2
+    )
+    return min_lat, min_lon, max_lat, max_lon
 
 
 def plan_prefetch(tp3d, payload):

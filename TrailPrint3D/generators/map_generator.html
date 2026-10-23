@@ -594,6 +594,12 @@
                 )
                 : tp3dProjectedShapePoints(bounds, currentShape, TP3D_SHAPE_ROTATION_DEG);
         }
+        function tp3dRotatedEditHandlePoints() {
+            if (!coords || !tp3dCanRotateShape() || TP3D_SHAPE_ROTATION_DEG % 360 === 0) return null;
+            return tp3dProjectedShapePoints(
+                effectiveBounds(coords), 'rectangle', TP3D_SHAPE_ROTATION_DEG
+            );
+        }
         function tp3dSetShapeRotation(value, persist) {
             var degrees = Number(value);
             if (!Number.isFinite(degrees)) return;
@@ -1033,14 +1039,38 @@
             }
         }
 
+        // The orange preview follows the shape rotation; the underlying
+        // editable rectangle keeps the original, axis-aligned bounds.
         function renderShapePreview() {
             tp3dUpdateMapSizeReadout();
             shapePreview.clearLayers();
             svgShapeOverlay = null;
             if (!coords) {
+                syncRotatedCornerEditHandles();
                 syncRotationHandlePosition();
                 return;
             }
+            var rectStyle = tp3dRectStyle();
+            var hasRotation = tp3dCanRotateShape() && TP3D_SHAPE_ROTATION_DEG % 360 !== 0;
+            if (rectLayer) {
+                rectLayer.setStyle({
+                    color: '#E97826', weight: rectStyle.weight,
+                    opacity: hasRotation ? 0 : 1,
+                    fill: rectStyle.fill,
+                    fillOpacity: hasRotation ? 0 : rectStyle.fillOpacity
+                });
+            }
+            if (hasRotation) {
+                L.polygon(tp3dProjectedShapePoints(
+                    effectiveBounds(coords), 'rectangle', TP3D_SHAPE_ROTATION_DEG
+                ), {
+                    color: '#E97826', weight: rectStyle.weight, opacity: 1,
+                    fill: rectStyle.fill, fillOpacity: rectStyle.fillOpacity,
+                    interactive: false
+                }).addTo(shapePreview);
+            }
+            if (drawMode === 'corner') syncRotatedCornerEditHandles();
+            else if (syncCenterHandles) syncCenterHandles();
             if (currentShape === 'svg') {
                 if (!svgDataUrl) {
                     syncRotationHandlePosition();
@@ -1054,7 +1084,7 @@
                 syncRotationHandlePosition();
                 return;
             }
-            if (currentShape === 'rectangle' && !TP3D_SHAPE_ROTATION_DEG) {
+            if (currentShape === 'rectangle' && TP3D_SHAPE_ROTATION_DEG % 360 === 0) {
                 syncRotationHandlePosition();
                 return;
             }

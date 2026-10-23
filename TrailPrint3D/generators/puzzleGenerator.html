@@ -254,6 +254,7 @@
         // the shared rect_editor.js code injected below reads this to stay
         // uniform with pages that do (map_generator.html etc.).
         var currentShape = 'rectangle';
+        var TP3D_SHAPE_ROTATION_DEG = Number(SETTINGS_STATE.shapeRotation) || 0;
         var pieces = [];         // current jigsaw pieces: [{row, col, points: [[x,y],...]}, ...]
         var gpxPaths = [];
         var gpxNames = [];
@@ -374,6 +375,7 @@
                 baseLayer: activeBaseLayerName,
                 settingsTab: TP3D_SETTINGS_TAB,
                 guideVisible: window.tp3dGetGuideVisible ? window.tp3dGetGuideVisible() : true,
+                shapeRotation: TP3D_SHAPE_ROTATION_DEG,
                 length: document.getElementById('lengthInput').value,
                 width: document.getElementById('widthInput').value,
                 rows: document.getElementById('rowsInput').value,
@@ -444,6 +446,7 @@
                         baseLayers[s.baseLayer].addTo(map);
                         activeBaseLayerName = s.baseLayer;
                     }
+                    tp3dSetShapeRotation(s.shapeRotation == null ? 0 : s.shapeRotation);
                     if (s.length != null) document.getElementById('lengthInput').value = s.length;
                     if (s.width != null) document.getElementById('widthInput').value = s.width;
                     if (s.rows) document.getElementById('rowsInput').value = s.rows;
@@ -747,10 +750,8 @@
 
             // Points are returned in ISOTROPIC space ([0,puzzleX] x
             // [0,puzzleY]) rather than pre-mapped into any other coordinate
-            // system here -- regeneratePuzzle() derives the two spaces that
-            // actually need them: drawn-area-relative (for the on-map
-            // preview) and puzzle-bbox-relative (for the payload sent to
-            // Blender). See isoToDrawnAreaSpace/isoToPuzzleSpace.
+            // system here -- regeneratePuzzle() maps them into the puzzle's
+            // projected footprint for the preview and Blender payload.
             var result = [];
             for (var i = 0; i < rows; i++) {
                 for (var j = 0; j < cols; j++) {
@@ -783,23 +784,11 @@
             return result;
         }
 
-        // Map a point from isotropic [0,puzzleX]x[0,puzzleY] space back to
-        // normalized-relative-to-the-DRAWN-RECTANGLE space (via geo.frac) --
-        // used only for the on-map preview (normToLatLng interprets points
-        // as fractions of the drawn rectangle's own corners).
-        function isoToDrawnAreaSpace(pt, geo) {
-            return [
-                geo.frac.nx0 + (pt[0] / geo.puzzleX) * (geo.frac.nx1 - geo.frac.nx0),
-                geo.frac.ny0 + (pt[1] / geo.puzzleY) * (geo.frac.ny1 - geo.frac.ny0)
-            ];
-        }
-
         // Map a point from isotropic space to normalized-relative-to-the-
         // PUZZLE'S-OWN-true-bbox space (always exactly [0,1] x [0,1], no
-        // cover-fit overflow/margin) -- this is what actually gets sent to
-        // Blender, paired with puzzleGeoBbox() as the *bbox* field, so the
-        // base terrain tile gets built to the puzzle's real footprint
-        // instead of the drawn rectangle's. Sending pieces relative to the
+        // cover-fit overflow/margin). Rotation maps these source points to
+        // the expanded payload bbox while scale_bbox preserves this original
+        // footprint's physical size. Sending pieces relative to the
         // drawn rectangle instead (the old behaviour) meant any piece
         // overflowing past the drawn edge in the cover-fit case got cut off
         // by cut_into_puzzle_pieces's boolean INTERSECT against a tile sized
@@ -824,6 +813,88 @@
             };
         }
 
+        function tp3dPuzzleBaseBounds() {
+            if (!coords) return null;
+            var geo = computePuzzleGeometry(coords);
+            return puzzleGeoBbox(coords, geo.frac);
+        }
+
+        function tp3dCurrentRotatedPuzzleProjectedBounds() {
+            return tp3dRotatedPuzzleProjectedBounds(tp3dPuzzleProjectedBounds(tp3dPuzzleBaseBounds()), TP3D_SHAPE_ROTATION_DEG);
+        }
+
+        function tp3dRotatedPuzzleBounds() {
+            return tp3dPuzzleProjectedBoundsToGeographic(tp3dCurrentRotatedPuzzleProjectedBounds());
+        }
+
+        function tp3dPuzzlePointToLatLng(point) {
+            var projectedBounds = tp3dPuzzleProjectedBounds(tp3dPuzzleBaseBounds());
+            var projected = tp3dNormalizedPuzzleProjectedPoint(point, projectedBounds, TP3D_SHAPE_ROTATION_DEG);
+            var latlng = map.unproject([projected.x, projected.y], 0);
+            return [latlng.lat, latlng.lng];
+        }
+
+        function tp3dPuzzlePointToPayload(point) {
+            var projected = tp3dNormalizedPuzzleProjectedPoint(
+                point, tp3dPuzzleProjectedBounds(tp3dPuzzleBaseBounds()), TP3D_SHAPE_ROTATION_DEG
+            );
+            var bounds = tp3dCurrentRotatedPuzzleProjectedBounds();
+            return [
+                (projected.x - bounds.minX) / (bounds.maxX - bounds.minX),
+                (bounds.maxY - projected.y) / (bounds.maxY - bounds.minY)
+            ];
+        }
+
+        function tp3dCurrentPuzzleOutlineLatLngs() {
+            return tp3dPuzzleOutlineLatLngs(
+                pieces, tp3dPuzzleProjectedBounds(tp3dPuzzleBaseBounds()), TP3D_SHAPE_ROTATION_DEG
+            );
+        }
+
+        function tp3dPuzzleEditHandlePoints() {
+            return tp3dPuzzleEditHandleLatLngs(
+                pieces, tp3dPuzzleProjectedBounds(tp3dPuzzleBaseBounds()), TP3D_SHAPE_ROTATION_DEG
+            );
+        }
+
+        function tp3dRotationHandleBounds() { return tp3dPuzzleBaseBounds(); }
+        function tp3dRotationHandlePoints() { return tp3dCurrentPuzzleOutlineLatLngs(); }
+        function tp3dRotatedEditHandlePoints() { return coords && pieces.length ? tp3dPuzzleEditHandlePoints() : null; }
+        function tp3dCanRotateShape() { return !!coords && pieces.length > 0; }
+
+        function tp3dSyncPuzzleRectVisibility() {
+            if (!rectLayer) return;
+            var hidden = Math.abs(TP3D_SHAPE_ROTATION_DEG % 360) > 1e-8;
+            var style = tp3dRectStyle();
+            rectLayer.setStyle({ opacity: hidden ? 0 : 1, fillOpacity: hidden ? 0 : style.fillOpacity });
+        }
+
+        function tp3dOnShapeRotationChanged() {
+            tp3dSyncPuzzleRectVisibility();
+            regeneratePuzzle();
+        }
+
+        function tp3dSetShapeRotation(value, persist) {
+            var degrees = Number(value);
+            if (!isFinite(degrees)) degrees = 0;
+            TP3D_SHAPE_ROTATION_DEG = Math.max(-360, Math.min(360, Math.round(degrees)));
+            SETTINGS_STATE.shapeRotation = TP3D_SHAPE_ROTATION_DEG;
+            tp3dOnShapeRotationChanged();
+            if (typeof syncRotationHandlePosition === 'function') syncRotationHandlePosition();
+            if (persist) saveState();
+        }
+
+        function tp3dAfterRotatedEditCornerDrag(originalBounds, resizedBounds, mode) {
+            var original = tp3dPuzzleProjectedBounds(originalBounds);
+            var resized = tp3dPuzzleProjectedBounds(resizedBounds);
+            var widthRatio = (resized.maxX - resized.minX) / (original.maxX - original.minX);
+            var heightRatio = (resized.maxY - resized.minY) / (original.maxY - original.minY);
+            var length = parseFloat(document.getElementById('lengthInput').value) || 0;
+            var width = parseFloat(document.getElementById('widthInput').value) || 0;
+            if (length > 0) document.getElementById('lengthInput').value = length * widthRatio;
+            if (width > 0) document.getElementById('widthInput').value = width * heightRatio;
+        }
+
         function normToLatLng(nx, ny) {
             // The drawn rectangle is an axis-aligned lat/lon box, so direct
             // linear interpolation is exact for preview purposes (the actual
@@ -835,7 +906,7 @@
         function renderPuzzlePreview() {
             puzzleLayer.clearLayers();
             pieces.forEach(function(p) {
-                L.polygon(p.points.map(function(pt) { return normToLatLng(pt[0], pt[1]); }), {
+                L.polygon(p.points, {
                     color: '#007bff', weight: 1.5, opacity: 0.9, fill: true, fillOpacity: 0.08
                 }).addTo(puzzleLayer);
             });
@@ -942,7 +1013,15 @@
             var cornerRadiusMm = parseFloat(document.getElementById('holderCornerRadiusInput').value) || 0;
             var radiusFracX = (geo.scale * cornerRadiusMm) / fullX;
             var radiusFracY = (geo.scale * cornerRadiusMm) / fullY;
-            var outline = roundedRectLatLngs(hx0, hy0, hx1, hy1, radiusFracX, radiusFracY, 8);
+            var outline = roundedRectLatLngs(hx0, hy0, hx1, hy1, radiusFracX, radiusFracY, 8)
+                .map(function(point) {
+                    var projectedBounds = tp3dPuzzleProjectedBounds(tp3dPuzzleBaseBounds());
+                    var projected = tp3dRotatePuzzleProjectedPoint(
+                        map.project(point, 0), projectedBounds, TP3D_SHAPE_ROTATION_DEG
+                    );
+                    var latlng = map.unproject([projected.x, projected.y], 0);
+                    return [latlng.lat, latlng.lng];
+                });
             L.polygon(outline, { color: '#000000', weight: 2, opacity: 0.9, fill: false, dashArray: '4,4' }).addTo(holderLayer);
         }
 
@@ -962,11 +1041,14 @@
             var geo = computePuzzleGeometry(coords);
             pieces = buildPuzzlePieces(rows, cols, tabSize, jitter, geo, cornerRadius);
             pieces.forEach(function(p) {
-                p.points = p.isoPoints.map(function(pt) { return isoToDrawnAreaSpace(pt, geo); });
                 p.puzzlePoints = p.isoPoints.map(function(pt) { return isoToPuzzleSpace(pt, geo); });
+                p.points = p.puzzlePoints.map(tp3dPuzzlePointToLatLng);
             });
             renderPuzzlePreview();
             updateHolderOutline();
+            tp3dSyncPuzzleRectVisibility();
+            if (typeof syncRotatedCornerEditHandles === 'function') syncRotatedCornerEditHandles();
+            if (typeof syncRotationHandlePosition === 'function') syncRotationHandlePosition();
             updateStatus();
             updateSendState();
         }
@@ -1123,6 +1205,7 @@
             syncCenterHandles = null;
             rectLayer = null;
             coords = null;
+            syncRotationHandlePosition();
             shapeCenter = null;
             pieces = [];
             updateStatus();
@@ -1226,8 +1309,11 @@
             var sendGeo = coords ? computePuzzleGeometry(coords) : null;
             var payload = {
                 excluded_ids: tp3dPrefetchExcludedIds(),
-                bbox: coords ? puzzleGeoBbox(coords, sendGeo.frac) : null,
-                pieces: pieces.map(function(p) { return { row: p.row, col: p.col, points: p.puzzlePoints }; }),
+                bbox: tp3dRotatedPuzzleBounds(),
+                scale_bbox: puzzleGeoBbox(coords, sendGeo.frac),
+                pieces: pieces.map(function(p) {
+                    return { row: p.row, col: p.col, points: p.puzzlePoints.map(tp3dPuzzlePointToPayload) };
+                }),
                 length: parseFloat(document.getElementById('lengthInput').value) || 0,
                 width: parseFloat(document.getElementById('widthInput').value) || 0,
                 rows: parseInt(document.getElementById('rowsInput').value) || 1,
@@ -1270,7 +1356,7 @@
         // Prefetch area: the puzzle's own true footprint (what actually gets generated).
         function tp3dPrefetchArea() {
             if (!coords) return null;
-            return { bounds: puzzleGeoBbox(coords, computePuzzleGeometry(coords).frac), type: 'exact' };
+            return { bounds: tp3dRotatedPuzzleBounds(), type: 'exact' };
         }
 
         __PREFETCH_JS__

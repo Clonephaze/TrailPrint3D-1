@@ -361,7 +361,7 @@ def test_generator_bbox_resolves_to_prefetch_cache_file():
     x2, y2, _ = utils.convert_to_blender_coordinates(b["north"], b["east"], 0, 0)
     diameter = max(abs(x2 - x1), abs(y2 - y1))
     r = math.radians(rot)
-    gen_diameter = diameter * (abs(math.cos(r)) + abs(math.sin(r)))
+    gen_diameter = diameter * (abs(math.cos(r)) + abs(math.sin(r))) * 1.002
     blank = utils.create_octagon(gen_diameter / 2, 2)
     blank.location = ((x1 + x2) / 2, (y1 + y2) / 2, 0)
     bpy.context.view_layer.objects.active = blank

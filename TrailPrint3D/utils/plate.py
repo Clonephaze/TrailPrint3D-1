@@ -444,6 +444,7 @@ def create_generic_plate(
                 thickness,
                 handle_style,
                 bevel,
+                shape_rotation=shape_rotation,
             )
 
         _store_wkt_metadata(plate_obj, outer_poly.wkt, poly.wkt, mode)
