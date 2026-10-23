@@ -2205,6 +2205,23 @@ def _taubin_smooth_ocean_polys(ocean_polys, bbox_bl):
     return list(_g2d.iter_polygons(_g2d.union(_smoothed_polys), min_area=1.0))
 
 
+def resolve_coast_simplify(smoothing: float, explicit: float) -> float:
+    """Use a positive explicit tolerance verbatim, otherwise derive it from smoothing."""
+    from .. import constants as const
+
+    if explicit > 0.0:
+        return explicit
+    s = min(max(smoothing, 0.0), 1.0)
+    return const.COAST_SIMPLIFY_BASE + const.COAST_SIMPLIFY_SLOPE * s
+
+
+def _ocean_rdp_epsilon(tp3d):
+    return resolve_coast_simplify(
+        getattr(tp3d, "col_osmSmoothing", 0.0),
+        getattr(tp3d, "el_oRdpEpsilon", 0.0),
+    )
+
+
 def _smoothed_ocean_polys(open_chains, closed_loops, bbox_bl, rdp_eps):
     """Build closed ocean-face polygons from coastline chains and Taubin-smooth
     them, pinning vertices on the tile bbox edge so adjacent tiles keep
@@ -2238,7 +2255,7 @@ def _build_ocean_mesh(open_chains, closed_loops, bbox_bl, tile):
 
     min_x, min_y, max_x, max_y = bbox_bl
 
-    rdp_eps = getattr(getattr(bpy.context.scene, "tp3d", None), "el_oRdpEpsilon", 0.1)
+    rdp_eps = _ocean_rdp_epsilon(getattr(bpy.context.scene, "tp3d", None))
     if bpy.app.debug:
         print(f"    [ocean mesh] coastline RDP epsilon = {rdp_eps}")
 
@@ -2369,7 +2386,7 @@ def createOcean(gen: GenerationContext, prefetched_coastline, scaleHor, tile):
     if gen.texture.useTexture:
         # Skip building any Blender mesh — return the Shapely polygon so the
         # texture rasterizer can paint it like every other OSM element.
-        rdp_eps = getattr(bpy.context.scene.tp3d, "el_oRdpEpsilon", 0.1)
+        rdp_eps = _ocean_rdp_epsilon(bpy.context.scene.tp3d)
         _ct_polys = _smoothed_ocean_polys(open_chains, closed_loops, bbox_bl, rdp_eps)
         if not _ct_polys:
             _progress.WarningsOverlay.add_warning(
@@ -2504,7 +2521,7 @@ def createOceanFromWaterPolygons(gen: GenerationContext, scaleHor, tile):
     min_island_area = getattr(tp3d_ctx, "el_oMinIslandArea", 4.0)
     poly = _g2d.drop_small_holes(poly, min_island_area)
 
-    rdp_eps = getattr(tp3d_ctx, "el_oRdpEpsilon", 0.1)
+    rdp_eps = _ocean_rdp_epsilon(tp3d_ctx)
     ocean_polys = list(_g2d.iter_polygons(poly, min_area=1.0))
     if rdp_eps > 0:
         simplified = [p.simplify(rdp_eps) for p in ocean_polys]

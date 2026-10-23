@@ -1004,6 +1004,90 @@ def test_ocean_probes_preserve_narrow_channels():
     assert not any(p.covers(Point(75.0, 500.0)) for p in polygons)
 
 
+def test_coast_simplify_auto_default():
+    from TrailPrint3D.utils.terrain import resolve_coast_simplify
+
+    assert resolve_coast_simplify(0.0, 0.0) == 0.1
+
+
+def test_coast_simplify_auto_midpoint_and_monotonicity():
+    from math import isclose
+
+    from TrailPrint3D.utils.terrain import resolve_coast_simplify
+
+    assert isclose(resolve_coast_simplify(0.5, 0.0), 0.15)
+    values = [resolve_coast_simplify(i / 100, 0.0) for i in range(101)]
+    assert values == sorted(values)
+
+
+def test_coast_simplify_auto_ceiling_and_clamping():
+    from math import isclose
+
+    from TrailPrint3D.utils.terrain import resolve_coast_simplify
+
+    assert isclose(resolve_coast_simplify(1.0, 0.0), 0.2)
+    assert isclose(resolve_coast_simplify(5.0, 0.0), 0.2)
+    assert resolve_coast_simplify(-1.0, 0.0) == 0.1
+
+
+def test_coast_simplify_explicit_ignores_smoothing():
+    from TrailPrint3D.utils.terrain import resolve_coast_simplify
+
+    assert resolve_coast_simplify(0.0, 0.3) == resolve_coast_simplify(1.0, 0.3) == 0.3
+
+
+def test_coast_simplify_explicit_uncapped_and_tiny():
+    from TrailPrint3D.utils.terrain import resolve_coast_simplify
+
+    for smoothing in (0.0, 0.5, 1.0, 5.0, -1.0):
+        assert resolve_coast_simplify(smoothing, 1.5) == 1.5
+        assert resolve_coast_simplify(smoothing, 0.001) == 0.001
+
+
+def test_ocean_rdp_epsilon_uses_scene_settings():
+    from types import SimpleNamespace
+
+    from TrailPrint3D.utils.terrain import _ocean_rdp_epsilon
+
+    assert _ocean_rdp_epsilon(None) == 0.1
+    assert _ocean_rdp_epsilon(SimpleNamespace(col_osmSmoothing=1.0)) == 0.2
+    assert _ocean_rdp_epsilon(SimpleNamespace(
+        col_osmSmoothing=1.0, el_oRdpEpsilon=0.05,
+    )) == 0.05
+
+
+def test_coast_simplify_preserves_taubin_smoothing():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from shapely.geometry import box
+
+    from TrailPrint3D.utils import geometry2d, terrain
+
+    ocean = box(10.0, 10.0, 90.0, 90.0)
+    bbox = (0.0, 0.0, 100.0, 100.0)
+    for smoothing, explicit, tolerance, steps in (
+        (0.0, 0.0, 0.1, 0),
+        (1.0, 0.0, 0.2, 20),
+        (0.5, 0.05, 0.05, 10),
+    ):
+        tp3d = SimpleNamespace(col_osmSmoothing=smoothing, el_oRdpEpsilon=explicit)
+        with (
+            patch.object(terrain, "bpy", SimpleNamespace(
+                context=SimpleNamespace(scene=SimpleNamespace(tp3d=tp3d)),
+            )),
+            patch.object(terrain, "_polygonize_ocean_faces", return_value=[ocean]) as polygonize,
+            patch.object(geometry2d, "smooth_polygon_taubin_bbox_pinned", return_value=ocean) as smooth,
+        ):
+            result = terrain._smoothed_ocean_polys([], [], bbox, terrain._ocean_rdp_epsilon(tp3d))
+            assert result and result[0].equals(ocean)
+            polygonize.assert_called_once_with([], [], bbox, rdp_eps=tolerance)
+            if steps:
+                smooth.assert_called_once_with(ocean, bbox, steps=steps, debug_name="ocean_000")
+            else:
+                smooth.assert_not_called()
+
+
 def test_ocean_simplification_does_not_move_mainland_across_islands():
     """Simplifying a shallow bay must not strand its offshore rock on land."""
     from shapely.geometry import Point
@@ -1309,6 +1393,13 @@ if __name__ == "__main__":
     _run("coastline faces: narrow ocean channels stay water",    test_ocean_probes_preserve_narrow_channels)
     _run("coastline faces: simplification preserves offshore islands",
          test_ocean_simplification_does_not_move_mainland_across_islands)
+    _run("coast simplify: automatic default", test_coast_simplify_auto_default)
+    _run("coast simplify: midpoint and monotonicity", test_coast_simplify_auto_midpoint_and_monotonicity)
+    _run("coast simplify: ceiling and clamping", test_coast_simplify_auto_ceiling_and_clamping)
+    _run("coast simplify: explicit ignores smoothing", test_coast_simplify_explicit_ignores_smoothing)
+    _run("coast simplify: explicit uncapped and tiny", test_coast_simplify_explicit_uncapped_and_tiny)
+    _run("coast simplify: scene settings and defaults", test_ocean_rdp_epsilon_uses_scene_settings)
+    _run("coast simplify: preserves independent Taubin smoothing", test_coast_simplify_preserves_taubin_smoothing)
     _run("coastline mesh: no chains → full bbox rect",            test_build_ocean_mesh_no_chains_returns_bbox_rect)
     _run("coastline mesh: open chain → polygon object",           test_build_ocean_mesh_open_chain_produces_polygon)
     _run("fetch_coastline_ways: empty prefetch → []",             test_fetch_coastline_ways_empty_prefetch)

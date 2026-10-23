@@ -265,9 +265,162 @@ function applyEdgeDrag(edge, value) {
 // mirrors both the opposite lat edge and the opposite lng edge
 // around shapeCenter.
 function applyCornerDrag(corner, latlng) {
+    if (tp3dShiftHeld) {
+        applySquareCornerDrag(corner, latlng);
+        return;
+    }
     applyEdgeDrag(corner[0] === 'N' ? 'north' : 'south', latlng.lat);
     applyEdgeDrag(corner[1] === 'E' ? 'east' : 'west', latlng.lng);
 }
+
+// ---------------------------------------------------------------------------
+// Shift = lock the box to 1:1.
+//
+// "Square" here means square in the projected plane (map.project(_, 0)) --
+// the same plane the backend scales from and #totalSizeInfo measures width and
+// height in -- NOT equal lat/lng spans. A degree of longitude is only
+// cos(lat) as long as a degree of latitude, so a box that is square in degrees
+// is a visibly wide/tall rectangle on screen and in the printed result.
+//
+// Covers every path that draws or resizes the box:
+//   - 'center' draw          -> centerDrawBounds (armCenterDraw)
+//   - 'center' handle/border -> applySquareCornerDrag via applyCornerDrag
+//   - 'corner' border drag   -> applySquareCornerDrag via applyCornerDrag
+//   - 'corner' draw          -> L.Draw.Rectangle._drawShape patch below
+//   - 'corner' leaflet-draw handles -> L.Edit.Rectangle._onMarkerDrag patch below
+// Shift only constrains the gesture in progress; releasing it goes back to
+// free-form resizing from wherever the box ended up.
+// ---------------------------------------------------------------------------
+var tp3dShiftHeld = false;
+var tp3dAltHeld = false;
+(function() {
+    function track(e) {
+        tp3dShiftHeld = !!e.shiftKey;
+        tp3dAltHeld = !!e.altKey;
+    }
+    // Capture phase on document so this runs before Leaflet's own handlers,
+    // and mouse events re-sync the flag in case Shift changed while the
+    // window wasn't focused.
+    ['keydown', 'keyup', 'mousedown', 'mousemove', 'mouseup'].forEach(function(type) {
+        document.addEventListener(type, track, true);
+    });
+    window.addEventListener('blur', function() {
+        tp3dShiftHeld = false;
+        tp3dAltHeld = false;
+    });
+})();
+
+// Smallest box a Shift-drag can collapse to, in zoom-0 projected px (~15 m at
+// the equator) -- keeps a 'center'-mode box from going zero-size, like
+// applyEdgeDrag's MIN_DEG clamp does for free-form edits.
+var TP3D_MIN_SQUARE_SIDE = 1e-4;
+
+// The point that makes a projected-plane square with *anchor* as one corner and
+// *latlng* steering the opposite one. signX/signY (+1/-1, in projected axes,
+// so y grows southward) force which quadrant the square extends into -- used
+// when the dragged corner is known; omitted, the quadrant follows the cursor.
+// The square grows to whichever axis the cursor has moved further along.
+function tp3dSquareFromAnchor(anchor, latlng, signX, signY, minSide) {
+    var a = map.project(L.latLng(anchor), 0);
+    var p = map.project(L.latLng(latlng), 0);
+    var dx = p.x - a.x, dy = p.y - a.y;
+    var sx = signX || (dx < 0 ? -1 : 1);
+    var sy = signY || (dy < 0 ? -1 : 1);
+    var side = Math.max(sx * dx, sy * dy, minSide || 0);
+    return map.unproject([a.x + sx * side, a.y + sy * side], 0);
+}
+
+// applyCornerDrag's Shift branch. 'corner' mode: the opposite corner stays
+// put and the dragged corner snaps to the square. 'center' mode: shapeCenter
+// stays put and the opposite corner mirrors the dragged one through it in the
+// projected plane (applyEdgeDrag mirrors in degrees, which can't stay square,
+// so all four edges are set directly here).
+function applySquareCornerDrag(corner, latlng) {
+    var north = corner[0] === 'N', east = corner[1] === 'E';
+    var signX = east ? 1 : -1;
+    var signY = north ? -1 : 1;
+    if (drawMode === 'center' && shapeCenter) {
+        var dragged = tp3dSquareFromAnchor(shapeCenter, latlng, signX, signY, TP3D_MIN_SQUARE_SIDE);
+        var c = map.project(L.latLng(shapeCenter), 0);
+        var d = map.project(dragged, 0);
+        var opposite = map.unproject([2 * c.x - d.x, 2 * c.y - d.y], 0);
+        if (north) { coords.north = dragged.lat; coords.south = opposite.lat; }
+        else { coords.south = dragged.lat; coords.north = opposite.lat; }
+        if (east) { coords.east = dragged.lng; coords.west = opposite.lng; }
+        else { coords.west = dragged.lng; coords.east = opposite.lng; }
+    } else {
+        var anchor = {
+            lat: north ? coords.south : coords.north,
+            lng: east ? coords.west : coords.east
+        };
+        var squared = tp3dSquareFromAnchor(anchor, latlng, signX, signY, TP3D_MIN_SQUARE_SIDE);
+        applyEdgeDrag(north ? 'north' : 'south', squared.lat);
+        applyEdgeDrag(east ? 'east' : 'west', squared.lng);
+    }
+}
+
+// Bounds for 'center' draw mode: symmetric around *center*, independently per
+// axis in degrees normally, a projected-plane square while Shift is held.
+// Returns identical north/south when latlng === center either way, so
+// finalizeCenterShape's zero-size click guard still works.
+function centerDrawBounds(center, latlng) {
+    if (tp3dShiftHeld) {
+        var c = map.project(L.latLng(center), 0);
+        var p = map.project(L.latLng(latlng), 0);
+        var half = Math.max(Math.abs(p.x - c.x), Math.abs(p.y - c.y));
+        var ne = map.unproject([c.x + half, c.y - half], 0);
+        var sw = map.unproject([c.x - half, c.y + half], 0);
+        return { north: ne.lat, south: sw.lat, east: ne.lng, west: sw.lng };
+    }
+    var dLat = Math.abs(latlng.lat - center.lat);
+    var dLng = Math.abs(latlng.lng - center.lng);
+    return {
+        north: center.lat + dLat, south: center.lat - dLat,
+        east: center.lng + dLng, west: center.lng - dLng
+    };
+}
+
+// 'corner' mode hands drawing and handle-dragging to leaflet-draw, which has
+// no square constraint of its own, so both are wrapped. Both read the shared
+// tp3dShiftHeld flag since leaflet-draw doesn't pass the mouse event through.
+// Idempotent, and retried on page load in case leaflet-draw is loaded after
+// this file. A marker patched mid-drag is also moved onto the squared corner,
+// so the handle doesn't visibly sit off the box while Shift is held.
+function tp3dPatchDrawLibs() {
+    if (typeof L === 'undefined') return;
+    if (L.Draw && L.Draw.Rectangle && !L.Draw.Rectangle.prototype._tp3dShiftSquare) {
+        var origDrawShape = L.Draw.Rectangle.prototype._drawShape;
+        L.Draw.Rectangle.prototype._drawShape = function(latlng) {
+            if (tp3dShiftHeld && this._startLatLng) {
+                latlng = tp3dSquareFromAnchor(this._startLatLng, latlng);
+            }
+            return origDrawShape.call(this, latlng);
+        };
+        L.Draw.Rectangle.prototype._tp3dShiftSquare = true;
+    }
+    if (L.Edit && L.Edit.Rectangle && !L.Edit.Rectangle.prototype._tp3dShiftSquare) {
+        var origMarkerDrag = L.Edit.Rectangle.prototype._onMarkerDrag;
+        L.Edit.Rectangle.prototype._onMarkerDrag = function(e) {
+            var marker = e.target;
+            if (tp3dShiftHeld && this._oppositeCorner && marker !== this._moveMarker) {
+                marker.setLatLng(tp3dSquareFromAnchor(this._oppositeCorner, marker.getLatLng()));
+            }
+            return origMarkerDrag.call(this, e);
+        };
+        L.Edit.Rectangle.prototype._tp3dShiftSquare = true;
+    }
+}
+
+// Leaflet's default Shift+drag is box-zoom, which would fire alongside every
+// Shift-draw/resize that starts on the map itself (e.g. dragging the border).
+// `map` is only touched once the page has finished loading.
+function tp3dInstallShiftSquare() {
+    tp3dPatchDrawLibs();
+    if (typeof map !== 'undefined' && map && map.boxZoom) map.boxZoom.disable();
+}
+tp3dPatchDrawLibs();
+if (document.readyState === 'complete') tp3dInstallShiftSquare();
+else window.addEventListener('load', tp3dInstallShiftSquare);
 
 // Set by bindCenterEdit() while its handle markers exist, so a
 // border-drag (bindCornerDrag below) can keep them in sync too
@@ -393,7 +546,10 @@ function bindRotationHandle() {
         var point = map.project(e.target.getLatLng(), map.getZoom());
         var angle = Math.atan2(point.y - center.y, point.x - center.x);
         var delta = (angle - rotationDragStart.angle) * 180 / Math.PI;
-        var degrees = ((Math.round(rotationDragStart.degrees - delta) + 180) % 360 + 360) % 360 - 180;
+        // Shift snaps the final angle to 5 degrees; Shift+Alt snaps to 30.
+        var step = tp3dShiftHeld ? (tp3dAltHeld ? 30 : 5) : 1;
+        var snapped = Math.round((rotationDragStart.degrees - delta) / step) * step;
+        var degrees = ((snapped + 180) % 360 + 360) % 360 - 180;
         tp3dSetShapeRotation(degrees);
     });
     marker.on('dragend', function() {
@@ -547,24 +703,14 @@ function armCenterDraw() {
         drawArmed = false;
         var center = e.latlng;
         function onMove(e2) {
-            var dLat = Math.abs(e2.latlng.lat - center.lat);
-            var dLng = Math.abs(e2.latlng.lng - center.lng);
-            previewDrawnRect({
-                north: center.lat + dLat, south: center.lat - dLat,
-                east: center.lng + dLng, west: center.lng - dLng
-            });
+            previewDrawnRect(centerDrawBounds(center, e2.latlng));
         }
         function onUp(e3) {
             map.off('mousemove', onMove);
             map.off('mouseup', onUp);
             map.dragging.enable();
             map.getContainer().style.cursor = '';
-            var dLat = Math.abs(e3.latlng.lat - center.lat);
-            var dLng = Math.abs(e3.latlng.lng - center.lng);
-            finalizeCenterShape({
-                north: center.lat + dLat, south: center.lat - dLat,
-                east: center.lng + dLng, west: center.lng - dLng
-            }, center);
+            finalizeCenterShape(centerDrawBounds(center, e3.latlng), center);
         }
         map.on('mousemove', onMove);
         map.on('mouseup', onUp);

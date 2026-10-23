@@ -31,6 +31,9 @@ R = 6371.0  # Earth radius in kilometers
 # never reaches the bottom of the map
 WATER_INSERT_MARGIN = 0.5
 
+COAST_SIMPLIFY_BASE = 0.1
+COAST_SIMPLIFY_SLOPE = 0.1
+
 # OSM map-size limits (km). These are only the defaults -- the live values are
 # user-adjustable in the Add-on Preferences (addon_preferences.py), which push
 # them into _osm_size_limits via sync_osm_size_limits(). Callers keep reading
