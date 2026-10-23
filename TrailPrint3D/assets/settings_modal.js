@@ -466,6 +466,18 @@ function tp3dGuideApplyVisible(visible) {
         TP3D_GUIDE_TOGGLE_BTN.textContent = TP3D_GUIDE_VISIBLE ? 'Hide guide' : 'Show guide';
         TP3D_GUIDE_TOGGLE_BTN.setAttribute('aria-expanded', String(TP3D_GUIDE_VISIBLE));
     }
+
+    // Toggle the native hover text on the "?" buttons. When the guide is
+    // open, we rely on the faded visual and the panel itself, so we strip
+    // the native tooltip to prevent it from overlapping the UI.
+    document.querySelectorAll('.preview-btn').forEach(function(btn) {
+        if (TP3D_GUIDE_VISIBLE) {
+            btn.removeAttribute('title');
+        } else {
+            btn.setAttribute('title', 'Click to preview');
+        }
+    });
+    
     // Clear stale pin/hover when hiding, so a later Show doesn't resurrect
     // whatever was showing when the user hid it.
     if (!TP3D_GUIDE_VISIBLE) {
