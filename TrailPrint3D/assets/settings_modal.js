@@ -23,9 +23,10 @@
 //    API box), plus rarely changed settings that fit nowhere else (texture
 //    resolution).
 //
-// The right-hand panel shows a per-feature preview GIF/image when a field
-// with a `preview` URL is clicked (tp3dShowPreview) -- most fields don't
-// have one yet and stay plain text, not clickable.
+// The right-hand panel is the "Setting guide": on wide modals it's always
+// visible and updates as the user hovers or selects a setting; on narrow
+// modals it stays hidden until a setting's "?" is clicked. See the
+// tp3dGuide* functions below.
 //
 // Which tab (Map/Elements) was last open is tracked in TP3D_SETTINGS_TAB and
 // switchable from outside via tp3dActivateSettingsTab -- this file doesn't
@@ -207,7 +208,7 @@ function tp3dBuildTrailAppearanceSwitch() {
         btn.appendChild(desc);
         btn.addEventListener('click', function() { select(opt.mode); });
         pill.appendChild(btn);
-        if (opt.preview || opt.caption) pill.appendChild(tp3dMakePreviewButton(opt.preview, opt.caption));
+        if (opt.preview || opt.caption) pill.appendChild(tp3dMakePreviewButton(opt.preview, opt.caption, opt.label, pill));
         wrap.appendChild(pill);
         buttons[opt.mode] = btn;
         options[opt.mode] = pill;
@@ -426,107 +427,190 @@ function tp3dSendAdvancedUpdate(key, value) {
     }).catch(function() {});
 }
 
-// What's currently showing in the preview panel -- the image URL, or the
-// caption text for a text-only preview (no `url`, see tp3dShowPreview).
-function tp3dPreviewKey(url, caption) {
-    return url || 'text:' + [].concat(caption || []).join('\n');
+// ── Setting guide: preview panel that updates on hover/selection ────────
+// A registry maps each guide-able element's data-guide-id to its
+// {title, url, caption}. The panel itself is built once (in
+// renderSettingsModal below) and entries are swapped in place. Wide modals
+// keep it permanently visible; narrow modals show it only after a "?" is
+// clicked, matching the old behavior exactly. The same registry handles
+// both, so there's one code path for content and two for visibility.
+var TP3D_GUIDE_REGISTRY = {};
+var TP3D_GUIDE_NEXT_ID = 0;
+var TP3D_GUIDE_STATE = { pinnedId: null, hoveredId: null, hoverTimer: null, leaveTimer: null, imageToken: 0 };
+var TP3D_GUIDE_HOVER_OK = !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+// User preference: false = the guide panel is collapsed to zero width on
+// wide modals until a "?" is clicked (which pins and re-opens it
+// transiently). Persisted per page alongside settingsTab -- see each page's
+// tp3dBuildStateSnapshot / tp3dApplyStateSnapshot.
+var TP3D_GUIDE_VISIBLE = !(window.matchMedia && window.matchMedia('(max-width: 70rem)').matches);
+var TP3D_GUIDE_TOGGLE_BTN = null;
+window.tp3dGetGuideVisible = function() { return TP3D_GUIDE_VISIBLE; };
+window.tp3dSetGuideVisible = function(visible) {
+    TP3D_GUIDE_VISIBLE = !!visible;
+    var panel = tp3dGuidePanel();
+    if (panel) {
+        var box = panel.closest('.settings-modal-box');
+        if (box) box.classList.toggle('guide-hidden', !TP3D_GUIDE_VISIBLE);
+    }
+    if (TP3D_GUIDE_TOGGLE_BTN) {
+        TP3D_GUIDE_TOGGLE_BTN.textContent = TP3D_GUIDE_VISIBLE ? 'Hide guide' : 'Show guide';
+        TP3D_GUIDE_TOGGLE_BTN.setAttribute('aria-expanded', String(TP3D_GUIDE_VISIBLE));
+    }
+    // Clear stale pin/hover when hiding, so a later Show doesn't resurrect
+    // whatever was showing when the user hid it. When showing, render the
+    // default placeholder (pinned/hovered are already null from the hide).
+    if (!TP3D_GUIDE_VISIBLE) {
+        TP3D_GUIDE_STATE.pinnedId = null;
+        TP3D_GUIDE_STATE.hoveredId = null;
+    } else {
+        tp3dGuideDisplay();
+    }
+};
+
+function tp3dRegisterGuide(title, url, caption) {
+    var id = 'tp3dGuide' + (++TP3D_GUIDE_NEXT_ID);
+    TP3D_GUIDE_REGISTRY[id] = { title: title || '', url: url || null, caption: caption || null };
+    return id;
 }
 
+function tp3dGuidePanel() { return document.getElementById('settingsPreviewPanel'); }
+
+function tp3dGuideRenderDefault() {
+    var panel = tp3dGuidePanel();
+    if (!panel) return;
+    // Visibility is driven entirely by .guide-hidden; only content swaps here.
+    var title = panel.querySelector('.preview-title');
+    if (title) title.textContent = 'Setting guide';
+    var media = panel.querySelector('.preview-media');
+    if (media) media.innerHTML = '';
+    var cap = panel.querySelector('.preview-caption');
+    if (cap) {
+        cap.className = 'preview-caption';
+        cap.textContent = 'Hover or select a setting to see a description here.';
+    }
+}
+
+function tp3dGuideRender(id) {
+    var entry = TP3D_GUIDE_REGISTRY[id];
+    var panel = tp3dGuidePanel();
+    if (!entry || !panel) return;
+    // Visibility is driven entirely by .guide-hidden; only content swaps here.
+
+    var title = panel.querySelector('.preview-title');
+    if (title) title.textContent = entry.title || 'Setting guide';
+
+    var media = panel.querySelector('.preview-media');
+    var token = ++TP3D_GUIDE_STATE.imageToken;
+    if (entry.url) {
+        var img = media.querySelector('img');
+        if (!img) {
+            img = document.createElement('img');
+            img.alt = 'Example: ' + (entry.title || 'setting');
+            media.appendChild(img);
+        }
+        if (img.getAttribute('data-guide-url') !== entry.url) {
+            // Keep the old image visible until the new one loads; ignore a
+            // load that resolves after the user has already moved on.
+            var pending = new Image();
+            pending.onload = function() {
+                if (token !== TP3D_GUIDE_STATE.imageToken) return;
+                img.src = entry.url;
+                img.setAttribute('data-guide-url', entry.url);
+            };
+            pending.onerror = function() {
+                if (token !== TP3D_GUIDE_STATE.imageToken) return;
+                media.innerHTML = ''; // caption-only fallback
+            };
+            pending.src = entry.url;
+        }
+    } else {
+        media.innerHTML = '';
+    }
+
+    var cap = panel.querySelector('.preview-caption');
+    if (cap) {
+        cap.className = 'preview-caption' + (entry.url ? '' : ' preview-text-only');
+        cap.innerHTML = '';
+        if (entry.caption) {
+            var lines = Array.isArray(entry.caption) ? entry.caption : [entry.caption];
+            lines.forEach(function(line) {
+                var d = document.createElement('div');
+                d.textContent = line;
+                cap.appendChild(d);
+            });
+        }
+    }
+}
+
+function tp3dGuideDisplay() {
+    var id = TP3D_GUIDE_STATE.hoveredId || TP3D_GUIDE_STATE.pinnedId;
+    if (id && TP3D_GUIDE_REGISTRY[id]) tp3dGuideRender(id);
+    else tp3dGuideRenderDefault();
+}
+
+function tp3dGuidePin(id) {
+    TP3D_GUIDE_STATE.pinnedId = id;
+    tp3dGuideDisplay();
+}
+function tp3dGuideUnpin() {
+    // Only clears pinned/hovered content. Turning the guide off is the
+    // header toggle's job (tp3dSetGuideVisible), so this just resets the
+    // panel back to the default placeholder while the guide stays on.
+    TP3D_GUIDE_STATE.pinnedId = null;
+    TP3D_GUIDE_STATE.hoveredId = null;
+    tp3dGuideDisplay();
+}
+
+// Compatibility shims for any external caller that still uses the old
+// click-only API (tp3dShowPreview(url, caption) / tp3dHidePreview()).
 function tp3dShowPreview(url, caption) {
-    var panel = document.getElementById('settingsPreviewPanel');
-    if (!panel) return;
-    // Grows the whole box open (see .settings-modal-box.preview-active) the
-    // first time this runs -- harmless to call again on later clicks, the
-    // class is already there and classList.add is a no-op.
-    var box = panel.closest('.settings-modal-box');
-    if (box) box.classList.add('preview-active');
-    panel.innerHTML = '';
-    panel.setAttribute('data-preview-url', tp3dPreviewKey(url, caption));
-    // No url -> a text-only preview: just the caption, for settings that
-    // don't have an image yet.
-    if (url) {
-        var img = document.createElement('img');
-        img.src = url;
-        img.alt = 'Preview';
-        panel.appendChild(img);
-    }
-
-    // caption is optional -- a single string or an array of lines, shown
-    // stacked below the image.
-    if (caption) {
-        var lines = Array.isArray(caption) ? caption : [caption];
-        var captionEl = document.createElement('div');
-        captionEl.className = 'preview-caption' + (url ? '' : ' preview-text-only');
-        lines.forEach(function(line) {
-            var lineEl = document.createElement('div');
-            lineEl.textContent = line;
-            captionEl.appendChild(lineEl);
-        });
-        panel.appendChild(captionEl);
-    }
-
-    var closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'preview-close-btn';
-    closeBtn.title = 'Close preview';
-    closeBtn.textContent = '✕';
-    closeBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        tp3dHidePreview();
-    });
-    panel.appendChild(closeBtn);
+    tp3dSetGuideVisible(true);
+    tp3dGuidePin(tp3dRegisterGuide('', url, caption));
 }
+function tp3dHidePreview() { tp3dGuideUnpin(); }
 
-function tp3dHidePreview() {
-    var panel = document.getElementById('settingsPreviewPanel');
-    if (!panel) return;
-    var box = panel.closest('.settings-modal-box');
-    if (box) box.classList.remove('preview-active');
-    panel.removeAttribute('data-preview-url');
-    panel.innerHTML = '';
-    panel.textContent = 'Click a highlighted setting to preview it here';
-}
-
-// A standalone icon button that shows *url* in the preview panel --
-// standalone (never nested inside a <label>) so it's safe to drop next to
-// ANY control, including a checkbox's own label, without its click also
-// forwarding to that control.
-function tp3dMakePreviewButton(url, caption) {
+function tp3dMakePreviewButtonForGuide(guideId) {
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'preview-btn';
     btn.title = 'Click to preview';
     btn.textContent = '?';
+    btn.setAttribute('data-guide-id', guideId);
     btn.addEventListener('click', function(e) {
         e.preventDefault();
         e.stopPropagation();
-        // Clicking the "?" of the preview that's already showing closes it.
-        var panel = document.getElementById('settingsPreviewPanel');
-        if (panel && panel.getAttribute('data-preview-url') === tp3dPreviewKey(url, caption)) {
-            tp3dHidePreview();
-        } else {
-            tp3dShowPreview(url, caption);
-        }
+        // "?" is one-way: turn the guide on and show this setting. Only
+        // the header Show/Hide button turns the guide off.
+        tp3dSetGuideVisible(true);
+        tp3dGuidePin(guideId);
     });
     return btn;
 }
 
-// The one reusable building block behind "make X clickable to preview a
-// GIF": wraps *el* together with a preview button when *url* is set, or
-// just returns *el* unchanged otherwise. Every field builder below calls
-// this on its label/title element -- so adding a preview to any field,
-// checkbox, or card title anywhere in this modal is just adding a
-// `preview: 'url'` property (plus an optional `previewCaption`, a string
-// or array of lines shown below the image) to its definition, nothing
-// else changes. A `previewCaption` without a `preview` URL gives a
-// text-only preview (see tp3dShowPreview).
-function tp3dWithPreview(el, url, caption) {
+// *tagEl*, when given, gets the same data-guide-id as the "?" button, so
+// hovering anywhere in it (e.g. a pill/option row that wraps both a big
+// button and its "?") triggers the guide, not just the tiny "?" itself.
+function tp3dMakePreviewButton(url, caption, title, tagEl) {
+    var btn = tp3dMakePreviewButtonForGuide(tp3dRegisterGuide(title || '', url, caption));
+    if (tagEl) tagEl.setAttribute('data-guide-id', btn.getAttribute('data-guide-id'));
+    return btn;
+}
+
+// Wraps *el* together with a preview button and a data-guide-id. `title` is
+// the field label shown as the guide heading; `caption` is the
+// previewCaption or, as a fallback, the field's own `title` string (so
+// settings without a preview image still get a text-only guide). *rowEl*,
+// when passed, also gets the same data-guide-id so hovering anywhere in
+// that enclosing row/card shows the guide (not just the label).
+function tp3dWithPreview(el, url, caption, title, rowEl) {
     if (!url && !caption) return el;
+    var guideId = tp3dRegisterGuide(title || '', url, caption);
     var wrap = document.createElement('span');
     wrap.className = 'preview-wrap';
+    wrap.setAttribute('data-guide-id', guideId);
     wrap.appendChild(el);
-    wrap.appendChild(tp3dMakePreviewButton(url, caption));
+    wrap.appendChild(tp3dMakePreviewButtonForGuide(guideId));
+    if (rowEl && rowEl !== wrap) rowEl.setAttribute('data-guide-id', guideId);
     return wrap;
 }
 
@@ -547,7 +631,10 @@ function tp3dRoundForDisplay(value, decimals) {
 function tp3dBuildNumberField(field) {
     var wrap = document.createElement('div');
     wrap.className = 'card-field';
-    wrap.title = field.title || '';
+    var guideCaption = field.previewCaption || field.title || null;
+    // If a guide (image or text-only) covers this field, suppress the native
+    // tooltip so it doesn't pop up over the same information.
+    wrap.title = (field.preview || guideCaption) ? '' : (field.title || '');
     var label = document.createElement('label');
     label.textContent = field.label;
     var input = document.createElement('input');
@@ -561,7 +648,7 @@ function tp3dBuildNumberField(field) {
     input.addEventListener('change', function() {
         tp3dSendAdvancedUpdate(field.key, parseFloat(input.value));
     });
-    wrap.appendChild(tp3dWithPreview(label, field.preview, field.previewCaption));
+    wrap.appendChild(tp3dWithPreview(label, field.preview, guideCaption, field.label, wrap));
     wrap.appendChild(input);
     if (field.singleExtruderOnly) {
         wrap.setAttribute('data-single-extruder-only', '');
@@ -591,7 +678,8 @@ function tp3dRefreshSingleExtruderFields() {
 // category's remembered map is never locked, same as a plain checkbox.
 function tp3dBuildCheckboxField(field, compositeKey) {
     var label = document.createElement('label');
-    label.title = field.title || '';
+    var guideCaption = field.previewCaption || field.title || null;
+    label.title = (field.preview || guideCaption) ? '' : (field.title || '');
     var input = document.createElement('input');
     input.type = 'checkbox';
     input.setAttribute('data-advanced-checkbox', field.key);
@@ -608,7 +696,7 @@ function tp3dBuildCheckboxField(field, compositeKey) {
     });
     label.appendChild(input);
     label.appendChild(document.createTextNode(field.label));
-    return tp3dWithPreview(label, field.preview, field.previewCaption);
+    return tp3dWithPreview(label, field.preview, guideCaption, field.label);
 }
 
 function tp3dBuildSimpleElementCard(key) {
@@ -629,7 +717,7 @@ function tp3dBuildSimpleElementCard(key) {
     var label = document.createElement('div');
     label.className = 'card-label';
     label.textContent = meta.label;
-    card.appendChild(tp3dWithPreview(label, meta.preview, meta.previewCaption));
+    card.appendChild(tp3dWithPreview(label, meta.preview, meta.previewCaption, meta.label, card));
 
     // SIMPLE_ELEMENT_FIELDS is OSM-only -- WorldCover shares several of
     // these same keys (forest/city/greenspace/farmland/glacier) for its own
@@ -666,7 +754,7 @@ function tp3dBuildCompositeElementCard(key) {
     label.className = 'card-label';
     label.textContent = meta.label;
     head.appendChild(icon);
-    head.appendChild(tp3dWithPreview(label, meta.preview, meta.previewCaption));
+    head.appendChild(tp3dWithPreview(label, meta.preview, meta.previewCaption, meta.label, head));
     card.appendChild(head);
 
     var checklist = document.createElement('div');
@@ -894,7 +982,10 @@ function tp3dRefreshMapTabVisibility() {
 function tp3dBuildFieldRow(field) {
     var row = document.createElement('div');
     row.className = 'adv-field-row';
-    row.title = field.title || '';
+    var guideCaption = field.previewCaption || field.title || null;
+    // If a guide (image or text-only) covers this field, suppress the native
+    // tooltip so it doesn't pop up over the same information.
+    row.title = (field.preview || guideCaption) ? '' : (field.title || '');
     MAP_TAB_ROWS.push({ field: field, row: row });
 
     var label = document.createElement('label');
@@ -902,7 +993,7 @@ function tp3dBuildFieldRow(field) {
     var stateObj = field.source === 'SETTINGS_STATE' ? SETTINGS_STATE : ADVANCED_SETTINGS_STATE;
 
     if (field.type === 'range') {
-        row.appendChild(tp3dWithPreview(label, field.preview, field.previewCaption));
+        row.appendChild(tp3dWithPreview(label, field.preview, guideCaption, field.label, row));
         row.appendChild(tp3dBuildRangeField(field, stateObj));
         return row;
     }
@@ -1036,7 +1127,7 @@ function tp3dBuildFieldRow(field) {
         if (window.tp3dOnMapFieldChanged) window.tp3dOnMapFieldChanged(field.key, value);
     });
 
-    row.appendChild(tp3dWithPreview(label, field.preview, field.previewCaption));
+    row.appendChild(tp3dWithPreview(label, field.preview, guideCaption, field.label, row));
     row.appendChild(controls);
     return row;
 }
@@ -1184,7 +1275,7 @@ function tp3dBuildClearCacheRow() {
         'Clear Cache',
         'Deletes all downloaded data saved on your computer (elevation, map elements, satellite images).',
         'Frees disk space; the next generation downloads everything fresh, so it takes longer.'
-    ]));
+    ], 'Cached API Data', row));
 
     var btn = document.createElement('button');
     btn.type = 'button';
@@ -1229,7 +1320,7 @@ function tp3dBuildElementSourceSwitch() {
         btn.textContent = opt.label;
         btn.addEventListener('click', function() { tp3dSwitchElementSource(opt.source); });
         option.appendChild(btn);
-        option.appendChild(tp3dMakePreviewButton(null, opt.caption));
+        option.appendChild(tp3dMakePreviewButton(null, opt.caption, opt.label, option));
         wrap.appendChild(option);
     });
     block.appendChild(wrap);
@@ -1276,7 +1367,7 @@ function tp3dBuildElementModeSwitch() {
 
     var label = document.createElement('label');
     label.textContent = 'Paint or Single Extruder Mode';
-    row.appendChild(tp3dWithPreview(label, ELEMENT_MODE_PREVIEW));
+    row.appendChild(tp3dWithPreview(label, ELEMENT_MODE_PREVIEW, null, 'Paint or Single Extruder Mode', row));
 
     var isWorldCover = tp3dIsWorldCover();
     var wrap = document.createElement('div');
@@ -1323,7 +1414,7 @@ function tp3dBuildOsmSmoothingToggle() {
     var label = document.createElement('label');
     label.textContent = 'Element Smoothing';
     row.appendChild(tp3dWithPreview(label, 'https://trailprint3d.com/images/howto/ElementSmoothing.webp',
-        'Smooth the outline of the elements so they are easier to print.'));
+        'Smooth the outline of the elements so they are easier to print.', 'Element Smoothing', row));
 
     var current = ADVANCED_SETTINGS_STATE.colOsmSmoothing || 0;
     var isOn = current > 0;
@@ -1518,12 +1609,23 @@ function tp3dRelocateFields(sourceId, grid) {
     header.className = 'modal-header';
     var title = document.createElement('span');
     title.textContent = 'Advanced Settings';
+    var guideToggleBtn = document.createElement('button');
+    guideToggleBtn.type = 'button';
+    guideToggleBtn.className = 'guide-toggle-btn';
+    guideToggleBtn.setAttribute('aria-controls', 'settingsPreviewPanel');
+    guideToggleBtn.setAttribute('aria-expanded', String(TP3D_GUIDE_VISIBLE));
+    guideToggleBtn.textContent = TP3D_GUIDE_VISIBLE ? 'Hide guide' : 'Show guide';
+    guideToggleBtn.addEventListener('click', function() {
+        window.tp3dSetGuideVisible(!TP3D_GUIDE_VISIBLE);
+    });
+    TP3D_GUIDE_TOGGLE_BTN = guideToggleBtn;
     var closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'tp3d-modal-close-btn';
     closeBtn.title = 'Close';
     closeBtn.textContent = '✕';
     header.appendChild(title);
+    header.appendChild(guideToggleBtn);
     header.appendChild(closeBtn);
     box.appendChild(header);
 
@@ -1541,14 +1643,76 @@ function tp3dRelocateFields(sourceId, grid) {
     left.appendChild(panelHost);
     body.appendChild(left);
 
-    // Shows a per-feature preview GIF/image once a field with a `preview`
-    // URL is clicked (tp3dShowPreview) -- most fields don't have one yet
-    // and this just stays on its placeholder text.
+    // Setting guide: on wide modals this stays visible permanently and
+    // updates on hover/selection; on narrow modals it stays hidden until a
+    // setting's "?" is clicked (the .preview-active class then reveals it,
+    // see picker_common.css). Content is swapped in place by tp3dGuide*.
     var right = document.createElement('div');
     right.className = 'settings-modal-right';
     right.id = 'settingsPreviewPanel';
-    right.textContent = 'Click a highlighted setting to preview it here';
+    right.setAttribute('role', 'region');
+    right.setAttribute('aria-label', 'Setting guide');
+    right.innerHTML = '<div class="preview-title">Setting guide</div>'
+        + '<div class="preview-media"></div>'
+        + '<div class="preview-caption">Hover or select a setting to see a description here.</div>';
     body.appendChild(right);
+
+    // Delegated listeners so the guide survives tp3dRebuildElementsTab /
+    // tp3dRebuildMapTab without re-binding anything. Hover is gated on
+    // (hover: hover) and (pointer: fine) so touch users just pin via click
+    // (which both the "?" button and the delegated click handler below do).
+    // Compare by data-guide-id, not by the element that matched: a pill
+    // (trail-appearance option) and its inner "?" share the same ID but are
+    // different elements, so an element-only comparison would fire a leave
+    // as the pointer slid from the pill's button onto its own "?".
+    function guideIdOf(el) {
+        var hit = el && el.closest && el.closest('[data-guide-id]');
+        return hit ? hit.getAttribute('data-guide-id') : null;
+    }
+    function onGuideEnter(target) {
+        clearTimeout(TP3D_GUIDE_STATE.leaveTimer);
+        clearTimeout(TP3D_GUIDE_STATE.hoverTimer);
+        // Hover never re-opens a hidden guide and never overrides an
+        // explicit off: it only updates the panel's contents while the
+        // guide is on.
+        if (!TP3D_GUIDE_VISIBLE) return;
+        var id = guideIdOf(target);
+        if (!id) return;
+        if (TP3D_GUIDE_STATE.hoveredId === id) return;
+        TP3D_GUIDE_STATE.hoverTimer = setTimeout(function() {
+            TP3D_GUIDE_STATE.hoveredId = id;
+            tp3dGuideDisplay();
+        }, 100);
+    }
+    function onGuideLeave(target, related) {
+        clearTimeout(TP3D_GUIDE_STATE.hoverTimer);
+        var from = guideIdOf(target);
+        if (!from) return;
+        var to = guideIdOf(related);
+        if (to === from) return;
+        TP3D_GUIDE_STATE.leaveTimer = setTimeout(function() {
+            TP3D_GUIDE_STATE.hoveredId = null;
+            tp3dGuideDisplay();
+        }, 150);
+    }
+    if (TP3D_GUIDE_HOVER_OK) {
+        body.addEventListener('mouseover', function(e) { onGuideEnter(e.target); });
+        body.addEventListener('mouseout', function(e) { onGuideLeave(e.target, e.relatedTarget); });
+    }
+    body.addEventListener('focusin', function(e) {
+        // Only pin when the guide is already on -- focusing a field never
+        // turns it back on.
+        if (!TP3D_GUIDE_VISIBLE) return;
+        var el = e.target.closest && e.target.closest('[data-guide-id]');
+        if (el) tp3dGuidePin(el.getAttribute('data-guide-id'));
+    });
+    body.addEventListener('click', function(e) {
+        // Same as focusin: clicking a field/button never re-shows a
+        // hidden guide. Only a "?" click or the header Show button do.
+        if (!TP3D_GUIDE_VISIBLE) return;
+        var el = e.target.closest && e.target.closest('[data-guide-id]');
+        if (el) tp3dGuidePin(el.getAttribute('data-guide-id'));
+    });
 
     var TABS = [
         { id: 'elements', label: 'Elements', build: tp3dBuildElementsTab },
@@ -1647,11 +1811,29 @@ function tp3dRelocateFields(sourceId, grid) {
     };
 
     document.body.appendChild(modal);
+    // Apply the initial visibility state (box class + button label) so the
+    // panel doesn't flash visible for a frame the first time the modal
+    // opens on a narrow viewport. A saved guideVisible in the state file
+    // overrides this later, via tp3dApplyStateSnapshot.
+    tp3dSetGuideVisible(TP3D_GUIDE_VISIBLE);
     // The cards' own per-card repaint ran while they were still detached from
     // the document, so it painted nothing -- do it again now they're attached.
     tp3dRepaintAllElementToggles();
 
-    function openModal() { modal.classList.add('open'); }
+    // Preload every guide image once on open so hover doesn't flash an
+    // empty media box on first hover. Deduped by URL (several fields share
+    // the same image, e.g. all the element-threshold GIFs).
+    function preloadGuideImages() {
+        var seen = {};
+        Object.keys(TP3D_GUIDE_REGISTRY).forEach(function(id) {
+            var url = TP3D_GUIDE_REGISTRY[id].url;
+            if (url && !seen[url]) { seen[url] = true; new Image().src = url; }
+        });
+    }
+    function openModal() {
+        modal.classList.add('open');
+        preloadGuideImages();
+    }
     function closeModal() { modal.classList.remove('open'); }
     closeBtn.addEventListener('click', closeModal);
     modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });

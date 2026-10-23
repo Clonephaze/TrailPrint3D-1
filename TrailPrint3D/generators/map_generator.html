@@ -308,6 +308,7 @@
                 lat: c.lat, lng: c.lng, zoom: map.getZoom(),
                 baseLayer: activeBaseLayerName,
                 settingsTab: TP3D_SETTINGS_TAB,
+                guideVisible: window.tp3dGetGuideVisible ? window.tp3dGetGuideVisible() : true,
                 shape: currentShape,
                 shapeRotation: TP3D_SHAPE_ROTATION_DEG,
                 plateMode: plateMode,
@@ -378,6 +379,7 @@
         function tp3dApplyStateSnapshot(s) {
                     if (!s) return;
                     if (s.settingsTab) tp3dActivateSettingsTab(s.settingsTab);
+                    if (s.guideVisible != null && window.tp3dSetGuideVisible) window.tp3dSetGuideVisible(s.guideVisible);
                     if (s.baseLayer && baseLayers[s.baseLayer] && s.baseLayer !== activeBaseLayerName) {
                         map.removeLayer(baseLayers[activeBaseLayerName]);
                         baseLayers[s.baseLayer].addTo(map);

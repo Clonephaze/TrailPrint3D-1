@@ -179,51 +179,67 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .preview-btn:hover { background: rgba(255,255,255,0.08); border-color: var(--accent); color: var(--text-primary); }
 .preview-btn:active { background: rgba(255,255,255,0.16); }
 /* The Settings popup specifically: bigger box, a top tab bar (Elements /
-   Map / ...) over a stack of titled section cards, and a right-hand preview
-   panel that starts collapsed (no preview picked yet -- box sized to just
-   the left column, so it reads as centered rather than leaving an empty
-   gap) and grows smoothly open the first time a `preview`-linked field is
-   clicked (tp3dShowPreview adds .preview-active to the box). */
-.settings-modal-box { width: 54rem; max-width: 100%; overflow: hidden; padding: 0; gap: 0;
+   Map / ...) over a stack of titled section cards, and a right-hand
+   "Setting guide" panel. Wide modals keep it open permanently; narrow
+   modals fall back to the old click-"? " behavior. Fluid type tokens
+   (--fs-*) use cqi so text scales with the modal body's own width; the
+   rem floor keeps browser zoom and text-size settings working. */
+.settings-modal-box { width: min(80rem, calc(100vw - 2rem)); max-width: 100%; overflow: hidden; padding: 0; gap: 0;
     --set-section-bg: #262a30; --set-section-border: #383e47;
-    --set-input-bg: #1b1e22; --set-input-border: #474f5b; --set-accent-tint: rgba(53,111,180,0.18); }
-.settings-modal-box.preview-active { width: 88rem; }
-.settings-modal-box > .modal-header { padding: 14px 16px 14px 20px; }
-.settings-modal-box > .modal-header span { font-size: 16px; font-weight: 600; }
+    --set-input-bg: #1b1e22; --set-input-border: #474f5b; --set-accent-tint: rgba(53,111,180,0.18);
+    --fs-body: clamp(0.75rem, 0.55rem + 0.9cqi, 0.875rem);
+    --fs-small: clamp(0.6875rem, 0.5rem + 0.8cqi, 0.8125rem);
+    --fs-tiny: clamp(0.625rem, 0.45rem + 0.7cqi, 0.75rem);
+    --fs-title: clamp(1rem, 0.8rem + 1.2cqi, 1.125rem); }
+.settings-modal-box > .modal-header { padding: 14px 16px 14px 20px; gap: 8px; }
+.settings-modal-box > .modal-header span { font-size: var(--fs-title); font-weight: 600; flex: 1 1 auto; }
+.guide-toggle-btn { background: none; border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 10px; color: var(--text-secondary); font-size: 12px; font-family: inherit;
+    cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.guide-toggle-btn:hover { border-color: var(--accent); color: var(--text-primary); }
 .settings-modal-body { display: flex; gap: var(--space-4); height: min(42rem, calc(100dvh - 8rem)); min-height: 0;
-    padding: 0 20px 20px; }
+    padding: 0 20px 20px; container-type: inline-size; container-name: settings-body; }
 .settings-modal-left { flex: 1 1 auto; display: flex; flex-direction: column;
     min-width: 0; min-height: 0; }
 .settings-modal-tabs { display: flex; gap: 2px; flex-shrink: 0; margin-bottom: 16px;
     border-bottom: 1px solid var(--set-section-border); }
 .settings-modal-tabs .settings-modal-tab-btn { background: none; border: none; border-radius: 0; margin-bottom: -1px;
-    color: var(--text-muted); padding: 10px 16px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+    color: var(--text-muted); padding: 10px 16px; font-size: var(--fs-small); font-weight: 600; font-family: inherit; cursor: pointer; }
 .settings-modal-tabs .settings-modal-tab-btn:hover { color: var(--text-primary); }
 .settings-modal-tabs .settings-modal-tab-btn.active { color: var(--text-primary); box-shadow: inset 0 -2px 0 var(--accent); }
 .settings-modal-tab-panel { display: none; flex: 1; overflow-y: auto; padding-right: 6px; scrollbar-gutter: stable; }
 .settings-modal-tab-panel.active { display: block; }
+/* Right panel: Setting guide. Hidden by default (narrow fallback), shown
+   always above 70.01rem, or on .preview-active below it. */
 .settings-modal-right { flex: 1 1 40%; min-width: 0; min-height: 0;
     position: relative; overflow: hidden; padding: var(--space-3); border: 1px solid var(--set-section-border);
-    border-radius: 10px; background: var(--set-section-bg); display: none; flex-direction: column; align-items: center;
-    justify-content: center; gap: 8px; color: var(--text-muted); font-size: 11px; text-align: center;
+    border-radius: 10px; background: var(--set-section-bg); display: none; flex-direction: column; align-items: stretch;
+    justify-content: flex-start; gap: 8px; color: var(--text-muted); font-size: var(--fs-small); text-align: center;
 }
+.settings-modal-right .preview-title { flex: 0 0 auto; font-size: var(--fs-title); font-weight: 600;
+    color: var(--text-primary); text-align: left; }
+.settings-modal-right .preview-media { flex: 0 1 auto; min-height: 0; display: flex; align-items: center;
+    justify-content: center; aspect-ratio: 4 / 3; background: var(--surface-base); border-radius: 6px; overflow: hidden; }
+.settings-modal-right .preview-media:empty { display: none; }
+.settings-modal-right .preview-media img { max-width: 100%; max-height: 100%; object-fit: contain;
+    border-radius: 4px; }
+.settings-modal-right .preview-caption { flex: 0 0 auto; font-size: var(--fs-small); color: var(--text-secondary);
+    text-align: left; line-height: 1.45; }
+.settings-modal-right .preview-caption.preview-text-only { font-size: var(--fs-body); text-align: left;
+    margin: 0; padding: 4px 2px; line-height: 1.5; }
 .settings-modal-right .preview-close-btn { position: absolute; top: 6px; right: 6px; z-index: 1;
     width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
     background: rgba(0,0,0,0.55); border: 1px solid var(--border); border-radius: 4px; color: var(--text-secondary);
     font-size: 12px; line-height: 1; padding: 0; cursor: pointer; }
 .settings-modal-right .preview-close-btn:hover { background: rgba(0,0,0,0.75); border-color: var(--accent); color: #fff; }
-.settings-modal-box.preview-active .settings-modal-left { flex: 1 1 60%; }
-.settings-modal-box.preview-active .settings-modal-right { display: flex; }
-/* Natural size (shrinking if needed) rather than growing to fill the panel --
-   otherwise the image box takes the whole height and the caption ends up
-   pinned to the bottom instead of right below the picture. */
-.settings-modal-right img, .settings-modal-right video {
-    flex: 0 1 auto; min-height: 0; max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; }
-/* Optional caption (tp3dShowPreview's second argument) shown below the
-   image -- stays out of the image's way (flex-shrink:0) so a multi-line
-   caption never gets squeezed by the image's own flex:1 sizing above. */
-.settings-modal-right .preview-caption { flex-shrink: 0; font-size: 11px; color: var(--text-secondary); text-align: center;
-    line-height: 1.4; }
+/* Wide modals: guide always visible unless the user hid it; a pinned
+   setting (see tp3dGuidePin) temporarily reveals it again via
+   .preview-active, and its own ✕ brings the panel back down. */
+@media (min-width: 70.01rem) {
+    .settings-modal-right { display: flex; flex: 0 0 clamp(18rem, 30%, 26rem); }
+    .settings-modal-box.guide-hidden .settings-modal-right { display: none; }
+    .settings-modal-left { flex: 1 1 auto; }
+}
 /* Section cards (settings_modal.js's tp3dBuildSection): each tab is a
    stack of them, each a title over a 3-column field grid (2 with
    .settings-grid-2). A .settings-subsection is a smaller nested card for
@@ -231,13 +247,13 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .settings-sections { display: flex; flex-direction: column; gap: 14px; }
 .settings-section { background: var(--set-section-bg); border: 1px solid var(--set-section-border);
     border-radius: 10px; padding: 16px 18px 18px; min-width: 0; }
-.settings-section-title { margin: 0 0 14px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.settings-section-title { margin: 0 0 14px; font-size: var(--fs-body); font-weight: 600; color: var(--text-primary); }
 /* A whole card that doesn't apply right now (e.g. Print Mode under ESA WorldCover). */
 .settings-section.section-locked { opacity: 0.4; cursor: not-allowed; }
 .settings-section.section-locked * { pointer-events: none; }
 .settings-subsection { grid-column: span 2; min-width: 0; background: rgba(0,0,0,0.16);
     border: 1px solid var(--set-section-border); border-radius: 8px; padding: 12px 14px 14px; }
-.settings-subsection .settings-section-title { font-size: 13px; margin-bottom: 10px; }
+.settings-subsection .settings-section-title { font-size: var(--fs-small); margin-bottom: 10px; }
 /* A field sharing its grid row with a sub-card (Trail Thickness) lines up
    with the sub-card's own fields: bottom-aligned, lifted by the sub-card's
    bottom padding + border. */
@@ -248,11 +264,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .map-tab-fields.settings-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 /* Field rows inside a card: label (+ "?") on top, full-width control below. */
 .settings-section :is(.adv-field-row, .field-row) { flex-direction: column; align-items: stretch;
-    justify-content: flex-start; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+    justify-content: flex-start; gap: 6px; font-size: var(--fs-small); color: var(--text-secondary); }
 .settings-section :is(.adv-field-row, .field-row) > :is(label, .preview-wrap),
 .settings-section .field-row > input[type=checkbox] { align-self: flex-start; }
 .settings-modal-box .settings-section :is(input[type=number], input[type=text], select) {
-    height: 36px; min-height: 36px; padding: 0 10px; font-size: 14px; color: var(--text-primary);
+    height: 36px; min-height: 36px; padding: 0 10px; font-size: var(--fs-body); color: var(--text-primary);
     background: var(--set-input-bg); border: 1px solid var(--set-input-border); border-radius: 6px; }
 .settings-section :is(input[type=number], input[type=text], select):focus { border-color: var(--accent); }
 .settings-section .field-row > :is(input:not([type=checkbox]), select) { width: 100%; }
@@ -263,11 +279,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .settings-section .adv-field-controls > .input-with-unit { position: relative; flex: 1; min-width: 0; display: flex; }
 .settings-modal-box .settings-section .input-with-unit > input { flex: 1; width: 100%; min-width: 0; padding-right: 38px; }
 .input-unit { position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-    font-size: 13px; color: var(--text-muted); pointer-events: none; }
+    font-size: var(--fs-small); color: var(--text-muted); pointer-events: none; }
 /* Smooth Terrain's strength slider next to its switch. */
 .settings-section .adv-field-controls > .range-with-number { max-width: none; }
 .settings-modal-box .settings-section .range-with-number input[type=number] { width: 4rem; flex-shrink: 0; padding: 0 8px; }
-.settings-modal-box .settings-section .element-card .card-field input[type=number] { height: 30px; min-height: 30px; padding: 0 8px; font-size: 13px; }
+.settings-modal-box .settings-section .element-card .card-field input[type=number] { height: 30px; min-height: 30px; padding: 0 8px; font-size: var(--fs-small); }
 .settings-modal-box .settings-section .locked :is(input[type=number], input[type=text], select),
 .settings-modal-box .settings-section :is(input[type=number], input[type=text], select):disabled {
     color: var(--text-muted); background: transparent; border-color: var(--set-section-border); }
@@ -305,12 +321,12 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .settings-modal-box .element-mode-switch .element-mode-btn:disabled { background: none; border-color: transparent; }
 .element-source-block { grid-column: 1 / -1; }
 /* Other tab's API setup hint -- a sentence, not a label/control pair. */
-.api-setup-note { grid-column: 1 / -1; font-size: 12px; }
+.api-setup-note { grid-column: 1 / -1; font-size: var(--fs-small); }
 /* A Settings popup row whose `showWhen` doesn't match (tp3dRefreshMapTabVisibility). */
 .adv-field-row.locked { color: #666; cursor: not-allowed; }
 .adv-field-row.locked :is(input, select) { color: #666; background: var(--surface-panel); border-color: var(--surface-raised); cursor: not-allowed; }
 /* Other tab's one-line-per-API overview under the Elevation API dropdown. */
-.api-summary { grid-column: 1 / -1; margin: 0; display: grid; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.api-summary { grid-column: 1 / -1; margin: 0; display: grid; gap: 4px; font-size: var(--fs-small); color: var(--text-muted); }
 .api-summary > div { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 8px; padding: 3px 6px; border-radius: 4px; }
 .api-summary dt { font-weight: bold; color: var(--text-secondary); }
 .api-summary dt a { color: inherit; text-decoration: none; }
@@ -329,15 +345,13 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .trail-option.active { background: var(--set-accent-tint); border-color: var(--accent); }
 .trail-option-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px;
     padding: 9px 26px; background: none; border: 0; color: var(--text-secondary); text-align: center; cursor: pointer; }
-.trail-option-name { font-size: 13px; font-weight: 600; }
-.trail-option-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.3; }
+.trail-option-name { font-size: var(--fs-small); font-weight: 600; }
+.trail-option-desc { font-size: var(--fs-tiny); color: var(--text-muted); line-height: 1.3; }
 .trail-option:hover:not(.disabled) .trail-option-btn, .trail-option.active .trail-option-btn { color: var(--text-primary); }
 .trail-option.disabled .trail-option-btn { opacity: 0.45; }
 .trail-option > .preview-btn { position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; min-width: 0; min-height: 0;
     border-radius: 50%; padding: 0; font-size: 10px; font-weight: 600; background: none; border: 1px solid #5c6573; color: var(--text-muted); }
 .trail-option > .preview-btn:hover { border-color: var(--accent); color: var(--text-primary); background: none; }
-/* Text-only preview (no image yet): the caption is the whole preview. */
-.settings-modal-right .preview-caption.preview-text-only { font-size: 13px; text-align: left; margin: auto 0; padding: 12px; line-height: 1.5; }
 .api-cache-group { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 /* Cards wrap inside their section rather than forcing horizontal scrolling. */
 .map-tab-fields.elements-grid { display: flex; flex-direction: column; gap: 10px; }
@@ -347,7 +361,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 /* OSM/ESA WorldCover switch (settings_modal.js's tp3dBuildElementSourceSwitch) --
    a segmented control (see the .settings-modal-box segmented rules above),
    full-width at the top of the Elements tab. */
-.element-source-switch .shape-btn { flex: 1; padding: 8px 6px; font-size: 13px; }
+.element-source-switch .shape-btn { flex: 1; padding: 8px 6px; font-size: var(--fs-small); }
 /* Each source button with its "?" laid over the right edge. */
 .element-source-option { position: relative; flex: 1; display: flex; min-width: 0; }
 .element-source-option .shape-btn { padding-left: 32px; padding-right: 32px; }
@@ -368,7 +382,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
     border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,0.45); }
 .tp3d-img-popover.open { display: flex; }
 .tp3d-img-popover img { width: 100%; max-height: 75vh; object-fit: contain; border-radius: 4px; }
-.tp3d-img-popover-caption { font-size: 13px; line-height: 1.45; color: var(--text-secondary); }
+.tp3d-img-popover-caption { font-size: var(--fs-small); line-height: 1.45; color: var(--text-secondary); }
 /* The sidebar "?" sits inline after its label/readout. */
 .sidebar-preview-btn { margin-left: 6px; vertical-align: middle; }
 /* tp3dToast (picker_ui.js): small self-dismissing note, bottom centre or just
@@ -404,7 +418,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
     box-shadow: 0 0 1px rgba(0,0,0,0.4); }
 .element-card .card-icon.enabled { color: #4caf50; border-color: rgba(76,175,80,0.7); }
 .element-card .card-icon.disabled { color: #666; }
-.element-card .card-label { font-size: 11px; font-weight: bold; text-align: center; line-height: 1.3; }
+.element-card .card-label { font-size: var(--fs-tiny); font-weight: bold; text-align: center; line-height: 1.3; }
 /* Reserves exactly 2 lines' worth of height (2 * the line-height set just
    above -- computed, not guessed, so it can't fall short of the browser's
    own "normal" line-height the way a plain min-height estimate did) on
@@ -942,10 +956,15 @@ input[aria-invalid=true] { border-color: var(--danger); }
 #map #drawModeToggle { top: 198px; }
 
 @media (max-width: 70rem) {
-    .settings-modal-box.preview-active .settings-modal-body { flex-direction: column; overflow-y: auto; }
-    .settings-modal-box.preview-active .settings-modal-left { flex: 0 0 auto; min-height: 18rem; }
-    .settings-modal-box.preview-active .settings-modal-tab-panel { max-height: 26rem; }
-    .settings-modal-box.preview-active .settings-modal-right { flex: 0 0 16rem; }
+    /* Narrow modals: same rule as wide -- guideVisible drives visibility
+       via .guide-hidden. When on, the panel stacks below the settings;
+       when off, it's gone. The header Show/Hide button is the only way
+       to turn it off; ? clicks (or Show) turn it back on. */
+    .settings-modal-box:not(.guide-hidden) .settings-modal-body { flex-direction: column; overflow-y: auto; }
+    .settings-modal-box:not(.guide-hidden) .settings-modal-left { flex: 0 0 auto; min-height: 18rem; }
+    .settings-modal-box:not(.guide-hidden) .settings-modal-tab-panel { max-height: 26rem; }
+    .settings-modal-box:not(.guide-hidden) .settings-modal-right { display: flex; flex: 0 0 16rem; }
+    .settings-modal-box.guide-hidden .settings-modal-right { display: none; }
 }
 @media (max-width: 48rem) {
     #sidebar { width: 15rem; padding: var(--space-3); }
