@@ -628,7 +628,15 @@ function tp3dExpandOutline(pts, grow, base) {
 }
 
 // text_layouts._polygon_radius_at_angle (same corner assumption included).
-function tp3dRadiusAtAngle(inradius, base, a) {
+// *rect* ([halfW, halfH] of a SQUARE map, text_layouts._rect_half_extents)
+// makes it a box: inradius is the long side's distance, and the same offset
+// past the map's edge applies to both sides.
+function tp3dRadiusAtAngle(inradius, base, a, rect) {
+    if (rect) {
+        var grow = inradius - Math.max(rect[0], rect[1]);
+        var c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
+        return Math.min(c > 1e-9 ? (rect[0] + grow) / c : Infinity, s > 1e-9 ? (rect[1] + grow) / s : Infinity);
+    }
     var n = { HEXAGON: 6, OCTAGON: 8 }[base];
     if (!n) return inradius;
     var half = Math.PI / n;
@@ -666,6 +674,20 @@ function tp3dSvgPoints(pts) {
     return pts.map(function(p) { return p[0].toFixed(2) + ',' + (-p[1]).toFixed(2); }).join(' ');
 }
 
+// The page's shape rotation (deg, CCW), as Blender applies it -- 0 where the
+// page has none or can't rotate the current shape (circle, GeoJSON).
+function tp3dPreviewRotation() {
+    if (typeof TP3D_SHAPE_ROTATION_DEG === 'undefined') return 0;
+    if (typeof tp3dCanRotateShape === 'function' && !tp3dCanRotateShape()) return 0;
+    return Number(TP3D_SHAPE_ROTATION_DEG) || 0;
+}
+
+function tp3dRotatePts(pts, deg) {
+    if (!pts || !deg) return pts;
+    var a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+    return pts.map(function(p) { return [p[0] * c - p[1] * s, p[0] * s + p[1] * c]; });
+}
+
 function tp3dDrawBackplatePreview() {
     var svg = document.getElementById('backplateSvg');
     var modal = document.getElementById('backplateModal');
@@ -699,15 +721,21 @@ function tp3dDrawBackplatePreview() {
         return e;
     }
 
-    var all = mapPts.concat(outerPts || []);
+    // Built in the map's own frame (the radii below), drawn turned by the
+    // shape rotation -- like create_generic_plate grows, then rotates.
+    var rotDeg = tp3dPreviewRotation();
+    var shownMap = tp3dRotatePts(mapPts, rotDeg);
+    var shownOuter = tp3dRotatePts(outerPts, rotDeg);
+    var shownCavity = tp3dRotatePts(cavityPts, rotDeg);
+    var all = shownMap.concat(shownOuter || []);
     var b = tp3dBounds(all);
     var top = b.maxy;
 
     // Plate / shell, then the map on top.
-    if (outerPts) el('polygon', { points: tp3dSvgPoints(outerPts), class: 'bp-plate' });
-    if (cavityPts) el('polygon', { points: tp3dSvgPoints(cavityPts), class: 'bp-cavity' });
+    if (shownOuter) el('polygon', { points: tp3dSvgPoints(shownOuter), class: 'bp-plate' });
+    if (shownCavity) el('polygon', { points: tp3dSvgPoints(shownCavity), class: 'bp-cavity' });
     var insetMap = plateMode === 'SOLID_PLATE' && num('plateInsertValue', 0) > 0;
-    el('polygon', { points: tp3dSvgPoints(mapPts), class: 'bp-map' + (insetMap ? ' bp-map-inset' : '') });
+    el('polygon', { points: tp3dSvgPoints(shownMap), class: 'bp-map' + (insetMap ? ' bp-map-inset' : '') });
     var mapLabel = el('text', { x: 0, y: 0, class: 'bp-map-label', 'font-size': (size * 0.06).toFixed(2) });
     mapLabel.textContent = 'Map';
 
@@ -731,6 +759,8 @@ function tp3dDrawBackplatePreview() {
     var spots = (BACKPLATE_TEXT_SPOTS[textLayout] || {})[base] || {};
     var inner = tp3dMeasuredInradius(mapPts, base);
     var outer = outerPts ? tp3dMeasuredInradius(outerPts, base) : inner;
+    var mb = tp3dBounds(mapPts);
+    var rect = base === 'SQUARE' ? [(mb.maxx - mb.minx) / 2, (mb.maxy - mb.miny) / 2] : null;
     var bodySize = num('textSize', 5) || 5;
     var titleSize = num('textSizeTitle', 0) || bodySize;
     var inset = !!st.textPlacement && textLayout !== 'ON_MAP';
@@ -793,20 +823,22 @@ function tp3dDrawBackplatePreview() {
             var rm = (size / 2 * 0.9) * Math.cos(Math.PI / 6);
             x = prop === 'titlefield' ? 0 : Math.cos(a) * rm;
             y = prop === 'titlefield' ? rm : Math.sin(a) * rm;
-            rot = prop === 'titlefield' ? 0 : angle + 90 + (flip ? 180 : 0);
+            rot = (prop === 'titlefield' ? 0 : angle + 90 + (flip ? 180 : 0)) + rotDeg;
         } else if (textLayout === 'FRONT_FACE') {
             // On the side wall -- seen from above, just outside the edge.
-            var rf = tp3dRadiusAtAngle(outer, base, a) + mm * 0.9;
+            var rf = tp3dRadiusAtAngle(outer, base, a, rect) + mm * 0.9;
             x = Math.cos(a) * rf; y = Math.sin(a) * rf;
-            rot = angle + 90;
+            rot = angle + 90 + rotDeg;
             if (Math.cos(rot * Math.PI / 180) < -1e-6) { rot += 180; reversed = true; }  // keep it readable
             cls += ' bp-text-side';
             extra = Math.max(extra, mm * 1.8);
         } else {
-            var rr = tp3dRadiusAtAngle((inner + outer) / 2, base, a);
+            var rr = tp3dRadiusAtAngle((inner + outer) / 2, base, a, rect);
             x = Math.cos(a) * rr; y = Math.sin(a) * rr;
-            rot = angle + 90 + (flip ? 180 : 0);
+            rot = angle + 90 + (flip ? 180 : 0) + rotDeg;
         }
+        var turned = tp3dRotatePts([[x, y]], rotDeg)[0];
+        x = turned[0]; y = turned[1];
         // Text and icon in the text's own frame (x = reading direction).
         var g = el('g', { transform: 'translate(' + x.toFixed(2) + ' ' + (-y).toFixed(2) + ') rotate(' + (-rot) + ')' });
         var dir = reversed ? -1 : 1;
@@ -829,12 +861,12 @@ function tp3dDrawBackplatePreview() {
     var vx = b.minx - pad, vy = -top - pad, vw = b.maxx - b.minx + 2 * pad, vh = top - b.miny + 2 * pad;
     svg.setAttribute('viewBox', [vx, vy, vw, vh].map(function(v) { return v.toFixed(2); }).join(' '));
 
-    tp3dDrawBackplateSide({ mapPts: mapPts, outerPts: outerPts, cavityPts: cavityPts, spots: spots,
+    tp3dDrawBackplateSide({ mapPts: shownMap, outerPts: shownOuter, cavityPts: shownCavity, spots: spots,
                             bodySize: bodySize, titleSize: titleSize, inset: inset });
 
     var caption = document.getElementById('backplateCaption');
     if (caption) {
-        var ob = tp3dBounds(outerPts || mapPts);
+        var ob = tp3dBounds(shownOuter || shownMap);
         var dims = (ob.maxx - ob.minx).toFixed(0) + ' × ' + (ob.maxy - ob.miny).toFixed(0) + ' mm';
         caption.textContent = plateMode === 'NONE'
             ? 'No plate — map only (' + dims + ')'

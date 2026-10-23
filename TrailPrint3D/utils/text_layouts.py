@@ -157,6 +157,7 @@ def _ring_radii(map_obj, plate_obj, shape):
     never raises on an object that predates the WKT metadata.
     """
     from shapely import wkt as _wkt
+    from shapely.affinity import rotate as _rotate
 
     from .plate import measured_inradius
 
@@ -179,7 +180,12 @@ def _ring_radii(map_obj, plate_obj, shape):
     )
     if outer_wkt_str:
         try:
-            outer = measured_inradius(_wkt.loads(outer_wkt_str), shape)
+            # plate_wkt / shell_outer_wkt are post-rotation; measure them in
+            # the map's pre-rotation frame, like map_polygon_wkt above.
+            outer_poly = _wkt.loads(outer_wkt_str)
+            if tp3d.shapeRotation:
+                outer_poly = _rotate(outer_poly, -tp3d.shapeRotation, origin=(0, 0))
+            outer = measured_inradius(outer_poly, shape)
         except Exception as exc:
             print(f"[TrailPrint3D] text ring outer-radius fallback: {exc!r}")
 
@@ -311,13 +317,14 @@ def _finalize(text_objs, icons, plate_obj, modelname):
         active_obj.data.materials.append(_white)
 
     if plate_obj is not None:
+        # No rotation here: the plate is built already rotated
+        # (create_generic_plate / build_map_shell), and the text is placed
+        # rotated by its layout.
         plate_obj.name = modelname + "_Plate"
         plate_obj.data.name = plate_obj.name
-        plate_obj.rotation_euler[2] += tp3d.shapeRotation * (math.pi / 180)
         bpy.ops.object.select_all(action="DESELECT")
         plate_obj.select_set(True)
         bpy.context.view_layer.objects.active = plate_obj
-        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
         bpy.ops.object.origin_set(type="ORIGIN_CURSOR", center="MEDIAN")
 
     return active_obj
@@ -642,13 +649,17 @@ def apply_outer_edge_layout(
 
     inner, outer = _ring_radii(map_obj, plate_obj, shape)
     dist = (inner + outer) / 2
+    rect = _rect_half_extents(map_obj) if shape == "SQUARE" else None
 
     text_objs = {}
     for field_name, base_angle, flip in fields:
         angle = base_angle + tp3d.text_angle_preset
-        rot_z = math.radians(angle + 90) + (math.pi if flip else 0)
-        angle_rad = math.radians(angle)
-        r_at_angle = _polygon_radius_at_angle(dist, shape, angle_rad)
+        # The radius in the map's own (pre-rotation) frame, the position
+        # and facing turned with the shape.
+        r_at_angle = _polygon_radius_at_angle(dist, shape, math.radians(angle), rect)
+        world = angle + tp3d.shapeRotation
+        rot_z = math.radians(world + 90) + (math.pi if flip else 0)
+        angle_rad = math.radians(world)
         x = math.cos(angle_rad) * r_at_angle
         y = math.sin(angle_rad) * r_at_angle
         text_objs[field_name] = _create_text(
@@ -686,13 +697,40 @@ def apply_outer_edge_layout(
     return _finalize(text_objs, icons, plate_obj, tp3d.modelname)
 
 
-def _polygon_radius_at_angle(inradius, shape, angle_rad):
+def _rect_half_extents(map_obj):
+    """(half_width, half_height) of a SQUARE map's own outline, PRE-rotation
+    -- the frame the text is placed in. measured_inradius only gives the
+    larger of the two, which put every field of a non-square rectangle at
+    its long side's distance."""
+    from shapely import wkt as _wkt
+
+    if map_obj is not None and "map_polygon_wkt" in map_obj:
+        try:
+            minx, miny, maxx, maxy = _wkt.loads(map_obj["map_polygon_wkt"]).bounds
+            return (maxx - minx) / 2, (maxy - miny) / 2
+        except Exception as exc:
+            print(f"[TrailPrint3D] text rectangle-extents fallback: {exc!r}")
+    tp3d = bpy.context.scene.tp3d
+    return tp3d.objSize / 2, tp3d.rectangleHeight / 2
+
+
+def _polygon_radius_at_angle(inradius, shape, angle_rad, rect=None):
     """Distance from center to a regular polygon's boundary at angle_rad.
 
     inradius is the edge-midpoint distance (what _ring_radii returns).
     Assumes the primitive's first vertex lies on the +X axis, matching
     Blender's primitive_circle_add -- corners at k * (2π/n).
+
+    *rect* (a SQUARE map's _rect_half_extents) makes it a box instead:
+    inradius is then read as the long side's distance, and the same offset
+    past the map's edge (the plate's uniform border) applies to both sides.
     """
+    if rect is not None:
+        grow = inradius - max(rect)
+        hx, hy = rect[0] + grow, rect[1] + grow
+        c, s = abs(math.cos(angle_rad)), abs(math.sin(angle_rad))
+        return min(hx / c if c > 1e-9 else math.inf, hy / s if s > 1e-9 else math.inf)
+
     n_lookup = {"HEXAGON": 6, "OCTAGON": 8}
     n = n_lookup.get(shape)
     if n is None:
@@ -713,6 +751,7 @@ def apply_front_face_layout(map_obj, plate_obj, shape, inset, only_fields=None):
     transform_MapObject = _import_transform_map_object()
 
     _inner, outer = _ring_radii(map_obj, plate_obj, shape)
+    rect = _rect_half_extents(map_obj) if shape == "SQUARE" else None
 
     bpy.context.view_layer.update()
 
@@ -726,10 +765,13 @@ def apply_front_face_layout(map_obj, plate_obj, shape, inset, only_fields=None):
 
     for field_name, base_angle in fields:
         angle = base_angle + tp3d.text_angle_preset
-        angle_rad = math.radians(angle)
-        r_at_angle = _polygon_radius_at_angle(outer, shape, angle_rad)
+        # Same split as apply_outer_edge_layout: radius pre-rotation,
+        # position and facing turned with the shape.
+        r_at_angle = _polygon_radius_at_angle(outer, shape, math.radians(angle), rect)
         dist = (r_at_angle - _inset) if inset else (r_at_angle + _inset)
-        rot_z = math.radians(angle + 90)
+        world = angle + tp3d.shapeRotation
+        angle_rad = math.radians(world)
+        rot_z = math.radians(world + 90)
         x = math.cos(angle_rad) * dist
         y = math.sin(angle_rad) * dist
         obj = create_text(
@@ -855,6 +897,8 @@ def apply_curved_ring_layout(
         # Bend the finished icon+text unit around the plate ring as a
         # single rigid piece. All four fields are bent separately, each
         # centered on its own base angle.
+        # No shapeRotation: a circle looks the same at any rotation, so the
+        # title stays on top (text_angle_preset turns it if wanted).
         angle_deg = base_deg + tp3d.text_angle_preset
         upper = math.sin(math.radians(angle_deg)) > 0
         wrap_mesh_around_circle(
@@ -895,15 +939,24 @@ def apply_on_map_layout(map_obj, shape):
 
     size = tp3d.objSize
     dist = size / 2 - size / 2 * (1 - 0.8) / 2
-    temp_y = math.sin(math.radians(90)) * (dist * math.cos(math.radians(30)))
+    r = dist * math.cos(math.radians(30))
+    # Turned with the shape, like the plate layouts.
+    rot = tp3d.shapeRotation
+    title_a = math.radians(90 + rot)
 
     text_objs = {}
-    text_objs["t_name"] = create_text("t_name", "Name", (0, temp_y, 0.1), 1)
+    text_objs["t_name"] = create_text(
+        "t_name",
+        "Name",
+        (math.cos(title_a) * r, math.sin(title_a) * r, 0.1),
+        1,
+        (0, 0, math.radians(rot)),
+    )
 
     for field_name, default_label, base_angle, flip in fields:
         if field_name == "t_name":
             continue
-        angle = base_angle
+        angle = base_angle + rot
         rot_z = math.radians(angle + 90) + (math.pi if flip else 0)
         x = math.cos(math.radians(angle)) * (dist * math.cos(math.radians(30)))
         y = math.sin(math.radians(angle)) * (dist * math.cos(math.radians(30)))

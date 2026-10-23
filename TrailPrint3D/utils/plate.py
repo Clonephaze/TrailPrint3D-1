@@ -134,15 +134,14 @@ def _assign_black_material(obj):
     obj.data.materials.append(mat)
 
 
-def _shapely_outline(map_obj, shape_rotation=0.0):
-    """Return the map's 2D outline (local space) as a Shapely geometry."""
+def _shapely_outline(map_obj):
+    """Return the map's 2D outline (local space, pre-rotation) as a Shapely
+    geometry."""
     if map_obj is None or "map_polygon_wkt" not in map_obj:
         return None
     poly = wkt.loads(map_obj["map_polygon_wkt"])
     if poly is None or poly.is_empty:
         return None
-    if shape_rotation:
-        poly = shp_rotate(poly, shape_rotation, origin=(0, 0))
     return g2d.validate(poly)
 
 
@@ -408,9 +407,17 @@ def create_generic_plate(
     Returns the new object at the local origin (caller positions it), or
     None on degenerate input.
     """
-    poly = _shapely_outline(map_obj, shape_rotation)
+    # Grown in the map's own pre-rotation frame, then rotated: _expand_outline
+    # measures the outline's bounds, which a rotated rectangle's (or a
+    # rotated hexagon's) no longer match.
+    poly = _shapely_outline(map_obj)
     if poly is None:
         return None
+
+    def _rotated(geom):
+        if not shape_rotation:
+            return geom
+        return g2d.validate(shp_rotate(geom, shape_rotation, origin=(0, 0)))
 
     size = bpy.context.scene.tp3d.objSize
     base_name = name or (map_obj.name + "_Plate")
@@ -420,6 +427,8 @@ def create_generic_plate(
         outer_poly = _expand_outline(poly, grow, shape=shape)
         if outer_poly is None or outer_poly.is_empty:
             return None
+        outer_poly = _rotated(outer_poly)
+        poly = _rotated(poly)
 
         plate_obj = _build_prism(outer_poly, 0.0, -thickness, base_name)
         if plate_obj is None:
@@ -452,6 +461,8 @@ def create_generic_plate(
             return None
         if inner_poly is None or inner_poly.is_empty:
             return None
+        outer_poly = _rotated(outer_poly)
+        inner_poly = _rotated(inner_poly)
 
         outer_obj = _build_prism(outer_poly, 0.0, -thickness, base_name)
         if outer_obj is None:
