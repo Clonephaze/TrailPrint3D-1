@@ -180,16 +180,19 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .preview-btn:active { background: rgba(255,255,255,0.16); }
 /* The Settings popup specifically: bigger box, a top tab bar (Elements /
    Map / ...) over a stack of titled section cards, and a right-hand
-   "Setting guide" panel. Wide modals keep it open permanently; narrow
-   modals fall back to the old click-"? " behavior. Fluid type tokens
-   (--fs-*) use cqi so text scales with the modal body's own width; the
-   rem floor keeps browser zoom and text-size settings working. */
+   "Setting guide" panel. Wide modals (>= 70rem) show it by default; narrow
+   modals start with it hidden and stack it under the settings once a "?"
+   or the header Show button is used. Fluid type tokens (--fs-*) use cqi so
+   text scales with the modal body's width (one container for all text, not
+   per-element); the rem floor keeps browser zoom and text-size settings
+   working. The ramps run from 12px/11px/10px at a ~700px-wide body up to
+   14px/13px/12px at ~1240px, i.e. across the side-by-side range. */
 .settings-modal-box { width: min(80rem, calc(100vw - 2rem)); max-width: 100%; overflow: hidden; padding: 0; gap: 0;
     --set-section-bg: #262a30; --set-section-border: #383e47;
     --set-input-bg: #1b1e22; --set-input-border: #474f5b; --set-accent-tint: rgba(53,111,180,0.18);
-    --fs-body: clamp(0.75rem, 0.55rem + 0.9cqi, 0.875rem);
-    --fs-small: clamp(0.6875rem, 0.5rem + 0.8cqi, 0.8125rem);
-    --fs-tiny: clamp(0.625rem, 0.45rem + 0.7cqi, 0.75rem);
+    --fs-body: clamp(0.75rem, 0.59rem + 0.37cqi, 0.875rem);
+    --fs-small: clamp(0.6875rem, 0.525rem + 0.37cqi, 0.8125rem);
+    --fs-tiny: clamp(0.625rem, 0.46rem + 0.37cqi, 0.75rem);
     --fs-title: clamp(1rem, 0.8rem + 1.2cqi, 1.125rem); }
 .settings-modal-box > .modal-header { padding: 14px 16px 14px 20px; gap: 8px; }
 .settings-modal-box > .modal-header span { font-size: var(--fs-title); font-weight: 600; flex: 1 1 auto; }
@@ -209,8 +212,9 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .settings-modal-tabs .settings-modal-tab-btn.active { color: var(--text-primary); box-shadow: inset 0 -2px 0 var(--accent); }
 .settings-modal-tab-panel { display: none; flex: 1; overflow-y: auto; padding-right: 6px; scrollbar-gutter: stable; }
 .settings-modal-tab-panel.active { display: block; }
-/* Right panel: Setting guide. Hidden by default (narrow fallback), shown
-   always above 70.01rem, or on .preview-active below it. */
+/* Right panel: Setting guide. Hidden by default (narrow); shown above
+   70.01rem unless .guide-hidden (user hid it). Below 70rem the stacked
+   layout further down applies while .guide-hidden is absent. */
 .settings-modal-right { flex: 1 1 40%; min-width: 0; min-height: 0;
     position: relative; overflow: hidden; padding: var(--space-3); border: 1px solid var(--set-section-border);
     border-radius: 10px; background: var(--set-section-bg); display: none; flex-direction: column; align-items: stretch;
@@ -219,22 +223,24 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .settings-modal-right .preview-title { flex: 0 0 auto; font-size: var(--fs-title); font-weight: 600;
     color: var(--text-primary); text-align: left; }
 .settings-modal-right .preview-media { flex: 0 1 auto; min-height: 0; display: flex; align-items: center;
-    justify-content: center; aspect-ratio: 4 / 3; background: var(--surface-base); border-radius: 6px; overflow: hidden; }
+    justify-content: center; aspect-ratio: 16 / 9; background: var(--surface-base); border-radius: 6px; overflow: hidden; }
 .settings-modal-right .preview-media:empty { display: none; }
+/* While an image is loading keep its space, so the caption doesn't jump. */
+.settings-modal-right .preview-media.reserve:empty { display: flex; }
 .settings-modal-right .preview-media img { max-width: 100%; max-height: 100%; object-fit: contain;
     border-radius: 4px; }
 .settings-modal-right .preview-caption { flex: 0 0 auto; font-size: var(--fs-small); color: var(--text-secondary);
     text-align: left; line-height: 1.45; }
 .settings-modal-right .preview-caption.preview-text-only { font-size: var(--fs-body); text-align: left;
     margin: 0; padding: 4px 2px; line-height: 1.5; }
-.settings-modal-right .preview-close-btn { position: absolute; top: 6px; right: 6px; z-index: 1;
-    width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
-    background: rgba(0,0,0,0.55); border: 1px solid var(--border); border-radius: 4px; color: var(--text-secondary);
-    font-size: 12px; line-height: 1; padding: 0; cursor: pointer; }
-.settings-modal-right .preview-close-btn:hover { background: rgba(0,0,0,0.75); border-color: var(--accent); color: #fff; }
-/* Wide modals: guide always visible unless the user hid it; a pinned
-   setting (see tp3dGuidePin) temporarily reveals it again via
-   .preview-active, and its own ✕ brings the panel back down. */
+/* Wide modals: guide visible unless the user hid it with the header toggle
+   (.guide-hidden). Clicking a "?" turns it back on. */
+/* The setting the guide is pinned to (tp3dGuideMarkPinned). Inset so it
+   isn't clipped by the scrolling tab panel's edge. */
+.settings-modal-box .guide-pinned { outline: 1px solid var(--accent); outline-offset: -1px; border-radius: 6px; }
+/* Visually hidden live region for screen-reader announcements. */
+.guide-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 @media (min-width: 70.01rem) {
     .settings-modal-right { display: flex; flex: 0 0 clamp(18rem, 30%, 26rem); }
     .settings-modal-box.guide-hidden .settings-modal-right { display: none; }
@@ -956,10 +962,9 @@ input[aria-invalid=true] { border-color: var(--danger); }
 #map #drawModeToggle { top: 198px; }
 
 @media (max-width: 70rem) {
-    /* Narrow modals: same rule as wide -- guideVisible drives visibility
-       via .guide-hidden. When on, the panel stacks below the settings;
-       when off, it's gone. The header Show/Hide button is the only way
-       to turn it off; ? clicks (or Show) turn it back on. */
+    /* Narrow modals: the guide starts hidden (.guide-hidden, set from JS).
+       Once shown via a "?" click or the header Show button it stacks below
+       the settings; the header toggle hides it again. */
     .settings-modal-box:not(.guide-hidden) .settings-modal-body { flex-direction: column; overflow-y: auto; }
     .settings-modal-box:not(.guide-hidden) .settings-modal-left { flex: 0 0 auto; min-height: 18rem; }
     .settings-modal-box:not(.guide-hidden) .settings-modal-tab-panel { max-height: 26rem; }
