@@ -404,6 +404,7 @@ def _rtg_process_tile(
     prefetched_osm=None,
     progress_start=0.0,
     progress_end=1.0,
+    snap_trails=False,
 ):
     """Run one tile through the same back-half phases runGeneration itself uses.
 
@@ -493,6 +494,17 @@ def _rtg_process_tile(
         f"{tile_label} — projecting trail onto terrain…",
     )
     curveObjs = _rtg_handle_trail(zobj, None, gen.settings.singleColorMode)
+    if snap_trails and gen.settings.overwritePathElevation:
+        # The caller built these trails before this tile had any terrain
+        # (generateJustTrail(raycast=False)), so snap them now, same as
+        # runGeneration does after displacing its own terrain.
+        from ..mesh_ops import RaycastCurveToMesh  # deferred
+
+        for crv in curveObjs:
+            if crv.type == "CURVE":
+                RaycastCurveToMesh(crv, zobj)
+        # RaycastCurveToMesh leaves the curve active (its smoothing pass).
+        bpy.context.view_layer.objects.active = zobj
     gen.runtime.curveObjs = curveObjs
     _n_trails = len(curveObjs)
     overlay.add_completed_step(
@@ -649,6 +661,7 @@ def runTileGeneration(
     prefetched_osm=None,
     progress_start=0.0,
     progress_end=1.0,
+    snap_trails=False,
 ):
     """Run the generation pipeline's back half on already-placed tile objects.
 
@@ -680,6 +693,12 @@ def runTileGeneration(
     whole batch fills. A manage_overlay=False caller that already moved the
     bar (e.g. its own up-front elevation fetch) passes the range left over
     for it, so the bar doesn't jump back to 0 when tile generation starts.
+
+    snap_trails: raycast the _Trail curves this tile picks up onto its
+    finished terrain (when overwritePathElevation is on). For callers that
+    built those trails before the tile had terrain -- the map generator in
+    Single Extruder Mode, so the trail goes through the same pipeline as
+    runGeneration's and cuts the roads instead of the other way around.
 
     Does NOT export -- unlike runGeneration's own Phase 18, a single call
     here doesn't necessarily mean the caller's final deliverable is ready
@@ -789,6 +808,7 @@ def runTileGeneration(
                     prefetched_osm=prefetched_osm,
                     progress_start=progress_start,
                     progress_end=progress_end,
+                    snap_trails=snap_trails,
                 )
             except GenerationError as e:
                 print(f"{tile_label} — generation phase failed: {e}")
@@ -916,7 +936,10 @@ def _gjt_bake_into_existing_textures(curve_obj):
     return baked
 
 
-def generateJustTrail(material="TRAIL"):
+def generateJustTrail(material="TRAIL", raycast=True):
+    """Build one trail curve from the scene's GPX file. raycast=False skips
+    snapping it onto the terrain -- for a caller that builds the trail
+    before the terrain exists (see runTileGeneration's snap_trails)."""
     from ..geo import (  # deferred to avoid circular import at load time
         convert_to_blender_coordinates,
         separate_duplicate_xy,
@@ -1024,7 +1047,7 @@ def generateJustTrail(material="TRAIL"):
         bpy.ops.object.origin_set(type="ORIGIN_CURSOR")
 
     # Raycast the curve points onto the Mesh surface
-    if overwritePathElevation == True:
+    if overwritePathElevation == True and raycast:
         # pass
         RaycastCurveToAnyMesh(curveObj, 1000, True)
 

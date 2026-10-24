@@ -340,6 +340,36 @@ def remove_objects(objects):
             bpy.data.objects.remove(obj)
 
 
+def remove_generated_objects_at(map_obj, radius=0.2):
+    """Remove earlier TrailPrint3D objects sitting at map_obj's own XY spot,
+    so regenerating the same area from a generator replaces the old map
+    instead of stacking a new one on top of it.
+
+    Generated pieces (map, roads, elements, trails, text, plate) all get
+    their origin on their map's center, so "same spot" is the same 0.2-unit
+    origin test runGeneration's _cleanup_build_area uses. Unlike that one,
+    only addon-made objects are touched (objType/"Object type" metadata, or
+    a "_Trail" curve/mesh, which carries no metadata until it's merged) --
+    never a camera, light or the user's own mesh.
+    """
+    target = Vector((map_obj.location.x, map_obj.location.y))
+    stale = []
+    for obj in bpy.data.objects:
+        if obj is map_obj:
+            continue
+        generated = (
+            obj.get("objType") is not None
+            or obj.get("Object type") is not None
+            or ("_Trail" in obj.name and obj.type in {"CURVE", "MESH"})
+        )
+        if generated and (Vector((obj.location.x, obj.location.y)) - target).length <= radius:
+            stale.append(obj)
+    if stale:
+        print(f"[TP3D] removing {len(stale)} earlier object(s) at the new map's position")
+    for obj in stale:
+        bpy.data.objects.remove(obj, do_unlink=True)
+
+
 def getHighestLowest(obj):
 
     # Get the bounding box corners in world space

@@ -3405,9 +3405,12 @@ def _bounds_adjacent(a, b, eps=1e-6):
     )
 
 
-def _generate_trails(context, gpx_paths, overlay, progress_start, progress_end):
+def _generate_trails(
+    context, gpx_paths, overlay, progress_start, progress_end, raycast=True
+):
     """Generate one trail curve per GPX path, using whatever map setup
     (scale, position, extrusion) is already active in the scene.
+    raycast: forwarded to generateJustTrail.
 
     Returns the list of created trail objects (GPX paths that failed to
     produce a curve are skipped). Module-level (not a method) since it
@@ -3428,7 +3431,7 @@ def _generate_trails(context, gpx_paths, overlay, progress_start, progress_end):
         trail_pct = progress_start + (i / n_trails) * (progress_end - progress_start)
         overlay.update(trail_pct, "Generating trails…", f"Trail {i + 1}/{n_trails}…")
         bpy.context.scene.tp3d.file_path = paths
-        trail_obj = utils.generateJustTrail(material=materials[i % 2])
+        trail_obj = utils.generateJustTrail(material=materials[i % 2], raycast=raycast)
         if trail_obj is not None:
             trails.append(trail_obj)
         overlay.add_completed_step(f"Trail {i + 1}/{n_trails} — done")
@@ -4398,6 +4401,10 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                     "error",
                 )
                 raise GenerationError
+            # Replace an earlier map generated on this exact spot instead of
+            # stacking on it (also keeps its old _Trail curves out of
+            # runTileGeneration's trail pickup).
+            utils.remove_generated_objects_at(blank)
             # Keeps the sidebar's own Shape field in sync with what this tile
             # actually is, same as the SVG branch below does.
             props.shape = "GEOJSON"
@@ -4566,6 +4573,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             blank["edge_south"], blank["edge_north"] = south, north
             blank["edge_west"], blank["edge_east"] = west, east
             blank.location = (center_x, center_y, 0)
+            # See the GeoJSON branch above.
+            utils.remove_generated_objects_at(blank)
 
             bpy.context.view_layer.objects.active = blank
             bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
@@ -4632,6 +4641,22 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 f"Preview elevation — z {lowest_z:.1f}-{highest_z:.1f}"
             )
 
+        from .props import single_extruder_active  # deferred
+
+        # Single Extruder Mode: build the trails BEFORE the tile so
+        # runTileGeneration picks them up (_rtg_handle_trail) and runs them
+        # through the same pipeline as runGeneration -- the trail is then cut
+        # out of the roads in 2D (_finalise_roads). Merging them afterwards
+        # instead intersects the trail with terrain the roads have already
+        # cut into, leaving the road's gap in the trail. They're snapped onto
+        # the terrain inside runTileGeneration (snap_trails), since the tile
+        # is still flat here.
+        early_trails = []
+        if gpx_paths and single_extruder_active(props):
+            early_trails = _generate_trails(
+                context, gpx_paths, overlay, 0.32, 0.33, raycast=False
+            )
+
         bpy.ops.object.select_all(action="DESELECT")
         blank.select_set(True)
         bpy.context.view_layer.objects.active = blank
@@ -4652,12 +4677,16 @@ class TP3D_OT_map_generator(bpy.types.Operator):
                 skip_bottom_recess=True,
                 progress_start=0.33,
                 progress_end=0.92,
+                snap_trails=bool(early_trails),
             )
         finally:
             props.shapeRotation = requested_shape_rotation
+            # runTileGeneration worked on its own copies of these.
+            if early_trails and not bpy.app.debug:
+                utils.remove_objects(early_trails)
         blank["shapeRotation"] = requested_shape_rotation
 
-        if gpx_paths:
+        if gpx_paths and not early_trails:
             from .utils.osm import gen as _osm_gen
 
             trails = _generate_trails(context, gpx_paths, overlay, 0.92, 0.96)
