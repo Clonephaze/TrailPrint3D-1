@@ -229,6 +229,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
     color: var(--text-muted); padding: 10px 16px; font-size: var(--fs-small); font-weight: 600; font-family: inherit; cursor: pointer; }
 .settings-modal-tabs .settings-modal-tab-btn:hover { color: var(--text-primary); }
 .settings-modal-tabs .settings-modal-tab-btn.active { color: var(--text-primary); box-shadow: inset 0 -2px 0 var(--accent); }
+/* Puzzle tab (puzzle pages only): light green so it reads as page-specific. */
+.settings-modal-tabs #settings-tab-puzzle { color: var(--success); }
+.settings-modal-tabs #settings-tab-puzzle:hover { color: #a9dcb6; }
+.settings-modal-tabs #settings-tab-puzzle.active { color: #a9dcb6; box-shadow: inset 0 -2px 0 var(--success); }
 .settings-modal-tab-panel { display: none; flex: 1; overflow-y: auto; padding-right: 6px; scrollbar-gutter: stable; }
 .settings-modal-tab-panel.active { display: block; }
 /* Right panel: Setting guide. Hidden by default (narrow); shown above
@@ -325,11 +329,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .settings-modal-box :is(input.tp3d-switch, .field-row > input)[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
 .settings-modal-box :is(input.tp3d-switch, .field-row > input)[type=checkbox]:checked::before { transform: translateX(16px); background: #fff; }
 .settings-modal-box :is(input.tp3d-switch, .field-row > input)[type=checkbox]:disabled { opacity: 0.45; cursor: not-allowed; }
-/* The small round "?" next to a label. */
+/* The small round "?" next to a label -- in the Settings popup and the sidebar alike. */
 .settings-modal-box .preview-wrap { gap: 6px; }
-.settings-modal-box .preview-wrap > .preview-btn { width: 18px; height: 18px; min-width: 0; min-height: 0; border-radius: 50%;
+.settings-modal-box .preview-wrap > .preview-btn, #sidebar .preview-btn { width: 18px; height: 18px; min-width: 0; min-height: 0; border-radius: 50%;
     background: none; border: 1px solid #5c6573; color: var(--text-muted); font-size: 10px; font-weight: 600; }
-.settings-modal-box .preview-wrap > .preview-btn:hover { border-color: var(--accent); color: var(--text-primary); background: none; }
+.settings-modal-box .preview-wrap > .preview-btn:hover, #sidebar .preview-btn:hover { border-color: var(--accent); color: var(--text-primary); background: none; }
 .settings-modal-box .element-mode-btn { min-height: 32px; padding: 0 14px; font-size: 12.5px; font-weight: 600; border-radius: 6px; }
 /* Segmented controls (Element Source, Paint/Single Extruder): one dark
    track, the active option tinted and outlined in the accent colour. */
@@ -927,6 +931,12 @@ input[type=range] { min-width: 0; min-height: var(--control-height); }
 .resolution-label { margin-bottom: var(--space-1); }
 .numeric-readout { color: var(--text-primary); font-weight: 600; }
 .full-width, .resolution-slider { width: 100%; }
+/* Sidebar Resolution: label and slider on one line. The readout keeps a
+   fixed width so the slider doesn't shift between "9" and "10". */
+#sidebar div:has(> #resolutionSlider) { display: flex; align-items: center; gap: var(--space-2); }
+#sidebar div:has(> #resolutionSlider) .resolution-label { margin-bottom: 0; white-space: nowrap; }
+#sidebar div:has(> #resolutionSlider) .numeric-readout { display: inline-block; min-width: 2ch; }
+#sidebar #resolutionSlider { flex: 1; min-width: 0; width: auto; }
 .brand-link { color: inherit; text-decoration: none; }
 .sidebar-heading { font-size: 1rem; font-weight: 600; margin-bottom: var(--space-2); }
 .sidebar-subtitle { font-size: 0.8125rem; font-weight: 400; color: var(--text-secondary); }

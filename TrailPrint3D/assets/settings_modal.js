@@ -1834,12 +1834,13 @@ function tp3dRelocateFields(sourceId, grid) {
         { id: 'elements', label: 'Elements', build: tp3dBuildElementsTab },
         { id: 'map', label: 'Map', build: tp3dBuildMapTab }
     ];
+    TABS.push({ id: 'other', label: 'Other', build: tp3dBuildOtherTab });
     // The sliding puzzle page gets the tab too, for its own (fewer) fields.
+    // Last, after Other, and tinted green (picker_common.css) as page-specific.
     if ((typeof TP3D_IS_PUZZLE_PAGE !== 'undefined' && TP3D_IS_PUZZLE_PAGE) ||
             (typeof TP3D_IS_SLIDING_PUZZLE_PAGE !== 'undefined' && TP3D_IS_SLIDING_PUZZLE_PAGE)) {
         TABS.push({ id: 'puzzle', label: 'Puzzle', build: tp3dBuildPuzzleTab });
     }
-    TABS.push({ id: 'other', label: 'Other', build: tp3dBuildOtherTab });
     var panels = {};
     var tabBtns = {};
     tabBar.setAttribute('role', 'tablist');
