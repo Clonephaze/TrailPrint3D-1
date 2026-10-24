@@ -30,6 +30,7 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
 
     from ...props import (  # deferred to avoid circular import at load time
         any_road_active,
+        single_extruder_active,
         texture_trail_active,
     )
 
@@ -65,7 +66,9 @@ def _rg_validate_inputs(flags, gen_type: int = 0, locked_scale: float | None = N
         minThickness: float = tp3d.minThickness
         xTerrainOffset: float = tp3d.xTerrainOffset
         yTerrainOffset: float = tp3d.yTerrainOffset
-        singleColorMode: bool = tp3d.singleColorMode
+        # The SEM element mode locks the Trail's Single Extruder checkbox on
+        # (panels.py), so it counts as on here even while the raw flag is off.
+        singleColorMode: bool = single_extruder_active(tp3d)
         elementChoice: bool = tp3d.elementChoice
         elementMode: str = tp3d.elementMode
         elementSource: str = tp3d.elementSource

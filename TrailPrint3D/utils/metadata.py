@@ -14,6 +14,7 @@ def writeMetadata(obj, type="MAP"):
     from ..props import (
         any_road_active,  # deferred to avoid circular import at load time
         get_road_active,
+        single_extruder_active,
     )
     from .osm.roads import TIER_TAGS  # deferred to avoid circular import at load time
 
@@ -218,7 +219,7 @@ def writeMetadata(obj, type="MAP"):
         obj["Version"] = const.ADDON_VERSION
         obj["xTerrainOffset"] = bpy.context.scene.tp3d.xTerrainOffset
         obj["yTerrainOffset"] = bpy.context.scene.tp3d.yTerrainOffset
-        obj["singleColorModeTrail"] = bpy.context.scene.tp3d.singleColorMode
+        obj["singleColorModeTrail"] = single_extruder_active(bpy.context.scene.tp3d)
 
         obj["overwritePathElevation"] = bpy.context.scene.tp3d.overwritePathElevation
 

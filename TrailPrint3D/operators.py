@@ -4324,8 +4324,10 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             # Trail-only: no area was drawn — just add the trail(s) using
             # whatever map setup (scale, position) is already active in the
             # scene, same as the sidebar's "Generate Just Trail" button.
+            from .props import single_extruder_active  # deferred
+
             trails = _generate_trails(context, gpx_paths, overlay, 0.1, 0.95)
-            if props.singleColorMode:
+            if single_extruder_active(props):
                 _progress.WarningsOverlay.add_warning(
                     _rpt(
                         "Single Extruder Mode is not applied automatically due to performance reasons."

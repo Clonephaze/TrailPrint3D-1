@@ -95,7 +95,7 @@ var SETTINGS_MODAL_MAP_FIELDS = [
     // singleColorMode and texIncludeTrail (tp3dBuildTrailAppearanceSwitch).
     { type: 'custom', build: tp3dBuildTrailAppearanceSwitch },
     { key: 'pathThickness', source: 'SETTINGS_STATE', endpoint: 'update_setting',
-      label: 'Trail Thickness', type: 'number', step: 0.01, min: 0.1, max: 5, decimals: 2,
+      label: 'Trail Thickness', type: 'number', step: 0.01, min: 0.1, decimals: 2,
       title: 'Thickness of the path in mm',
       preview: 'https://trailprint3d.com/images/howto/PathThicknessGif.webp',
       previewCaption: 'Thickness of the trail in mm.' },

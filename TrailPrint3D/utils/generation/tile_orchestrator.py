@@ -602,6 +602,8 @@ def _rtg_add_shape_extras(gen: GenerationContext, map_obj, riders=()):
     saved = {k: getattr(tp3d, k) for k in ("o_centerx", "o_centery", "xTerrainOffset", "yTerrainOffset")}
     saved_cursor = bpy.context.scene.cursor.location.copy()
     saved_curves = gen.runtime.curveObjs
+    saved_road = gen.runtime.roadObj
+    saved_elements = gen.runtime.elements
     map_z = map_obj.location.z
     try:
         tp3d.o_centerx = map_obj.location.x
@@ -613,8 +615,11 @@ def _rtg_add_shape_extras(gen: GenerationContext, map_obj, riders=()):
         bpy.context.scene.cursor.location = (map_obj.location.x, map_obj.location.y, 0)
         gen.runtime.mapObject = map_obj
         # Riders are lifted below instead -- _rg_create_text_and_overlays
-        # would otherwise lift runTileGeneration's own curveObjs a second time.
+        # would otherwise lift runTileGeneration's own curveObjs, road mesh
+        # and element meshes a second time (floating roads in SEM).
         gen.runtime.curveObjs = None
+        gen.runtime.roadObj = None
+        gen.runtime.elements = None
         _rg_create_text_and_overlays(gen)
     finally:
         for k, v in saved.items():
@@ -622,6 +627,8 @@ def _rtg_add_shape_extras(gen: GenerationContext, map_obj, riders=()):
         bpy.context.scene.cursor.location = saved_cursor
         # _rg_export still selects these for the export that follows.
         gen.runtime.curveObjs = saved_curves
+        gen.runtime.roadObj = saved_road
+        gen.runtime.elements = saved_elements
 
     lift = map_obj.location.z - map_z
     if lift:

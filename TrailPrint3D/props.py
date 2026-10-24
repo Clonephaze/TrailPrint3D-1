@@ -644,7 +644,6 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         name=_("Trail Width (mm)"),
         default=1.2,
         min=0.1,
-        max=5,
         description=_tip("Thickness of the path in mm"),
     )  # type: ignore
     shapeRotation: IntProperty(

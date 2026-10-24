@@ -647,7 +647,6 @@ def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
                 originals.append(point.co.xyz)
                 ws.append(getattr(point.co, "w", 1.0))
 
-            hit_result = scene.ray_cast(depsgraph, co_world, direction_world)
             # scene.ray_cast checks the WHOLE scene, not just the terrain --
             # it was landing on OTHER trail objects (leftover/duplicate
             # curves converted to mesh elsewhere) sitting in the scene, which
@@ -655,11 +654,20 @@ def RaycastCurveToAnyMesh(curve_obj, offset_z=1000.0, smooth_after=True):
             # normal check below while still being completely the wrong
             # object. Only accept a hit on something actually tagged as a
             # MAP/terrain object; everything else (trails, or anything else
-            # in the scene) is rejected regardless of its normal.
-            hit_obj = hit_result[4] if hit_result[0] else None
-            is_map_hit = hit_obj is not None and (
-                hit_obj.get("objType") == "MAP" or hit_obj.get("Object type") == "MAP"
-            )
+            # in the scene) is rejected regardless of its normal -- and cast
+            # on through it, since a separate SEM road mesh lying on the
+            # terrain otherwise hides the map under every point of a trail
+            # that runs entirely along a road (no hit to borrow a Z from).
+            origin = co_world
+            for _attempt in range(16):
+                hit_result = scene.ray_cast(depsgraph, origin, direction_world)
+                hit_obj = hit_result[4] if hit_result[0] else None
+                is_map_hit = hit_obj is not None and (
+                    hit_obj.get("objType") == "MAP" or hit_obj.get("Object type") == "MAP"
+                )
+                if hit_obj is None or is_map_hit:
+                    break
+                origin = hit_result[1] + direction_world * 1e-4
             # Same reasoning as RaycastCurveToMesh on top of that: only
             # accept a hit whose normal points mostly upward (a true top
             # face) -- near a jigsaw piece's boundary the ray can otherwise
@@ -3357,6 +3365,9 @@ def merge_active_with_map(map_obj, active_obj):
     True otherwise -- including the "invalid active type" case, which only
     warns and lets the caller continue on to the next object.
     """
+    from ..props import (
+        single_extruder_active,  # deferred to avoid circular import at load time
+    )
     from .scene import (
         show_message_box,  # deferred to avoid circular import at load time
     )
@@ -3377,7 +3388,7 @@ def merge_active_with_map(map_obj, active_obj):
         bpy.ops.tp3d.popup_merge("INVOKE_DEFAULT")
 
     elif active_obj.type == "CURVE":
-        if not bpy.context.scene.tp3d.singleColorMode:
+        if not single_extruder_active(bpy.context.scene.tp3d):
             # merge_with_map's CURVE branch builds `duplicate` as a straight
             # mapobject.copy() (map_obj.copy() inherits whatever transform
             # map_obj currently has -- identity/world-origin for a freshly cut
