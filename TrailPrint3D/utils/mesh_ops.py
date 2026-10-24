@@ -782,13 +782,7 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
         dup.select_set(True)
         bpy.context.view_layer.objects.active = dup
 
-        # Add Solidify modifier to create an extrusion (thickness in Blender units)
-        # We set use_rim to True so caps are created, giving a closed volume suitable for Boolean
-        # solid_mod = dup.modifiers.new(name="__auto_solidify__", type='SOLIDIFY')
-        # solid_mod.thickness = extrude_amount
-        # solid_mod.offset = 1.0    # push outwards relative to normals
-        # solid_mod.use_rim = True
-        # solid_mod.use_even_offset = True
+        # Stretch the duplicate vertically so it clips the element to the tile outline.
         dup.scale.z = 50
 
         # Apply the Solidify modifier (ensure we're in OBJECT mode)
@@ -808,10 +802,7 @@ def intersectWithTile(tile, element, extrude_amount=1.0):
         bool_mod = element.modifiers.new(name="__auto_boolean__", type="BOOLEAN")
         bool_mod.operation = "INTERSECT"
         bool_mod.object = dup
-        # EXACT (not MANIFOLD): buildings/roads footprints can be non-manifold
-        # (self-touching OSM outlines). The MANIFOLD solver refuses non-manifold
-        # input and silently no-ops, which left elements spanning the whole bbox.
-        # EXACT tolerates non-manifold input so the clip to the map shape works.
+        # EXACT tolerates non-manifold cutter meshes and reliably clips them to the map.
         bool_mod.solver = "EXACT"
 
         # Apply the boolean modifier

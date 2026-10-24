@@ -950,6 +950,7 @@ def _rg_extrude_terrain(gen: GenerationContext):
     vert_lookup = {
         (round(v.co.x, 6), round(v.co.y, 6)): v for loop in loops for v in loop
     }
+    bottom_faces = []
 
     for poly in mesh_polygons:
         if poly.is_empty:
@@ -979,9 +980,9 @@ def _rg_extrude_terrain(gen: GenerationContext):
                     assert v1 is not None and v2 is not None and v3 is not None
                     normal = (v2.co - v1.co).cross(v3.co - v1.co)
                     if normal.z > 0:
-                        bm.faces.new((v1, v3, v2))
+                        bottom_faces.append(bm.faces.new((v1, v3, v2)))
                     else:
-                        bm.faces.new((v1, v2, v3))
+                        bottom_faces.append(bm.faces.new((v1, v2, v3)))
         else:
             verts2d, tris, _unused = cdt_res
             bm_vert_list = []
@@ -1000,9 +1001,12 @@ def _rg_extrude_terrain(gen: GenerationContext):
                 if len({v1, v2, v3}) == 3:
                     normal = (v2.co - v1.co).cross(v3.co - v1.co)
                     if normal.z > 0:
-                        bm.faces.new((v1, v3, v2))
+                        bottom_faces.append(bm.faces.new((v1, v3, v2)))
                     else:
-                        bm.faces.new((v1, v2, v3))
+                        bottom_faces.append(bm.faces.new((v1, v2, v3)))
+
+    if bottom_faces:
+        bmesh.ops.dissolve_faces(bm, faces=bottom_faces, use_verts=False)
 
     for v in bm.verts:
         v.co.z += shift_z

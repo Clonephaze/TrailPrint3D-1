@@ -2376,8 +2376,6 @@ class TP3D_OT_popup_text(bpy.types.Operator):
             obj.location.z = -1
             utils.projection(self.operation, Mapobject, obj)
         else:
-            obj.location.z = Mapobject.location.z
-
             bpy.ops.object.select_all(action="DESELECT")
 
             if obj.type == "FONT":
@@ -2393,9 +2391,64 @@ class TP3D_OT_popup_text(bpy.types.Operator):
             )  # bpy.ops.mesh.select_all(action='DESELECT')
             bpy.ops.object.mode_set(mode="OBJECT")
 
-            utils.intersectWithTile(Mapobject, obj)
+            if not Mapobject.data.vertices or not obj.data.vertices:
+                self.report(
+                    {"ERROR"},
+                    _("Could not align bottom text because the map or text mesh is empty."),
+                )
+                self.restore_view(context)
+                return {"CANCELLED"}
 
-            utils.boolean_operation(Mapobject, obj)
+            context.view_layer.update()
+            map_bottom_z = min(
+                (Mapobject.matrix_world @ vertex.co).z
+                for vertex in Mapobject.data.vertices
+            )
+            text_bottom_z = min(
+                (obj.matrix_world @ vertex.co).z for vertex in obj.data.vertices
+            )
+            obj.location.z += map_bottom_z - 0.1 - text_bottom_z
+            context.view_layer.update()
+
+            clipped, clip_message = utils.intersectWithTile(Mapobject, obj)
+            if not clipped:
+                self.report(
+                    {"ERROR"},
+                    _("Could not clip text to the map: {message}").format(
+                        message=clip_message
+                    ),
+                )
+                self.restore_view(context)
+                return {"CANCELLED"}
+
+            from .utils.mesh_ops import is_mesh_manifold
+
+            before_boolean = (
+                len(Mapobject.data.vertices),
+                len(Mapobject.data.edges),
+                len(Mapobject.data.polygons),
+            )
+            solver = (
+                "MANIFOLD"
+                if is_mesh_manifold(Mapobject) and is_mesh_manifold(obj)
+                else "EXACT"
+            )
+            original_text_z = obj.location.z
+            obj.location.z = original_text_z - 0.01
+            context.view_layer.update()
+            try:
+                utils.boolean_operation(Mapobject, obj, solver=solver)
+
+                after_boolean = (
+                    len(Mapobject.data.vertices),
+                    len(Mapobject.data.edges),
+                    len(Mapobject.data.polygons),
+                )
+                if solver == "MANIFOLD" and after_boolean == before_boolean:
+                    utils.boolean_operation(Mapobject, obj, solver="EXACT")
+            finally:
+                obj.location.z = original_text_z
+                context.view_layer.update()
 
         # Restore View
         self.restore_view(context)
