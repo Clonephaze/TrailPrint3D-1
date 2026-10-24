@@ -175,9 +175,28 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .preview-wrap { display: inline-flex; align-items: center; gap: 5px; }
 .preview-btn { cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center;
     justify-content: center; width: 20px; height: 20px; background: var(--surface-field); border: 1px solid var(--border);
-    border-radius: 4px; padding: 0; font-size: 11px; line-height: 1; color: var(--text-secondary); }
+    border-radius: 4px; padding: 0; font-size: 11px; line-height: 1; color: var(--text-secondary);
+    transition: opacity var(--motion), background-color var(--motion), border-color var(--motion); }
 .preview-btn:hover { background: rgba(255,255,255,0.08); border-color: var(--accent); color: var(--text-primary); }
 .preview-btn:active { background: rgba(255,255,255,0.16); }
+/* When the guide is visible, fade the "?" buttons so they don't compete
+   with the guide content itself. They return to full opacity on hover,
+   focus, or when the guide is hidden. */
+.settings-modal-box:not(.guide-hidden) .preview-btn {
+    opacity: 0.35;
+}
+/* Un-fade on direct hover/focus, or when hovering/focusing anywhere in
+   the field row or card the "?" belongs to. */
+.settings-modal-box:not(.guide-hidden) .preview-btn:hover,
+.settings-modal-box:not(.guide-hidden) .preview-btn:focus-visible,
+.settings-modal-box:not(.guide-hidden) .preview-btn:active,
+.settings-modal-box:not(.guide-hidden) .adv-field-row:hover .preview-btn,
+.settings-modal-box:not(.guide-hidden) .adv-field-row:focus-within .preview-btn,
+.settings-modal-box:not(.guide-hidden) .element-card:hover .preview-btn,
+.settings-modal-box:not(.guide-hidden) .trail-option:hover .preview-btn,
+.settings-modal-box:not(.guide-hidden) .element-source-option:hover .preview-btn {
+    opacity: 1;
+}
 /* The Settings popup specifically: bigger box, a top tab bar (Elements /
    Map / ...) over a stack of titled section cards, and a right-hand
    "Setting guide" panel. Wide modals (>= 70rem) show it by default; narrow
