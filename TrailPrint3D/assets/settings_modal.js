@@ -263,6 +263,7 @@ function tp3dBuildTrailAppearanceSwitch() {
             var locked = forcedScm || (mode === 'PAINT' && noPaint);
             options[mode].classList.toggle('active', mode === shown);
             options[mode].classList.toggle('disabled', locked);
+            options[mode].classList.toggle('no-3mf', mode === 'PAINT' && noPaint);
             buttons[mode].disabled = locked;
         });
         buttons.PAINT.title = noPaint ? TP3D_NO_3MF_TITLE : paintTitle;
@@ -1056,6 +1057,12 @@ function tp3dRefreshMapTabVisibility() {
             return;
         }
         entry.row.classList.toggle('locked', !active);
+        if (entry.field.lockedTitle) {
+            entry.row.classList.toggle(
+                'no-3mf',
+                !active && entry.field.lockedTitle() === TP3D_NO_3MF_TITLE
+            );
+        }
         // `lockedTitle()` -- why the row is locked, as its tooltip (empty
         // when that reason doesn't apply, keeping the row's own title).
         if (entry.field.lockedTitle) {
