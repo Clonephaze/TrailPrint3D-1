@@ -535,7 +535,7 @@ def create_circle(radius, num_subdivisions=1, name="Circle", num_segments=192):
 
 
 def create_ellipse(
-    radius, num_subdivisions=1, name="Ellipse", aspect_ratio=0.75, num_segments=64
+    radius, num_subdivisions=1, name="Ellipse", aspect_ratio=0.75, num_segments=192
 ):
     """Creates an ellipse centered at (0,0,0)."""
     cell_size = radius / (2**num_subdivisions)
