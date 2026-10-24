@@ -1,7 +1,9 @@
-Version 3.3
+Version 4.0
 Upcoming
 
 Added: Quick Access button for all Generators at the Top bar
+Added: Backplate Generator
+Added: Shape rotation to Generator pages
 Added: Single Tile Map Generator
 Added: GeoJson import for Multi Tile Generator to create multitile maps with custom shapes (e.g Country Maps)
 Added: Quick Toggle of elements inside the Generator pages
@@ -19,6 +21,8 @@ Added: OSM polygon smoothing control (Taubin smoothing) (By Clonephaze)
 Added: GeoJSON and SVG file import as custom map outline Shapes (By Clonephaze)
 Added: Option to smooth Terrain when elevation data hits the API's resolution limit
 Changed: Increased maximum River Width and Road Width Multiplier from 10 to 100
+Changed: Reworked Color Mountain into Color by Height, with stacked height bands and support for Single Element Mode and textured maps
+Changed: Improved Generation Settings Snapshots with additional terrain and shape metadata
 Changed: Longitude now wraps at any magnitude in the map pickers, allowing continuous panning
 Changed: 3MF export now supports slicer profiles and custom filenames (By Clonephaze)
 Changed: Material-mode colors now match texture-mode swatches in the viewport and 3MF exports; legacy named and height-layer materials migrate when their colors are set up
