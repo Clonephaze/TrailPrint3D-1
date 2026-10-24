@@ -56,7 +56,7 @@ class TP3D_AddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
     show_osm_size_limits: BoolProperty(
-        name="Show OSM Map Size Limits",
+        name=_("Show OSM Map Size Limits"),
         default=False,
     )  # type: ignore
 
@@ -155,14 +155,14 @@ class TP3D_AddonPreferences(bpy.types.AddonPreferences):
         row.prop(
             self,
             "show_osm_size_limits",
-            text="OSM Map Size Limits (km):",
+            text=_("OSM Map Size Limits (km):"),
             icon='TRIA_DOWN' if self.show_osm_size_limits else 'TRIA_RIGHT',
             emboss=False,
         )
         if self.show_osm_size_limits:
             box = layout.box()
-            box.label(text="OSM elements are skipped on maps larger than these sizes.", icon='INFO')
-            box.label(text="Higher values mean larger Overpass downloads and slower generation.", icon='ERROR')
+            box.label(text=_("OSM elements are skipped on maps larger than these sizes."), icon='INFO')
+            box.label(text=_("Higher values mean larger Overpass downloads and slower generation."), icon='ERROR')
             grid = box.grid_flow(row_major=True, columns=2, even_columns=True, align=False)
             for attr in OSM_SIZE_LIMITS:
                 grid.prop(self, attr)

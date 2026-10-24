@@ -2394,7 +2394,7 @@ class TP3D_OT_popup_text(bpy.types.Operator):
             if not Mapobject.data.vertices or not obj.data.vertices:
                 self.report(
                     {"ERROR"},
-                    _("Could not align bottom text because the map or text mesh is empty."),
+                    _rpt("Could not align bottom text because the map or text mesh is empty."),
                 )
                 self.restore_view(context)
                 return {"CANCELLED"}
@@ -2414,7 +2414,7 @@ class TP3D_OT_popup_text(bpy.types.Operator):
             if not clipped:
                 self.report(
                     {"ERROR"},
-                    _("Could not clip text to the map: {message}").format(
+                    _rpt("Could not clip text to the map: {message}").format(
                         message=clip_message
                     ),
                 )
@@ -3196,8 +3196,8 @@ class TP3D_OT_dismiss_update(bpy.types.Operator):
 
 class TP3D_OT_reset_osm_size_limits(bpy.types.Operator):
     bl_idname = "tp3d.reset_osm_size_limits"
-    bl_label = "Reset to Defaults"
-    bl_description = "Reset all OSM map size limits to their default values"
+    bl_label = _("Reset to Defaults")
+    bl_description = _tip("Reset all OSM map size limits to their default values")
 
     def execute(self, context):
         prefs = addon_preferences.get_prefs()
