@@ -487,7 +487,7 @@ function tp3dRenderPlateSettings(body) {
 function tp3dRenderHandleSettings(body) {
     body.innerHTML = '';
     body.style.display = plateMode === 'NONE' ? 'none' : 'flex';
-    if (plateMode === 'NONE') return;
+    if (plateMode === 'NONE' || plateMode === 'SHELL') return;
 
     var handleLabel = document.createElement('div');
     handleLabel.className = 'se-section-label';
@@ -721,21 +721,22 @@ function tp3dDrawBackplatePreview() {
         return e;
     }
 
-    // Built in the map's own frame (the radii below), drawn turned by the
-    // shape rotation -- like create_generic_plate grows, then rotates.
-    var rotDeg = tp3dPreviewRotation();
-    var shownMap = tp3dRotatePts(mapPts, rotDeg);
-    var shownOuter = tp3dRotatePts(outerPts, rotDeg);
-    var shownCavity = tp3dRotatePts(cavityPts, rotDeg);
-    var all = shownMap.concat(shownOuter || []);
+    // Keep the top-down preview aligned to the map frame; rotation remains
+    // reflected in the side-view dimensions and in the generated model.
+    var rotDeg = 0;
+    var sideViewRotation = tp3dPreviewRotation();
+    var shownMap = tp3dRotatePts(mapPts, sideViewRotation);
+    var shownOuter = tp3dRotatePts(outerPts, sideViewRotation);
+    var shownCavity = tp3dRotatePts(cavityPts, sideViewRotation);
+    var all = mapPts.concat(outerPts || []);
     var b = tp3dBounds(all);
     var top = b.maxy;
 
     // Plate / shell, then the map on top.
-    if (shownOuter) el('polygon', { points: tp3dSvgPoints(shownOuter), class: 'bp-plate' });
-    if (shownCavity) el('polygon', { points: tp3dSvgPoints(shownCavity), class: 'bp-cavity' });
+    if (outerPts) el('polygon', { points: tp3dSvgPoints(outerPts), class: 'bp-plate' });
+    if (cavityPts) el('polygon', { points: tp3dSvgPoints(cavityPts), class: 'bp-cavity' });
     var insetMap = plateMode === 'SOLID_PLATE' && num('plateInsertValue', 0) > 0;
-    el('polygon', { points: tp3dSvgPoints(shownMap), class: 'bp-map' + (insetMap ? ' bp-map-inset' : '') });
+    el('polygon', { points: tp3dSvgPoints(mapPts), class: 'bp-map' + (insetMap ? ' bp-map-inset' : '') });
     var mapLabel = el('text', { x: 0, y: 0, class: 'bp-map-label', 'font-size': (size * 0.06).toFixed(2) });
     mapLabel.textContent = 'Map';
 

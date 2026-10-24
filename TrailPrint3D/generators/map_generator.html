@@ -492,7 +492,7 @@
                         var layer = makeShapeLayer(m.bounds, m.shape, {
                             color: '#9b59b6', weight: 2.5, opacity: 0.95, dashArray: '6 4',
                             fill: true, fillOpacity: 0.15, fillColor: '#9b59b6'
-                        }, m.polygon);
+                        }, m.polygon, m.rotation);
                         if (m.name) layer.bindTooltip(m.name, { sticky: true });
                         existingMapsLayer.addLayer(layer);
                     });
@@ -552,7 +552,7 @@
             ];
         }
 
-        function makeShapeLayer(bounds, shape, style, polygon) {
+        function makeShapeLayer(bounds, shape, style, polygon, rotation) {
             // CUSTOM (e.g. GeoJSON-boundary) tiles have no regular shape to
             // reconstruct from just their bounding box -- draw the actual
             // outline the backend stored instead. `polygon` is one entry per
@@ -561,6 +561,9 @@
             // shape rather than treating extra rings as holes.
             if (shape === 'custom' && polygon && polygon.length) {
                 return L.polygon(polygon, style);
+            }
+            if (rotation && shape !== 'circle' && shape !== 'custom') {
+                return L.polygon(tp3dProjectedShapePoints(bounds, shape, rotation), style);
             }
             var centerLat = (bounds.north + bounds.south) / 2;
             var centerLng = (bounds.east + bounds.west) / 2;

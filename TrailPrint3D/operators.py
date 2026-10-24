@@ -3259,6 +3259,7 @@ def _collect_existing_maps():
             "shape": shape,
             "bounds": bounds,
             "name": obj.name,
+            "rotation": float(obj.get("shapeRotation", 0) or 0),
             "scaleHor": obj.get("Horizontal Scale"),
             "additionalExtrusion": obj.get("AdditionalExtrusion"),
         }

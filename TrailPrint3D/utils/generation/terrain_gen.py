@@ -150,6 +150,10 @@ def _rg_create_map_object(gen: GenerationContext):
     MapObject.select_set(True)
     bpy.context.view_layer.objects.active = MapObject
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+    # Shape extras (notably the Shell) are built before writeMetadata runs.
+    # Store the rotation now so map_outline_local can match the baked mesh
+    # against the rotated map_polygon_wkt when building the shell footprint.
+    MapObject["shapeRotation"] = gen.settings.shapeRotation
 
     targetx = (gen.runtime.centerX or 0.0) + gen.settings.xTerrainOffset
     targety = (gen.runtime.centerY or 0.0) + gen.settings.yTerrainOffset
