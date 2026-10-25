@@ -1241,12 +1241,68 @@ function placeSvgBoxInViewport(fraction) {
     bindMoveHandle();
 }
 
+// Every vertex of a layer's polylines, recursing into groups (e.g. a
+// multi-file gpxLayer holding one FeatureGroup per trail).
+function tp3dLayerLatLngs(layer) {
+    var out = [];
+    (function collect(l) {
+        if (l.getLatLngs) {
+            (function flatten(arr) {
+                arr.forEach(function(item) {
+                    if (Array.isArray(item)) flatten(item); else out.push(item);
+                });
+            })(l.getLatLngs());
+        } else if (l.eachLayer) {
+            l.eachLayer(collect);
+        }
+    })(layer);
+    return out;
+}
+
+// How much the current shape -- drawn on a square box of projected *side*
+// centered at (centerX, centerY), zoom 0 -- must be scaled so its outline
+// just contains every point in *latlngs*. All outlines tp3dProjectedShapePoints
+// draws are convex and centered, so each edge is a half-plane n.p <= d and
+// the answer is the largest n.p / d over all points and edges.
+function tp3dShapeCoverRatio(centerX, centerY, side, latlngs) {
+    var nw = map.unproject([centerX - side / 2, centerY - side / 2], 0);
+    var se = map.unproject([centerX + side / 2, centerY + side / 2], 0);
+    var box = { north: nw.lat, south: se.lat, east: se.lng, west: nw.lng };
+    var rotation = typeof TP3D_SHAPE_ROTATION_DEG !== 'undefined' ? TP3D_SHAPE_ROTATION_DEG : 0;
+    var outline = currentShape === 'svg' && typeof svgAspect !== 'undefined'
+        ? tp3dProjectedShapePoints(svgInscribedBounds(box, svgAspect), 'rectangle', rotation)
+        : tp3dProjectedShapePoints(box, currentShape, rotation);
+    var verts = outline.map(function(ll) {
+        var p = map.project(ll, 0);
+        return [p.x - centerX, p.y - centerY];
+    });
+    var planes = [];
+    for (var i = 0; i < verts.length; i++) {
+        var a = verts[i], c = verts[(i + 1) % verts.length];
+        var nx = c[1] - a[1], ny = a[0] - c[0];
+        var d = nx * a[0] + ny * a[1];
+        if (Math.abs(d) < 1e-12) continue;
+        if (d < 0) { nx = -nx; ny = -ny; d = -d; }
+        planes.push([nx / d, ny / d]);
+    }
+    var ratio = 0;
+    latlngs.forEach(function(ll) {
+        var p = map.project(ll, 0);
+        var x = p.x - centerX, y = p.y - centerY;
+        planes.forEach(function(n) { ratio = Math.max(ratio, n[0] * x + n[1] * y); });
+    });
+    return ratio;
+}
+
 // Auto-places a drawn shape of the current type centered on *b* (an
 // L.LatLngBounds, e.g. an imported GPX trail's) so that *b* takes up about
 // *fraction* of it -- e.g. 0.8 leaves a 10% margin on each side. The box is
 // always square in the projected map plane, sized off *b*'s longer side.
+// With *latlngs* (e.g. every trail point), the box is instead grown until the
+// current shape's actual outline -- hexagon, octagon, circle, rotation,
+// SVG aspect -- contains all of them, *fraction* again setting the margin.
 // Replaces whatever was previously drawn; callers decide whether that's appropriate.
-function placeShapeAroundBounds(b, fraction) {
+function placeShapeAroundBounds(b, fraction, latlngs) {
     var northWest = map.project([b.getNorth(), b.getWest()], 0);
     var southEast = map.project([b.getSouth(), b.getEast()], 0);
     var width = Math.abs(southEast.x - northWest.x);
@@ -1255,6 +1311,10 @@ function placeShapeAroundBounds(b, fraction) {
     if (!(side > 0)) return;
     var centerX = (northWest.x + southEast.x) / 2;
     var centerY = (northWest.y + southEast.y) / 2;
+    if (latlngs && latlngs.length) {
+        var ratio = tp3dShapeCoverRatio(centerX, centerY, side, latlngs);
+        if (ratio > 0) side *= ratio / fraction;
+    }
     var north = map.unproject([centerX - side / 2, centerY - side / 2], 0);
     var south = map.unproject([centerX + side / 2, centerY + side / 2], 0);
     editHandles.clearLayers();
