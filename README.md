@@ -68,6 +68,13 @@ Automatically fetches and renders geographic data from [OpenStreetMap](https://w
 | Elevation tiles | [Terrain Tiles / Mapzen](https://registry.opendata.aws/terrain-tiles/) | Terrain height |
 | Elevation (high-res datasets) | [OpenTopography](https://opentopography.org) | Terrain height (API key required) |
 | Geographic data | [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)<br/><sub>using [Overpass API](https://overpass-api.de/)</sub> | Map Elements |
+| Land-cover classification | [ESA WorldCover](https://esa-worldcover.org/), via [Microsoft Planetary Computer](https://planetarycomputer.microsoft.com/dataset/esa-worldcover) (CC BY 4.0) | WorldCover terrain colors |
+
+WorldCover uses Planetary Computer's public `/item/crop/{width}x{height}.png`
+endpoint with a GeoJSON bounding polygon. The `/item/feature/` and `/item/bbox/`
+routes can appear in the API schema but return HTTP 501 on the public service.
+Fetch errors are reported separately from missing coverage; failed downloads
+are not cached or filled as water.
 
 ## License
 

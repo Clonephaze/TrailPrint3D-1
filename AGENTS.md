@@ -46,6 +46,7 @@ TrailPrint3D/                 - Blender addon package (installed as a Blender ex
     accessories/
       medal_holder.py           - Medal Holder mesh builder (backs generators/medalHolderGenerator.html)
       backplate.py              - Backplate builder via the Shape Extras code (backs generators/backplateGenerator.html)
+    color_styles.py             - map element color roles, built-in/user color styles (JSON), scene color helpers
     elevation.py                - elevation API helpers
     generation.py                - runGeneration() orchestration
     geo.py                       - coordinate math
@@ -77,7 +78,7 @@ tests/                         - standalone test suite, run inside Blender's own
   run_all_tests.py              - runs every test_*.py and prints a combined pass/fail summary
   headless_generate.py          - headless generator with a browser-based config UI (manual/dev use)
   test_generation_pipeline.py   - end-to-end runGeneration() tests against real elevation/Overpass APIs
-  test_element_colors.py        - tests for preference-driven element colors
+  test_element_colors.py        - tests for scene color styles and recoloring existing maps
   test_model_shape_matrix.py    - runGeneration() across every shape/shape-extra/medal-handle combo, exported as 3MF
   test_geo_elevation.py         - unit tests for pure-math functions in geo.py / elevation.py
   test_geojson_import.py        - tests for the GeoJSON boundary reader

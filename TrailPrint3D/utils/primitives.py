@@ -36,10 +36,10 @@ def _setup_material(name, color):
     set_material_srgb(mat, color[:3])
 
 
-def setupColors():
-    from ..addon_preferences import element_material_colors
+def setupColors(colors=None):
+    from .color_styles import scene_colors
 
-    for material_name, color in element_material_colors().items():
+    for material_name, color in (colors or scene_colors()).items():
         _setup_material(material_name, color)
     _setup_material("BLACK", (0, 0, 0))
     _setup_material("WHITE", (255, 255, 255))

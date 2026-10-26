@@ -90,21 +90,6 @@ def __getattr__(name):
 
 BUILDINGS_MIN_PRINT_MM = 0.15  # PRINTED footprint
 
-ELEMENT_COLOR_DEFAULTS = (
-    ("element_color_base", "BASE", _("Base Terrain"), (13, 178, 13)),
-    ("element_color_water", "WATER", _("Water"), (0, 0, 204)),
-    ("element_color_forest", "FOREST", _("Forest"), (13, 64, 13)),
-    ("element_color_mountain", "MOUNTAIN", _("Mountain / Scree"), (128, 128, 128)),
-    ("element_color_city", "CITY", _("City"), (178, 178, 26)),
-    ("element_color_greenspace", "GREENSPACE", _("Greenspace"), (41, 255, 41)),
-    ("element_color_farmland", "FARMLAND", _("Farmland"), (77, 128, 26)),
-    ("element_color_glacier", "GLACIER", _("Glacier"), (204, 229, 204)),
-    ("element_color_buildings", "BUILDINGS", _("Buildings"), (102, 102, 102)),
-    ("element_color_roads", "ROADS", _("Roads"), (0, 0, 0)),
-    ("element_color_trail", "TRAIL", _("Trail"), (255, 0, 0)),
-    ("element_color_secondary_trail", "YELLOW", _("Secondary Trail"), (255, 255, 0)),
-)
-
 # -- Texture Constants --
 _KIND_MATERIAL_NAME = {
     "WATER": "WATER",
@@ -206,6 +191,9 @@ preset_dir = os.path.join(bpy.utils.user_resource("CONFIG"), "TP3D-presets")
 # /get_page_defaults & /save_page_defaults. Created on first save. A
 # subfolder, so the main panel's CSV presets in preset_dir never list them.
 generator_defaults_dir = os.path.join(preset_dir, "generator_defaults")
+
+# User-wide color styles, one JSON file per style. Created on first save.
+color_style_dir = os.path.join(bpy.utils.user_resource("CONFIG"), "TrailPrint3D", "color_styles")
 
 # Set up a folder for the picker pages' (puzzleGenerator.html etc.) per-
 # generator generation history -- one JSON file per page, see
