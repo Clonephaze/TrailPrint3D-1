@@ -222,14 +222,14 @@ def export_selected_to_3mf(
                         _ccol = material_to_srgb(
                             _own_mat or bpy.data.materials.get("TRAIL")
                         )
-                    elif obj_type == "BUILDINGS":
+                    elif obj_type in {"BUILDINGS", "ROADS"}:
                         _own_mat = (
                             dup.data.materials[0]
                             if dup.data and dup.data.materials
                             else None
                         )
                         _ccol = material_to_srgb(
-                            _own_mat or bpy.data.materials.get("BUILDINGS")
+                            _own_mat or bpy.data.materials.get(obj_type)
                         )
                     elif (
                         dup.get("IsMountainPiece")

@@ -1811,9 +1811,9 @@ def cut_into_puzzle_pieces(
                         road_mesh.from_pydata(road_verts, [], road_faces)
                         road_mesh.update()
                         road_mesh.validate(verbose=False)
-                        black_mat = bpy.data.materials.get("BLACK")
-                        if black_mat:
-                            road_mesh.materials.append(black_mat)
+                        roads_mat = bpy.data.materials.get("ROADS")
+                        if roads_mat:
+                            road_mesh.materials.append(roads_mat)
                         road_piece = bpy.data.objects.new(road_mesh.name, road_mesh)
                         bpy.context.collection.objects.link(road_piece)
                         bpy.ops.object.select_all(action="DESELECT")

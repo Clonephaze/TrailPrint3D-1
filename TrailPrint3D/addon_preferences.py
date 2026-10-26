@@ -6,7 +6,7 @@
 import bpy
 from bpy.app.translations import pgettext_iface as _
 from bpy.app.translations import pgettext_tip as _tip
-from bpy.props import BoolProperty, IntProperty, StringProperty
+from bpy.props import BoolProperty, FloatVectorProperty, IntProperty, StringProperty
 
 from . import constants as const
 
@@ -52,6 +52,40 @@ def _osm_limit_prop(const_name, name, description):
     )
 
 
+_ELEMENT_COLOR_BY_ATTR = {row[0]: row for row in const.ELEMENT_COLOR_DEFAULTS}
+
+
+def _element_color_prop(attr):
+    _attr, _material, label, rgb = _ELEMENT_COLOR_BY_ATTR[attr]
+    return FloatVectorProperty(
+        name=label,
+        description=_tip("Color used for this element in newly generated maps"),
+        subtype="COLOR_GAMMA",
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=tuple(channel / 255.0 for channel in rgb),
+    )
+
+
+def element_material_colors():
+    """Return {material_name: sRGB uint8 tuple} from preferences, or defaults."""
+    try:
+        prefs = get_prefs()
+    except (AttributeError, KeyError):
+        prefs = None
+
+    colors = {}
+    for attr, material, _label, default in const.ELEMENT_COLOR_DEFAULTS:
+        value = getattr(prefs, attr, None) if prefs is not None else None
+        colors[material] = (
+            default
+            if value is None
+            else tuple(round(max(0.0, min(1.0, channel)) * 255.0) for channel in value[:3])
+        )
+    return colors
+
+
 class TP3D_AddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
@@ -59,6 +93,24 @@ class TP3D_AddonPreferences(bpy.types.AddonPreferences):
         name=_("Show OSM Map Size Limits"),
         default=False,
     )  # type: ignore
+
+    show_element_colors: BoolProperty(
+        name=_("Show Element Colors"),
+        default=True,
+    )  # type: ignore
+
+    element_color_base: _element_color_prop("element_color_base")  # type: ignore
+    element_color_water: _element_color_prop("element_color_water")  # type: ignore
+    element_color_forest: _element_color_prop("element_color_forest")  # type: ignore
+    element_color_mountain: _element_color_prop("element_color_mountain")  # type: ignore
+    element_color_city: _element_color_prop("element_color_city")  # type: ignore
+    element_color_greenspace: _element_color_prop("element_color_greenspace")  # type: ignore
+    element_color_farmland: _element_color_prop("element_color_farmland")  # type: ignore
+    element_color_glacier: _element_color_prop("element_color_glacier")  # type: ignore
+    element_color_buildings: _element_color_prop("element_color_buildings")  # type: ignore
+    element_color_roads: _element_color_prop("element_color_roads")  # type: ignore
+    element_color_trail: _element_color_prop("element_color_trail")  # type: ignore
+    element_color_secondary_trail: _element_color_prop("element_color_secondary_trail")  # type: ignore
 
     osm_limit_forest: _osm_limit_prop(
         "FOREST_MAXSIZE", "Forest", "Forests are skipped above this map size"
@@ -147,6 +199,24 @@ class TP3D_AddonPreferences(bpy.types.AddonPreferences):
         # Export
         layout.label(text=_("Export Settings:"), icon='EXPORT')
         layout.prop(self, "default_export_folder")
+
+        layout.separator()
+
+        row = layout.row()
+        row.prop(
+            self,
+            "show_element_colors",
+            text=_("Element Colors:"),
+            icon='TRIA_DOWN' if self.show_element_colors else 'TRIA_RIGHT',
+            emboss=False,
+        )
+        if self.show_element_colors:
+            box = layout.box()
+            box.label(text=_("Used by geometry, Paint, and Texture modes. Regenerate maps to apply changes."), icon='INFO')
+            grid = box.grid_flow(row_major=True, columns=2, even_columns=True, align=False)
+            for attr, _material, _label, _default in const.ELEMENT_COLOR_DEFAULTS:
+                grid.prop(self, attr)
+            box.operator("tp3d.reset_element_colors", icon='LOOP_BACK')
 
         layout.separator()
 

@@ -3208,6 +3208,18 @@ class TP3D_OT_reset_osm_size_limits(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class TP3D_OT_reset_element_colors(bpy.types.Operator):
+    bl_idname = "tp3d.reset_element_colors"
+    bl_label = _("Reset Colors to Defaults")
+    bl_description = _tip("Reset all element colors to their default values")
+
+    def execute(self, context):
+        prefs = addon_preferences.get_prefs()
+        for attr, _material, _label, _default in const.ELEMENT_COLOR_DEFAULTS:
+            prefs.property_unset(attr)
+        return {'FINISHED'}
+
+
 class TP3D_OT_install_update(bpy.types.Operator):
     bl_idname = "tp3d.install_update"
     bl_label = _("Install Update")
