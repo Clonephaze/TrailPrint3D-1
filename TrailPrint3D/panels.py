@@ -905,10 +905,10 @@ def _draw_appearance_box(layout, props):
         "tex_include_trail",
     )
     road_tex_row = box.row()
-    # Roads only exist with Map Elements on.
+    # Roads only exist with Map Elements on. Unlike the trail row, a Single
+    # Extruder trail doesn't block this -- painted roads don't touch the cutout.
     road_tex_row.enabled = (
         not _elem_scm
-        and not props.singleColorMode
         and props.tex_use_texture
         and props.elementChoice
     )

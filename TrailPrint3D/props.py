@@ -140,7 +140,7 @@ ROAD_TYPE_DEFS = [
         (
             "highway=service -- vehicle access roads to buildings, parking lots, business estates (see "
             "Key:service on the OSM wiki). Split out from Residential Roads since alley/driveway/"
-            "parking_aisle ways are always filtered out of it (using OSM's own service=* sub-tag, not "
+            "drive-through ways are always filtered out of it (using OSM's own service=* sub-tag, not "
             "geometry) rather than being lumped in with named residential streets."
         ),
     ),
@@ -180,6 +180,14 @@ ROAD_TYPE_DEFS = [
         (
             "highway=path -- generic multi-use/hiking trail, ambiguous length so kept in the normal "
             "dense-road mapsize cutoff rather than being exempted like Tracks."
+        ),
+    ),
+    (
+        "raceway",
+        _("Raceways"),
+        (
+            "highway=raceway -- motor racing circuits and karting/test tracks. A circuit is a few "
+            "long ways, so like Tracks this tier is exempt from the dense-road mapsize cutoff."
         ),
     ),
 ]

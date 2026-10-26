@@ -186,7 +186,7 @@ def _build_union_query(south, west, north, east, kinds, settings=None):
         if "service" in highway_types:
             if exclude_alleys:
                 filters.append(
-                    'way["highway"="service"]["service"!~"alley|driveway|parking_aisle|drive-through"]'
+                    'way["highway"="service"]["service"!~"alley|driveway|drive-through"]'
                 )
             else:
                 filters.append('way["highway"="service"]')
@@ -222,7 +222,7 @@ def _classify_element(element, active_kinds, settings=None):
                     highway == "service"
                     and settings.exclude_alleys
                     and tags.get("service")
-                    in {"alley", "driveway", "parking_aisle", "drive-through"}
+                    in {"alley", "driveway", "drive-through"}
                 ):
                     return "STREETS"
             else:
@@ -231,7 +231,7 @@ def _classify_element(element, active_kinds, settings=None):
                     highway == "service"
                     and exclude_alleys
                     and tags.get("service")
-                    in {"alley", "driveway", "parking_aisle", "drive-through"}
+                    in {"alley", "driveway", "drive-through"}
                 ):
                     return "STREETS"
 

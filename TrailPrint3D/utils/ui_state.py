@@ -556,6 +556,7 @@ _ADVANCED_SETTINGS_FIELDS = [
     {"key": "elSCycleBridleActive", "road_id": "cycle_bridle", "type": bool, "group": "Roads"},
     {"key": "elSTrackActive", "road_id": "track", "type": bool, "group": "Roads"},
     {"key": "elSPathActive", "road_id": "path", "type": bool, "group": "Roads"},
+    {"key": "elSRacewayActive", "road_id": "raceway", "type": bool, "group": "Roads"},
     {"key": "elSMultiplier", "attr": "el_sMultiplier", "type": float, "group": "Roads"},
     {"key": "elSHeight", "attr": "el_sHeight", "type": float, "group": "Roads"},
     {

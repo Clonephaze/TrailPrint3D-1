@@ -628,7 +628,7 @@ var TP3D_PREFETCH_WATER = { colWPondsActive: true, colWSmallRiversActive: false,
 var TP3D_PREFETCH_ROADS = {
     elSHighwaysActive: false, elSMajorActive: false, elSMinorActive: false, elSResidentialActive: true,
     elSServiceActive: false, elSFootwayActive: false, elSPedestrianActive: true, elSCycleBridleActive: false,
-    elSTrackActive: false, elSPathActive: false
+    elSTrackActive: false, elSPathActive: false, elSRacewayActive: false
 };
 
 function tp3dZoomToMunich() {

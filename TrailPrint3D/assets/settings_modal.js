@@ -154,9 +154,6 @@ function tp3dHas3mf() {
 function tp3dTextureAvailable() {
     return tp3dHas3mf() && tp3dTexturePaintMode();
 }
-function tp3dTextureTrailRoadsEnabled() {
-    return tp3dTextureAvailable() && MAP_TAB_CONTROL_VALUES.singleColorMode !== true;
-}
 var TP3D_NO_3MF_TITLE = 'Requires the free 3MF addon';
 function tp3dNo3mfTitle() {
     return tp3dHas3mf() ? '' : TP3D_NO_3MF_TITLE;
@@ -431,7 +428,8 @@ var COMPOSITE_ELEMENTS = {
             { key: 'elSPedestrianActive', label: 'Pedestrian Streets' },
             { key: 'elSCycleBridleActive', label: 'Cycle/Bridle Paths' },
             { key: 'elSTrackActive', label: 'Tracks' },
-            { key: 'elSPathActive', label: 'Trails/Paths' }
+            { key: 'elSPathActive', label: 'Trails/Paths' },
+            { key: 'elSRacewayActive', label: 'Raceways' }
         ],
         numberFields: [
             { key: 'elSMultiplier', label: 'Width Multiplier', step: 0.1, min: 0 },
@@ -934,8 +932,9 @@ function tp3dBuildWaterFlattenFields() {
 var TP3D_WATER_INSERT_MARGIN = 0.5; // constants.WATER_INSERT_MARGIN
 
 // Roads card's "Paint Roads" (props.tex_include_roads) -- the Map tab's
-// "Paint Trail" counterpart, greyed out under the same conditions
-// (tp3dTextureTrailRoadsEnabled) via MAP_TAB_ROWS.
+// "Paint Trail" counterpart, greyed out via MAP_TAB_ROWS whenever there's
+// no texture to paint into. Unlike Paint Trail it stays available with a
+// Single Extruder trail -- painted roads don't conflict with the trail cutout.
 function tp3dBuildRoadsPaintField() {
     var field = {
         key: 'texIncludeRoads',
@@ -943,7 +942,7 @@ function tp3dBuildRoadsPaintField() {
         title: 'Paint the roads into the texture (terrain under roads coloured black)',
         preview: 'https://trailprint3d.com/images/howto/PaintRoads.webp',
         previewCaption: 'Paint the roads onto the map instead of creating a separate object.',
-        enabledWhen: tp3dTextureTrailRoadsEnabled,
+        enabledWhen: tp3dTextureAvailable,
         lockedTitle: tp3dNo3mfTitle
     };
     // With a preview this is a .preview-wrap around the <label> -- lock the
