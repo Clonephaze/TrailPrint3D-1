@@ -176,7 +176,9 @@ function tp3dTrailIsSingleExtruder() {
 // `desc` is the short line shown under each option's name.
 var TRAIL_APPEARANCE_OPTIONS = [
     { mode: 'NORMAL', label: 'Normal', desc: 'Print trail together with map',
-      title: 'The trail is its own object' },
+      title: 'The trail is its own object',
+      preview: 'https://trailprint3d.com/images/howto/normalTrail.webp',
+      caption: 'The trail is printed together with the map as its own colored object.' },
     { mode: 'SCM', label: 'Single Extruder Mode', desc: 'Print the Trail Separately',
       title: 'Enable this if you don\'t have a Multicolor printer',
       preview: 'https://trailprint3d.com/images/howto/SingleColorTrail.webp',
