@@ -372,10 +372,23 @@ def _rtg_build_tile_preview(selected_objects):
                 ),
                 "status": "pending",
                 "shape": obj.get("Shape", "square").lower().split()[0],
+                "name": obj.name,
             }
             for obj in valid
         ]
     return valid, tiles_info, tile_size
+
+
+def _rtg_carry_fetched_status(overlay, tiles_info):
+    """Keep tiles a caller already prefetched (the multitile picker's
+    up-front elevation pass) marked "fetched" instead of resetting them to
+    pending. Matched by object name -- the selection order, and with it each
+    tile's bx/by, can differ from the prefetch's own order."""
+    previous = (overlay.map_preview or {}).get("tiles") or []
+    fetched = {t.get("name") for t in previous if t.get("status") == "fetched"}
+    for info in tiles_info:
+        if info["name"] in fetched:
+            info["status"] = "fetched"
 
 
 def _rtg_update_tile_preview_status(
@@ -762,7 +775,12 @@ def runTileGeneration(
         _mp_valid, _mp_tiles_info, _mp_tile_size = _rtg_build_tile_preview(
             selected_objects
         )
+        # A failed tile falls back to its status from before generation
+        # (fetched or pending).
+        _mp_base_status = {}
         if _mp_tiles_info:
+            _rtg_carry_fetched_status(overlay, _mp_tiles_info)
+            _mp_base_status = {t["name"]: t["status"] for t in _mp_tiles_info}
             overlay.set_map_preview(
                 {"tiles": _mp_tiles_info, "tile_size": round(_mp_tile_size, 3)}
             )
@@ -817,7 +835,7 @@ def runTileGeneration(
                 )
                 _rtg_update_tile_preview_status(
                     overlay, _mp_valid, _mp_tiles_info, _mp_tile_size, zobj,
-                    status="pending",
+                    status=_mp_base_status.get(zobj.name, "pending"),
                 )
                 continue
             except Exception as e:  # noqa: BLE001 - a single tile's bpy.ops/mesh-op failure shouldn't abort the whole batch
@@ -831,7 +849,7 @@ def runTileGeneration(
                 )
                 _rtg_update_tile_preview_status(
                     overlay, _mp_valid, _mp_tiles_info, _mp_tile_size, zobj,
-                    status="pending",
+                    status=_mp_base_status.get(zobj.name, "pending"),
                 )
                 continue
 
