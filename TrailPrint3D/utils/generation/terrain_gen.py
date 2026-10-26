@@ -350,7 +350,11 @@ def _rg_start_satellite_prefetch(gen: GenerationContext):
         return
 
     from ...progress import ProgressOverlay
-    from ..satellite import get_cached_landcover_image, get_cached_photo_image
+    from ..satellite import (
+        SatelliteFetchError,
+        get_cached_landcover_image,
+        get_cached_photo_image,
+    )
 
     min_lat, max_lat = gen.runtime.tbMinLat, gen.runtime.tbMaxLat
     min_lon, max_lon = gen.runtime.tbMinLon, gen.runtime.tbMaxLon
@@ -366,23 +370,26 @@ def _rg_start_satellite_prefetch(gen: GenerationContext):
     result: dict = {}
 
     def _run():
-        landcover = get_cached_landcover_image(
-            min_lat,
-            max_lat,
-            min_lon,
-            max_lon,
-            disable_cache=disable_cache,
-            progress_cb=lambda frac: overlay.set_fetch_progress("landcover", frac),
-        )
-        photo = (
-            get_cached_photo_image(
-                min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache
+        try:
+            result["landcover"] = get_cached_landcover_image(
+                min_lat,
+                max_lat,
+                min_lon,
+                max_lon,
+                disable_cache=disable_cache,
+                progress_cb=lambda frac: overlay.set_fetch_progress("landcover", frac),
             )
-            if debug
-            else None
-        )
-        result["landcover"] = landcover
-        result["photo"] = photo
+        except (SatelliteFetchError, OSError) as e:
+            print(f"WorldCover fetch failed: {e}")
+            result["error"] = str(e)
+            return
+        if debug and result["landcover"] is not None:
+            try:
+                result["photo"] = get_cached_photo_image(
+                    min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache
+                )
+            except (SatelliteFetchError, OSError) as e:
+                print(f"Satellite debug photo fetch failed: {e}")
 
     t = threading.Thread(target=_run, daemon=True, name="satellite-prefetch")
     t.start()
@@ -405,15 +412,26 @@ def _rg_create_satellite_plane(gen: GenerationContext):
         remove_stale_satellite_debug()
         return
 
-    from ...progress import ProgressOverlay
-    from ..satellite import create_satellite_plane, paint_terrain_from_landcover
+    from ...progress import ProgressOverlay, WarningsOverlay
+    from ..satellite import (
+        create_satellite_plane,
+        paint_terrain_from_landcover,
+        remove_stale_satellite_debug,
+    )
 
     gen.fetch.satelliteThread.join()
     result = gen.fetch.satelliteResult or {}
     landcover = result.get("landcover")
     ProgressOverlay.get().set_fetch_done("landcover", success=landcover is not None)
     if landcover is None:
-        print("WorldCover: no land-cover data returned for this area, skipping.")
+        remove_stale_satellite_debug()
+        if result.get("error"):
+            WarningsOverlay.add_warning(
+                _rpt("WorldCover fetch failed: {error}").format(error=result["error"]),
+                icon="error",
+            )
+        else:
+            print("WorldCover: no coverage found for this area, skipping.")
         return
 
     min_lat, max_lat = gen.runtime.tbMinLat, gen.runtime.tbMaxLat
