@@ -1696,7 +1696,46 @@ function tp3dBuildPuzzleTab() {
         plate.grid.id = 'plateTabFields';
         wrap.appendChild(plate.card);
     }
+    tp3dAddPuzzlePreviews(wrap, sliding ? SLIDING_PUZZLE_PREVIEWS : JIGSAW_PUZZLE_PREVIEWS);
     return wrap;
+}
+
+// Guide "?" for the relocated puzzle fields, keyed by input id. The jigsaw
+// and sliding pages share some ids (holder*), so each page type has its own map.
+var PUZZLE_PREVIEW_BASE = 'https://trailprint3d.com/images/howto/';
+var JIGSAW_PUZZLE_PREVIEWS = {
+    tabSizeInput: { img: 'JigsawTabSize.webp', caption: 'Size of the tabs that interlock the puzzle pieces.' },
+    jitterInput: { img: 'JigsawJitter.webp', caption: 'Random variation of the cut lines, so every piece gets its own shape.' },
+    puzzleCornerRadiusInput: { img: 'JigsawCornerRadius.webp', caption: 'Rounds the outer corners of the puzzle.' },
+    puzzleToleranceInput: { img: 'JigsawTolerance.webp', caption: ['Gap between neighboring puzzle pieces (each piece shrinks by half of it).',
+        'Depending on the printer, I recommend 0.2-0.3mm tolerance.'] },
+    holderWallWidthInput: { img: 'JigsawFrameThickness.webp', caption: 'Width of the holder frame around the puzzle.' },
+    holderCornerRadiusInput: { img: 'JigsawFrameCornerRadius.webp', caption: 'Rounds the outer corners of the holder.' },
+    holderSeamEngravingInput: { img: 'JigsawEngravePattern.webp', caption: 'Engraves the puzzle cut pattern into the floor of the holder.' },
+    holderFrameTerrainInput: { img: 'JigsawTerrainOnFrame.webp', caption: 'Continues the terrain onto the holder frame instead of a flat rim.' },
+    holderTextInput: { img: 'JigsawText.webp', caption: 'Text embossed on the flat rim of the holder.' }
+};
+var SLIDING_PUZZLE_PREVIEWS = {
+    cornerRadiusInput: { img: 'SlidingCornerRadius.webp', caption: ['Rounds the corners of every tile.',
+        'I recommend the default of 1mm.'] },
+    toleranceInput: { img: 'SlidingTolerance.webp', caption: ['Gap between neighboring tiles, and between the tiles and the frame.',
+        'Depending on the printer, I recommend 0.2-0.3mm tolerance.'] },
+    holderWallWidthInput: { img: 'SlidingFrameThickness.webp', caption: 'Width of the frame around the tiles.' },
+    holderCornerRadiusInput: { img: 'SlidingFrameCornerRadius.webp', caption: 'Rounds the outer corners of the frame.' },
+    holderFrameTerrainInput: { img: 'SlidingTerrainOnFrame.webp', caption: 'Continues the terrain onto the frame instead of a flat rim.' },
+    holderTopBevelInput: { img: 'SlidingTopBevel.webp', caption: 'Chamfers the top outer edge of the frame.' },
+    holderTextInput: { img: 'SlidingText.webp', caption: 'Text embossed on the flat rim of the frame.' }
+};
+function tp3dAddPuzzlePreviews(root, previews) {
+    Object.keys(previews).forEach(function(id) {
+        var label = root.querySelector('label[for="' + id + '"]');
+        if (!label) return;
+        var parent = label.parentNode;
+        var next = label.nextSibling;
+        var entry = previews[id];
+        parent.insertBefore(tp3dWithPreview(label, PUZZLE_PREVIEW_BASE + entry.img, entry.caption,
+            label.textContent, label.closest('.field-row')), next);
+    });
 }
 
 // Moves every child of the hidden #sourceId container into the fields

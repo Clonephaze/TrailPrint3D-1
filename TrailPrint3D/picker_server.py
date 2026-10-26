@@ -790,9 +790,44 @@ def _free_port() -> int:
             return s.getsockname()[1]
 
 
+_CHROMIUM_EXE_NAMES = {
+    'msedge.exe', 'chrome.exe', 'brave.exe', 'vivaldi.exe', 'opera.exe', 'chromium.exe',
+}
+
+
+def _default_chromium_browser() -> str | None:
+    """The user's Windows default browser, if it is Chromium-based (so it
+    supports --app), else None. Reads the https UserChoice ProgId and that
+    ProgId's open command."""
+    import os
+    import shlex
+    try:
+        import winreg
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r'Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice',
+        ) as key:
+            prog_id, _ = winreg.QueryValueEx(key, 'ProgId')
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, rf'{prog_id}\shell\open\command') as key:
+            command, _ = winreg.QueryValueEx(key, '')
+    except OSError:
+        return None
+    try:
+        exe = shlex.split(command, posix=False)[0].strip('"')
+    except (ValueError, IndexError):
+        return None
+    exe = os.path.expandvars(exe)
+    if os.path.basename(exe).lower() in _CHROMIUM_EXE_NAMES and os.path.isfile(exe):
+        return exe
+    return None
+
+
 def _find_chromium() -> str | None:
     import os
     if sys.platform == 'win32':
+        default = _default_chromium_browser()
+        if default:
+            return default
         candidates = [
             os.path.expandvars(r'%PROGRAMFILES(X86)%\Microsoft\Edge\Application\msedge.exe'),
             os.path.expandvars(r'%PROGRAMFILES%\Microsoft\Edge\Application\msedge.exe'),
@@ -1648,6 +1683,19 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
             }),
             encoding='utf-8',
         )
+        # Brave shows its product-analytics (P3A) notice on every fresh
+        # profile; Brave settings live in the root 'Local State' file, so
+        # seed P3A as off and the notice as already acknowledged.
+        if pathlib.Path(browser).name.lower() == 'brave.exe':
+            (profile_dir / 'Local State').write_text(
+                json.dumps({
+                    'brave': {
+                        'p3a': {'enabled': False, 'notice_acknowledged': True},
+                        'stats': {'reporting_enabled': False},
+                    },
+                }),
+                encoding='utf-8',
+            )
         proc = sp.Popen(
             [browser, f'--app={url}',
              f'--user-data-dir={profile_dir}',

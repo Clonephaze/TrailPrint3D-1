@@ -206,7 +206,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
    per-element); the rem floor keeps browser zoom and text-size settings
    working. The ramps run from 12px/11px/10px at a ~700px-wide body up to
    14px/13px/12px at ~1240px, i.e. across the side-by-side range. */
-.settings-modal-box { width: min(80rem, calc(100vw - 2rem)); max-width: 100%; overflow: hidden; padding: 0; gap: 0;
+.settings-modal-box { width: min(88rem, calc(100vw - 2rem)); max-width: 100%; overflow: hidden; padding: 0; gap: 0;
     --set-section-bg: #262a30; --set-section-border: #383e47;
     --set-input-bg: #1b1e22; --set-input-border: #474f5b; --set-accent-tint: rgba(53,111,180,0.18);
     --fs-body: clamp(0.75rem, 0.59rem + 0.37cqi, 0.875rem);
@@ -265,7 +265,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .guide-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
     clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 @media (min-width: 70.01rem) {
-    .settings-modal-right { display: flex; flex: 0 0 clamp(18rem, 30%, 26rem); }
+    .settings-modal-right { display: flex; flex: 0 0 clamp(20rem, 38%, 36rem); }
     .settings-modal-box.guide-hidden .settings-modal-right { display: none; }
     .settings-modal-left { flex: 1 1 auto; }
 }
@@ -428,10 +428,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .element-mode-btn:disabled { opacity: 0.4; cursor: not-allowed; background: var(--surface-field); color: #666; border-color: var(--surface-raised); }
 /* tp3dToggleImagePopover (picker_ui.js): image hint next to a sidebar "?". */
 .tp3d-img-popover { position: fixed; z-index: 3000; display: none; flex-direction: column; gap: 6px;
-    width: min(560px, calc(100vw - 16px)); padding: 10px; background: var(--surface-panel);
+    width: min(800px, calc(100vw - 16px)); padding: 10px; background: var(--surface-panel);
     border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,0.45); }
 .tp3d-img-popover.open { display: flex; }
-.tp3d-img-popover img { width: 100%; max-height: 75vh; object-fit: contain; border-radius: 4px; }
+.tp3d-img-popover img { width: 100%; max-height: 80vh; object-fit: contain; border-radius: 4px; }
 .tp3d-img-popover-caption { font-size: var(--fs-small); line-height: 1.45; color: var(--text-secondary); }
 /* The sidebar "?" sits inline after its label/readout. */
 .sidebar-preview-btn { margin-left: 6px; vertical-align: middle; }
@@ -876,6 +876,8 @@ button.element-chip:active { background: rgba(255,255,255,0.16); }
 .tab-fields-note { display: none; font-size: 12px; color: var(--text-secondary); }
 .tab-fields-inactive > .tab-fields-note { display: block; }
 .tab-fields-inactive > :not(.tab-fields-note) { opacity: 0.4; pointer-events: none; }
+/* The guide "?" stays usable while the fields are locked. */
+.tab-fields-inactive .preview-btn { pointer-events: auto; }
 
 /* Shared form and layout primitives. Runtime visibility stays in JS. */
 button, input, select, textarea { font: inherit; }
@@ -1018,7 +1020,8 @@ input[aria-invalid=true] { border-color: var(--danger); }
     .settings-modal-box:not(.guide-hidden) .settings-modal-body { flex-direction: column; overflow-y: auto; }
     .settings-modal-box:not(.guide-hidden) .settings-modal-left { flex: 0 0 auto; min-height: 18rem; }
     .settings-modal-box:not(.guide-hidden) .settings-modal-tab-panel { max-height: 26rem; }
-    .settings-modal-box:not(.guide-hidden) .settings-modal-right { display: flex; flex: 0 0 16rem; }
+    /* Auto height: the 16:9 image spans the full modal width. */
+    .settings-modal-box:not(.guide-hidden) .settings-modal-right { display: flex; flex: 0 0 auto; }
     .settings-modal-box.guide-hidden .settings-modal-right { display: none; }
 }
 @media (max-width: 48rem) {

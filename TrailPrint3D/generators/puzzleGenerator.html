@@ -36,7 +36,7 @@
         </div>
         <div class="control-stack">
             <div class="field-row" id="sizeRowRect">
-                <label>Size (mm)</label>
+                <span class="preview-wrap"><label>Size (mm)</label><button type="button" class="preview-btn" data-preview-img="https://trailprint3d.com/images/howto/JigsawSize.webp" aria-label="Show an example of the size">?</button></span>
                 <div class="field-controls">
                     <input class="input-dimension" type="number" id="lengthInput" min="0" step="1" value="100" title="Length">
                     <span class="field-separator">×</span>
@@ -46,7 +46,7 @@
         </div>
         <div class="control-stack">
             <div class="field-row" id="gridRowRect">
-                <label>Grid (cols × rows)</label>
+                <span class="preview-wrap"><label>Grid (cols × rows)</label><button type="button" class="preview-btn" data-preview-img="https://trailprint3d.com/images/howto/JigsawRowsCols.webp" aria-label="Show an example of the grid">?</button></span>
                 <div class="field-controls">
                     <input class="input-dimension" type="number" id="colsInput" min="1" max="50" step="1" value="3" title="Columns">
                     <span class="field-separator">×</span>
@@ -61,7 +61,7 @@
         <button class="btn-clear" id="clearGpx" style="display:none;">Clear GPX</button>
         <hr class="sidebar-divider">
         <div class="field-row">
-            <label>Piece Shape</label>
+            <span class="preview-wrap"><label>Piece Shape</label><button type="button" class="preview-btn" data-preview-img="https://trailprint3d.com/images/howto/JigsawPieceShape.webp" aria-label="Show an example of the piece shapes">?</button></span>
             <div class="compact-row">
                 <button type="button" id="shapeSquareBtn" class="shape-toggle-btn active" title="Square pieces">
                     <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="14" height="14"/></svg>
@@ -106,7 +106,7 @@
         </div>
         <div class="control-stack">
             <div class="field-row">
-                <label for="holderEnabled">Generate Holder</label>
+                <span class="preview-wrap"><label for="holderEnabled">Generate Holder</label><button type="button" class="preview-btn" data-preview-img="https://trailprint3d.com/images/howto/JigsawGenerateHolder.webp" aria-label="Show an example of the holder">?</button></span>
                 <input type="checkbox" id="holderEnabled">
             </div>
         </div>
