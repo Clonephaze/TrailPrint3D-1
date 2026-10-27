@@ -170,7 +170,9 @@ def _rg_create_map_object(gen: GenerationContext):
     return MapObject
 
 
-def _rg_build_osm_kind_tasks(min_lat, max_lat, min_lon, max_lon, map_km, element_source, tp3d):
+def _rg_build_osm_kind_tasks(
+    min_lat, max_lat, min_lon, max_lon, map_km, element_source, tp3d
+):
     """Given explicit bounds + map size, build the (kind, tile_tasks) list
     _fetch_all_kinds_parallel expects: which OSM kinds are active (per tp3d
     flags, each gated on its own MAXSIZE constant) and the 2°-chunked grid
@@ -208,7 +210,11 @@ def _rg_build_osm_kind_tasks(min_lat, max_lat, min_lon, max_lon, map_km, element
         [
             (key.upper(), _tile_tasks)
             for key, flag_attr, max_size, _, _ in coloring_elements()
-            if (flag_attr(tp3d) if callable(flag_attr) else getattr(tp3d, flag_attr) == 1)
+            if (
+                flag_attr(tp3d)
+                if callable(flag_attr)
+                else getattr(tp3d, flag_attr) == 1
+            )
             and map_km <= max_size
         ]
         if element_source == "OSM"
@@ -223,7 +229,11 @@ def _rg_build_osm_kind_tasks(min_lat, max_lat, min_lon, max_lon, map_km, element
             _active_kind_tasks.append(("BUILDINGS", _tile_tasks))
         if any_road_active(tp3d) and map_km <= const.ROADS_MAXSIZE:
             _active_kind_tasks.append(("STREETS", _tile_tasks))
-        if tp3d.show_water and tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE:
+        if (
+            tp3d.show_water
+            and tp3d.el_oActive == 1
+            and map_km <= const.COASTLINE_MAXSIZE
+        ):
             _active_kind_tasks.append(("COASTLINE", _tile_tasks))
     return _active_kind_tasks
 
@@ -248,6 +258,8 @@ def _rg_osm_fetch_settings(tp3d):
         water_big_rivers=bool(tp3d.show_water and tp3d.col_wMajorActive),
         exclude_alleys=True,
     )
+
+
 def _rg_start_osm_prefetch(gen: GenerationContext):
     """Start a background fetch for the active OSM element kinds."""
     from ..terrain import _fetch_all_kinds_parallel
@@ -293,7 +305,13 @@ def prepare_combined_osm_fetch(min_lat, max_lat, min_lon, max_lon, map_km):
 
     tp3d = bpy.context.scene.tp3d
     active_kind_tasks = _rg_build_osm_kind_tasks(
-        min_lat, max_lat, min_lon, max_lon, map_km, tp3d.elementSource, tp3d,
+        min_lat,
+        max_lat,
+        min_lon,
+        max_lon,
+        map_km,
+        tp3d.elementSource,
+        tp3d,
     )
     fetch_settings = _rg_osm_fetch_settings(tp3d) if active_kind_tasks else None
 
@@ -329,9 +347,7 @@ def fetch_combined_osm_data(min_lat, max_lat, min_lon, max_lon, map_km):
     _fetch_all_kinds_parallel produces -- pass straight into every physical
     tile's _rg_build_terrain_elements(gen, prefetched_osm=...).
     """
-    return prepare_combined_osm_fetch(
-        min_lat, max_lat, min_lon, max_lon, map_km
-    )()
+    return prepare_combined_osm_fetch(min_lat, max_lat, min_lon, max_lon, map_km)()
 
 
 def _rg_start_satellite_prefetch(gen: GenerationContext):
@@ -350,11 +366,7 @@ def _rg_start_satellite_prefetch(gen: GenerationContext):
         return
 
     from ...progress import ProgressOverlay
-    from ..satellite import (
-        SatelliteFetchError,
-        get_cached_landcover_image,
-        get_cached_photo_image,
-    )
+    from ..satellite import get_cached_landcover_image, get_cached_photo_image
 
     min_lat, max_lat = gen.runtime.tbMinLat, gen.runtime.tbMaxLat
     min_lon, max_lon = gen.runtime.tbMinLon, gen.runtime.tbMaxLon
@@ -370,26 +382,23 @@ def _rg_start_satellite_prefetch(gen: GenerationContext):
     result: dict = {}
 
     def _run():
-        try:
-            result["landcover"] = get_cached_landcover_image(
-                min_lat,
-                max_lat,
-                min_lon,
-                max_lon,
-                disable_cache=disable_cache,
-                progress_cb=lambda frac: overlay.set_fetch_progress("landcover", frac),
+        landcover = get_cached_landcover_image(
+            min_lat,
+            max_lat,
+            min_lon,
+            max_lon,
+            disable_cache=disable_cache,
+            progress_cb=lambda frac: overlay.set_fetch_progress("landcover", frac),
+        )
+        photo = (
+            get_cached_photo_image(
+                min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache
             )
-        except (SatelliteFetchError, OSError) as e:
-            print(f"WorldCover fetch failed: {e}")
-            result["error"] = str(e)
-            return
-        if debug and result["landcover"] is not None:
-            try:
-                result["photo"] = get_cached_photo_image(
-                    min_lat, max_lat, min_lon, max_lon, disable_cache=disable_cache
-                )
-            except (SatelliteFetchError, OSError) as e:
-                print(f"Satellite debug photo fetch failed: {e}")
+            if debug
+            else None
+        )
+        result["landcover"] = landcover
+        result["photo"] = photo
 
     t = threading.Thread(target=_run, daemon=True, name="satellite-prefetch")
     t.start()
@@ -412,26 +421,15 @@ def _rg_create_satellite_plane(gen: GenerationContext):
         remove_stale_satellite_debug()
         return
 
-    from ...progress import ProgressOverlay, WarningsOverlay
-    from ..satellite import (
-        create_satellite_plane,
-        paint_terrain_from_landcover,
-        remove_stale_satellite_debug,
-    )
+    from ...progress import ProgressOverlay
+    from ..satellite import create_satellite_plane, paint_terrain_from_landcover
 
     gen.fetch.satelliteThread.join()
     result = gen.fetch.satelliteResult or {}
     landcover = result.get("landcover")
     ProgressOverlay.get().set_fetch_done("landcover", success=landcover is not None)
     if landcover is None:
-        remove_stale_satellite_debug()
-        if result.get("error"):
-            WarningsOverlay.add_warning(
-                _rpt("WorldCover fetch failed: {error}").format(error=result["error"]),
-                icon="error",
-            )
-        else:
-            print("WorldCover: no coverage found for this area, skipping.")
+        print("WorldCover: no land-cover data returned for this area, skipping.")
         return
 
     min_lat, max_lat = gen.runtime.tbMinLat, gen.runtime.tbMaxLat
@@ -802,7 +800,9 @@ def _rg_displace_terrain_with_curve(gen: GenerationContext):
         ) - (np.pi / 2.0)
         merc = 1.0 / np.cos(lat_rad)
     except Exception as e:  # noqa: BLE001
-        raise GenerationError(_rpt("Mercator correction failed: {error}").format(error=e))
+        raise GenerationError(
+            _rpt("Mercator correction failed: {error}").format(error=e)
+        )
 
     # --- Compute new Z for all vertices ---
     try:
