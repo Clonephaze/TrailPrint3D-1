@@ -19,6 +19,7 @@ from bpy.props import (
 
 from . import constants as const
 from . import temp, utils
+from .utils import color_styles
 from .utils.shape_capabilities import (
     LAYOUTS_REQUIRING_PLATE,
     PLATE_MODES_BY_SHAPE,
@@ -415,6 +416,26 @@ def repair_invalid_shape(scene):
     tp3d = getattr(scene, "tp3d", None)
     if tp3d is not None and not tp3d.shape:
         tp3d.shape = "HEXAGON"
+
+
+def _element_color_prop(role):
+    label = next(label for key, _attr, label in color_styles.COLOR_ROLES if key == role)
+    return FloatVectorProperty(
+        name=_(label),
+        description=_tip("Color used for this map element"),
+        subtype="COLOR_GAMMA",
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=color_styles.srgb_to_color(color_styles.default_colors()[role]),
+    )
+
+
+def _on_color_style_update(self, context):
+    try:
+        color_styles.set_scene_colors(self, color_styles.style_colors(self.color_style))
+    except (OSError, ValueError) as exc:
+        print(f"[TP3D colors] Could not load color style {self.color_style}: {exc}")
 
 
 # Define a Property Group to store variables
@@ -1598,6 +1619,31 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     use_multi_generation: BoolProperty(name=_("Multi Generation"), default=False)  # type: ignore
     show_map: BoolProperty(name=_("Map"), default=False)  # type: ignore
     show_ags: BoolProperty(name=_("Advanced Generation Settings"), default=False)  # type: ignore
+    show_color_settings: BoolProperty(name=_("Color Settings"), default=False)  # type: ignore
+    # color_style must stay before the swatches so CSV presets restore custom swatches after the style update.
+    color_style: EnumProperty(
+        name=_("Color Style:"),
+        description=_tip("Built-in or saved set of colors for map elements"),
+        items=color_styles.color_style_items,
+        update=_on_color_style_update,
+    )  # type: ignore
+    color_style_name: StringProperty(
+        name=_("Style Name"),
+        description=_tip("Name used when saving the current colors as a reusable style"),
+        default="",
+    )  # type: ignore
+    element_color_base: _element_color_prop("BASE")  # type: ignore
+    element_color_water: _element_color_prop("WATER")  # type: ignore
+    element_color_forest: _element_color_prop("FOREST")  # type: ignore
+    element_color_mountain: _element_color_prop("MOUNTAIN")  # type: ignore
+    element_color_city: _element_color_prop("CITY")  # type: ignore
+    element_color_greenspace: _element_color_prop("GREENSPACE")  # type: ignore
+    element_color_farmland: _element_color_prop("FARMLAND")  # type: ignore
+    element_color_glacier: _element_color_prop("GLACIER")  # type: ignore
+    element_color_buildings: _element_color_prop("BUILDINGS")  # type: ignore
+    element_color_roads: _element_color_prop("ROADS")  # type: ignore
+    element_color_trail: _element_color_prop("TRAIL")  # type: ignore
+    element_color_secondary_trail: _element_color_prop("YELLOW")  # type: ignore
     show_pin: BoolProperty(name=_("Pin"), default=False)  # type: ignore
     show_special: BoolProperty(name=_("Special"), default=False)  # type: ignore
     show_postProcess: BoolProperty(name=_("Post Process"), default=False)  # type: ignore

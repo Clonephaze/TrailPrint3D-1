@@ -77,6 +77,7 @@ _RUN_INTEGRATION = "--integration" in _script_args
 
 _TEST_FILES = [
     "test_color_by_height.py",
+    "test_element_colors.py",
     "test_export_folder.py",
     "test_generation_snapshot.py",
     "test_geo_elevation.py",
@@ -86,6 +87,7 @@ _TEST_FILES = [
     "test_magnet_layout.py",
     "test_osm_pipeline.py",
     "test_prefetch.py",
+    "test_satellite.py",
     "test_updater.py",
 ]
 

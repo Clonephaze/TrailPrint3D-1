@@ -1045,3 +1045,140 @@ input[aria-invalid=true] { border-color: var(--danger); }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+/* ── Color Styles (Settings > Other > Appearance) ─────────────────── */
+.color-style-row {
+    margin-bottom: 12px;
+}
+.color-style-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.color-style-controls select {
+    flex: 1;
+    min-width: 140px;
+}
+.color-style-dirty {
+    font-size: 11px;
+    color: #e0b050;
+    white-space: nowrap;
+    margin-left: 2px;
+}
+.restore-btn {
+    background: none;
+    border: 1px solid var(--set-input-border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 14px;
+    line-height: 1;
+    transition: all var(--motion);
+}
+.restore-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+    background: var(--surface-raised);
+}
+
+/* The Swatch Grid */
+.color-role-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+    margin-bottom: 16px;
+}
+
+/* Individual Swatch Pill */
+.color-swatch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--set-input-bg);
+    border: 1px solid var(--set-input-border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: border-color var(--motion), background-color var(--motion);
+    user-select: none;
+}
+.color-swatch:hover {
+    border-color: var(--text-muted);
+}
+
+/* The native color input, completely re-skinned */
+.color-swatch-input {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 50%; /* Circle looks premium */
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    background: transparent;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+/* Chrome/Safari inner swatch */
+.color-swatch-input::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+.color-swatch-input::-webkit-color-swatch {
+    border: 1px solid rgba(0,0,0,0.4);
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+/* Firefox inner swatch */
+.color-swatch-input::-moz-color-swatch {
+    border: 1px solid rgba(0,0,0,0.4);
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.color-swatch-label {
+    font-size: var(--fs-small);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+}
+
+/* Actions row */
+.color-style-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--set-section-border);
+}
+.color-style-actions .element-mode-btn {
+    flex: 1;
+    min-height: 32px;
+    font-size: var(--fs-small);
+}
+.color-style-actions .element-mode-btn.danger {
+    background: #6e3434;
+    border-color: #8f3434;
+    color: #fff;
+}
+.color-style-actions .element-mode-btn.danger:hover:not(:disabled) {
+    background: #8f3434;
+}
+
+/* Inline Name Row (Save as new / Update) */
+.color-style-name-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+}
+.color-style-name-row input {
+    flex: 1;
+    min-width: 0;
+}
+.color-style-name-row .element-mode-btn {
+    flex-shrink: 0;
+}

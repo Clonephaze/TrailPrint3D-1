@@ -36,20 +36,13 @@ def _setup_material(name, color):
     set_material_srgb(mat, color[:3])
 
 
-def setupColors():
-    _setup_material("BASE", (13, 178, 13))
-    _setup_material("FOREST", (13, 64, 13))
-    _setup_material("MOUNTAIN", (128, 128, 128))
-    _setup_material("WATER", (0, 0, 204))
-    _setup_material("TRAIL", (255, 0, 0))
-    _setup_material("YELLOW", (255, 255, 0))
-    _setup_material("CITY", (178, 178, 26))
-    _setup_material("GREENSPACE", (41, 255, 41))
-    _setup_material("GLACIER", (204, 229, 204))
+def setupColors(colors=None):
+    from .color_styles import scene_colors
+
+    for material_name, color in (colors or scene_colors()).items():
+        _setup_material(material_name, color)
     _setup_material("BLACK", (0, 0, 0))
     _setup_material("WHITE", (255, 255, 255))
-    _setup_material("BUILDINGS", (102, 102, 102))
-    _setup_material("FARMLAND", (77, 128, 26))
 
     for mat in bpy.data.materials:
         if not mat.name.startswith("HEIGHT_") or mat.get(COLOR_DECODED_PROP):

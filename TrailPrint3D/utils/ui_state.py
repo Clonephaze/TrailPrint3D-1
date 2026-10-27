@@ -12,6 +12,7 @@ import bpy  # type: ignore
 
 from .. import constants as const
 
+
 # ---------------------------------------------------------------------------
 # Coloring-element definitions — used by both the OSM prefetch helper and the
 # main terrain-element builder.  Tuple layout:
@@ -30,9 +31,7 @@ def coloring_elements():
         ),
         (
             "water",
-            lambda t: (
-                t.col_wBodiesActive or t.col_wMinorActive or t.col_wMajorActive
-            ),
+            lambda t: t.col_wBodiesActive or t.col_wMinorActive or t.col_wMajorActive,
             const.WATER_MAXSIZE,
             "Water",
             "Fetching water data\u2026",
@@ -68,6 +67,7 @@ def coloring_elements():
         ),
     ]
 
+
 # ---------------------------------------------------------------------------
 # Shared helper: build the fetch-item list for the progress chip strip
 # ---------------------------------------------------------------------------
@@ -102,13 +102,12 @@ def build_fetch_items(map_km=None):
     for key, flag, max_size, icon, label in defs:
         if key == "water":
             water_feats = (
-                tp3d.col_wBodiesActive
-                or tp3d.col_wMinorActive
-                or tp3d.col_wMajorActive
+                tp3d.col_wBodiesActive or tp3d.col_wMinorActive or tp3d.col_wMajorActive
             ) and map_km <= const.WATER_MAXSIZE
-            active = tp3d.show_water and (water_feats or (
-                tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE
-            ))
+            active = tp3d.show_water and (
+                water_feats
+                or (tp3d.el_oActive == 1 and map_km <= const.COASTLINE_MAXSIZE)
+            )
             max_size = None
         elif key == "roads":
             from ..props import get_road_active
@@ -121,7 +120,9 @@ def build_fetch_items(map_km=None):
             active = tp3d.show_roads and any(
                 get_road_active(tp3d, t) and t in _allowed for t in TIER_TAGS
             )
-            max_size = None  # mapsize already folded into `active` via allowed_road_tiers
+            max_size = (
+                None  # mapsize already folded into `active` via allowed_road_tiers
+            )
         else:
             active = bool(flag and getattr(tp3d, flag, 0) == 1)
         if active and (max_size is None or map_km <= max_size):
@@ -302,7 +303,9 @@ def apply_element_toggle(tp3d, key):
         # Off = the master only; the sub-flags stay as they are (generation
         # ignores them while the master is off), so the N-panel keeps them.
         if any_sub:
-            tp3d[remember_key] = [bool(_get_composite_flag(tp3d, key, f)) for f in subflags]
+            tp3d[remember_key] = [
+                bool(_get_composite_flag(tp3d, key, f)) for f in subflags
+            ]
         setattr(tp3d, master, False)
     else:
         setattr(tp3d, master, True)
@@ -388,8 +391,11 @@ def build_settings_row_state(tp3d=None):
     if tp3d is None:
         tp3d = bpy.context.scene.tp3d
     from .. import temp
-    state = {key: getattr(tp3d, attr) for key, (attr, _) in _SETTINGS_ROW_FIELDS.items()}
-    state['has3mf'] = temp.has3mf
+
+    state = {
+        key: getattr(tp3d, attr) for key, (attr, _) in _SETTINGS_ROW_FIELDS.items()
+    }
+    state["has3mf"] = temp.has3mf
     return state
 
 
@@ -404,12 +410,16 @@ def _apply_export_folder(value):
     addon_preferences.get_export_folder). Returns False for anything that
     isn't an existing folder.
     """
-    from ..addon_preferences import get_prefs  # deferred to avoid circular import at load time
+    from ..addon_preferences import (
+        get_prefs,
+    )  # deferred to avoid circular import at load time
 
     path = str(value or "")
     if not path or not os.path.isdir(path):
         return False
-    get_prefs().default_export_folder = os.path.join(path, "")  # export.py appends file names directly
+    get_prefs().default_export_folder = os.path.join(
+        path, ""
+    )  # export.py appends file names directly
     return True
 
 
@@ -431,7 +441,9 @@ def apply_setting_update(tp3d, key, value):
         if not _apply_export_folder(value):
             return
     elif key == "clearCache":
-        from .elevation import clear_api_cache  # deferred to avoid circular import at load time
+        from .elevation import (
+            clear_api_cache,
+        )  # deferred to avoid circular import at load time
 
         clear_api_cache()
         return
@@ -453,6 +465,68 @@ def apply_setting_update(tp3d, key, value):
             for area in window.screen.areas:
                 area.tag_redraw()
 
+
+def apply_color_update(tp3d, update: dict) -> None:
+    """Apply one queued color-style operation on the main thread.
+
+    *tp3d* is ``context.scene.tp3d`` (same convention as
+    ``apply_setting_update`` / ``apply_advanced_setting_update``).
+
+    *update* is a dict like picker_server._pending_color_styles entries:
+        {'action': 'set',    'key': 'element_color_base', 'value': '#RRGGBB'}
+        {'action': 'apply',  'style': 'FOREST' or 'USER:My Palette'}
+        {'action': 'save',   'name': 'My Palette'}
+        {'action': 'delete', 'style': 'USER:My Palette'}
+    """
+    from . import color_styles
+
+    # NOTE: no `import bpy` / `tp3d = bpy.context.scene.tp3d` here anymore
+    # -- the caller passes tp3d in, matching the other apply_* helpers.
+
+    action = update.get('action')
+    if action == 'set':
+        key = update.get('key') or ''
+        if key.startswith('element_color_'):
+            try:
+                rgb = color_styles.hex_to_srgb(update.get('value'))
+            except ValueError:
+                return
+            setattr(tp3d, key, color_styles.srgb_to_color(rgb))
+    elif action == 'apply':
+        style_id = update.get('style')
+        if not style_id:
+            return
+        try:
+            colors = color_styles.style_colors(style_id)
+        except (OSError, ValueError):
+            return
+        color_styles.set_scene_colors(tp3d, colors)
+        tp3d.color_style = style_id
+    elif action == 'save':
+        name = update.get('name')
+        if not name:
+            return
+        colors = color_styles.scene_colors(tp3d)
+        try:
+            tp3d.color_style = color_styles.save_user_style(name, colors)
+        except ValueError:
+            return
+    elif action == 'delete':
+        style_id = update.get('style')
+        if not style_id:
+            return
+        try:
+            color_styles.delete_user_style(style_id)
+        except (OSError, ValueError):
+            return
+        if tp3d.color_style == style_id:
+            tp3d.color_style = color_styles.DEFAULT_STYLE
+    # Repaint the scene's materials so the viewport / preview picks up the change.
+    try:
+        from . import color
+        color.refresh_material_colors()
+    except (AttributeError, ImportError):
+        pass
 
 # The Settings popup's Elements tab -- a much larger whitelist than
 # _SETTINGS_ROW_FIELDS/_ELEMENT_SINGLE_FLAGS/_ELEMENT_COMPOSITE_FLAGS,
@@ -553,11 +627,26 @@ _ADVANCED_SETTINGS_FIELDS = [
     {"key": "elSHighwaysActive", "road_id": "highways", "type": bool, "group": "Roads"},
     {"key": "elSMajorActive", "road_id": "major", "type": bool, "group": "Roads"},
     {"key": "elSMinorActive", "road_id": "minor", "type": bool, "group": "Roads"},
-    {"key": "elSResidentialActive", "road_id": "residential", "type": bool, "group": "Roads"},
+    {
+        "key": "elSResidentialActive",
+        "road_id": "residential",
+        "type": bool,
+        "group": "Roads",
+    },
     {"key": "elSServiceActive", "road_id": "service", "type": bool, "group": "Roads"},
     {"key": "elSFootwayActive", "road_id": "footway", "type": bool, "group": "Roads"},
-    {"key": "elSPedestrianActive", "road_id": "pedestrian", "type": bool, "group": "Roads"},
-    {"key": "elSCycleBridleActive", "road_id": "cycle_bridle", "type": bool, "group": "Roads"},
+    {
+        "key": "elSPedestrianActive",
+        "road_id": "pedestrian",
+        "type": bool,
+        "group": "Roads",
+    },
+    {
+        "key": "elSCycleBridleActive",
+        "road_id": "cycle_bridle",
+        "type": bool,
+        "group": "Roads",
+    },
     {"key": "elSTrackActive", "road_id": "track", "type": bool, "group": "Roads"},
     {"key": "elSPathActive", "road_id": "path", "type": bool, "group": "Roads"},
     {"key": "elSRacewayActive", "road_id": "raceway", "type": bool, "group": "Roads"},
@@ -583,8 +672,12 @@ _ADVANCED_SETTINGS_FIELDS = [
     },
 ]
 _ADVANCED_SETTINGS_BY_KEY = {f["key"]: f for f in _ADVANCED_SETTINGS_FIELDS}
-_ATTR_TO_ADVANCED_KEY = {f["attr"]: f["key"] for f in _ADVANCED_SETTINGS_FIELDS if "attr" in f}
-_ROAD_ID_TO_ADVANCED_KEY = {f["road_id"]: f["key"] for f in _ADVANCED_SETTINGS_FIELDS if "road_id" in f}
+_ATTR_TO_ADVANCED_KEY = {
+    f["attr"]: f["key"] for f in _ADVANCED_SETTINGS_FIELDS if "attr" in f
+}
+_ROAD_ID_TO_ADVANCED_KEY = {
+    f["road_id"]: f["key"] for f in _ADVANCED_SETTINGS_FIELDS if "road_id" in f
+}
 
 
 def _read_advanced_field(tp3d, field):
@@ -631,7 +724,11 @@ def build_composite_remembered_state(tp3d=None):
                 if remembered
                 else current
             )
-        result[cat_key] = {_ATTR_TO_ADVANCED_KEY[f]: v for f, v in values.items() if f in _ATTR_TO_ADVANCED_KEY}
+        result[cat_key] = {
+            _ATTR_TO_ADVANCED_KEY[f]: v
+            for f, v in values.items()
+            if f in _ATTR_TO_ADVANCED_KEY
+        }
 
     road_ids = _road_subflags()
     current = {r: _get_composite_flag(tp3d, "roads", r) for r in road_ids}
@@ -640,10 +737,14 @@ def build_composite_remembered_state(tp3d=None):
     else:
         remembered = tp3d.get("_toggle_remember_roads")
         road_values = (
-            {r: bool(v) for r, v in zip(road_ids, remembered)} if remembered else current
+            {r: bool(v) for r, v in zip(road_ids, remembered)}
+            if remembered
+            else current
         )
     result["roads"] = {
-        _ROAD_ID_TO_ADVANCED_KEY[r]: v for r, v in road_values.items() if r in _ROAD_ID_TO_ADVANCED_KEY
+        _ROAD_ID_TO_ADVANCED_KEY[r]: v
+        for r, v in road_values.items()
+        if r in _ROAD_ID_TO_ADVANCED_KEY
     }
     return result
 
@@ -660,7 +761,9 @@ def build_advanced_settings_state(tp3d=None):
     # Same reserved-key idea: the N-panel's per-category master checkbox
     # (see _COMPOSITE_MASTER_FLAGS), which the page's tp3dCompositeIsActive
     # needs to agree with build_element_toggle_states.
-    state["_compositeMaster"] = {k: bool(getattr(tp3d, a)) for k, a in _COMPOSITE_MASTER_FLAGS.items()}
+    state["_compositeMaster"] = {
+        k: bool(getattr(tp3d, a)) for k, a in _COMPOSITE_MASTER_FLAGS.items()
+    }
     return state
 
 
@@ -675,5 +778,3 @@ def apply_advanced_setting_update(tp3d, key, value):
     if not field:
         return
     _write_advanced_field(tp3d, field, value)
-
-

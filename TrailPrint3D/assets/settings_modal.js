@@ -116,14 +116,12 @@ var SETTINGS_MODAL_MAP_FIELDS = [
 ];
 
 // Other tab -- rarely changed settings that don't fit the other tabs.
+// The section title is now supplied by tp3dBuildOtherTab's "Appearance" card.
 var SETTINGS_MODAL_OTHER_FIELDS = [
-    { type: 'section', title: 'Texture & Trail' },
     { key: 'texResolution', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Texture Resolution', type: 'number', step: 1024, min: 1024, max: 8192,
       title: 'Image resolution of the texture (px)',
       preview: 'https://trailprint3d.com/images/howto/TextureResolution.webp',
-      // Not OSM-only: WorldCover land cover is sampled into the same texture
-      // (utils/texture.py); the condition is Paint mode (generation/input.py).
       previewCaption: 'Resolution of the texture the map is painted with in Paint mode — used for both OSM and ESA WorldCover.',
       enabledWhen: tp3dTextureAvailable,
       lockedTitle: tp3dNo3mfTitle },
@@ -1287,18 +1285,393 @@ function tp3dBuildMapTab() {
     return tp3dBuildFieldList(SETTINGS_MODAL_MAP_FIELDS);
 }
 
-// API section on top, then the remaining Other fields in their own card.
+// ── Color styles ─────────────────────────────────────────────────────
+// Mirrors ui/color_styles.py's COLOR_ROLES: every role the backend knows
+// about, in a display order that groups terrain, nature, and built
+// features together. TP3D_COLOR_STYLES (injected as __COLOR_STYLES_JS__)
+// carries the built-in + saved palettes, the current selection, and
+// whether the live colors have drifted from that selection.
+var COLOR_ROLE_ORDER = ['BASE', 'MOUNTAIN', 'GLACIER', 'WATER', 'FOREST',
+                        'GREENSPACE', 'FARMLAND', 'CITY', 'BUILDINGS',
+                        'ROADS', 'TRAIL', 'YELLOW'];
+var COLOR_ROLE_LABELS = {
+    BASE: 'Base Terrain', MOUNTAIN: 'Mountain / Scree', GLACIER: 'Glacier',
+    WATER: 'Water', FOREST: 'Forest', GREENSPACE: 'Greenspace',
+    FARMLAND: 'Farmland', CITY: 'City', BUILDINGS: 'Buildings',
+    ROADS: 'Roads', TRAIL: 'Trail', YELLOW: 'Secondary Trail'
+};
+
+var TP3D_COLOR_STYLES = window.TP3D_COLOR_STYLES || {
+    builtIn: [], user: [], currentStyle: '', currentColors: {}, isModified: false
+};
+
+function tp3dFindColorStyle(styleId) {
+    if (!styleId) return null;
+    if (styleId.indexOf('USER:') === 0) {
+        var name = styleId.substring(5);
+        return TP3D_COLOR_STYLES.user.find(function(s) { return s.name === name; }) || null;
+    }
+    return TP3D_COLOR_STYLES.builtIn.find(function(s) { return s.id === styleId; }) || null;
+}
+
+function tp3dColorStylesAreModified() {
+    var style = tp3dFindColorStyle(TP3D_COLOR_STYLES.currentStyle);
+    if (!style) return true;
+    for (var i = 0; i < COLOR_ROLE_ORDER.length; i++) {
+        var role = COLOR_ROLE_ORDER[i];
+        var current = (TP3D_COLOR_STYLES.currentColors[role] || '').toUpperCase();
+        var expected = (style.colors[role] || '').toUpperCase();
+        if (current !== expected) return true;
+    }
+    return false;
+}
+
+// *container* is the wrapper the controls live in (used instead of
+// document.getElementById so this also works before the card is attached).
+function tp3dUpdateColorStyleDirty(container) {
+    var root = container || document;
+    var modified = tp3dColorStylesAreModified();
+
+    var dirty = root.querySelector('#colorStyleDirty');
+    if (dirty) dirty.style.display = modified ? '' : 'none';
+
+    var restore = root.querySelector('#colorStyleRestore');
+    if (restore) restore.style.display = modified ? '' : 'none';
+
+    var saveBtn = root.querySelector('.color-save-btn');
+    if (saveBtn) saveBtn.style.display = modified ? '' : 'none';
+
+    var updateBtn = root.querySelector('.color-update-btn');
+    if (updateBtn) updateBtn.style.display = modified ? '' : 'none';
+
+    var actions = root.querySelector('.color-style-actions');
+    if (actions) {
+        var hasVisible = Array.from(actions.children).some(function(c) { return c.style.display !== 'none'; });
+        actions.style.display = hasVisible ? 'flex' : 'none';
+    }
+}
+
+function tp3dBuildColorRoleSwatch(role) {
+    var swatch = document.createElement('label');
+    swatch.className = 'color-swatch';
+
+    var input = document.createElement('input');
+    input.type = 'color';
+    input.className = 'color-swatch-input';
+    input.id = 'color-role-' + role.toLowerCase();
+    input.value = TP3D_COLOR_STYLES.currentColors[role] || '#000000';
+    input.title = COLOR_ROLE_LABELS[role];
+    
+    input.addEventListener('change', function() {
+        var hex = this.value.toUpperCase();
+        TP3D_COLOR_STYLES.currentColors[role] = hex;
+        tp3dSendColorUpdate('element_color_' + role.toLowerCase(), hex);
+        tp3dUpdateColorStyleDirty();
+    });
+    swatch.appendChild(input);
+
+    var label = document.createElement('span');
+    label.className = 'color-swatch-label';
+    label.textContent = COLOR_ROLE_LABELS[role];
+    label.title = COLOR_ROLE_LABELS[role];
+    swatch.appendChild(label);
+
+    return swatch;
+}
+
+function tp3dBuildColorStylesSection() {
+    var wrap = document.createElement('div');
+    wrap.className = 'color-styles-section';
+
+    if (!TP3D_COLOR_STYLES.builtIn.length) {
+        var msg = document.createElement('div');
+        msg.className = 'field-hint';
+        msg.textContent = 'Color styles are not available on this page.';
+        wrap.appendChild(msg);
+        return wrap;
+    }
+
+    // ── Style selector row ───────────────────────────────────────────
+    var styleRow = document.createElement('div');
+    styleRow.className = 'adv-field-row color-style-row';
+    var label = document.createElement('label');
+    label.textContent = 'Color Style';
+    label.htmlFor = 'colorStyleSelect';
+    styleRow.appendChild(label);
+
+    // Register the guide and attach it to the label + the whole section
+    var guideCaption = [
+        'Color Styles',
+        'Choose a preset palette or click any color to customize it.',
+        'These colors are applied to the terrain, water, forests, roads, and other elements on your generated map.',
+        'If you modify a preset, use "Save as new" to create your own reusable style.'
+    ];
+    // We pass the main `wrap` as the rowEl so hovering anywhere in the color grid 
+    // (or the save buttons) will trigger the guide, not just the label.
+    styleRow.appendChild(tp3dWithPreview(label, null, guideCaption, 'Color Styles', wrap));
+
+    var controls = document.createElement('div');
+    controls.className = 'adv-field-controls color-style-controls';
+
+    var select = document.createElement('select');
+    select.id = 'colorStyleSelect';
+    TP3D_COLOR_STYLES.builtIn.forEach(function(s) {
+        var opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.label;
+        opt.title = s.description || '';
+        select.appendChild(opt);
+    });
+    if (TP3D_COLOR_STYLES.user.length) {
+        var sep = document.createElement('option');
+        sep.disabled = true;
+        sep.textContent = '──────────';
+        select.appendChild(sep);
+        TP3D_COLOR_STYLES.user.forEach(function(s) {
+            var opt = document.createElement('option');
+            opt.value = 'USER:' + s.name;
+            opt.textContent = s.name;
+            select.appendChild(opt);
+        });
+    }
+    select.value = TP3D_COLOR_STYLES.currentStyle;
+    select.addEventListener('change', function() { tp3dApplyColorStyle(this.value); });
+    controls.appendChild(select);
+
+    var dirty = document.createElement('span');
+    dirty.id = 'colorStyleDirty';
+    dirty.className = 'color-style-dirty';
+    dirty.textContent = '• changed';
+    dirty.title = 'The current colors differ from the selected style';
+    dirty.style.display = 'none';
+    controls.appendChild(dirty);
+
+    var restore = document.createElement('button');
+    restore.type = 'button';
+    restore.id = 'colorStyleRestore';
+    restore.className = 'restore-btn';
+    restore.textContent = '↺';
+    restore.title = 'Restore the selected style\'s colors';
+    restore.style.display = 'none';
+    restore.addEventListener('click', function() {
+        tp3dApplyColorStyle(TP3D_COLOR_STYLES.currentStyle);
+    });
+    controls.appendChild(restore);
+
+    styleRow.appendChild(controls);
+    wrap.appendChild(styleRow);
+
+    // ── Color grid ───────────────────────────────────────────────────
+    var grid = document.createElement('div');
+    grid.className = 'color-role-grid';
+    COLOR_ROLE_ORDER.forEach(function(role) {
+        grid.appendChild(tp3dBuildColorRoleSwatch(role));
+    });
+    wrap.appendChild(grid);
+
+    // ── Save / Update / Delete ───────────────────────────────────────
+    var actions = document.createElement('div');
+    actions.className = 'color-style-actions';
+
+    var saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'element-mode-btn color-save-btn';
+    saveBtn.textContent = 'Save as new';
+    saveBtn.title = 'Save the current colors as a new user style';
+    saveBtn.addEventListener('click', function() { tp3dShowColorStyleNameRow('new'); });
+    actions.appendChild(saveBtn);
+
+    if (TP3D_COLOR_STYLES.currentStyle.indexOf('USER:') === 0) {
+        var updateBtn = document.createElement('button');
+        updateBtn.type = 'button';
+        updateBtn.className = 'element-mode-btn color-update-btn';
+        updateBtn.textContent = 'Update';
+        updateBtn.title = 'Replace the selected user style with the current colors';
+        updateBtn.addEventListener('click', function() { tp3dShowColorStyleNameRow('update'); });
+        actions.appendChild(updateBtn);
+
+        var deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'element-mode-btn danger';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.title = 'Delete this user style';
+        deleteBtn.addEventListener('click', function() { tp3dDeleteColorStyle(); });
+        actions.appendChild(deleteBtn);
+    }
+    wrap.appendChild(actions);
+
+    // ── Hidden name row ──────────────────────────────────────────────
+    var nameRow = document.createElement('div');
+    nameRow.id = 'colorStyleNameRow';
+    nameRow.className = 'color-style-name-row';
+    nameRow.style.display = 'none';
+    
+    var nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.id = 'colorStyleName';
+    nameInput.maxLength = 64;
+    nameInput.placeholder = 'Style name';
+    nameRow.appendChild(nameInput);
+    
+    var nameOk = document.createElement('button');
+    nameOk.type = 'button';
+    nameOk.className = 'element-mode-btn active';
+    nameOk.textContent = 'Save';
+    nameOk.addEventListener('click', tp3dCommitColorStyleName);
+    nameRow.appendChild(nameOk);
+    
+    var nameCancel = document.createElement('button');
+    nameCancel.type = 'button';
+    nameCancel.className = 'element-mode-btn';
+    nameCancel.textContent = 'Cancel';
+    nameCancel.addEventListener('click', tp3dHideColorStyleNameRow);
+    nameRow.appendChild(nameCancel);
+    
+    wrap.appendChild(nameRow);
+
+    tp3dUpdateColorStyleDirty(wrap);
+    return wrap;
+}
+
+function tp3dSendColorUpdate(key, hex) {
+    fetch('http://127.0.0.1:' + PORT + '/update_color_setting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key, value: hex })
+    }).catch(function() {});
+}
+
+function tp3dApplyColorStyle(styleId) {
+    var style = tp3dFindColorStyle(styleId);
+    if (!style) return;
+    TP3D_COLOR_STYLES.currentStyle = styleId;
+    COLOR_ROLE_ORDER.forEach(function(role) {
+        var input = document.getElementById('color-role-' + role.toLowerCase());
+        if (input && style.colors[role]) {
+            input.value = style.colors[role];
+            TP3D_COLOR_STYLES.currentColors[role] = style.colors[role];
+        }
+    });
+    fetch('http://127.0.0.1:' + PORT + '/apply_color_style', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ style: styleId })
+    }).catch(function() {});
+    tp3dUpdateColorStyleDirty();
+}
+
+var _colorStyleNameMode = null;
+
+function tp3dShowColorStyleNameRow(mode) {
+    _colorStyleNameMode = mode;
+    var row = document.getElementById('colorStyleNameRow');
+    var input = document.getElementById('colorStyleName');
+    var okBtn = row.querySelector('.element-mode-btn.active');
+    if (mode === 'update') {
+        input.value = TP3D_COLOR_STYLES.currentStyle.substring(5);
+        if (okBtn) okBtn.textContent = 'Update';
+    } else {
+        input.value = '';
+        if (okBtn) okBtn.textContent = 'Save';
+    }
+    row.style.display = 'flex';
+    input.focus();
+    input.select();
+}
+
+function tp3dHideColorStyleNameRow() {
+    _colorStyleNameMode = null;
+    var row = document.getElementById('colorStyleNameRow');
+    if (row) row.style.display = 'none';
+}
+
+function tp3dCommitColorStyleName() {
+    var input = document.getElementById('colorStyleName');
+    var name = (input.value || '').trim().replace(/\s+/g, ' ');
+    if (!name) { input.focus(); return; }
+    var ops = Promise.resolve();
+    if (_colorStyleNameMode === 'update') {
+        var oldName = TP3D_COLOR_STYLES.currentStyle.substring(5);
+        ops = fetch('http://127.0.0.1:' + PORT + '/delete_color_style', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ style: 'USER:' + oldName })
+        });
+    }
+    ops.then(function() {
+        return fetch('http://127.0.0.1:' + PORT + '/save_color_style', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name })
+        });
+    }).then(function() {
+        return fetch('http://127.0.0.1:' + PORT + '/get_color_styles', { cache: 'no-store' })
+            .then(function(r) { return r.json(); });
+    }).then(function(data) {
+        tp3dRefreshColorStyleFromServer(data);
+        tp3dHideColorStyleNameRow();
+    }).catch(function() { tp3dHideColorStyleNameRow(); });
+}
+
+function tp3dDeleteColorStyle() {
+    var styleId = TP3D_COLOR_STYLES.currentStyle;
+    if (styleId.indexOf('USER:') !== 0) return;
+    if (!confirm('Delete "' + styleId.substring(5) + '"?')) return;
+    fetch('http://127.0.0.1:' + PORT + '/delete_color_style', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ style: styleId })
+    }).then(function() {
+        return fetch('http://127.0.0.1:' + PORT + '/get_color_styles', { cache: 'no-store' })
+            .then(function(r) { return r.json(); });
+    }).then(function(data) {
+        tp3dRefreshColorStyleFromServer(data);
+    }).catch(function() {});
+}
+
+function tp3dRefreshColorStyleFromServer(data) {
+    TP3D_COLOR_STYLES = data;
+    // Rebuild the whole block -- simplest way to reflect added/removed
+    // user styles (and their per-style Update/Delete buttons) in place.
+    var section = document.querySelector('.color-styles-section');
+    if (section && section.parentNode) {
+        var fresh = tp3dBuildColorStylesSection();
+        section.parentNode.replaceChild(fresh, section);
+    }
+    var select = document.getElementById('colorStyleSelect');
+    if (select) select.value = TP3D_COLOR_STYLES.currentStyle;
+    tp3dUpdateColorStyleDirty();
+}
+
+// API section on top, then the consolidated Appearance card (color styles +
+// texture), then the remaining Advanced fields in their own card.
 function tp3dBuildOtherTab() {
     var wrap = document.createElement('div');
     wrap.className = 'settings-sections';
+
     var api = tp3dBuildSection('Elevation Data', 'settings-grid-2');
     tp3dAppendApiSection(api.grid);
     wrap.appendChild(api.card);
-    var rest = tp3dBuildFieldList(SETTINGS_MODAL_OTHER_FIELDS);
-    while (rest.firstChild) wrap.appendChild(rest.firstChild);
+
+    var appearance = tp3dBuildSection('Appearance', 'settings-grid-2');
+    // Color styles get their own full-width sub-block above the texture
+    // fields -- the texture rows themselves stay in the card's own 2-col
+    // grid (they're simple label+input rows, not a swatch grid).
+    var colorBlock = document.createElement('div');
+    colorBlock.className = 'settings-subsection appearance-colors';
+    colorBlock.style.cssText = 'grid-column:1 / -1;padding:6px 10px 10px;';
+    colorBlock.appendChild(tp3dBuildColorStylesSection());
+    appearance.grid.appendChild(colorBlock);
+    SETTINGS_MODAL_OTHER_FIELDS.forEach(function(field) {
+        if (field.type === 'section') return; // heading now comes from the Appearance card
+        appearance.grid.appendChild(tp3dBuildFieldRow(field));
+    });
+    wrap.appendChild(appearance.card);
+
     var advancedSection = tp3dBuildSection('Advanced Element Settings', 'settings-grid-2');
     advancedSection.grid.appendChild(tp3dBuildFieldRow(COASTLINE_SIMPLIFY_FIELD));
     wrap.appendChild(advancedSection.card);
+
     tp3dRefreshMapTabVisibility();
     return wrap;
 }

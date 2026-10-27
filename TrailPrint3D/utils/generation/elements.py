@@ -650,7 +650,7 @@ def _rg_build_terrain_elements(
                 if roads is not None:
                     set_origin_to_3d_cursor(roads)
                     roads.data.materials.clear()
-                    roads.data.materials.append(bpy.data.materials.get("BLACK"))
+                    roads.data.materials.append(bpy.data.materials.get("ROADS"))
                     terrain["roads"] = roads
                     roads.name = obj.name + "_" + "ROADS"
                     writeMetadata(roads, type="ROADS")

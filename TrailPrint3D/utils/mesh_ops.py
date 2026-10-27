@@ -1811,9 +1811,9 @@ def cut_into_puzzle_pieces(
                         road_mesh.from_pydata(road_verts, [], road_faces)
                         road_mesh.update()
                         road_mesh.validate(verbose=False)
-                        black_mat = bpy.data.materials.get("BLACK")
-                        if black_mat:
-                            road_mesh.materials.append(black_mat)
+                        roads_mat = bpy.data.materials.get("ROADS")
+                        if roads_mat:
+                            road_mesh.materials.append(roads_mat)
                         road_piece = bpy.data.objects.new(road_mesh.name, road_mesh)
                         bpy.context.collection.objects.link(road_piece)
                         bpy.ops.object.select_all(action="DESELECT")
@@ -1870,13 +1870,9 @@ def cut_into_puzzle_pieces(
 
             # Mesh-level 3MF paint metadata lives on the data block, not the object,
             # so it isn't carried by the bulk terrain_metadata copy below.
-            for _pk in (
-                "3mf_is_paint_texture",
-                "3mf_paint_default_extruder",
-                "3mf_paint_extruder_colors",
-            ):
-                if _pk in terrain_obj.data and piece_obj.data is not None:
-                    piece_obj.data[_pk] = terrain_obj.data[_pk]
+            from .texture import copy_paint_metadata
+
+            copy_paint_metadata(terrain_obj.data, piece_obj.data)
 
             for k, v in terrain_metadata.items():
                 piece_obj[k] = v

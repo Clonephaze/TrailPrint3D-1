@@ -161,7 +161,7 @@ def test_leftover_paint_image_does_not_mark_map_painted():
 
 
 def test_material_helper_is_per_color():
-    for name in ("MOUNTAIN", "HEIGHT_FF0040"):
+    for name in ("HEIGHT_808080", "HEIGHT_FF0040"):
         material = bpy.data.materials.get(name)
         if material is not None:
             bpy.data.materials.remove(material)
@@ -174,10 +174,10 @@ def test_material_helper_is_per_color():
     assert tuple(bsdf.inputs["Base Color"].default_value) == expected
     assert texture.material_to_srgb(material) == (255, 0, 64)
     assert material.get(COLOR_DECODED_PROP) is True
-    # Default grey keeps the historical MOUNTAIN material, and a second colour
-    # must never reuse (and therefore recolour) the first one.
+    # Grey gets its own height material rather than recolouring MOUNTAIN, and a
+    # second colour must never reuse (and therefore recolour) the first one.
     grey = operators._height_color_material((0.5, 0.5, 0.5))
-    assert grey.name == "MOUNTAIN"
+    assert grey.name == "HEIGHT_808080"
     assert grey is not material
 
 
@@ -433,7 +433,7 @@ def test_split_commit_marks_both_pieces():
     assert _is_manifold(obj.data)
     assert _is_manifold(mountain_obj.data)
     assert [mat.name for mat in obj.data.materials] == ["BASE"]
-    assert [mat.name for mat in mountain_obj.data.materials] == ["MOUNTAIN"]
+    assert [mat.name for mat in mountain_obj.data.materials] == ["HEIGHT_808080"]
     assert all(polygon.material_index == 0 for polygon in obj.data.polygons)
     assert all(polygon.material_index == 0 for polygon in mountain_obj.data.polygons)
     mountain_bottom = min(vertex.co.z for vertex in mountain_obj.data.vertices)
@@ -479,7 +479,7 @@ def test_textured_map_split_keeps_texture():
         assert _is_manifold(obj.data)
         # The piece is a plain single-colour part.
         assert operators._paint_texture_state(mountain_obj.data) is None
-        assert [mat.name for mat in mountain_obj.data.materials] == ["MOUNTAIN"]
+        assert [mat.name for mat in mountain_obj.data.materials] == ["HEIGHT_808080"]
         assert _is_manifold(mountain_obj.data)
     finally:
         bpy.data.images.remove(image)
@@ -504,7 +504,7 @@ def test_manifold_pieces_stack():
     assert cap["heightLayerLevel"] == 2
     assert cap["mountain_base_name"] == mountain.name
     # The middle piece keeps its own grey; only the cap is white.
-    assert [mat.name for mat in mountain.data.materials] == ["MOUNTAIN"]
+    assert [mat.name for mat in mountain.data.materials] == ["HEIGHT_808080"]
     assert [mat.name for mat in cap.data.materials] == ["HEIGHT_FFFFFF"]
     assert [mat.name for mat in obj.data.materials] == ["BASE"]
     assert _is_manifold(obj.data)
@@ -547,7 +547,7 @@ def test_manifold_operator_stacks_three_colors():
 
     assert [material.name for material in base.data.materials] == ["BASE"]
     assert [material.name for material in green.data.materials] == ["HEIGHT_00FF00"]
-    assert [material.name for material in grey.data.materials] == ["MOUNTAIN"]
+    assert [material.name for material in grey.data.materials] == ["HEIGHT_808080"]
     assert [material.name for material in white.data.materials] == ["HEIGHT_FFFFFF"]
     assert grey["mountain_base_name"] == green.name
     assert white["mountain_base_name"] == grey.name
@@ -590,15 +590,15 @@ def test_material_layers_stack_and_preserve_elements():
     _apply(85, (1.0, 1.0, 1.0))
 
     names = [mat.name for mat in obj.data.materials]
-    for expected in ("HEIGHT_00FF00", "MOUNTAIN", "HEIGHT_FFFFFF"):
+    for expected in ("HEIGHT_00FF00", "HEIGHT_808080", "HEIGHT_FFFFFF"):
         assert expected in names, names
     used = {obj.data.materials[p.material_index].name for p in obj.data.polygons}
-    assert {"HEIGHT_00FF00", "MOUNTAIN", "HEIGHT_FFFFFF"} <= used, used
+    assert {"HEIGHT_00FF00", "HEIGHT_808080", "HEIGHT_FFFFFF"} <= used, used
     # The painted element colour survives every stacked layer.
     assert "WATER" in used
     assert list(obj[operators._HEIGHT_COLOR_MATERIALS_PROP]) == [
         "HEIGHT_00FF00",
-        "MOUNTAIN",
+        "HEIGHT_808080",
         "HEIGHT_FFFFFF",
     ]
 
