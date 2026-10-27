@@ -105,8 +105,11 @@ def generation_mode_update(self, context):
 
 def _get_tex_use_texture(self):
     # Runs each time the value is read; falls back to temp.has3mf
-    # only if the user hasn't explicitly set it.
-    return self.get("tex_use_texture", bool(temp.has3mf))
+    # only if the user hasn't explicitly set it. Always False without the
+    # 3MF addon -- the texture is only exported through it, and panels.py
+    # hides the toggle then, so a stored True (set while 3MF was installed,
+    # or from someone else's .blend) couldn't be switched off.
+    return bool(temp.has3mf) and bool(self.get("tex_use_texture", True))
 
 
 def _set_tex_use_texture(self, value):

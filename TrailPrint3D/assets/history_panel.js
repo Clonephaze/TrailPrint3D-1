@@ -234,7 +234,10 @@ function tp3dApplyHistorySettings(entry) {
         Object.keys(entry.settingsState).forEach(function(key) {
             // A preference, not part of what was generated -- restoring an
             // old entry shouldn't flip the cache back on or off.
-            if (key === 'disableCache') return;
+            // Same for the Local DEM path (a file on this machine, kept out
+            // like the export folder) -- an entry saved before one was picked
+            // would otherwise clear it.
+            if (key === 'disableCache' || key === 'demFilePath') return;
             puts.push(fetch('http://127.0.0.1:' + PORT + '/update_setting', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ key: key, value: entry.settingsState[key] })

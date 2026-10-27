@@ -86,9 +86,10 @@ _export_folder_job: dict = {'status': 'idle', 'scene': '', 'default': ''}
 # /pick_dem_path {kind: 'file'|'folder'} opens the OS dialog the same way as
 # /pick_export_folder and queues the choice as a 'demFilePath' update on
 # _pending_settings; GET /dem_path_status reports it back. 'path' is seeded
-# from the scene's demFilePath in start_picker. Same key-wise-update-only rule
-# as _prefetch_job.
-_dem_path_job: dict = {'status': 'idle', 'path': ''}
+# from the scene's demFilePath in start_picker and kept in sync with it by
+# _sync_dem_path ('scene' is the raw, possibly '//'-relative, value last
+# seen). Same key-wise-update-only rule as _prefetch_job.
+_dem_path_job: dict = {'status': 'idle', 'path': '', 'scene': ''}
 
 
 def _effective_export_folder() -> str:
@@ -221,6 +222,19 @@ def _run_export_folder_pick() -> None:
     chosen = os.path.join(chosen, '')
     _pending_settings.put(('exportFolder', chosen))
     _export_folder_job.update(status='done', default=chosen)
+
+
+def _sync_dem_path(scene_value: str | None) -> None:
+    """Follow a demFilePath change made outside /pick_dem_path (the sidebar,
+    /update_setting) so /dem_path_status doesn't keep reporting the old path.
+    Only acts when the scene value differs from the last one seen ('scene'),
+    so a dialog choice not yet applied by the modal timer isn't overwritten.
+    Main thread only (bpy.path.abspath) -- called from refresh_state_snapshots."""
+    if scene_value is None or scene_value == _dem_path_job.get('scene'):
+        return
+    import bpy  # type: ignore
+
+    _dem_path_job.update(scene=scene_value, path=bpy.path.abspath(scene_value) if scene_value else '')
 
 
 def _dem_path_valid(path: str) -> bool:
@@ -380,10 +394,21 @@ def refresh_state_snapshots(element_states: dict | None = None, settings_state: 
         _Handler.element_states_json = json.dumps(element_states).encode('utf-8')
     if settings_state is not None:
         _Handler.settings_state_json = json.dumps(settings_state).encode('utf-8')
+        _sync_dem_path(settings_state.get('demFilePath'))
     if advanced_settings is not None:
         _Handler.advanced_settings_json = json.dumps(advanced_settings).encode('utf-8')
     if element_source is not None:
         _Handler.element_source = element_source
+
+
+def merge_settings_snapshot(changes: dict) -> None:
+    """Update only *changes*' keys in the SETTINGS_STATE snapshot -- for pages
+    whose snapshot isn't build_settings_row_state()'s (the medal holder and
+    backplate generators), where refresh_state_snapshots would drop the page's
+    own keys. Same main-thread-only rule as refresh_state_snapshots."""
+    state = json.loads(_Handler.settings_state_json.decode('utf-8'))
+    state.update(changes)
+    _Handler.settings_state_json = json.dumps(state).encode('utf-8')
 
 
 _HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'generators' / 'multitile_generator.html'
@@ -1696,12 +1721,13 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
         scene_folder = bpy.path.abspath(bpy.context.scene.tp3d.export_path) if bpy.context.scene.tp3d.export_path else ''
         default_folder = get_prefs().default_export_folder
         default_folder = bpy.path.abspath(default_folder) if default_folder else ''
-        dem_path = bpy.path.abspath(bpy.context.scene.tp3d.demFilePath) if bpy.context.scene.tp3d.demFilePath else ''
+        dem_scene = bpy.context.scene.tp3d.demFilePath
+        dem_path = bpy.path.abspath(dem_scene) if dem_scene else ''
     except (AttributeError, KeyError, ImportError) as e:
         print(f"[TP3D picker] could not read the export folder: {e}")
-        scene_folder = default_folder = dem_path = ''
+        scene_folder = default_folder = dem_scene = dem_path = ''
     _export_folder_job.update(status='idle', scene=scene_folder, default=default_folder, pid=None)
-    _dem_path_job.update(status='idle', path=dem_path, pid=None)
+    _dem_path_job.update(status='idle', scene=dem_scene, path=dem_path, pid=None)
 
     html_path = pathlib.Path(html_path) if html_path else _HTML_PATH
     # Keep the original state filename for multitile_generator.html itself (exact

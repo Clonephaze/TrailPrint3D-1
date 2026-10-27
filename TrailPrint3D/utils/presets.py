@@ -72,14 +72,26 @@ def save_myproperties_to_csv(filename):
             writer.writerow([name, value])
 
 
-def appendCollection():
-
+def _special_blend_path():
+    """Path of the selected specialBlendFile, or None if there's no such file.
+    specialBlendFile is a dynamic enum stored as an index, so a file saved in
+    Premium (puzzles.blend first) and opened in the free build can read back
+    '' (index past the free list's end) -- don't hand that to libraries.load."""
     addon_dir = os.path.dirname(os.path.dirname(__file__))
     _blend = bpy.context.scene.tp3d.specialBlendFile
+    if not _blend:
+        return None
     _prem = os.path.join(addon_dir, "premium", "assets", _blend)
-    filepath = (
-        _prem if os.path.exists(_prem) else os.path.join(addon_dir, "assets", _blend)
-    )
+    path = _prem if os.path.isfile(_prem) else os.path.join(addon_dir, "assets", _blend)
+    return path if os.path.isfile(path) else None
+
+
+def appendCollection():
+
+    filepath = _special_blend_path()
+    if filepath is None:
+        print("Special collection file not found.")
+        return None
     collection_name = bpy.context.scene.tp3d.specialCollectionName
 
     # If the collection already exists, delete it and its contents
@@ -147,19 +159,19 @@ def appendCollection():
 
 
 def get_external_collections(path):
-    if not os.path.exists(path):
+    if not path or not os.path.isfile(path):
         return []
-    with bpy.data.libraries.load(path, link=True) as (data_from, _): # type: ignore
-        return list(data_from.collections)
+    try:
+        with bpy.data.libraries.load(path, link=True) as (data_from, _): # type: ignore
+            return list(data_from.collections)
+    except OSError as e:
+        print(f"Could not read collections from {path}: {e}")
+        return []
 
 
 def loadCollections(self, context):
 
-    addon_dir = os.path.dirname(os.path.dirname(__file__))
-    _blend = bpy.context.scene.tp3d.specialBlendFile
-    _prem = os.path.join(addon_dir, "premium", "assets", _blend)
-    path = _prem if os.path.exists(_prem) else os.path.join(addon_dir, "assets", _blend)
-    names = get_external_collections(path)
+    names = get_external_collections(_special_blend_path())
 
     const.specialCollection = [(name, name, "") for name in names]
 

@@ -92,6 +92,11 @@ Tests run directly with Blender's bundled Python, not `pytest`, e.g.:
 & "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --factory-startup --python-exit-code 1 -P tests/run_all_tests.py
 ```
 
+There is no system Python on the dev machine (`python` resolves to the Microsoft Store stub). For anything that doesn't need `bpy` — `py_compile` checks, quick standalone scripts — use Blender's bundled interpreter directly:
+```powershell
+& "C:\Program Files\Blender Foundation\Blender 5.1\5.1\python\bin\python.exe" -m py_compile premium/utils_pe.py
+```
+
 ---
 
 ## 1. Class Naming Convention

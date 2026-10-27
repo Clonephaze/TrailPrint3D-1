@@ -57,32 +57,10 @@ class TP3D_OT_run_generation(bpy.types.Operator):
         self._handler = getattr(self, "_handler", None)
 
         _progress.WarningsOverlay.clear()
-        try:
-            if context.scene.tp3d.elementMode == "CREATE_TEXTURE":
-                from .threemf_discovery import (
-                    has_threemf_capability,
-                    is_threemf_available,
-                )
-
-                if not is_threemf_available():
-                    raise GenerationError(
-                        _(
-                            "Create Texture mode requires the 3MF Import/Export addon. Please install it."
-                        )
-                    )
-                if not has_threemf_capability("slicer_profile"):
-                    raise GenerationError(
-                        _(
-                            "Create Texture mode requires a newer version of the 3MF addon. Please update it."
-                        )
-                    )
-        except GenerationError as e:
-            _warn(str(e))
-            self.report({"ERROR"}, str(e))
-            return {"CANCELLED"}
-        finally:
-            _progress.WarningsOverlay.get().show()
-            utils.runGeneration(0)
+        # Texture mode needs no check here: props.tex_use_texture already
+        # reads False without the 3MF addon.
+        _progress.WarningsOverlay.get().show()
+        utils.runGeneration(0)
         return {"FINISHED"}
 
 
@@ -4846,8 +4824,10 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
         for key, value in mp.drain_pending_settings():
             utils.apply_setting_update(context.scene.tp3d, key, value)
         if mp.drain_pending_3mf_install():
+            from . import temp
+
             bpy.ops.tp3d.install_three_mf()
-            mp.refresh_state_snapshots(settings_state=utils.build_settings_row_state(context.scene.tp3d))
+            mp.merge_settings_snapshot({"has3mf": temp.has3mf})
         request = mp.drain_latest_model_preview()
         if request is not None:
             self._build_preview(context, request)
@@ -4906,6 +4886,7 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
         import tempfile
 
         from . import picker_server as mp
+        from . import temp
 
         self._result_path = str(
             pathlib.Path(tempfile.gettempdir()) / "trailprint_medalholder.json"
@@ -4923,9 +4904,11 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
             html_path=html_path,
             # The page's magnet-hole fields start from the scene's own
             # Magnet Diameter/Height, same as the map tiles' Magnet Holes.
+            # has3mf: read by threemf_promo.js.
             settings_state={
                 "magnetDiameter": tp3d.magnetDiameter,
                 "magnetHeight": tp3d.magnetHeight,
+                "has3mf": temp.has3mf,
             },
         )
 
@@ -5002,8 +4985,10 @@ class TP3D_OT_backplate_generator(bpy.types.Operator):
         for key, value in mp.drain_pending_settings():
             utils.apply_setting_update(context.scene.tp3d, key, value)
         if mp.drain_pending_3mf_install():
+            from . import temp
+
             bpy.ops.tp3d.install_three_mf()
-            mp.refresh_state_snapshots(settings_state=utils.build_settings_row_state(context.scene.tp3d))
+            mp.merge_settings_snapshot({"has3mf": temp.has3mf})
         request = mp.drain_latest_model_preview()
         if request is not None:
             self._build_preview(context, request)
@@ -5086,6 +5071,7 @@ class TP3D_OT_backplate_generator(bpy.types.Operator):
         if tp3d.textLayout in backplate.LAYOUTS and tp3d.textLayout != "NONE":
             settings_state["textLayout"] = tp3d.textLayout
         settings_state["premium"] = bool(temp.PREMIUMVERSION)
+        settings_state["has3mf"] = temp.has3mf  # read by threemf_promo.js
         self._server = mp.start_picker(
             self._result_path, html_path=html_path, settings_state=settings_state
         )
