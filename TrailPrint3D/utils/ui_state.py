@@ -179,7 +179,7 @@ _ELEMENT_COMPOSITE_FLAGS = {
             "col_wMajorActive",
             "el_oActive",
         ),
-        "col_wBodiesActive",
+        ("col_wBodiesActive",),
     ),
 }
 
@@ -198,10 +198,9 @@ def _road_subflags():
     return tuple(TIER_TAGS.keys())
 
 
-# Bootstrap sub-flag for the 'roads' composite's first-ever toggle-ON (see
-# apply_element_toggle's docstring) -- residential roads are the closest
-# equivalent to the old scheme's "Small Roads" default.
-_ROADS_BOOTSTRAP = "residential"
+# Bootstrap sub-flags for the 'roads' composite's toggle-ON with nothing
+# ticked (see apply_element_toggle's docstring).
+_ROADS_BOOTSTRAP = ("major", "minor")
 
 
 def _get_composite_flag(tp3d, key, subflag):
@@ -270,9 +269,10 @@ def apply_element_toggle(tp3d, key):
     (_COMPOSITE_MASTER_FLAGS) and leaves the sub-flags alone, so a mix
     fine-tuned in the N-panel (e.g. only Tracks + Footways) survives a quick
     off/on from the picker. Toggling OFF also remembers that mix in a scene
-    custom property; toggling ON with no sub-flag ticked restores it, or --
-    with nothing remembered either -- ticks just the category's single most
-    common sub-flag.
+    custom property (shown greyed out while off, see
+    build_composite_remembered_state); toggling ON with no sub-flag ticked
+    ticks the category's default sub-flags (Ponds & Lakes for water, Major +
+    Minor Roads for roads).
 
     ESA WorldCover (tp3d.elementSource == "WORLDCOVER") has none of the OSM
     composites -- every _LANDCOVER_SINGLE_FLAGS category is a plain
@@ -311,12 +311,8 @@ def apply_element_toggle(tp3d, key):
         setattr(tp3d, master, True)
         if any_sub:
             return
-        remembered = tp3d.get(remember_key)
-        if remembered and any(remembered):
-            for f, v in zip(subflags, remembered):
-                _set_composite_flag(tp3d, key, f, bool(v))
-        else:
-            _set_composite_flag(tp3d, key, bootstrap, True)
+        for f in bootstrap:
+            _set_composite_flag(tp3d, key, f, True)
 
 
 # The Settings popup's Map tab -- a small, fixed whitelist of scene fields
@@ -703,8 +699,8 @@ def _write_advanced_field(tp3d, field, value):
 def build_composite_remembered_state(tp3d=None):
     """Per composite category (water, roads), the sub-flag combination the
     Settings modal should show -- greyed out and unclickable -- while that
-    category is off. Mirrors apply_element_toggle's own remember/restore
-    logic: the live combo if any sub-flag is currently on, else whatever
+    category is off. Uses apply_element_toggle's remembered snapshot: the
+    live combo if any sub-flag is currently on, else whatever
     was remembered from the last time it got toggled off via a picker
     chip/card-icon (or all-False if that's never happened). Keyed by the
     same camelCase field keys ADVANCED_SETTINGS_STATE itself uses, so the

@@ -1273,7 +1273,7 @@ def _draw_post_process_box(layout, props, context):
         col.operator("tp3d.bottom_mark", text=_("Add Label(s) to bottom"), icon="SMALL_CAPS")
         col.prop(props, "bottomMarkCutout")
 
-    def _draw_svg_text_import_box(layout, props):
+    def _draw_svg_text_import_box(layout, props, context):
         sub = layout.box()
         row = sub.row()
         row.label(text=_("SVG / Text Import"), icon="FILE_IMAGE")
@@ -1284,6 +1284,12 @@ def _draw_post_process_box(layout, props, context):
         row.operator("tp3d.pick_svg_file", text="", icon="FILEBROWSER")
         sub.operator("tp3d.import_svg", text=_("Import SVG"))
         sub.operator("tp3d.import_text", text=_("Place Text"), icon="FONT_DATA")
+        if has_height_bake_undo(context.object):
+            sub.operator(
+                "tp3d.undo_mountain_texture",
+                text=_("Undo Texture Bake"),
+                icon="LOOP_BACK",
+            )
 
     def _draw_heightmap_box(layout):
         sub = layout.box()
@@ -1311,7 +1317,7 @@ def _draw_post_process_box(layout, props, context):
 
     _draw_bottom_mark_box(box, props)
 
-    _draw_svg_text_import_box(box, props)
+    _draw_svg_text_import_box(box, props, context)
 
     _draw_heightmap_box(box)
 

@@ -3441,7 +3441,14 @@ def merge_active_with_map(map_obj, active_obj):
     return True
 
 
-def projection(operation, Mapobject, obj):
+def projection(operation, Mapobject, obj, color=None):
+    """Merge obj (an Add Text / Add SVG mesh) into Mapobject.
+
+    color -- optional sRGB 0..1 (R, G, B) for operation "paint". On a map with
+    a paint texture the footprint is baked straight into that texture (the
+    3MF exporter ignores per-face materials there); otherwise the painted
+    faces get a material of this colour.
+    """
     from .scene import remove_objects  # deferred to avoid circular import at load time
     from .terrain import (
         color_map_faces_by_terrain,  # deferred to avoid circular import at load time
@@ -3470,6 +3477,38 @@ def projection(operation, Mapobject, obj):
             )
 
     if operation == "paint":
+        if color is not None:
+            rgb8 = tuple(round(max(0.0, min(1.0, c)) * 255) for c in color)
+        else:
+            # "Merge Object with Map" passes no colour -- keep the object's own.
+            from .color import material_to_srgb
+
+            rgb8 = material_to_srgb(obj.active_material, (255, 255, 255))
+
+        if Mapobject.data.get("3mf_is_paint_texture"):
+            from . import geometry2d as _g2d
+            from .texture import bake_polygon_into_texture
+
+            if bake_polygon_into_texture(
+                Mapobject, _g2d.footprint_with_holes(obj), rgb8, undo=True
+            ):
+                mesh_data = obj.data
+                bpy.data.objects.remove(obj, do_unlink=True)
+                bpy.data.meshes.remove(mesh_data)
+                return
+            # No usable paint image -- fall through to the per-face material path.
+
+        if color is not None:
+            from .color import set_material_srgb
+
+            mat_name = "PAINT_" + "".join(f"{c:02X}" for c in rgb8)
+            mat = bpy.data.materials.get(mat_name)
+            if mat is None:
+                mat = bpy.data.materials.new(mat_name)
+                mat.use_nodes = True
+            set_material_srgb(mat, rgb8)
+            obj.data.materials.clear()
+            obj.data.materials.append(mat)
         merge_with_map(Mapobject, obj)
 
         # obj.location.z += 1

@@ -478,6 +478,21 @@ def setup_paint_texture(gen: GenerationContext):
     return palette
 
 
+def _ensure_palette_color(mesh, srgb):
+    """Declare *srgb* as an extruder colour in the mesh's 3MF paint palette
+    if it isn't one already, so the exporter maps it to its own filament."""
+    import ast
+
+    try:
+        palette = ast.literal_eval(mesh.get("3mf_paint_extruder_colors", "{}"))
+    except (ValueError, SyntaxError):
+        palette = {}
+    hexcol = _srgb_to_hex(*srgb)
+    if hexcol not in palette.values():
+        palette[(max(palette.keys()) + 1) if palette else 1] = hexcol
+        mesh["3mf_paint_extruder_colors"] = str(palette)
+
+
 def bake_trail_into_texture(terrain_obj, trail_polygon, material=None):
     """Rasterize a single trail ribbon polygon onto terrain_obj's EXISTING
     MMU_Paint texture in place, without disturbing whatever other elements
@@ -496,7 +511,32 @@ def bake_trail_into_texture(terrain_obj, trail_polygon, material=None):
     composite onto -- the caller should fall back to keeping the trail as
     3D geometry in that case.
     """
-    if trail_polygon is None or trail_polygon.is_empty:
+    srgb = (
+        material_to_srgb(material)
+        if material is not None
+        else _named_material_srgb("TRAIL")
+    )
+    return bake_polygon_into_texture(terrain_obj, trail_polygon, srgb)
+
+
+def bake_polygon_into_texture(terrain_obj, polygon, srgb, undo=False):
+    """Rasterize a world-space Shapely (Multi)Polygon onto terrain_obj's
+    EXISTING MMU_Paint texture in colour *srgb* (uint8 R, G, B), in place.
+
+    Used for anything painted onto an already-textured map after generation
+    (trails, "Add SVG" / "Add Text" in Paint on Surface mode): once a mesh is
+    flagged 3mf_is_paint_texture the 3MF exporter colours it from this
+    texture only, so per-face materials would be lost on export.
+
+    undo : snapshot the texture first into the same history Color by Height
+    uses (see save_height_bake_state), so "Undo Texture Bake" steps back
+    through every post-generation paint in order. One shared history per
+    image keeps that correct -- separate ones would restore a snapshot that
+    predates the other feature's paint and silently erase it.
+
+    Returns False (no-op) if terrain_obj has no paint texture.
+    """
+    if polygon is None or polygon.is_empty:
         return False
 
     mesh = terrain_obj.data
@@ -521,20 +561,17 @@ def bake_trail_into_texture(terrain_obj, trail_polygon, material=None):
     # whatever the live cursor currently is.
     cursor_x, cursor_y = float(terrain_obj.location.x), float(terrain_obj.location.y)
 
+    if undo:
+        save_height_bake_state(image, mesh)
+
     arr = np.empty(resolution * resolution * 4, dtype=np.float32)
     image.pixels.foreach_get(arr)
     arr = arr.reshape((resolution, resolution, 4))
 
-    srgb = (
-        material_to_srgb(material)
-        if material is not None
-        else _named_material_srgb("TRAIL")
-    )
-    color_f = (srgb[0] / 255.0, srgb[1] / 255.0, srgb[2] / 255.0, 1.0)
     _rasterize_geometry(
-        trail_polygon,
+        polygon,
         arr,
-        color_f,
+        _srgb_to_rgba(srgb),
         None,
         cursor_x,
         cursor_y,
@@ -548,19 +585,9 @@ def bake_trail_into_texture(terrain_obj, trail_polygon, material=None):
     image.pixels.foreach_set(arr.ravel())
     image.pack()
 
-    # Register TRAIL in the exported extruder-colour palette if this map's
-    # original bake predates it (no trail existed yet at bake time).
-    import ast
-
-    try:
-        palette = ast.literal_eval(mesh.get("3mf_paint_extruder_colors", "{}"))
-    except (ValueError, SyntaxError):
-        palette = {}
-    trail_hex = _srgb_to_hex(*srgb)
-    if trail_hex not in palette.values():
-        next_idx = (max(palette.keys()) + 1) if palette else 1
-        palette[next_idx] = trail_hex
-        mesh["3mf_paint_extruder_colors"] = str(palette)
+    # Register the colour in the exported extruder palette if this map's
+    # original bake predates it (e.g. no trail existed yet at bake time).
+    _ensure_palette_color(mesh, srgb)
 
     return True
 
@@ -660,17 +687,8 @@ def paint_part_before_join(target_obj, part_obj, srgb):
         image.pixels.foreach_set(arr.ravel())
         image.pack()
 
-    # Make sure the colour is a declared filament, same as bake_trail_into_texture.
-    import ast
-
-    try:
-        palette = ast.literal_eval(mesh.get("3mf_paint_extruder_colors", "{}"))
-    except (ValueError, SyntaxError):
-        palette = {}
-    hexcol = _srgb_to_hex(*srgb)
-    if hexcol not in palette.values():
-        palette[(max(palette.keys()) + 1) if palette else 1] = hexcol
-        mesh["3mf_paint_extruder_colors"] = str(palette)
+    # Make sure the colour is a declared filament, same as bake_polygon_into_texture.
+    _ensure_palette_color(mesh, srgb)
 
     part_mesh = part_obj.data
     while part_mesh.uv_layers:
@@ -1421,12 +1439,13 @@ def _remap_height_bake_history(image_name, mapping, keep_hexes):
                 state["meta_palette"] = str(_remap_palette(palette, mapping, keep_hexes))
 
 
-def recolor_paint_textures(new_roles, fallback_roles, scene):
-    """Recolor TrailPrint3D paint textures used by objects in scene to new_roles.
+def recolor_paint_textures(new_roles, fallback_roles, objects):
+    """Recolor TrailPrint3D paint textures used by objects to new_roles.
 
     Uses each mesh's tp3d_color_roles snapshot as the source colours, falling
     back to fallback_roles (the materials before the update) for older maps.
-    Orphan meshes and objects unlinked from this scene are not targets.
+    An image shared with objects outside *objects* (e.g. split tiles using
+    their source terrain's image) is recolored for those too.
     Returns {"meshes", "pixels", "collisions", "missing"}.
     """
     keep_hexes = [
@@ -1436,13 +1455,28 @@ def recolor_paint_textures(new_roles, fallback_roles, scene):
     ]
     stats = {"meshes": 0, "pixels": 0, "collisions": set(), "missing": []}
     processed_images = set()
-    meshes = {obj.data for obj in scene.objects if obj.type == "MESH"}
+    meshes = {obj.data for obj in objects if obj.type == "MESH"}
     for mesh in meshes:
         if not mesh.get("3mf_is_paint_texture"):
             continue
-        if f"{mesh.name}_MMU_Solid" in bpy.data.images:
+        # Split tiles and terrain-capped frames can still use the source
+        # terrain's image, whose name no longer matches their mesh names.
+        image = next(
+            (
+                node.image
+                for material in mesh.materials
+                if material and material.use_nodes and material.node_tree
+                for node in material.node_tree.nodes
+                if node.type == "TEX_IMAGE" and node.image
+            ),
+            None,
+        )
+        if image is None:
+            if f"{mesh.name}_MMU_Solid" in bpy.data.images:
+                continue
+            image = bpy.data.images.get(f"{mesh.name}_MMU_Paint")
+        if image is not None and image.name.endswith("_MMU_Solid"):
             continue
-        image = bpy.data.images.get(f"{mesh.name}_MMU_Paint")
         if image is None:
             stats["missing"].append(mesh.name)
             continue

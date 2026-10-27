@@ -56,6 +56,12 @@ importlib.reload(T.progress_win)
 # geometry2d/primitives/terrain/elevation/generation.*/utils __init__ --
 # must be reloaded before all of them.
 importlib.reload(T.utils.dataclasses)
+# color.py is a leaf imported by primitives/texture/color_styles at module
+# scope; color_styles.py (built-in palettes) needs constants + color and is
+# imported at module scope by texture/props/panels/operators. Import both
+# explicitly in case nothing has pulled them in yet.
+importlib.reload(_imp("utils.color"))
+importlib.reload(_imp("utils.color_styles"))
 importlib.reload(T.utils.geo)
 importlib.reload(T.utils.mesh_ops)
 importlib.reload(T.utils.primitives)

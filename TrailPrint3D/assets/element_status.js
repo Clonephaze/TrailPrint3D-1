@@ -70,8 +70,8 @@ ELEMENT_STATUS_ORDER.forEach(function(entry) { TP3D_ELEMENT_STATE[entry[0]] = !!
 // keys here are the camelCase versions of its snake_case attr names, same
 // convention as COMPOSITE_ELEMENTS in settings_modal.js.
 var TP3D_COMPOSITE_FLAGS = {
-    water: { subflags: ['colWPondsActive', 'colWSmallRiversActive', 'colWBigRiversActive', 'elOActive'], bootstrap: 'colWPondsActive' },
-    roads: { subflags: ['elSHighwaysActive', 'elSMajorActive', 'elSMinorActive', 'elSResidentialActive', 'elSServiceActive', 'elSFootwayActive', 'elSPedestrianActive', 'elSCycleBridleActive', 'elSTrackActive', 'elSPathActive', 'elSRacewayActive'], bootstrap: 'elSResidentialActive' }
+    water: { subflags: ['colWPondsActive', 'colWSmallRiversActive', 'colWBigRiversActive', 'elOActive'], bootstrap: ['colWPondsActive'] },
+    roads: { subflags: ['elSHighwaysActive', 'elSMajorActive', 'elSMinorActive', 'elSResidentialActive', 'elSServiceActive', 'elSFootwayActive', 'elSPedestrianActive', 'elSCycleBridleActive', 'elSTrackActive', 'elSPathActive', 'elSRacewayActive'], bootstrap: ['elSMajorActive', 'elSMinorActive'] }
 };
 
 // TP3D_COMPOSITE_FLAGS is an OSM-only concept -- under WorldCover, 'water'
@@ -133,7 +133,7 @@ function tp3dRepaintCompositeCheckboxes(key) {
 
 // Predicts what utils.apply_element_toggle will do server-side for a
 // composite category -- flip the master, remember the sub-flags on off,
-// fill them in on on if none are ticked -- kept in
+// tick the bootstrap defaults on on if none are ticked -- kept in
 // ADVANCED_SETTINGS_STATE._compositeMaster/_compositeRemembered so a fresh
 // page load and a same-session chip click agree, and applies it
 // optimistically to ADVANCED_SETTINGS_STATE + the modal's checkboxes.
@@ -156,13 +156,7 @@ function tp3dToggleElement(key) {
         } else {
             ADVANCED_SETTINGS_STATE._compositeMaster[key] = true;
             if (!anySub) {
-                var remembered = ADVANCED_SETTINGS_STATE._compositeRemembered[key] || {};
-                var hasRemembered = def.subflags.some(function(f) { return !!remembered[f]; });
-                if (hasRemembered) {
-                    def.subflags.forEach(function(f) { ADVANCED_SETTINGS_STATE[f] = !!remembered[f]; });
-                } else {
-                    ADVANCED_SETTINGS_STATE[def.bootstrap] = true;
-                }
+                def.bootstrap.forEach(function(f) { ADVANCED_SETTINGS_STATE[f] = true; });
             }
         }
         tp3dRepaintCompositeCheckboxes(key);

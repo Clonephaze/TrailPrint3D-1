@@ -106,9 +106,9 @@ def test_scene_colors_drive_materials():
 
 
 def test_built_in_styles_are_complete():
-    expected = {"FOREST", "URBAN", "DESERT", "MIDNIGHT", "VIBRANT", "SNOW"}
+    expected = {"FOREST", "URBAN", "DESERT", "SNOW"}
     assert set(color_styles.BUILT_IN_STYLES) == expected
-    for _label, colors in color_styles.BUILT_IN_STYLES.values():
+    for _label, _description, colors in color_styles.BUILT_IN_STYLES.values():
         assert set(colors) == set(color_styles.ROLE_NAMES)
         color_styles.normalize_colors(colors)
 
@@ -158,20 +158,32 @@ def test_invalid_and_reserved_style_names_are_rejected():
         raise AssertionError(f"accepted invalid style name {name!r}")
 
 
-def test_apply_recolors_materials_and_paint_texture():
+def _select_only(*objects):
+    for obj in bpy.context.view_layer.objects:
+        obj.select_set(False)
+    for obj in objects:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = objects[0] if objects else None
+
+
+def _object_of(mesh):
+    return next(obj for obj in bpy.context.scene.objects if obj.data == mesh)
+
+
+def test_apply_recolors_paint_texture():
     old = color_styles.default_colors()
     mesh, image = _paint_mesh(
         "RecolorTexture",
-        [old["BASE"], old["WATER"], old["ROADS"], (0, 0, 0), (1, 1, 1), (11, 176, 15)],
+        [old["BASE"], old["WATER"], old["ROADS"], (0, 0, 0), (1, 1, 1), tuple(c + 1 for c in old["BASE"])],
         roles=old,
         palette={0: _hex(old["BASE"]), 1: _hex(old["WATER"]), 2: "#000000", 3: "#FFFFFF", 4: "#FF0000"},
     )
     try:
-        new = color_styles.style_colors("CITY")
+        new = color_styles.style_colors("URBAN")
         color_styles.set_scene_colors(_tp3d(), new)
+        _select_only(_object_of(mesh))
         assert bpy.ops.tp3d.apply_color_style() == {"FINISHED"}
 
-        assert material_to_srgb(bpy.data.materials["BASE"]) == new["BASE"]
         pixels = _image_rgb(image)
         # BLACK roads are indistinguishable from the BLACK utility colour in the
         # texture, so both move with ROADS; the ±3 tolerance catches near-BASE.
@@ -195,14 +207,60 @@ def test_legacy_texture_uses_material_colors():
     mesh, image = _paint_mesh("LegacyTexture", [old["BASE"], old["FOREST"]])
     try:
         assert color_styles.COLOR_ROLES_PROP not in mesh
-        new = color_styles.style_colors("FOREST")
+        new = color_styles.style_colors("DESERT")
         color_styles.set_scene_colors(_tp3d(), new)
+        _select_only(_object_of(mesh))
         assert bpy.ops.tp3d.apply_color_style() == {"FINISHED"}
         assert _image_rgb(image) == [new["BASE"], new["FOREST"]]
         assert color_styles.COLOR_ROLES_PROP in mesh
     finally:
         bpy.data.images.remove(image)
         _remove_paint_mesh(mesh)
+
+
+def _element_object(name, material_name):
+    mesh = bpy.data.meshes.new(name)
+    mesh.materials.append(bpy.data.materials[material_name])
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    return obj
+
+
+def test_apply_recolors_only_selected_materials():
+    old = color_styles.default_colors()
+    selected = _element_object("SelectedWater", "WATER")
+    other = _element_object("OtherWater", "WATER")
+    copy = None
+    try:
+        new = color_styles.style_colors("SNOW")
+        color_styles.set_scene_colors(_tp3d(), new)
+        _select_only(selected)
+        assert bpy.ops.tp3d.apply_color_style() == {"FINISHED"}
+
+        copy = selected.material_slots[0].material
+        assert copy.name != "WATER"
+        assert color_styles.material_role(copy) == "WATER"
+        assert material_to_srgb(copy) == new["WATER"]
+        assert other.material_slots[0].material == bpy.data.materials["WATER"]
+        assert material_to_srgb(bpy.data.materials["WATER"]) == old["WATER"]
+
+        # A copy only the selection uses is recolored in place, not copied again.
+        color_styles.set_scene_colors(_tp3d(), color_styles.style_colors("DESERT"))
+        assert bpy.ops.tp3d.apply_color_style() == {"FINISHED"}
+        assert selected.material_slots[0].material == copy
+        assert material_to_srgb(copy) == color_styles.style_colors("DESERT")["WATER"]
+    finally:
+        for obj in (selected, other):
+            mesh = obj.data
+            bpy.data.objects.remove(obj, do_unlink=True)
+            bpy.data.meshes.remove(mesh)
+        if copy is not None and copy.name != "WATER":
+            bpy.data.materials.remove(copy)
+
+
+def test_apply_without_selection_is_disabled():
+    _select_only()
+    assert not bpy.ops.tp3d.apply_color_style.poll()
 
 
 def test_shared_colors_report_collision():
@@ -218,18 +276,18 @@ def test_shared_colors_report_collision():
 
 def test_recolor_ignores_deleted_scene_objects():
     old = color_styles.default_colors()
-    new = color_styles.style_colors("ARCTIC")
+    new = color_styles.style_colors("SNOW")
     mesh, image = _paint_mesh("DeletedTexture", [old["BASE"]], roles=old)
     image_name = image.name
     obj = next(obj for obj in bpy.context.scene.objects if obj.data == mesh)
     bpy.data.objects.remove(obj, do_unlink=True)
     try:
-        stats = texture.recolor_paint_textures(new, old, bpy.context.scene)
+        stats = texture.recolor_paint_textures(new, old, bpy.context.scene.objects)
         assert stats["meshes"] == 0
         assert _image_rgb(image) == [old["BASE"]]
         assert color_styles.read_mesh_color_roles(mesh, {}) == old
         bpy.data.images.remove(image)
-        stats = texture.recolor_paint_textures(new, old, bpy.context.scene)
+        stats = texture.recolor_paint_textures(new, old, bpy.context.scene.objects)
         assert mesh.name not in stats["missing"]
     finally:
         if image_name in bpy.data.images:
@@ -242,8 +300,8 @@ def test_height_bake_undo_history_is_recolored():
     mesh, image = _paint_mesh("HistoryTexture", [old["BASE"], old["WATER"]], roles=old)
     try:
         texture.save_height_bake_state(image, mesh)
-        new = color_styles.style_colors("ARCTIC")
-        texture.recolor_paint_textures(new, old, bpy.context.scene)
+        new = color_styles.style_colors("SNOW")
+        texture.recolor_paint_textures(new, old, bpy.context.scene.objects)
         obj = bpy.data.objects.new("HistoryTexture", mesh)
         assert texture.restore_last_height_bake(obj)
         assert _image_rgb(image) == [new["BASE"], new["WATER"]]
@@ -257,7 +315,7 @@ def test_height_bake_undo_history_is_recolored():
 
 def test_recolor_targets_scene_meshes_once():
     old = color_styles.default_colors()
-    new = color_styles.style_colors("ARCTIC")
+    new = color_styles.style_colors("SNOW")
     mesh, image = _paint_mesh("SharedTexture", [old["BASE"]], roles=old)
     other_mesh, other_image = _paint_mesh("OtherSceneTexture", [old["WATER"]], roles=old)
     other_scene = bpy.data.scenes.new("OtherColorScene")
@@ -270,7 +328,7 @@ def test_recolor_targets_scene_meshes_once():
     unlinked_obj = next(obj for obj in bpy.context.scene.objects if obj.data == unlinked_mesh)
     bpy.context.scene.collection.objects.unlink(unlinked_obj)
     try:
-        stats = texture.recolor_paint_textures(new, old, bpy.context.scene)
+        stats = texture.recolor_paint_textures(new, old, bpy.context.scene.objects)
         assert stats["meshes"] == 1
         assert stats["pixels"] == 1
         assert stats["missing"] == []
@@ -289,15 +347,15 @@ def test_recolor_targets_scene_meshes_once():
 
 def test_full_preset_round_trip_keeps_custom_colors():
     tp3d = _tp3d()
-    tp3d.color_style = "ALPINE"
+    tp3d.color_style = "DESERT"
     tp3d.element_color_glacier = color_styles.srgb_to_color((7, 8, 9))
     presets.save_myproperties_to_csv("colors")
     _reset_scene_colors()
 
     presets.load_myproperties_from_csv("colors")
-    assert tp3d.color_style == "ALPINE"
+    assert tp3d.color_style == "DESERT"
     assert color_styles.scene_colors(tp3d)["GLACIER"] == (7, 8, 9)
-    assert color_styles.scene_colors(tp3d)["BASE"] == color_styles.style_colors("ALPINE")["BASE"]
+    assert color_styles.scene_colors(tp3d)["BASE"] == color_styles.style_colors("DESERT")["BASE"]
 
 
 for _test in (
@@ -306,8 +364,10 @@ for _test in (
     test_style_selection_reset_and_modified_state,
     test_user_style_json_round_trip,
     test_invalid_and_reserved_style_names_are_rejected,
-    test_apply_recolors_materials_and_paint_texture,
+    test_apply_recolors_paint_texture,
     test_legacy_texture_uses_material_colors,
+    test_apply_recolors_only_selected_materials,
+    test_apply_without_selection_is_disabled,
     test_shared_colors_report_collision,
     test_recolor_ignores_deleted_scene_objects,
     test_recolor_targets_scene_meshes_once,

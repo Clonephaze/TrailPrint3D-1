@@ -1989,12 +1989,12 @@ class TP3D_OT_color_mountain(bpy.types.Operator):
 
 
 class TP3D_OT_undo_mountain_texture(bpy.types.Operator):
-    """Restore the selected object's MMU_Paint texture to its state immediately before its most recent Color by Height texture bake. Blender's native Ctrl+Z does not track raw Image.pixels writes made through Python, so texture mode maintains its own in-session history instead."""
+    """Restore the selected object's MMU_Paint texture to its state immediately before its most recent texture bake (Color by Height, or Add SVG / Add Text painted on the surface). Blender's native Ctrl+Z does not track raw Image.pixels writes made through Python, so texture mode maintains its own in-session history instead."""
 
     bl_idname = "tp3d.undo_mountain_texture"
     bl_label = _("Undo Texture Bake")
     bl_description = _tip(
-        "Undo the most recent Color by Height texture bake for the selected object"
+        "Undo the most recent texture bake (Color by Height, SVG or Text) for the selected object"
     )
     bl_options = {"REGISTER"}
 
@@ -2021,7 +2021,7 @@ class TP3D_OT_undo_mountain_texture(bpy.types.Operator):
         if restored == 0:
             self.report(
                 {"INFO"},
-                _rpt("Nothing to undo -- no Color by Height texture bake to restore."),
+                _rpt("Nothing to undo -- no texture bake to restore."),
             )
             return {"CANCELLED"}
         return {"FINISHED"}
@@ -2259,6 +2259,15 @@ class TP3D_OT_popup_text(bpy.types.Operator):
         ],
         default="paint",
     )  # type: ignore
+    color: bpy.props.FloatVectorProperty(
+        name=_("Color"),
+        description=_tip("Color the text is painted onto the map with"),
+        subtype="COLOR_GAMMA",
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(1.0, 1.0, 1.0),
+    )  # type: ignore
 
     # Internal variables to track state
     _start_location = None
@@ -2286,6 +2295,8 @@ class TP3D_OT_popup_text(bpy.types.Operator):
         layout.prop(self, "bottomSide")
         if not self.bottomSide:
             layout.prop(self, "operation")
+            if self.operation == "paint":
+                layout.prop(self, "color")
 
     def check(self, context):
         obj = context.active_object
@@ -2346,7 +2357,12 @@ class TP3D_OT_popup_text(bpy.types.Operator):
 
         if not self.bottomSide:
             obj.location.z = -1
-            utils.projection(self.operation, Mapobject, obj)
+            utils.projection(
+                self.operation,
+                Mapobject,
+                obj,
+                tuple(self.color) if self.operation == "paint" else None,
+            )
         else:
             bpy.ops.object.select_all(action="DESELECT")
 
@@ -2582,6 +2598,15 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
         ],
         default="paint",
     )  # type: ignore
+    color: bpy.props.FloatVectorProperty(
+        name=_("Color"),
+        description=_tip("Color the SVG is painted onto the map with"),
+        subtype="COLOR_GAMMA",
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(1.0, 1.0, 1.0),
+    )  # type: ignore
 
     _start_location = None
     _start_scale = None
@@ -2607,6 +2632,8 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
         layout.prop(self, "bottomSide")
         if not self.bottomSide:
             layout.prop(self, "operation")
+            if self.operation == "paint":
+                layout.prop(self, "color")
 
     def check(self, context):
         obj = context.active_object
@@ -2658,7 +2685,12 @@ class TP3D_OT_popup_svg(bpy.types.Operator):
             bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
             bpy.ops.object.origin_set(type="ORIGIN_CURSOR", center="MEDIAN")
             obj.location.z = -1
-            utils.projection(self.operation, Mapobject, obj)
+            utils.projection(
+                self.operation,
+                Mapobject,
+                obj,
+                tuple(self.color) if self.operation == "paint" else None,
+            )
         else:
             obj.location.z = Mapobject.location.z
             obj.scale.z = 0.8
@@ -3244,20 +3276,28 @@ class TP3D_OT_delete_color_style(bpy.types.Operator):
 
 class TP3D_OT_apply_color_style(bpy.types.Operator):
     bl_idname = "tp3d.apply_color_style"
-    bl_label = _("Apply to Existing Maps")
+    bl_label = _("Apply to Selected Maps")
     bl_description = _tip(
-        "Apply current material colors and recolor Paint textures in the current scene"
+        "Apply the current colors to the selected maps only, recoloring their materials and Paint textures"
     )
     bl_options = {'REGISTER', 'UNDO'}
 
+    @classmethod
+    def poll(cls, context):
+        return any(obj.type == "MESH" for obj in context.selected_objects)
+
     def execute(self, context):
-        from .utils.primitives import setupColors
         from .utils.texture import recolor_paint_textures
+
+        targets = [obj for obj in context.selected_objects if obj.type == "MESH"]
+        if not targets:
+            self.report({'ERROR'}, _rpt("Select the maps to recolor first."))
+            return {'CANCELLED'}
 
         new_colors = color_styles.scene_colors(context.scene.tp3d)
         previous_colors = color_styles.material_role_colors()
-        setupColors(new_colors)
-        stats = recolor_paint_textures(new_colors, previous_colors, context.scene)
+        color_styles.recolor_object_materials(targets, new_colors)
+        stats = recolor_paint_textures(new_colors, previous_colors, targets)
 
         if stats["collisions"]:
             self.report(
@@ -3270,7 +3310,9 @@ class TP3D_OT_apply_color_style(bpy.types.Operator):
             print(f"[TP3D colors] Paint texture image missing for: {', '.join(stats['missing'])}")
         self.report(
             {'INFO'},
-            _rpt("Applied colors to materials and {} paint texture(s)").format(stats["meshes"]),
+            _rpt("Applied colors to {} selected object(s) and {} paint texture(s)").format(
+                len(targets), stats["meshes"]
+            ),
         )
         return {'FINISHED'}
 

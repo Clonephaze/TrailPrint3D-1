@@ -8,7 +8,7 @@ from bpy.app.translations import pgettext_iface as _
 from bpy.app.translations import pgettext_tip as _tip
 
 from .. import constants as const
-from .color import material_to_srgb
+from .color import material_to_srgb, set_material_srgb
 
 COLOR_ROLES = (
     ("BASE", "element_color_base", "Base Terrain"),
@@ -27,6 +27,7 @@ COLOR_ROLES = (
 ROLE_NAMES = tuple(role for role, _attr, _label in COLOR_ROLES)
 ROLE_ATTRS = {role: attr for role, attr, _label in COLOR_ROLES}
 COLOR_ROLES_PROP = "tp3d_color_roles"
+MATERIAL_ROLE_PROP = "tp3d_color_role"
 USER_STYLE_PREFIX = "USER:"
 STYLE_VERSION = 1
 
@@ -37,9 +38,9 @@ BUILT_IN_STYLES = {
             "A bold, natural green palette with vivid greens, deep forest tones, and classic blue water."
         ),
         {
-            "BASE": "#0DB20D",
-            "WATER": "#0000CC",
-            "FOREST": "#0D400D",
+            "BASE": "#55B222",
+            "WATER": "#2338CC",
+            "FOREST": "#266623",
             "MOUNTAIN": "#808080",
             "CITY": "#B2B21A",
             "GREENSPACE": "#29FF29",
@@ -54,21 +55,21 @@ BUILT_IN_STYLES = {
     "URBAN": (
         _("Urban"),
         _tip(
-            "A modern, understated palette of concrete grays, slate tones, blue water, and muted greens."
+            "A city-model palette of warm taupe terrain, white buildings, black roads, and vivid blue water."
         ),
         {
-            "BASE": "#A7ADB2",
-            "WATER": "#397FA5",
-            "FOREST": "#496B52",
-            "MOUNTAIN": "#777F86",
-            "CITY": "#D1CEC5",
-            "GREENSPACE": "#82A77B",
-            "FARMLAND": "#B4AE83",
-            "GLACIER": "#E7F0F3",
-            "BUILDINGS": "#515B65",
-            "ROADS": "#30363B",
-            "TRAIL": "#D94A45",
-            "YELLOW": "#E9B949",
+            "BASE": "#363636",
+            "WATER": "#1E3CD2",
+            "FOREST": "#1F7A35",
+            "MOUNTAIN": "#8E8178",
+            "CITY": "#776A5E",
+            "GREENSPACE": "#3A9A48",
+            "FARMLAND": "#98A87F",
+            "GLACIER": "#EDEDED",
+            "BUILDINGS": "#F2F2F2",
+            "ROADS": "#1C1C1C",
+            "TRAIL": "#E02424",
+            "YELLOW": "#F2C230",
         },
     ),
     "DESERT": (
@@ -322,6 +323,58 @@ def material_role_colors():
         if material is not None:
             colors[role] = material_to_srgb(material, colors[role])
     return colors
+
+
+def material_role(material):
+    """Color role a TrailPrint3D element material stands for, or None.
+
+    The shared materials are named after their role ("BASE", "WATER", ...);
+    per-map copies made by recolor_object_materials carry MATERIAL_ROLE_PROP.
+    """
+    if material is None:
+        return None
+    role = material.get(MATERIAL_ROLE_PROP)
+    if role in ROLE_NAMES:
+        return role
+    return material.name if material.name in ROLE_NAMES else None
+
+
+def recolor_object_materials(objects, colors):
+    """Recolor only *objects*' element materials to *colors*.
+
+    The shared role materials stay untouched (every other map and every
+    by-name lookup keeps using them); each one used by *objects* is swapped
+    for a tagged copy, shared between the objects of this call. A copy that
+    no object outside *objects* uses is recolored in place instead of copied
+    again. Returns the number of material slots recolored.
+    """
+    objects = set(objects)
+    users = {}
+    for obj in bpy.data.objects:
+        for slot in obj.material_slots:
+            if slot.material is not None:
+                users.setdefault(slot.material.name, set()).add(obj)
+
+    copies = {}
+    changed = 0
+    for obj in objects:
+        for slot in obj.material_slots:
+            material = slot.material
+            role = material_role(material)
+            if role is None:
+                continue
+            if material.get(MATERIAL_ROLE_PROP) and users.get(material.name, set()) <= objects:
+                target = material
+            else:
+                target = copies.get(material.name)
+                if target is None:
+                    target = material.copy()
+                    target[MATERIAL_ROLE_PROP] = role
+                    copies[material.name] = target
+                slot.material = target
+            set_material_srgb(target, colors[role])
+            changed += 1
+    return changed
 
 
 def role_hex_map(colors):
