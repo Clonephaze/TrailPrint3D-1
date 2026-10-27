@@ -1,13 +1,13 @@
 import json
 import os
 import re
+import zlib
 
 import bpy
 from bpy.app.translations import pgettext_iface as _
 
 from .. import constants as const
 from .color import material_to_srgb
-
 
 COLOR_ROLES = (
     ("BASE", "element_color_base", "Base Terrain"),
@@ -30,52 +30,132 @@ USER_STYLE_PREFIX = "USER:"
 STYLE_VERSION = 1
 
 BUILT_IN_STYLES = {
-    "DEFAULT": ("Default", {
-        "BASE": "#0DB20D", "WATER": "#0000CC", "FOREST": "#0D400D",
-        "MOUNTAIN": "#808080", "CITY": "#B2B21A", "GREENSPACE": "#29FF29",
-        "FARMLAND": "#4D801A", "GLACIER": "#CCE5CC", "BUILDINGS": "#666666",
-        "ROADS": "#000000", "TRAIL": "#FF0000", "YELLOW": "#FFFF00",
-    }),
-    "DESERT": ("Desert", {
-        "BASE": "#C9A66B", "WATER": "#2F7F9F", "FOREST": "#6B7F3A",
-        "MOUNTAIN": "#9C6B43", "CITY": "#D8C3A5", "GREENSPACE": "#A3A85A",
-        "FARMLAND": "#B98B4E", "GLACIER": "#F2E7D0", "BUILDINGS": "#8A6F55",
-        "ROADS": "#4A3B2E", "TRAIL": "#C0392B", "YELLOW": "#F2C14E",
-    }),
-    "CITY": ("City", {
-        "BASE": "#9EA3A8", "WATER": "#3E6F99", "FOREST": "#4E6B4A",
-        "MOUNTAIN": "#7A7A7A", "CITY": "#C8C2B5", "GREENSPACE": "#7FA36B",
-        "FARMLAND": "#A7A47A", "GLACIER": "#E6EEF2", "BUILDINGS": "#5C6168",
-        "ROADS": "#2B2B2B", "TRAIL": "#E63946", "YELLOW": "#FFD166",
-    }),
-    "ARCTIC": ("Arctic", {
-        "BASE": "#E8F1F5", "WATER": "#2B6CB0", "FOREST": "#4B6E63",
-        "MOUNTAIN": "#9AA7B0", "CITY": "#B7C3CC", "GREENSPACE": "#A9C9C0",
-        "FARMLAND": "#C9D6C8", "GLACIER": "#FFFFFF", "BUILDINGS": "#6E7C87",
-        "ROADS": "#33414D", "TRAIL": "#D62828", "YELLOW": "#F4D35E",
-    }),
-    "FOREST": ("Forest", {
-        "BASE": "#4F7D3A", "WATER": "#2C6E91", "FOREST": "#1F4D2B",
-        "MOUNTAIN": "#7C7467", "CITY": "#A49A6A", "GREENSPACE": "#78A85A",
-        "FARMLAND": "#8C9A4B", "GLACIER": "#DDE8E1", "BUILDINGS": "#6D5D4B",
-        "ROADS": "#3B3227", "TRAIL": "#D1495B", "YELLOW": "#EDAE49",
-    }),
-    "ALPINE": ("Alpine", {
-        "BASE": "#6E9F5B", "WATER": "#3A7CA5", "FOREST": "#2E5E3E",
-        "MOUNTAIN": "#8B8680", "CITY": "#B9A98A", "GREENSPACE": "#9BC56E",
-        "FARMLAND": "#A8B66B", "GLACIER": "#F4F8FA", "BUILDINGS": "#6F6A64",
-        "ROADS": "#2F2F2F", "TRAIL": "#E63946", "YELLOW": "#FFC300",
-    }),
+    "DEFAULT": (
+        "Default",
+        {
+            "BASE": "#0DB20D",
+            "WATER": "#0000CC",
+            "FOREST": "#0D400D",
+            "MOUNTAIN": "#808080",
+            "CITY": "#B2B21A",
+            "GREENSPACE": "#29FF29",
+            "FARMLAND": "#4D801A",
+            "GLACIER": "#CCE5CC",
+            "BUILDINGS": "#666666",
+            "ROADS": "#000000",
+            "TRAIL": "#FF0000",
+            "YELLOW": "#FFFF00",
+        },
+    ),
+    "DESERT": (
+        "Desert",
+        {
+            "BASE": "#D2B078",
+            "WATER": "#318BA3",
+            "FOREST": "#667744",
+            "MOUNTAIN": "#A66F49",
+            "CITY": "#E1CDAA",
+            "GREENSPACE": "#A4B477",
+            "FARMLAND": "#B88E50",
+            "GLACIER": "#F4E9D5",
+            "BUILDINGS": "#80664F",
+            "ROADS": "#514033",
+            "TRAIL": "#C83F35",
+            "YELLOW": "#F0C653",
+        },
+    ),
+    "CITY": (
+        "City",
+        {
+            "BASE": "#A7ADB2",
+            "WATER": "#397FA5",
+            "FOREST": "#496B52",
+            "MOUNTAIN": "#777F86",
+            "CITY": "#D1CEC5",
+            "GREENSPACE": "#82A77B",
+            "FARMLAND": "#B4AE83",
+            "GLACIER": "#E7F0F3",
+            "BUILDINGS": "#515B65",
+            "ROADS": "#30363B",
+            "TRAIL": "#D94A45",
+            "YELLOW": "#E9B949",
+        },
+    ),
+    "ARCTIC": (
+        "Arctic",
+        {
+            "BASE": "#D5E3E9",
+            "WATER": "#326FA0",
+            "FOREST": "#476B61",
+            "MOUNTAIN": "#9AAAB4",
+            "CITY": "#B9C8D0",
+            "GREENSPACE": "#A4C6B9",
+            "FARMLAND": "#C3D2BB",
+            "GLACIER": "#F2F8FA",
+            "BUILDINGS": "#637582",
+            "ROADS": "#344550",
+            "TRAIL": "#D74440",
+            "YELLOW": "#F0CB62",
+        },
+    ),
+    "FOREST": (
+        "Forest",
+        {
+            "BASE": "#688653",
+            "WATER": "#327A96",
+            "FOREST": "#244B35",
+            "MOUNTAIN": "#82796A",
+            "CITY": "#B0A47B",
+            "GREENSPACE": "#96B96C",
+            "FARMLAND": "#A3A45C",
+            "GLACIER": "#DDEAE5",
+            "BUILDINGS": "#695A49",
+            "ROADS": "#40382F",
+            "TRAIL": "#D65356",
+            "YELLOW": "#EAB65A",
+        },
+    ),
+    "ALPINE": (
+        "Alpine",
+        {
+            "BASE": "#7EA66A",
+            "WATER": "#377FA7",
+            "FOREST": "#315C43",
+            "MOUNTAIN": "#898B87",
+            "CITY": "#BDB49E",
+            "GREENSPACE": "#A9C97B",
+            "FARMLAND": "#B7B66F",
+            "GLACIER": "#F1F6F8",
+            "BUILDINGS": "#6B6C67",
+            "ROADS": "#393B39",
+            "TRAIL": "#D94345",
+            "YELLOW": "#F2C14E",
+        },
+    ),
 }
 
 _STYLE_ITEMS_CACHE = []
+
+# Blender stores a callback EnumProperty as the integer from the item tuple, not the
+# identifier. User styles therefore need a value that depends only on the style's
+# name; a positional index shifts whenever another style is saved or deleted, and
+# a saved .blend then reopens on the wrong style. Built-ins keep their small
+# indices; user styles hash into a range that cannot overlap them.
+_USER_STYLE_VALUE_BASE = 1 << 16
+_USER_STYLE_VALUE_SPAN = 1 << 24
+
+# Redraws call list_user_styles/style_is_modified, so avoid file reads there. The
+# listing is keyed on the style folder's mtime and each parsed style on its own
+# file's (mtime, size); both are a single stat() to validate.
+_user_styles_cache = {"signature": None, "names": []}
+_user_style_colors_cache = {}
 
 
 def hex_to_srgb(value):
     if not isinstance(value, str) or not re.fullmatch(r"#?[0-9A-Fa-f]{6}", value):
         raise ValueError(f"Invalid color: {value!r}")
     value = value.lstrip("#")
-    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+    return tuple(int(value[i : i + 2], 16) for i in (0, 2, 4))
 
 
 def srgb_to_hex(rgb):
@@ -130,7 +210,7 @@ def set_scene_colors(tp3d, colors):
 def _safe_style_name(name):
     name = " ".join(str(name).split())
     if not name or len(name) > 64 or re.search(r'[<>:"/\\|?*]', name):
-        raise ValueError(_("Use 1-64 characters without < > : \" / \\ | ? *."))
+        raise ValueError(_('Use 1-64 characters without < > : " / \\ | ? *.'))
     if name.rstrip(" .") != name or name.upper() in {"CON", "PRN", "AUX", "NUL"}:
         raise ValueError(_("Use a regular file-safe style name."))
     return name
@@ -141,8 +221,13 @@ def _style_path(name):
 
 
 def list_user_styles():
-    if not os.path.isdir(const.color_style_dir):
+    try:
+        signature = (const.color_style_dir, os.stat(const.color_style_dir).st_mtime_ns)
+    except OSError:
+        _user_styles_cache.update(signature=None, names=[])
         return []
+    if _user_styles_cache["signature"] == signature:
+        return list(_user_styles_cache["names"])
     styles = []
     for filename in sorted(os.listdir(const.color_style_dir), key=str.lower):
         name, ext = os.path.splitext(filename)
@@ -152,15 +237,40 @@ def list_user_styles():
             styles.append(_safe_style_name(name))
         except ValueError:
             continue
-    return styles
+    _user_styles_cache.update(signature=signature, names=styles)
+    return list(styles)
+
+
+def _user_style_enum_values(names):
+    """Map each user style name to a stable enum value (see _USER_STYLE_VALUE_BASE)."""
+    values = {}
+    used = set()
+    for name in names:
+        value = (
+            _USER_STYLE_VALUE_BASE
+            + zlib.crc32(name.casefold().encode("utf-8")) % _USER_STYLE_VALUE_SPAN
+        )
+        while value in used:  # astronomically rare; stays deterministic for a given set
+            value += 1
+        used.add(value)
+        values[name] = value
+    return values
 
 
 def load_user_style(name):
-    with open(_style_path(name), "r", encoding="utf-8") as handle:
+    path = _style_path(name)
+    stat = os.stat(path)  # raises OSError when missing, like open() would
+    signature = (stat.st_mtime_ns, stat.st_size)
+    cached = _user_style_colors_cache.get(path)
+    if cached is not None and cached[0] == signature:
+        return dict(cached[1])
+    with open(path, "r", encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, dict) or data.get("version") != STYLE_VERSION:
         raise ValueError("Unsupported color style version")
-    return normalize_colors(data.get("colors"))
+    colors = normalize_colors(data.get("colors"))
+    _user_style_colors_cache[path] = (signature, colors)
+    return dict(colors)
 
 
 def save_user_style(name, colors):
@@ -186,14 +296,16 @@ def save_user_style(name, colors):
 def delete_user_style(identifier):
     if not identifier.startswith(USER_STYLE_PREFIX):
         raise ValueError(_("Only saved styles can be deleted."))
-    os.remove(_style_path(identifier[len(USER_STYLE_PREFIX):]))
+    path = _style_path(identifier[len(USER_STYLE_PREFIX) :])
+    os.remove(path)
+    _user_style_colors_cache.pop(path, None)
 
 
 def style_colors(identifier):
     if identifier in BUILT_IN_STYLES:
         return normalize_colors(BUILT_IN_STYLES[identifier][1])
     if identifier.startswith(USER_STYLE_PREFIX):
-        return load_user_style(identifier[len(USER_STYLE_PREFIX):])
+        return load_user_style(identifier[len(USER_STYLE_PREFIX) :])
     raise ValueError(f"Unknown color style: {identifier}")
 
 
@@ -202,9 +314,9 @@ def color_style_items(_self, _context):
         (key, _(label), _("Built-in color style"), index)
         for index, (key, (label, _colors)) in enumerate(BUILT_IN_STYLES.items())
     ]
-    offset = len(items)
-    for index, name in enumerate(list_user_styles(), start=offset):
-        items.append((USER_STYLE_PREFIX + name, name, _("Saved color style"), index))
+    names = list_user_styles()
+    for name, value in _user_style_enum_values(names).items():
+        items.append((USER_STYLE_PREFIX + name, name, _("Saved color style"), value))
     _STYLE_ITEMS_CACHE[:] = items
     return _STYLE_ITEMS_CACHE
 
@@ -230,7 +342,9 @@ def role_hex_map(colors):
 
 
 def write_mesh_color_roles(mesh, colors=None):
-    mesh[COLOR_ROLES_PROP] = json.dumps(role_hex_map(colors or scene_colors()), sort_keys=True)
+    mesh[COLOR_ROLES_PROP] = json.dumps(
+        role_hex_map(colors or scene_colors()), sort_keys=True
+    )
 
 
 def read_mesh_color_roles(mesh, fallback):
@@ -238,7 +352,18 @@ def read_mesh_color_roles(mesh, fallback):
     if not raw:
         return dict(fallback)
     try:
-        return normalize_colors(json.loads(raw))
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("color roles must be an object")
+        # Roles missing from an older snapshot take the caller's fallback (the
+        # current material color), not DEFAULT, which would recolor the wrong pixels.
+        roles = dict(fallback)
+        for role in ROLE_NAMES:
+            if role in parsed:
+                roles[role] = hex_to_srgb(parsed[role])
+        return roles
     except (TypeError, ValueError, json.JSONDecodeError):
-        print(f"[TP3D colors] Invalid {COLOR_ROLES_PROP} on {mesh.name}; using current materials")
+        print(
+            f"[TP3D colors] Invalid {COLOR_ROLES_PROP} on {mesh.name}; using current materials"
+        )
         return dict(fallback)
