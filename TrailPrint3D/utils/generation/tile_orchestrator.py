@@ -22,7 +22,11 @@ from .output import (
     _rg_finalize_metadata,
     _rg_set_material_preview,
 )
-from .terrain_gen import _rg_create_satellite_plane, _rg_start_satellite_prefetch
+from .terrain_gen import (
+    _rg_create_satellite_plane,
+    _rg_start_osm_prefetch,
+    _rg_start_satellite_prefetch,
+)
 
 # createTerrainFromSelected sub-phase helpers
 #
@@ -52,6 +56,7 @@ def _rtg_apply_elevation(
     additionalExtrusion,
     progress_cb=None,
     skip_bottom_recess=False,
+    prefetched_osm=None,
 ):
     """Fetch terrain elevation, apply to vertices, extrude bottom face, shift to z=0.
 
@@ -108,12 +113,12 @@ def _rtg_apply_elevation(
     # with the bare object -- call it here first so _rg_build_terrain_elements
     # (which needs gen.runtime.mapKm) sees it too.
     compute_and_store_tile_bounds(gen)
-    # This tile's own bbox is now known -- start the WorldCover prefetch (a
-    # no-op unless elementSource == "WORLDCOVER") here so its network request
-    # overlaps get_tile_elevation()'s below, same overlap runGeneration gets
-    # by starting it alongside its own elevation fetch. Joined later by
-    # _rg_create_satellite_plane() in _rtg_process_tile, once this tile's
-    # mesh has real elevation to test face normals against.
+    # This tile's own bbox is now known -- start OSM and WorldCover prefetches
+    # before the elevation request so their network work overlaps it, as in
+    # runGeneration. A combined multi-tile OSM fetch is already running (or
+    # finished) when supplied by the caller, so don't duplicate it.
+    if prefetched_osm is None:
+        _rg_start_osm_prefetch(gen)
     _rg_start_satellite_prefetch(gen)
     get_tile_elevation(gen, progress_cb=progress_cb)
     tileVerts = gen.runtime.tileVerts or []
@@ -475,6 +480,7 @@ def _rtg_process_tile(
         additionalExtrusion,
         progress_cb=_elev_progress,
         skip_bottom_recess=skip_bottom_recess,
+        prefetched_osm=prefetched_osm,
     )
     overlay.sub_percent = None
     overlay.set_fetch_done("elevation", success=True)
@@ -528,6 +534,14 @@ def _rtg_process_tile(
         base_pct + step * 0.65, "Land Cover", f"{tile_label} — sampling WorldCover…"
     )
     _rg_create_satellite_plane(gen)
+
+    # Match runGeneration: consume the OSM data after elevation and other
+    # tile preparation have had a chance to overlap the background request.
+    if prefetched_osm is None and gen.fetch.fetchThread is not None:
+        gen.fetch.fetchThread.join()
+        prefetched_osm = gen.fetch.fetchResult
+        gen.fetch.fetchThread = None
+        gen.fetch.fetchResult = None
 
     # --- Phase 4: Terrain overlay elements (water, forest, city, glacier, buildings, roads) ---
     _elem_start = base_pct + step * 0.70
@@ -834,6 +848,11 @@ def runTileGeneration(
                     status="pending",
                 )
                 continue
+            finally:
+                if gen.fetch.fetchThread is not None:
+                    gen.fetch.fetchThread.join()
+                    gen.fetch.fetchThread = None
+                    gen.fetch.fetchResult = None
 
             _rtg_update_tile_preview_status(
                 overlay, _mp_valid, _mp_tiles_info, _mp_tile_size, zobj,
