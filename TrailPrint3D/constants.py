@@ -100,7 +100,7 @@ _KIND_MATERIAL_NAME = {
     "GREENSPACE": "GREENSPACE",
     "FARMLAND": "FARMLAND",
     "GLACIER": "GLACIER",
-    "ROADS": "BLACK",
+    "ROADS": "ROADS",
     "TRAIL": "TRAIL",
 }
 
@@ -191,6 +191,9 @@ preset_dir = os.path.join(bpy.utils.user_resource("CONFIG"), "TP3D-presets")
 # /get_page_defaults & /save_page_defaults. Created on first save. A
 # subfolder, so the main panel's CSV presets in preset_dir never list them.
 generator_defaults_dir = os.path.join(preset_dir, "generator_defaults")
+
+# User-wide color styles, one JSON file per style. Created on first save.
+color_style_dir = os.path.join(bpy.utils.user_resource("CONFIG"), "TrailPrint3D", "color_styles")
 
 # Set up a folder for the picker pages' (puzzleGenerator.html etc.) per-
 # generator generation history -- one JSON file per page, see

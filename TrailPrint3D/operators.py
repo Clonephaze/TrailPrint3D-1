@@ -27,6 +27,7 @@ from mathutils import Euler, Quaternion, Vector, noise  # type: ignore
 from . import addon_preferences, export, utils
 from . import constants as const
 from . import progress as _progress
+from .utils import color_styles
 from .utils.color import set_material_srgb
 from .utils.dataclasses import ExportError, GenerationError
 
@@ -1302,14 +1303,11 @@ def _height_color_material(color):
     """Return the material dedicated to this exact colour.
 
     Every height layer owns its own material so stacking a second colour on
-    top never recolours the layers applied before it. The default grey keeps
-    using the long-standing MOUNTAIN material so existing maps, palettes and
-    exports are unaffected.
+    top never recolours the layers applied before it. Grey also gets its own
+    HEIGHT_ material so it never overwrites the configurable MOUNTAIN role.
     """
     r, g, b = _color_to_srgb255(color)
-    name = (
-        "MOUNTAIN" if (r, g, b) == (128, 128, 128) else f"HEIGHT_{r:02X}{g:02X}{b:02X}"
-    )
+    name = f"HEIGHT_{r:02X}{g:02X}{b:02X}"
     mat = bpy.data.materials.get(name)
     if mat is None:
         mat = bpy.data.materials.new(name=name)
@@ -1596,13 +1594,9 @@ def _apply_mountain_manifold(
         # Applying the Boolean drops mesh-level custom properties -- carry the
         # 3MF paint metadata over so a textured map stays textured (same as
         # utils/mesh_ops.py does for split terrain pieces).
-        for key in (
-            "3mf_is_paint_texture",
-            "3mf_paint_default_extruder",
-            "3mf_paint_extruder_colors",
-        ):
-            if key in original_mesh:
-                new_base_mesh[key] = original_mesh[key]
+        from .utils.texture import copy_paint_metadata
+
+        copy_paint_metadata(original_mesh, new_base_mesh)
         obj.data = new_base_mesh
         bpy.data.objects.remove(base_work, do_unlink=True)
         base_work = None
@@ -3186,6 +3180,101 @@ class TP3D_OT_reset_osm_size_limits(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class TP3D_OT_reset_color_style(bpy.types.Operator):
+    bl_idname = "tp3d.reset_color_style"
+    bl_label = _("Reset Colors")
+    bl_description = _tip("Reset the color swatches to the selected color style")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        tp3d = context.scene.tp3d
+        try:
+            color_styles.set_scene_colors(tp3d, color_styles.style_colors(tp3d.color_style))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            self.report({'ERROR'}, _rpt("Could not load color style: {}").format(exc))
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class TP3D_OT_save_color_style(bpy.types.Operator):
+    bl_idname = "tp3d.save_color_style"
+    bl_label = _("Save Color Style")
+    bl_description = _tip("Save the current colors as a reusable style for all Blender files")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        tp3d = context.scene.tp3d
+        name = tp3d.color_style_name.strip()
+        try:
+            identifier = color_styles.save_user_style(name, color_styles.scene_colors(tp3d))
+        except (OSError, ValueError) as exc:
+            self.report({'ERROR'}, _rpt("Could not save color style: {}").format(exc))
+            return {'CANCELLED'}
+        tp3d.color_style = identifier
+        tp3d.color_style_name = ""
+        self.report({'INFO'}, _rpt("Saved color style: {}").format(name))
+        return {'FINISHED'}
+
+
+class TP3D_OT_delete_color_style(bpy.types.Operator):
+    bl_idname = "tp3d.delete_color_style"
+    bl_label = _("Delete Color Style")
+    bl_description = _tip("Delete the selected saved color style. The current colors are kept")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.tp3d.color_style.startswith(color_styles.USER_STYLE_PREFIX)
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
+    def execute(self, context):
+        tp3d = context.scene.tp3d
+        colors = color_styles.scene_colors(tp3d)
+        try:
+            color_styles.delete_user_style(tp3d.color_style)
+        except (OSError, ValueError) as exc:
+            self.report({'ERROR'}, _rpt("Could not delete color style: {}").format(exc))
+            return {'CANCELLED'}
+        tp3d.color_style = color_styles.DEFAULT_STYLE
+        color_styles.set_scene_colors(tp3d, colors)
+        return {'FINISHED'}
+
+
+class TP3D_OT_apply_color_style(bpy.types.Operator):
+    bl_idname = "tp3d.apply_color_style"
+    bl_label = _("Apply to Existing Maps")
+    bl_description = _tip(
+        "Apply current material colors and recolor Paint textures in the current scene"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from .utils.primitives import setupColors
+        from .utils.texture import recolor_paint_textures
+
+        new_colors = color_styles.scene_colors(context.scene.tp3d)
+        previous_colors = color_styles.material_role_colors()
+        setupColors(new_colors)
+        stats = recolor_paint_textures(new_colors, previous_colors, context.scene)
+
+        if stats["collisions"]:
+            self.report(
+                {'WARNING'},
+                _rpt("Some elements shared a color and were recolored together: {}").format(
+                    ", ".join(sorted(stats["collisions"]))
+                ),
+            )
+        if stats["missing"]:
+            print(f"[TP3D colors] Paint texture image missing for: {', '.join(stats['missing'])}")
+        self.report(
+            {'INFO'},
+            _rpt("Applied colors to materials and {} paint texture(s)").format(stats["meshes"]),
+        )
+        return {'FINISHED'}
+
+
 class TP3D_OT_install_update(bpy.types.Operator):
     bl_idname = "tp3d.install_update"
     bl_label = _("Install Update")
@@ -3445,6 +3534,8 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             utils.apply_setting_update(context.scene.tp3d, key, value)
         for key, value in mp.drain_pending_advanced_settings():
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
+        for update in mp.drain_pending_color_styles():
+            utils.apply_color_update(context.scene.tp3d, update)
         for request in mp.drain_pending_prefetch():
             self._start_prefetch(context, request)
         if mp.drain_pending_3mf_install():
@@ -4094,6 +4185,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             utils.apply_setting_update(context.scene.tp3d, key, value)
         for key, value in mp.drain_pending_advanced_settings():
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
+        for update in mp.drain_pending_color_styles():
+            utils.apply_color_update(context.scene.tp3d, update)
         for request in mp.drain_pending_prefetch():
             self._start_prefetch(context, request)
         if mp.drain_pending_3mf_install():

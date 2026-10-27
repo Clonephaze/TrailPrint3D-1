@@ -30,6 +30,12 @@ from ..constants import (
     _UV_LAYER_NAME,
 )
 from .color import material_to_srgb
+from .color_styles import (
+    ROLE_NAMES,
+    material_role_colors,
+    read_mesh_color_roles,
+    write_mesh_color_roles,
+)
 from .dataclasses import GenerationContext
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -463,6 +469,7 @@ def setup_paint_texture(gen: GenerationContext):
     mesh["3mf_is_paint_texture"] = True
     mesh["3mf_paint_default_extruder"] = 1
     mesh["3mf_paint_extruder_colors"] = str(palette)
+    write_mesh_color_roles(mesh, material_role_colors())
 
     print(
         f"[TP3D texture] {resolution}x{resolution}px | {len(palette)} filaments | "
@@ -1138,6 +1145,23 @@ def has_height_bake_undo(terrain_obj):
     return isinstance(history, list) and bool(history)
 
 
+PAINT_MESH_METADATA_KEYS = (
+    "3mf_is_paint_texture",
+    "3mf_paint_default_extruder",
+    "3mf_paint_extruder_colors",
+    "tp3d_color_roles",
+)
+
+
+def copy_paint_metadata(source_mesh, target_mesh):
+    """Copy mesh-level 3MF paint metadata that Blender boolean results drop."""
+    if source_mesh is None or target_mesh is None:
+        return
+    for key in PAINT_MESH_METADATA_KEYS:
+        if key in source_mesh:
+            target_mesh[key] = source_mesh[key]
+
+
 def tag_solid_color_for_paint_export(obj, srgb, palette):
     """Give a companion mesh a 1×1 solid-colour paint texture.
 
@@ -1285,3 +1309,161 @@ def crop_paint_texture_to_piece(piece_obj, source_image):
     links.new(bsdf.outputs["BSDF"], out_node.inputs["Surface"])
     mesh.materials.clear()
     mesh.materials.append(mat)
+
+
+# ── Recolor existing paint textures ──────────────────────────────────────────
+
+_RECOLOR_TOLERANCE = 3
+
+
+def _hex_to_u8(value):
+    value = value.lstrip("#")
+    return np.array([int(value[i : i + 2], 16) for i in (0, 2, 4)], dtype=np.int16)
+
+
+def color_role_mapping(old_roles, new_roles):
+    """Return ({old_hex: new_hex}, colliding_old_hexes).
+
+    Roles that previously shared one colour can't be told apart in the image;
+    the first role in ROLE_NAMES order wins and the colour is reported.
+    """
+    mapping = {}
+    collisions = set()
+    for role in ROLE_NAMES:
+        old_hex = _srgb_to_hex(*old_roles[role])
+        new_hex = _srgb_to_hex(*new_roles[role])
+        if old_hex in mapping:
+            if mapping[old_hex] != new_hex:
+                collisions.add(old_hex)
+            continue
+        mapping[old_hex] = new_hex
+    return {old: new for old, new in mapping.items() if old != new}, collisions
+
+
+def _remap_rgb_u8(rgb, mapping):
+    """Return (remapped, changed_mask); masks all come from the original colours."""
+    rgb = rgb.astype(np.int16)
+    out = rgb.copy()
+    changed = np.zeros(rgb.shape[:-1], dtype=bool)
+    for old_hex, new_hex in mapping.items():
+        mask = np.all(np.abs(rgb - _hex_to_u8(old_hex)) <= _RECOLOR_TOLERANCE, axis=-1)
+        out[mask] = _hex_to_u8(new_hex)
+        changed |= mask
+    return out, changed
+
+
+def _remap_hex(hexcol, mapping):
+    out, _changed = _remap_rgb_u8(_hex_to_u8(hexcol)[None, :], mapping)
+    return _srgb_to_hex(*out[0])
+
+
+def _remap_palette(palette, mapping, keep_hexes):
+    remapped = {}
+    for key in sorted(palette):
+        hexcol = _remap_hex(palette[key], mapping)
+        if hexcol in remapped.values() and key != 0:
+            continue
+        remapped[key] = hexcol
+    for hexcol in keep_hexes:
+        if hexcol not in remapped.values():
+            remapped[(max(remapped) + 1) if remapped else 0] = hexcol
+    return remapped
+
+
+def _remap_float_pixels(pixels, mapping):
+    arr = pixels.reshape(-1, 4)
+    u8 = np.clip(np.rint(arr[:, :3] * 255.0), 0, 255)
+    out, changed = _remap_rgb_u8(u8, mapping)
+    arr[changed, :3] = out[changed].astype(np.float32) / 255.0
+    return int(np.count_nonzero(changed))
+
+
+def _remap_palette_prop(mesh, mapping, keep_hexes):
+    import ast
+
+    raw = mesh.get("3mf_paint_extruder_colors")
+    if not raw:
+        return
+    try:
+        palette = ast.literal_eval(raw)
+    except (ValueError, SyntaxError):
+        print(f"[TP3D colors] Invalid 3mf_paint_extruder_colors on {mesh.name}; left unchanged")
+        return
+    if not isinstance(palette, dict):
+        return
+    palette = _remap_palette(palette, mapping, keep_hexes)
+    mesh["3mf_paint_extruder_colors"] = str(palette)
+    owned = [key for key in _height_palette_keys(mesh) if key in palette]
+    if owned:
+        mesh[_HEIGHT_BAKE_PALETTE_KEY_PROP] = owned
+    elif _HEIGHT_BAKE_PALETTE_KEY_PROP in mesh:
+        del mesh[_HEIGHT_BAKE_PALETTE_KEY_PROP]
+
+
+def _remap_height_bake_history(image_name, mapping, keep_hexes):
+    import ast
+
+    for state in _HEIGHT_BAKE_UNDO.get(image_name, []):
+        if state["kind"] == "indexed":
+            palette_u8 = state["palette"]
+            rgb, _changed = _remap_rgb_u8(palette_u8[:, :3], mapping)
+            state["palette"] = np.concatenate(
+                (rgb.astype(np.uint8), palette_u8[:, 3:]), axis=1
+            )
+        else:
+            _remap_float_pixels(state["pixels"], mapping)
+        if state["meta_palette"]:
+            try:
+                palette = ast.literal_eval(state["meta_palette"])
+            except (ValueError, SyntaxError):
+                continue
+            if isinstance(palette, dict):
+                state["meta_palette"] = str(_remap_palette(palette, mapping, keep_hexes))
+
+
+def recolor_paint_textures(new_roles, fallback_roles, scene):
+    """Recolor TrailPrint3D paint textures used by objects in scene to new_roles.
+
+    Uses each mesh's tp3d_color_roles snapshot as the source colours, falling
+    back to fallback_roles (the materials before the update) for older maps.
+    Orphan meshes and objects unlinked from this scene are not targets.
+    Returns {"meshes", "pixels", "collisions", "missing"}.
+    """
+    keep_hexes = [
+        _srgb_to_hex(*_named_material_srgb("WHITE", (255, 255, 255))),
+        _srgb_to_hex(*_named_material_srgb("BLACK")),
+        _srgb_to_hex(*new_roles["TRAIL"]),
+    ]
+    stats = {"meshes": 0, "pixels": 0, "collisions": set(), "missing": []}
+    processed_images = set()
+    meshes = {obj.data for obj in scene.objects if obj.type == "MESH"}
+    for mesh in meshes:
+        if not mesh.get("3mf_is_paint_texture"):
+            continue
+        if f"{mesh.name}_MMU_Solid" in bpy.data.images:
+            continue
+        image = bpy.data.images.get(f"{mesh.name}_MMU_Paint")
+        if image is None:
+            stats["missing"].append(mesh.name)
+            continue
+
+        old_roles = read_mesh_color_roles(mesh, fallback_roles)
+        mapping, collisions = color_role_mapping(old_roles, new_roles)
+        stats["collisions"] |= collisions
+        if mapping:
+            if image.name not in processed_images:
+                pixels = np.empty(len(image.pixels), dtype=np.float32)
+                image.pixels.foreach_get(pixels)
+                changed = _remap_float_pixels(pixels, mapping)
+                if changed:
+                    image.pixels.foreach_set(pixels)  # type: ignore - Blender api accepts the numpy array
+                    image.update()
+                    if image.packed_file is not None:
+                        image.pack()
+                stats["pixels"] += changed
+                _remap_height_bake_history(image.name, mapping, keep_hexes)
+                processed_images.add(image.name)
+            _remap_palette_prop(mesh, mapping, keep_hexes)
+        write_mesh_color_roles(mesh, new_roles)
+        stats["meshes"] += 1
+    return stats
