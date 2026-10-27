@@ -5,6 +5,7 @@ import zlib
 
 import bpy
 from bpy.app.translations import pgettext_iface as _
+from bpy.app.translations import pgettext_tip as _tip
 
 from .. import constants as const
 from .color import material_to_srgb
@@ -31,7 +32,10 @@ STYLE_VERSION = 1
 
 BUILT_IN_STYLES = {
     "FOREST": (
-        "Forest",
+        _("Forest"),
+        _tip(
+            "A bold, natural green palette with vivid greens, deep forest tones, and classic blue water."
+        ),
         {
             "BASE": "#0DB20D",
             "WATER": "#0000CC",
@@ -48,7 +52,10 @@ BUILT_IN_STYLES = {
         },
     ),
     "URBAN": (
-        "Urban",
+        _("Urban"),
+        _tip(
+            "A modern, understated palette of concrete grays, slate tones, blue water, and muted greens."
+        ),
         {
             "BASE": "#A7ADB2",
             "WATER": "#397FA5",
@@ -65,7 +72,10 @@ BUILT_IN_STYLES = {
         },
     ),
     "DESERT": (
-        "Desert",
+        _("Desert"),
+        _tip(
+            "A warm, earthy palette of sandstone, clay, and olive tones, accented by blue water and red trails."
+        ),
         {
             "BASE": "#D2B078",
             "WATER": "#318BA3",
@@ -81,42 +91,11 @@ BUILT_IN_STYLES = {
             "YELLOW": "#F0C653",
         },
     ),
-    "MIDNIGHT": (
-        "Midnight",
-        {
-            "BASE": "#343B46",
-            "WATER": "#245C85",
-            "FOREST": "#24483F",
-            "MOUNTAIN": "#68717E",
-            "CITY": "#525967",
-            "GREENSPACE": "#557D65",
-            "FARMLAND": "#85764D",
-            "GLACIER": "#C7D8E3",
-            "BUILDINGS": "#8994A3",
-            "ROADS": "#1D222B",
-            "TRAIL": "#FF796C",
-            "YELLOW": "#F2C14E",
-        },
-    ),
-    "VIBRANT": (
-        "Vibrant",
-        {
-            "BASE": "#E8C95B",
-            "WATER": "#168BE0",
-            "FOREST": "#176B3A",
-            "MOUNTAIN": "#8D79C6",
-            "CITY": "#F29B62",
-            "GREENSPACE": "#71D64A",
-            "FARMLAND": "#C5B52D",
-            "GLACIER": "#BDEEFF",
-            "BUILDINGS": "#6550A4",
-            "ROADS": "#303044",
-            "TRAIL": "#F04472",
-            "YELLOW": "#FFF000",
-        },
-    ),
     "SNOW": (
-        "Snow",
+        _("Snow"),
+        _tip(
+            "A crisp winter palette of snowy whites, icy blues, cool grays, and evergreen forests, with orange trail accents."
+        ),
         {
             "BASE": "#E8EEF2",
             "WATER": "#68A9D0",
@@ -175,13 +154,13 @@ def srgb_to_color(rgb):
 
 
 def default_colors():
-    return normalize_colors(BUILT_IN_STYLES[DEFAULT_STYLE][1])
+    return normalize_colors(BUILT_IN_STYLES[DEFAULT_STYLE][2])
 
 
 def normalize_colors(colors):
     normalized = {
         role: hex_to_srgb(value)
-        for role, value in BUILT_IN_STYLES[DEFAULT_STYLE][1].items()
+        for role, value in BUILT_IN_STYLES[DEFAULT_STYLE][2].items()
     }
     if not isinstance(colors, dict):
         return normalized
@@ -280,7 +259,7 @@ def load_user_style(name):
 def save_user_style(name, colors):
     name = _safe_style_name(name)
     if name.upper() in BUILT_IN_STYLES or name.lower() in {
-        label.lower() for label, _colors in BUILT_IN_STYLES.values()
+        label.lower() for label, _description, _colors in BUILT_IN_STYLES.values()
     }:
         raise ValueError(_("Built-in style names are reserved."))
     os.makedirs(const.color_style_dir, exist_ok=True)
@@ -307,16 +286,20 @@ def delete_user_style(identifier):
 
 def style_colors(identifier):
     if identifier in BUILT_IN_STYLES:
-        return normalize_colors(BUILT_IN_STYLES[identifier][1])
+        return normalize_colors(BUILT_IN_STYLES[identifier][2])
     if identifier.startswith(USER_STYLE_PREFIX):
         return load_user_style(identifier[len(USER_STYLE_PREFIX) :])
     raise ValueError(f"Unknown color style: {identifier}")
 
 
 def color_style_items(_self, _context):
+    # Labels and descriptions are already translated at definition time in
+    # BUILT_IN_STYLES (via _() and _tip()), so do not re-wrap them here.
     items = [
-        (key, _(label), _("Built-in color style"), index)
-        for index, (key, (label, _colors)) in enumerate(BUILT_IN_STYLES.items())
+        (key, label, description, index)
+        for index, (key, (label, description, _colors)) in enumerate(
+            BUILT_IN_STYLES.items()
+        )
     ]
     names = list_user_styles()
     for name, value in _user_style_enum_values(names).items():
@@ -358,7 +341,7 @@ def read_mesh_color_roles(mesh, fallback):
     try:
         parsed = json.loads(raw)
         if not isinstance(parsed, dict):
-            raise ValueError("color roles must be an object")
+            raise TypeError("color roles must be an object")
         # Roles missing from an older snapshot take the caller's fallback (the
         # current material color), not DEFAULT, which would recolor the wrong pixels.
         roles = dict(fallback)

@@ -1619,7 +1619,7 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     show_color_settings: BoolProperty(name=_("Color Settings"), default=False)  # type: ignore
     # color_style must stay before the swatches so CSV presets restore custom swatches after the style update.
     color_style: EnumProperty(
-        name=_("Color Style"),
+        name=_("Color Style:"),
         description=_tip("Built-in or saved set of colors for map elements"),
         items=color_styles.color_style_items,
         update=_on_color_style_update,
