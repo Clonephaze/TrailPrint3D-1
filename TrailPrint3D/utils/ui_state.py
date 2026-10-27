@@ -373,7 +373,11 @@ _SETTINGS_ROW_FIELDS = {
     "texIncludeTrail": ("tex_include_trail", bool),
     "texResolution": ("tex_resolution", int),
     # Settings popup's Other tab, API section -- mirrors panels.py's API box.
+    # demFilePath is set by picker_server's /pick_dem_path (OS dialog).
     "api": ("api", str),
+    "dataset": ("dataset", str),
+    "openTopographyDataset": ("openTopographyDataset", str),
+    "demFilePath": ("demFilePath", str),
     "disableCache": ("disableCache", bool),
 }
 
