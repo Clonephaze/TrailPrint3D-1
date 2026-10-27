@@ -313,6 +313,10 @@ function tp3dAttachSubFlyout(wrap, chip, key) {
         el.id = 'element-flyout-' + key;
         el.setAttribute('role', 'group');
         el.setAttribute('aria-label', chip.textContent.trim() + ' categories');
+        // Focusable so a press on the padding / gaps between rows focuses the
+        // flyout instead of <body> -- otherwise focusout below sees focus
+        // leaving the wrap and closes it on a near-miss click.
+        el.tabIndex = -1;
         var remembered = (ADVANCED_SETTINGS_STATE._compositeRemembered || {})[key] || {};
         var active = tp3dCompositeIsActive(key);
         def.checkboxes.forEach(function(field) {
