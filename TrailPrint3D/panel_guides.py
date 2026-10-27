@@ -221,10 +221,17 @@ classes = [
         "TP3D_PT_help_appearance",
         "About: Appearance",
         "Controls whether map elements use a texture or flat per-face colors.\n"
+        "Controls how map elements are colored, and whether they use a texture "
+        "or flat per-face colors.\n"
+        "\n"
+        "Color Style picks a built-in or saved set of colors. Open Advanced "
+        "Color Settings to adjust individual colors, save them as your own "
+        "style, or apply them to maps already generated in this scene, "
+        "including Paint textures.\n"
         "\n"
         "Textures produce more accurate results regardless of mesh resolution, "
         "but increase export and slicing time. Including the trail or roads in "
-        "the texture merges them into a single object instead of separate parts.",
+        "the texture means they won't generate as separate objects.\n",
         doc_url="https://trailprint3d.com/howto.html#ht-elements",
     ),
 ]
