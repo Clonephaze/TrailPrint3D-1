@@ -3259,7 +3259,7 @@ class TP3D_OT_delete_color_style(bpy.types.Operator):
         except (OSError, ValueError) as exc:
             self.report({'ERROR'}, _rpt("Could not delete color style: {}").format(exc))
             return {'CANCELLED'}
-        tp3d.color_style = "DEFAULT"
+        tp3d.color_style = color_styles.DEFAULT_STYLE
         color_styles.set_scene_colors(tp3d, colors)
         return {'FINISHED'}
 

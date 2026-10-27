@@ -30,8 +30,8 @@ USER_STYLE_PREFIX = "USER:"
 STYLE_VERSION = 1
 
 BUILT_IN_STYLES = {
-    "DEFAULT": (
-        "Default",
+    "FOREST": (
+        "Forest",
         {
             "BASE": "#0DB20D",
             "WATER": "#0000CC",
@@ -45,6 +45,23 @@ BUILT_IN_STYLES = {
             "ROADS": "#000000",
             "TRAIL": "#FF0000",
             "YELLOW": "#FFFF00",
+        },
+    ),
+    "URBAN": (
+        "Urban",
+        {
+            "BASE": "#A7ADB2",
+            "WATER": "#397FA5",
+            "FOREST": "#496B52",
+            "MOUNTAIN": "#777F86",
+            "CITY": "#D1CEC5",
+            "GREENSPACE": "#82A77B",
+            "FARMLAND": "#B4AE83",
+            "GLACIER": "#E7F0F3",
+            "BUILDINGS": "#515B65",
+            "ROADS": "#30363B",
+            "TRAIL": "#D94A45",
+            "YELLOW": "#E9B949",
         },
     ),
     "DESERT": (
@@ -64,75 +81,62 @@ BUILT_IN_STYLES = {
             "YELLOW": "#F0C653",
         },
     ),
-    "CITY": (
-        "City",
+    "MIDNIGHT": (
+        "Midnight",
         {
-            "BASE": "#A7ADB2",
-            "WATER": "#397FA5",
-            "FOREST": "#496B52",
-            "MOUNTAIN": "#777F86",
-            "CITY": "#D1CEC5",
-            "GREENSPACE": "#82A77B",
-            "FARMLAND": "#B4AE83",
-            "GLACIER": "#E7F0F3",
-            "BUILDINGS": "#515B65",
-            "ROADS": "#30363B",
-            "TRAIL": "#D94A45",
-            "YELLOW": "#E9B949",
-        },
-    ),
-    "ARCTIC": (
-        "Arctic",
-        {
-            "BASE": "#D5E3E9",
-            "WATER": "#326FA0",
-            "FOREST": "#476B61",
-            "MOUNTAIN": "#9AAAB4",
-            "CITY": "#B9C8D0",
-            "GREENSPACE": "#A4C6B9",
-            "FARMLAND": "#C3D2BB",
-            "GLACIER": "#F2F8FA",
-            "BUILDINGS": "#637582",
-            "ROADS": "#344550",
-            "TRAIL": "#D74440",
-            "YELLOW": "#F0CB62",
-        },
-    ),
-    "FOREST": (
-        "Forest",
-        {
-            "BASE": "#688653",
-            "WATER": "#327A96",
-            "FOREST": "#244B35",
-            "MOUNTAIN": "#82796A",
-            "CITY": "#B0A47B",
-            "GREENSPACE": "#96B96C",
-            "FARMLAND": "#A3A45C",
-            "GLACIER": "#DDEAE5",
-            "BUILDINGS": "#695A49",
-            "ROADS": "#40382F",
-            "TRAIL": "#D65356",
-            "YELLOW": "#EAB65A",
-        },
-    ),
-    "ALPINE": (
-        "Alpine",
-        {
-            "BASE": "#7EA66A",
-            "WATER": "#377FA7",
-            "FOREST": "#315C43",
-            "MOUNTAIN": "#898B87",
-            "CITY": "#BDB49E",
-            "GREENSPACE": "#A9C97B",
-            "FARMLAND": "#B7B66F",
-            "GLACIER": "#F1F6F8",
-            "BUILDINGS": "#6B6C67",
-            "ROADS": "#393B39",
-            "TRAIL": "#D94345",
+            "BASE": "#343B46",
+            "WATER": "#245C85",
+            "FOREST": "#24483F",
+            "MOUNTAIN": "#68717E",
+            "CITY": "#525967",
+            "GREENSPACE": "#557D65",
+            "FARMLAND": "#85764D",
+            "GLACIER": "#C7D8E3",
+            "BUILDINGS": "#8994A3",
+            "ROADS": "#1D222B",
+            "TRAIL": "#FF796C",
             "YELLOW": "#F2C14E",
         },
     ),
+    "VIBRANT": (
+        "Vibrant",
+        {
+            "BASE": "#E8C95B",
+            "WATER": "#168BE0",
+            "FOREST": "#176B3A",
+            "MOUNTAIN": "#8D79C6",
+            "CITY": "#F29B62",
+            "GREENSPACE": "#71D64A",
+            "FARMLAND": "#C5B52D",
+            "GLACIER": "#BDEEFF",
+            "BUILDINGS": "#6550A4",
+            "ROADS": "#303044",
+            "TRAIL": "#F04472",
+            "YELLOW": "#FFF000",
+        },
+    ),
+    "SNOW": (
+        "Snow",
+        {
+            "BASE": "#E8EEF2",
+            "WATER": "#68A9D0",
+            "FOREST": "#315746",
+            "MOUNTAIN": "#A3ADB8",
+            "CITY": "#C8D0D8",
+            "GREENSPACE": "#A8C7B0",
+            "FARMLAND": "#D4DCCB",
+            "GLACIER": "#FFFFFF",
+            "BUILDINGS": "#697785",
+            "ROADS": "#485563",
+            "TRAIL": "#E87532",
+            "YELLOW": "#F2C75C",
+        },
+    ),
 }
+
+# The first built-in doubles as the default: it is the first enum item (so the
+# initial selection) and the source of default_colors().
+DEFAULT_STYLE = next(iter(BUILT_IN_STYLES))
 
 _STYLE_ITEMS_CACHE = []
 
@@ -171,13 +175,13 @@ def srgb_to_color(rgb):
 
 
 def default_colors():
-    return normalize_colors(BUILT_IN_STYLES["DEFAULT"][1])
+    return normalize_colors(BUILT_IN_STYLES[DEFAULT_STYLE][1])
 
 
 def normalize_colors(colors):
     normalized = {
         role: hex_to_srgb(value)
-        for role, value in BUILT_IN_STYLES["DEFAULT"][1].items()
+        for role, value in BUILT_IN_STYLES[DEFAULT_STYLE][1].items()
     }
     if not isinstance(colors, dict):
         return normalized

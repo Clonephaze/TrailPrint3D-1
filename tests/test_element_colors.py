@@ -50,7 +50,7 @@ def _tp3d():
 
 def _reset_scene_colors():
     tp3d = _tp3d()
-    tp3d.color_style = "DEFAULT"
+    tp3d.color_style = color_styles.DEFAULT_STYLE
     color_styles.set_scene_colors(tp3d, color_styles.default_colors())
     primitives.setupColors()
 
@@ -106,7 +106,7 @@ def test_scene_colors_drive_materials():
 
 
 def test_built_in_styles_are_complete():
-    expected = {"DEFAULT", "DESERT", "CITY", "ARCTIC", "FOREST", "ALPINE"}
+    expected = {"FOREST", "URBAN", "DESERT", "MIDNIGHT", "VIBRANT", "SNOW"}
     assert set(color_styles.BUILT_IN_STYLES) == expected
     for _label, colors in color_styles.BUILT_IN_STYLES.values():
         assert set(colors) == set(color_styles.ROLE_NAMES)
@@ -139,18 +139,18 @@ def test_user_style_json_round_trip():
     assert data["version"] == color_styles.STYLE_VERSION
     assert data["colors"]["CITY"] == "#0A141E"
 
-    tp3d.color_style = "DEFAULT"
+    tp3d.color_style = color_styles.DEFAULT_STYLE
     tp3d.color_style = "USER:My Coast"
     assert color_styles.scene_colors(tp3d)["CITY"] == (10, 20, 30)
 
     assert bpy.ops.tp3d.delete_color_style() == {"FINISHED"}
     assert not os.path.exists(path)
-    assert tp3d.color_style == "DEFAULT"
+    assert tp3d.color_style == color_styles.DEFAULT_STYLE
     assert color_styles.scene_colors(tp3d)["CITY"] == (10, 20, 30)
 
 
 def test_invalid_and_reserved_style_names_are_rejected():
-    for name in ("", "bad/name", "Desert", "DEFAULT", "x" * 65):
+    for name in ("", "bad/name", "Desert", "FOREST", "x" * 65):
         try:
             color_styles.save_user_style(name, color_styles.default_colors())
         except ValueError:
