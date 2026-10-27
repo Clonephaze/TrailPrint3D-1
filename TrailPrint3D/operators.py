@@ -3556,6 +3556,8 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             utils.apply_setting_update(context.scene.tp3d, key, value)
         for key, value in mp.drain_pending_advanced_settings():
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
+        for update in mp.drain_pending_color_styles():
+            utils.apply_color_update(context.scene.tp3d, update)
         for request in mp.drain_pending_prefetch():
             self._start_prefetch(context, request)
         if mp.drain_pending_3mf_install():
@@ -4205,6 +4207,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             utils.apply_setting_update(context.scene.tp3d, key, value)
         for key, value in mp.drain_pending_advanced_settings():
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
+        for update in mp.drain_pending_color_styles():
+            utils.apply_color_update(context.scene.tp3d, update)
         for request in mp.drain_pending_prefetch():
             self._start_prefetch(context, request)
         if mp.drain_pending_3mf_install():

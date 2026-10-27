@@ -45,6 +45,17 @@ _pending_settings: 'queue.Queue[tuple]' = queue.Queue()
 # independent on the applying side too.
 _pending_advanced_settings: 'queue.Queue[tuple]' = queue.Queue()
 
+# ── COLOR STYLES ─────────────────────────────────────────────────────
+# Color-style operations from the Settings popup's Other tab (POST
+# /update_color_setting, /apply_color_style, /save_color_style,
+# /delete_color_style, see settings_modal.js). A dedicated queue because
+# apply touches several tp3d properties at once, and save/delete need the
+# helpers from ui.color_styles that aren't on the generic /update_setting
+# whitelist. Drained on the main thread via drain_pending_color_styles and
+# utils.apply_color_update.
+_pending_color_styles: 'queue.Queue[dict]' = queue.Queue()
+# ─────────────────────────────────────────────────────────────────────
+
 # The map generator pages' "Prefetch" button (POST /prefetch, see
 # assets/prefetch_layer.js). Planning it needs scene settings (main thread
 # only, hence the queue drained via drain_pending_prefetch from the calling
@@ -340,6 +351,65 @@ def drain_pending_advanced_settings() -> list:
     return updates
 
 
+# ── COLOR STYLES ─────────────────────────────────────────────────────
+def drain_pending_color_styles() -> list:
+    """Pop every queued color-style operation since the last call, in order.
+
+    Each entry is a dict like:
+        {'action': 'set',    'key': 'element_color_base', 'value': '#RRGGBB'}
+        {'action': 'apply',  'style': 'FOREST' or 'USER:My Palette'}
+        {'action': 'save',   'name': 'My Palette'}
+        {'action': 'delete', 'style': 'USER:My Palette'}
+    Applied on the main thread by utils.apply_color_update.
+    """
+    updates = []
+    while True:
+        try:
+            updates.append(_pending_color_styles.get_nowait())
+        except queue.Empty:
+            break
+    return updates
+
+
+def build_color_styles_state(tp3d) -> dict:
+    """COLOR_STYLES snapshot for the picker page (inlined as
+    __COLOR_STYLES_JS__). Main thread only -- reads the scene's material
+    colors.
+
+    *tp3d* is ``bpy.context.scene.tp3d``.
+    """
+    try:
+        from .utils import color_styles
+        current = color_styles.scene_colors(tp3d)
+        built_in = []
+        for ident, (label, description, colors) in color_styles.BUILT_IN_STYLES.items():
+            built_in.append({
+                'id': ident,
+                'label': label,
+                'description': description,
+                'colors': color_styles.role_hex_map(color_styles.normalize_colors(colors)),
+            })
+        user = []
+        for name in color_styles.list_user_styles():
+            try:
+                colors = color_styles.load_user_style(name)
+            except (OSError, ValueError):
+                continue
+            user.append({'name': name, 'colors': color_styles.role_hex_map(colors)})
+        return {
+            'builtIn': built_in,
+            'user': user,
+            'currentStyle': getattr(tp3d, 'color_style', color_styles.DEFAULT_STYLE),
+            'currentColors': color_styles.role_hex_map(current),
+            'isModified': color_styles.style_is_modified(tp3d),
+        }
+    except (AttributeError, ImportError, KeyError) as e:
+        print(f"[TP3D picker] could not build color styles state: {e}")
+        return {'builtIn': [], 'user': [], 'currentStyle': '',
+                'currentColors': {}, 'isModified': False}
+# ─────────────────────────────────────────────────────────────────────
+
+
 def drain_pending_3mf_install() -> bool:
     """True if the generator page asked for a 3MF addon install since the last
     call (duplicate requests are collapsed -- only one install fires)."""
@@ -354,12 +424,13 @@ def drain_pending_3mf_install() -> bool:
 
 
 def refresh_state_snapshots(element_states: dict | None = None, settings_state: dict | None = None,
-                             advanced_settings: dict | None = None, element_source: str | None = None) -> None:
+                             advanced_settings: dict | None = None, element_source: str | None = None,
+                             color_styles: dict | None = None) -> None:
     """Re-point the running server's cached page-load snapshots (ELEMENT_STATES/
-    SETTINGS_STATE/ADVANCED_SETTINGS_STATE/ELEMENT_SOURCE, see start_picker's
-    own docstring) at fresh dicts, so a later browser reload of '/' serves
-    current scene state instead of whatever was true when start_picker() was
-    first called.
+    SETTINGS_STATE/ADVANCED_SETTINGS_STATE/ELEMENT_SOURCE/COLOR_STYLES, see
+    start_picker's own docstring) at fresh dicts, so a later browser reload of
+    '/' serves current scene state instead of whatever was true when
+    start_picker() was first called.
 
     Needed for every picker page's OSM/ESA WorldCover switch
     (settings_modal.js): flipping tp3d.elementSource via /update_setting only
@@ -375,6 +446,9 @@ def refresh_state_snapshots(element_states: dict | None = None, settings_state: 
     only from the calling operator's modal() timer tick, never from the HTTP
     server's own background thread. Any argument left None keeps that
     snapshot as it was.
+
+    *color_styles*, if given, is picker_server.build_color_styles_state(tp3d)'s
+    return value -- see that function's docstring.
     """
     if element_states is not None:
         _Handler.element_states_json = json.dumps(element_states).encode('utf-8')
@@ -384,6 +458,8 @@ def refresh_state_snapshots(element_states: dict | None = None, settings_state: 
         _Handler.advanced_settings_json = json.dumps(advanced_settings).encode('utf-8')
     if element_source is not None:
         _Handler.element_source = element_source
+    if color_styles is not None:
+        _Handler.color_styles_json = json.dumps(color_styles).encode('utf-8')
 
 
 _HTML_PATH = pathlib.Path(__file__).parent / 'premium' / 'generators' / 'multitile_generator.html'
@@ -907,6 +983,7 @@ class _Handler(BaseHTTPRequestHandler):
     element_states_json: bytes = b'{}'
     settings_state_json: bytes = b'{}'
     advanced_settings_json: bytes = b'{}'
+    color_styles_json: bytes = b'{}'  # ── COLOR STYLES
     element_source: str = 'OSM'
     dem_bounds_json: bytes = b'null'
     obj_size: float = 100.0
@@ -935,6 +1012,18 @@ class _Handler(BaseHTTPRequestHandler):
                 'settingsState': json.loads(self.settings_state_json.decode('utf-8')),
                 'advancedSettings': json.loads(self.advanced_settings_json.decode('utf-8')),
             }).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == '/get_color_styles':
+            # ── COLOR STYLES ────────────────────────────────────────
+            # Serves the main-thread-built snapshot -- see
+            # build_color_styles_state / refresh_state_snapshots. Never
+            # reads bpy directly here; this is the HTTP server's own thread.
+            body = self.color_styles_json
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(body)))
@@ -1187,6 +1276,7 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__ELEMENT_STATUS_JS__', _ELEMENT_STATUS_JS_PATH.read_text(encoding='utf-8'))
             .replace('__SETTINGS_STATE_JS__', 'var SETTINGS_STATE = ' + self.settings_state_json.decode('utf-8') + ';')
             .replace('__ADVANCED_SETTINGS_STATE_JS__', 'var ADVANCED_SETTINGS_STATE = ' + self.advanced_settings_json.decode('utf-8') + ';')
+            .replace('__COLOR_STYLES_JS__', 'var TP3D_COLOR_STYLES = ' + self.color_styles_json.decode('utf-8') + ';')  # ── COLOR STYLES
             .replace('__SETTINGS_MODAL_JS__', _SETTINGS_MODAL_JS_PATH.read_text(encoding='utf-8'))
             .replace('__HISTORY_PANEL_JS__', _HISTORY_PANEL_JS_PATH.read_text(encoding='utf-8'))
             .replace('__RECT_EDITOR_JS__', _RECT_EDITOR_JS_PATH.read_text(encoding='utf-8'))
@@ -1337,6 +1427,39 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'ok')
             return
+        # ── COLOR STYLES ─────────────────────────────────────────────
+        if self.path in ('/update_color_setting', '/apply_color_style',
+                         '/save_color_style', '/delete_color_style'):
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            try:
+                data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                data = {}
+            if self.path == '/update_color_setting':
+                key = data.get('key')
+                value = data.get('value')
+                if key is not None:
+                    _pending_color_styles.put({'action': 'set', 'key': key, 'value': value})
+            elif self.path == '/apply_color_style':
+                style_id = data.get('style')
+                if style_id:
+                    _pending_color_styles.put({'action': 'apply', 'style': style_id})
+            elif self.path == '/save_color_style':
+                name = data.get('name')
+                if name:
+                    _pending_color_styles.put({'action': 'save', 'name': name})
+            elif self.path == '/delete_color_style':
+                style_id = data.get('style')
+                if style_id:
+                    _pending_color_styles.put({'action': 'delete', 'style': style_id})
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', '2')
+            self.end_headers()
+            self.wfile.write(b'ok')
+            return
+        # ─────────────────────────────────────────────────────────────
         if self.path == '/save_state':
             length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(length)
@@ -1666,9 +1789,12 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     element_status.js/settings_modal.js), so this drives their
     element-status strip and Settings modal Elements tab, switching between
     the OSM and WorldCover chip/card sets.
+
+    The color-styles state (COLOR_STYLES) is built here too, via
+    build_color_styles_state -- see that function's docstring.
     """
     global _active_server, _pending_toggles, _pending_settings, _pending_advanced_settings, _pending_prefetch
-    global _pending_model_previews, _pending_3mf_install
+    global _pending_model_previews, _pending_3mf_install, _pending_color_styles
     if _active_server is not None:
         try:
             _active_server.shutdown()
@@ -1678,6 +1804,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     _pending_toggles = queue.Queue()
     _pending_settings = queue.Queue()
     _pending_advanced_settings = queue.Queue()
+    _pending_color_styles = queue.Queue()  # ── COLOR STYLES
     _pending_prefetch = queue.Queue()
     _pending_model_previews = queue.Queue()
     _pending_3mf_install = queue.Queue()
@@ -1723,6 +1850,20 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     _Handler.element_states_json = json.dumps(element_states or {}).encode('utf-8')
     _Handler.settings_state_json = json.dumps(settings_state or {}).encode('utf-8')
     _Handler.advanced_settings_json = json.dumps(advanced_settings or {}).encode('utf-8')
+    # ── COLOR STYLES ─────────────────────────────────────────────────
+    # Built here on the main thread -- build_color_styles_state reads the
+    # scene's material colors, which is main-thread only.
+    try:
+        import bpy  # type: ignore
+        _Handler.color_styles_json = json.dumps(
+            build_color_styles_state(bpy.context.scene.tp3d)).encode('utf-8')
+    except (AttributeError, ImportError) as e:
+        print(f"[TP3D picker] could not build color styles state: {e}")
+        _Handler.color_styles_json = json.dumps({
+            'builtIn': [], 'user': [], 'currentStyle': '',
+            'currentColors': {}, 'isModified': False,
+        }).encode('utf-8')
+    # ─────────────────────────────────────────────────────────────────
     _Handler.element_source = element_source or 'OSM'
     _Handler.dem_bounds_json = json.dumps(dem_bounds).encode('utf-8')
     _Handler.obj_size = obj_size or 100.0
