@@ -894,6 +894,15 @@ def _draw_appearance_box(layout, props):
         icon="COLOR",
         help_key="TP3D_PT_help_appearance",
     )
+    col = box.column(align=True)
+    col.label(text=_("Color Style:"))
+    row = col.row(align=True)
+    row.prop(props, "color_style", text="")
+    row.operator("tp3d.reset_color_style", text="", icon="LOOP_BACK")
+    row.operator("tp3d.delete_color_style", text="", icon="TRASH")
+    if color_styles.style_is_modified(props):
+        col.label(text=_("Modified from selected style"), icon="INFO")
+    box.separator(type="LINE")
     if "PAINT" in props.elementMode:
         box.prop(props, "tex_use_texture")
     trail_tex_row = box.row()
@@ -916,6 +925,7 @@ def _draw_appearance_box(layout, props):
         props,
         "tex_include_roads",
     )
+    _draw_color_settings(box, props)
 
 
 class TP3D_PT_generate(bpy.types.Panel):
@@ -1059,9 +1069,6 @@ def _draw_advanced_generation_box(layout, props):
         row.enabled = props.el_oActive
         row.prop(props, "el_oRdpEpsilon")
 
-    box.separator(type="LINE")
-    _draw_color_settings(box, props)
-
 
 def _draw_color_settings(layout, props):
     row = layout.row()
@@ -1074,14 +1081,6 @@ def _draw_color_settings(layout, props):
     )
     if not props.show_color_settings:
         return
-
-    col = layout.column(align=True)
-    row = col.row(align=True)
-    row.prop(props, "color_style", text="")
-    row.operator("tp3d.reset_color_style", text="", icon="LOOP_BACK")
-    row.operator("tp3d.delete_color_style", text="", icon="TRASH")
-    if color_styles.style_is_modified(props):
-        col.label(text=_("Modified from selected style"), icon="INFO")
 
     grid = layout.grid_flow(row_major=True, columns=2, even_columns=True, align=False)
     for _role, attr, _label in color_styles.COLOR_ROLES:
