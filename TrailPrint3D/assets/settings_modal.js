@@ -1331,10 +1331,24 @@ function tp3dColorStylesAreModified() {
 function tp3dUpdateColorStyleDirty(container) {
     var root = container || document;
     var modified = tp3dColorStylesAreModified();
+
     var dirty = root.querySelector('#colorStyleDirty');
     if (dirty) dirty.style.display = modified ? '' : 'none';
+
     var restore = root.querySelector('#colorStyleRestore');
     if (restore) restore.style.display = modified ? '' : 'none';
+
+    var saveBtn = root.querySelector('.color-save-btn');
+    if (saveBtn) saveBtn.style.display = modified ? '' : 'none';
+
+    var updateBtn = root.querySelector('.color-update-btn');
+    if (updateBtn) updateBtn.style.display = modified ? '' : 'none';
+
+    var actions = root.querySelector('.color-style-actions');
+    if (actions) {
+        var hasVisible = Array.from(actions.children).some(function(c) { return c.style.display !== 'none'; });
+        actions.style.display = hasVisible ? 'flex' : 'none';
+    }
 }
 
 function tp3dBuildColorRoleSwatch(role) {
@@ -1384,6 +1398,17 @@ function tp3dBuildColorStylesSection() {
     label.textContent = 'Color Style';
     label.htmlFor = 'colorStyleSelect';
     styleRow.appendChild(label);
+
+    // Register the guide and attach it to the label + the whole section
+    var guideCaption = [
+        'Color Styles',
+        'Choose a preset palette or click any color to customize it.',
+        'These colors are applied to the terrain, water, forests, roads, and other elements on your generated map.',
+        'If you modify a preset, use "Save as new" to create your own reusable style.'
+    ];
+    // We pass the main `wrap` as the rowEl so hovering anywhere in the color grid 
+    // (or the save buttons) will trigger the guide, not just the label.
+    styleRow.appendChild(tp3dWithPreview(label, null, guideCaption, 'Color Styles', wrap));
 
     var controls = document.createElement('div');
     controls.className = 'adv-field-controls color-style-controls';
@@ -1450,7 +1475,7 @@ function tp3dBuildColorStylesSection() {
 
     var saveBtn = document.createElement('button');
     saveBtn.type = 'button';
-    saveBtn.className = 'element-mode-btn';
+    saveBtn.className = 'element-mode-btn color-save-btn';
     saveBtn.textContent = 'Save as new';
     saveBtn.title = 'Save the current colors as a new user style';
     saveBtn.addEventListener('click', function() { tp3dShowColorStyleNameRow('new'); });
@@ -1459,7 +1484,7 @@ function tp3dBuildColorStylesSection() {
     if (TP3D_COLOR_STYLES.currentStyle.indexOf('USER:') === 0) {
         var updateBtn = document.createElement('button');
         updateBtn.type = 'button';
-        updateBtn.className = 'element-mode-btn';
+        updateBtn.className = 'element-mode-btn color-update-btn';
         updateBtn.textContent = 'Update';
         updateBtn.title = 'Replace the selected user style with the current colors';
         updateBtn.addEventListener('click', function() { tp3dShowColorStyleNameRow('update'); });
