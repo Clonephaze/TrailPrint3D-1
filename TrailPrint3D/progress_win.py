@@ -329,7 +329,7 @@ function renderTileSvg(tiles, tileSize) {
   var ox0 = OUTER + (canvas - groupW) / 2 + tr * scale;
   var oy0 = OUTER + (canvas - groupH) / 2 + tr * scale;
 
-  var pendingOut = '', doneOut = '', activeOut = '';
+  var pendingOut = '', fetchedOut = '', doneOut = '', activeOut = '';
   for (var i = 0; i < n; i++) {
     var t = tiles[i];
     var px = ox0 + (t.bx - minBx) * scale;
@@ -338,6 +338,10 @@ function renderTileSvg(tiles, tileSize) {
     if (t.status === 'active') {
       fill='#1c3a5e'; stk='#f27a0d'; sw=2;
       activeOut += _drawTileShape(t.shape || '', px, py, r, fill, stk, sw);
+    } else if (t.status === 'fetched') {
+      // Elevation prefetched, not generated yet
+      fill='#2a3644'; stk='#5b7fa6'; sw=1.25;
+      fetchedOut += _drawTileShape(t.shape || '', px, py, r, fill, stk, sw);
     } else if (t.status === 'done') {
       fill='#1a3a1e'; stk='#3a8a3a'; sw=1.5;
       doneOut += _drawTileShape(t.shape || '', px, py, r, fill, stk, sw);
@@ -346,7 +350,7 @@ function renderTileSvg(tiles, tileSize) {
       pendingOut += _drawTileShape(t.shape || '', px, py, r, fill, stk, sw);
     }
   }
-  return pendingOut + doneOut + activeOut;
+  return pendingOut + fetchedOut + doneOut + activeOut;
 }
 function renderMapPreview(d) {
   var el = document.getElementById('map-prev');

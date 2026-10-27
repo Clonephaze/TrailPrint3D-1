@@ -34,6 +34,7 @@ TIER_TAGS: dict[str, set[str]] = {
     "cycle_bridle": {"cycleway", "bridleway"},
     "track": {"track"},
     "path": {"path"},
+    "raceway": {"raceway"},
 }
 
 # Dense, short-segment tiers -- dropped above STREETS_PRIMARY_THRESHOLD to
@@ -46,10 +47,11 @@ DENSE_TIERS: frozenset[str] = frozenset(
 # usually a handful of long rural/wilderness lines (often the one trail a
 # user actually wants) rather than urban clutter, so they get the same
 # headroom as the arterial road network instead of the dense-tier cutoff.
-SPARSE_TIERS: frozenset[str] = frozenset({"highways", "major", "minor", "track"})
+# Raceways likewise: a circuit is a handful of long ways, never clutter.
+SPARSE_TIERS: frozenset[str] = frozenset({"highways", "major", "minor", "track", "raceway"})
 
 ALLEY_SERVICE_TYPES: frozenset[str] = frozenset(
-    {"alley", "driveway", "parking_aisle", "drive-through"}
+    {"alley", "driveway", "drive-through"}
 )
 
 
@@ -66,7 +68,7 @@ class RoadConfig:
     max_lat: float
     max_lon: float
     street_width_multiplier: float
-    # Always True (see from_scene) -- alley/driveway/parking_aisle filtering
+    # Always True (see from_scene) -- alley/driveway/drive-through filtering
     # isn't user-configurable, just always-on cleanup of Service Roads.
     exclude_alleys: bool
     tier_active: dict[str, bool] = field(
@@ -118,6 +120,7 @@ def highway_default_width(highway: str) -> float:
         "service": 6.0,
         "track": 6.0,
         "path": 6.0,
+        "raceway": 6.0,
     }
     return mapping.get(highway, 6.0)
 

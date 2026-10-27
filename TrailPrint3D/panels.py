@@ -914,10 +914,10 @@ def _draw_appearance_box(layout, props):
         "tex_include_trail",
     )
     road_tex_row = box.row()
-    # Roads only exist with Map Elements on.
+    # Roads only exist with Map Elements on. Unlike the trail row, a Single
+    # Extruder trail doesn't block this -- painted roads don't touch the cutout.
     road_tex_row.enabled = (
         not _elem_scm
-        and not props.singleColorMode
         and props.tex_use_texture
         and props.elementChoice
     )
@@ -1416,8 +1416,6 @@ def _draw_stats_box(layout, props):
     col = box.column(align=True)
     col.label(text=_("Opentopodata:"))
     col.label(text=props.o_apiCounter_OpenTopoData)
-    col.label(text=_("OpenElevation:"))
-    col.label(text=props.o_apiCounter_OpenElevation)
     box.separator(factor=0.5)
     col = box.column(align=True)
     col.label(
@@ -1438,11 +1436,6 @@ def _draw_attribution_box(layout, props):
         text=_("OpenTopoData — elevation (SRTM and other datasets)"),
         icon="URL",
     ).url = "https://www.opentopodata.org/"
-    col.operator(
-        "wm.url_open",
-        text=_("Open-Elevation — elevation (SRTM © NASA)"),
-        icon="URL",
-    ).url = "https://open-elevation.com/"
     col.operator(
         "wm.url_open",
         text=_("OpenStreetMap contributors — water, forests, city data"),

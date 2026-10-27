@@ -675,6 +675,7 @@ def _munich_settings(**overrides):
             "highways": True, "major": True, "minor": True,
             "residential": False, "service": False, "footway": False,
             "pedestrian": False, "cycle_bridle": False, "track": False, "path": False,
+            "raceway": False,
         },
         "water_ponds": True,
         "water_small_rivers": True,

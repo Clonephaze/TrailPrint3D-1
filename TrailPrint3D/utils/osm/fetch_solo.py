@@ -255,7 +255,7 @@ def fetch_osm_data(
     def _build_streets_query(s, w, n, e, mapsize, tier_active, exclude_alleys=True):
         # tier_active is a {tier_id: bool} dict keyed by utils.osm.roads.TIER_TAGS
         # (e.g. "highways", "major", "minor", "residential", "service",
-        # "footway", "pedestrian", "cycle_bridle", "track", "path"). requested_highway_tags
+        # "footway", "pedestrian", "cycle_bridle", "track", "path", "raceway"). requested_highway_tags
         # already applies the mapsize-based performance gate (see
         # fetch_utils.allowed_road_tiers) -- dense short-segment tiers are
         # dropped above STREETS_PRIMARY_THRESHOLD, sparse long-segment tiers
@@ -279,7 +279,7 @@ def fetch_osm_data(
         if "service" in highway_types:
             if exclude_alleys:
                 filters.append(
-                    'way["highway"="service"]["service"!~"alley|driveway|parking_aisle|drive-through"]'
+                    'way["highway"="service"]["service"!~"alley|driveway|drive-through"]'
                 )
             else:
                 filters.append('way["highway"="service"]')

@@ -49,7 +49,7 @@ def allowed_road_tiers(mapsize: float) -> "set[str]":
     Dense, short-segment tiers (residential/service/footway/pedestrian/
     cycle_bridle/path) are dropped above STREETS_PRIMARY_THRESHOLD to avoid width-scaled
     roads fusing into solid blocks on zoomed-out maps. Sparse, long-segment
-    tiers (highways/major/minor/track) survive up to ROADS_MAXSIZE.
+    tiers (highways/major/minor/track/raceway) survive up to ROADS_MAXSIZE.
     """
     from ... import constants as const
     from .roads import DENSE_TIERS, SPARSE_TIERS

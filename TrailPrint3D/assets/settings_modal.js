@@ -154,9 +154,6 @@ function tp3dHas3mf() {
 function tp3dTextureAvailable() {
     return tp3dHas3mf() && tp3dTexturePaintMode();
 }
-function tp3dTextureTrailRoadsEnabled() {
-    return tp3dTextureAvailable() && MAP_TAB_CONTROL_VALUES.singleColorMode !== true;
-}
 var TP3D_NO_3MF_TITLE = 'Requires the free 3MF addon';
 function tp3dNo3mfTitle() {
     return tp3dHas3mf() ? '' : TP3D_NO_3MF_TITLE;
@@ -274,10 +271,11 @@ function tp3dBuildTrailAppearanceSwitch() {
     return row;
 }
 
-// Other tab's API section -- mirrors panels.py's _draw_api_box. The per-API
-// extras there (Opentopodata dataset, OpenTopography key, DEM file path)
-// stay sidebar-only; API_SETUP_NOTES point there for the two that can't
-// work without them.
+// Other tab's API section -- mirrors panels.py's _draw_api_box: the API
+// select, then (only for the API they belong to, `hideWhenInactive`) its
+// dataset select or the Local DEM file/folder row (tp3dBuildDemPathRow).
+// Opentopodata's self-hosted URL and the OpenTopography key stay
+// sidebar/preferences-only; API_SETUP_NOTES points there for the key.
 var SETTINGS_MODAL_API_FIELDS = [
     { key: 'api', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Elevation API', type: 'select',
@@ -291,10 +289,43 @@ var SETTINGS_MODAL_API_FIELDS = [
       options: [
           ['MAPTERHORN', 'Mapterhorn'],
           ['OPENTOPODATA', 'Opentopodata'],
-          ['OPEN-ELEVATION', 'Open-Elevation'],
           ['TERRAIN-TILES', 'Terrain-Tiles'],
           ['OPENTOPOGRAPHY', 'OpenTopography'],
           ['LOCAL_DEM', 'Local DEM File']
+      ] },
+    // Same identifiers as props.py's `dataset` / `openTopographyDataset`.
+    { key: 'dataset', source: 'SETTINGS_STATE', endpoint: 'update_setting',
+      label: 'Dataset', type: 'select',
+      showWhen: { key: 'api', equals: 'OPENTOPODATA' }, hideWhenInactive: true,
+      title: 'Which Opentopodata dataset the elevation is read from',
+      previewCaption: [
+          'Opentopodata Dataset',
+          'Each dataset covers a different area at a different resolution. Outside its coverage the terrain comes out flat.'
+      ],
+      options: [
+          ['srtm30m', 'SRTM 30m — latitudes -60 to 60'],
+          ['aster30m', 'ASTER 30m — global'],
+          ['ned10m', 'NED 10m — continental USA, Hawaii, parts of Alaska'],
+          ['mapzen', 'Mapzen — global'],
+          ['nzdem8m', 'NZ DEM 8m — New Zealand'],
+          ['eudem25m', 'EU-DEM 25m — Europe']
+      ] },
+    { key: 'openTopographyDataset', source: 'SETTINGS_STATE', endpoint: 'update_setting',
+      label: 'Dataset', type: 'select',
+      showWhen: { key: 'api', equals: 'OPENTOPOGRAPHY' }, hideWhenInactive: true,
+      title: 'Which OpenTopography dataset the elevation is read from',
+      previewCaption: [
+          'OpenTopography Dataset',
+          'Global datasets at different resolutions. SRTM15+ is the fastest download but the least detailed.'
+      ],
+      options: [
+          ['SRTMGL1', 'SRTM GL1 (30m)'],
+          ['SRTMGL3', 'SRTM GL3 (90m)'],
+          ['SRTM15Plus', 'SRTM15+ (500m)'],
+          ['AW3D30', 'ALOS AW3D30 (30m)'],
+          ['NASADEM', 'NASADEM (30m)'],
+          ['COP30', 'Copernicus 30m'],
+          ['COP90', 'Copernicus 90m']
       ] },
     { key: 'disableCache', source: 'SETTINGS_STATE', endpoint: 'update_setting',
       label: 'Disable Cache', type: 'checkbox',
@@ -314,8 +345,6 @@ var API_SUMMARIES = {
                     url: 'https://github.com/mapterhorn/mapterhorn' },
     'OPENTOPODATA': { text: 'High accuracy, but by far the slowest API.',
                       url: 'https://www.opentopodata.org/' },
-    'OPEN-ELEVATION': { text: 'Slow, with lower coverage and a daily API limit.',
-                        url: 'https://open-elevation.com/' },
     'TERRAIN-TILES': { text: 'As fast as Mapterhorn, but quite often has buggy data.',
                        url: 'https://registry.opendata.aws/terrain-tiles/' },
     'OPENTOPOGRAPHY': { text: 'Different datasets, fast, detailed. Requires a registered API key (free).',
@@ -324,9 +353,7 @@ var API_SUMMARIES = {
 };
 var API_SETUP_NOTES = [
     { text: 'ⓘ Needs an API key — set it in the TrailPrint3D addon preferences',
-      showWhen: { key: 'api', equals: 'OPENTOPOGRAPHY' } },
-    { text: 'ⓘ Needs a DEM file — pick it in Blender\'s TrailPrint3D sidebar (API section)',
-      showWhen: { key: 'api', equals: 'LOCAL_DEM' } }
+      showWhen: { key: 'api', equals: 'OPENTOPOGRAPHY' } }
 ];
 
 // { label, preview? } per element card -- preview is optional, add a URL
@@ -431,7 +458,8 @@ var COMPOSITE_ELEMENTS = {
             { key: 'elSPedestrianActive', label: 'Pedestrian Streets' },
             { key: 'elSCycleBridleActive', label: 'Cycle/Bridle Paths' },
             { key: 'elSTrackActive', label: 'Tracks' },
-            { key: 'elSPathActive', label: 'Trails/Paths' }
+            { key: 'elSPathActive', label: 'Trails/Paths' },
+            { key: 'elSRacewayActive', label: 'Raceways' }
         ],
         numberFields: [
             { key: 'elSMultiplier', label: 'Width Multiplier', step: 0.1, min: 0 },
@@ -934,8 +962,9 @@ function tp3dBuildWaterFlattenFields() {
 var TP3D_WATER_INSERT_MARGIN = 0.5; // constants.WATER_INSERT_MARGIN
 
 // Roads card's "Paint Roads" (props.tex_include_roads) -- the Map tab's
-// "Paint Trail" counterpart, greyed out under the same conditions
-// (tp3dTextureTrailRoadsEnabled) via MAP_TAB_ROWS.
+// "Paint Trail" counterpart, greyed out via MAP_TAB_ROWS whenever there's
+// no texture to paint into. Unlike Paint Trail it stays available with a
+// Single Extruder trail -- painted roads don't conflict with the trail cutout.
 function tp3dBuildRoadsPaintField() {
     var field = {
         key: 'texIncludeRoads',
@@ -943,7 +972,7 @@ function tp3dBuildRoadsPaintField() {
         title: 'Paint the roads into the texture (terrain under roads coloured black)',
         preview: 'https://trailprint3d.com/images/howto/PaintRoads.webp',
         previewCaption: 'Paint the roads onto the map instead of creating a separate object.',
-        enabledWhen: tp3dTextureTrailRoadsEnabled,
+        enabledWhen: tp3dTextureAvailable,
         lockedTitle: tp3dNo3mfTitle
     };
     // With a preview this is a .preview-wrap around the <label> -- lock the
@@ -1043,7 +1072,8 @@ function tp3dClearTabPanel(panel) {
 // conditions spanning several settings) returns false, is greyed out
 // (locked, its controls disabled) rather than hidden, so rows don't jump
 // around; an info note (an entry with `text` instead of a field key) is
-// hidden instead.
+// hidden instead, and so is a field with `hideWhenInactive` (rows that only
+// exist for one choice of another field, e.g. an API's own dataset select).
 function tp3dRefreshMapTabVisibility() {
     MAP_TAB_ROWS.forEach(function(entry) {
         var when = entry.field.showWhen;
@@ -1054,7 +1084,7 @@ function tp3dRefreshMapTabVisibility() {
             entry.field.apply(); // a custom control repaints itself
             return;
         }
-        if (entry.field.text) {
+        if (entry.field.text || entry.field.hideWhenInactive) {
             entry.row.style.display = active ? '' : 'none';
             return;
         }
@@ -1326,15 +1356,18 @@ function tp3dBuildFieldList(fields) {
 }
 
 function tp3dAppendApiSection(wrap) {
-    // API on the left; Disable Cache with Clear Cache stacked below it on
-    // the right.
-    var apiField = SETTINGS_MODAL_API_FIELDS[0];
-    var cacheField = SETTINGS_MODAL_API_FIELDS[1];
-    wrap.appendChild(tp3dBuildFieldRow(apiField));
+    // API with its dataset / DEM file row stacked below it on the left;
+    // Disable Cache with Clear Cache stacked below it on the right.
+    var apiGroup = document.createElement('div');
+    apiGroup.className = 'api-cache-group';
     var cacheGroup = document.createElement('div');
     cacheGroup.className = 'api-cache-group';
-    cacheGroup.appendChild(tp3dBuildFieldRow(cacheField));
+    SETTINGS_MODAL_API_FIELDS.forEach(function(field) {
+        (field.key === 'disableCache' ? cacheGroup : apiGroup).appendChild(tp3dBuildFieldRow(field));
+    });
+    apiGroup.appendChild(tp3dBuildDemPathRow());
     cacheGroup.appendChild(tp3dBuildClearCacheRow());
+    wrap.appendChild(apiGroup);
     wrap.appendChild(cacheGroup);
     wrap.appendChild(tp3dBuildApiSummary(wrap.querySelector('#setting-api')));
 
@@ -1383,6 +1416,83 @@ function tp3dBuildApiSummary(select) {
     select.addEventListener('change', highlight);
     highlight();
     return list;
+}
+
+// Local DEM File row -- same as the sidebar's demFilePath field and its
+// tp3d.pick_dem_path button. A browser can't hand out a local path, so
+// "File…"/"Folder…" ask picker_server (POST /pick_dem_path) to open the OS
+// dialog, then poll GET /dem_path_status until it reports 'done' or
+// 'cancelled' -- the same flow as export_folder.js. The server queues the
+// choice as a 'demFilePath' setting for Blender itself.
+function tp3dBuildDemPathRow() {
+    var field = { key: 'demFilePath', showWhen: { key: 'api', equals: 'LOCAL_DEM' }, hideWhenInactive: true };
+    var row = document.createElement('div');
+    row.className = 'adv-field-row';
+    MAP_TAB_ROWS.push({ field: field, row: row });
+
+    var label = document.createElement('label');
+    label.textContent = 'DEM File';
+    row.appendChild(tp3dWithPreview(label, null, [
+        'DEM File',
+        'A GeoTIFF (.tif/.tiff) elevation file you downloaded, or a folder of tiled GeoTIFFs covering a larger area — only the tiles covering the map are read.',
+        'WGS84 lat/lon, or UTM in WGS84, ETRS89 or NAD83.'
+    ], 'DEM File', row));
+
+    var pathEl = document.createElement('div');
+    pathEl.className = 'dem-path';
+    row.appendChild(pathEl);
+
+    var controls = document.createElement('div');
+    controls.className = 'adv-field-controls';
+    var buttons = {};
+    [['file', 'File…', 'Pick a GeoTIFF DEM file'],
+     ['folder', 'Folder…', 'Pick a folder of tiled GeoTIFF DEM files']].forEach(function(def) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'element-mode-btn';
+        btn.textContent = def[1];
+        btn.title = def[2];
+        btn.addEventListener('click', function() { pick(def[0]); });
+        controls.appendChild(btn);
+        buttons[def[0]] = btn;
+    });
+    row.appendChild(controls);
+
+    var state = { path: SETTINGS_STATE.demFilePath || '', valid: true, picking: null };
+    function render() {
+        pathEl.textContent = state.path || 'No file selected';
+        pathEl.title = state.path;
+        pathEl.classList.toggle('warning-text', !state.path || !state.valid);
+        if (state.path && !state.valid) pathEl.textContent = state.path + ' (not found)';
+        Object.keys(buttons).forEach(function(kind) {
+            buttons[kind].textContent = state.picking === kind ? 'Choosing…'
+                : kind === 'file' ? 'File…' : 'Folder…';
+        });
+    }
+    function poll() {
+        fetch('/dem_path_status', { cache: 'no-store' })
+            .then(function(r) { return r.json(); })
+            .then(function(s) {
+                state.path = s.path || '';
+                state.valid = !!s.valid;
+                if (s.status !== 'picking') state.picking = null;
+                SETTINGS_STATE.demFilePath = state.path;
+                render();
+                if (s.status === 'picking') setTimeout(poll, 400);
+            })
+            .catch(function() { state.picking = null; render(); });
+    }
+    function pick(kind) {
+        // A click while a dialog is already open brings it back to the front.
+        if (!state.picking) state.picking = kind;
+        render();
+        fetch('/pick_dem_path', { method: 'POST', body: JSON.stringify({ kind: kind }) })
+            .then(function() { setTimeout(poll, 400); })
+            .catch(function() { state.picking = null; render(); });
+    }
+    render();
+    poll();
+    return row;
 }
 
 // Clear Cache -- same as the sidebar's tp3d.clear_cache button. Sent as the

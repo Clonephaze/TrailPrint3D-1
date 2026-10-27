@@ -64,7 +64,6 @@ Automatically fetches and renders geographic data from [OpenStreetMap](https://w
 | Data | Provider | Used for |
 | --- | --- | --- |
 | Elevation (SRTM & others) | [OpenTopoData](https://www.opentopodata.org) | Terrain height |
-| Elevation (SRTM/NASA) | [Open-Elevation](https://open-elevation.com) | Terrain height |
 | Elevation tiles | [Terrain Tiles / Mapzen](https://registry.opendata.aws/terrain-tiles/) | Terrain height |
 | Elevation (high-res datasets) | [OpenTopography](https://opentopography.org) | Terrain height (API key required) |
 | Geographic data | [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)<br/><sub>using [Overpass API](https://overpass-api.de/)</sub> | Map Elements |

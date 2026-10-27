@@ -373,7 +373,11 @@ _SETTINGS_ROW_FIELDS = {
     "texIncludeTrail": ("tex_include_trail", bool),
     "texResolution": ("tex_resolution", int),
     # Settings popup's Other tab, API section -- mirrors panels.py's API box.
+    # demFilePath is set by picker_server's /pick_dem_path (OS dialog).
     "api": ("api", str),
+    "dataset": ("dataset", str),
+    "openTopographyDataset": ("openTopographyDataset", str),
+    "demFilePath": ("demFilePath", str),
     "disableCache": ("disableCache", bool),
 }
 
@@ -556,6 +560,7 @@ _ADVANCED_SETTINGS_FIELDS = [
     {"key": "elSCycleBridleActive", "road_id": "cycle_bridle", "type": bool, "group": "Roads"},
     {"key": "elSTrackActive", "road_id": "track", "type": bool, "group": "Roads"},
     {"key": "elSPathActive", "road_id": "path", "type": bool, "group": "Roads"},
+    {"key": "elSRacewayActive", "road_id": "raceway", "type": bool, "group": "Roads"},
     {"key": "elSMultiplier", "attr": "el_sMultiplier", "type": float, "group": "Roads"},
     {"key": "elSHeight", "attr": "el_sHeight", "type": float, "group": "Roads"},
     {

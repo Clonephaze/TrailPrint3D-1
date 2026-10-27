@@ -82,18 +82,28 @@ _MODEL_PREVIEW_PATH = pathlib.Path(tempfile.gettempdir()) / 'trailprint_model_pr
 # Same key-wise-update-only rule as _prefetch_job.
 _export_folder_job: dict = {'status': 'idle', 'scene': '', 'default': ''}
 
+# Settings popup's Local DEM File row (assets/settings_modal.js): POST
+# /pick_dem_path {kind: 'file'|'folder'} opens the OS dialog the same way as
+# /pick_export_folder and queues the choice as a 'demFilePath' update on
+# _pending_settings; GET /dem_path_status reports it back. 'path' is seeded
+# from the scene's demFilePath in start_picker. Same key-wise-update-only rule
+# as _prefetch_job.
+_dem_path_job: dict = {'status': 'idle', 'path': ''}
+
 
 def _effective_export_folder() -> str:
     return _export_folder_job.get('scene') or _export_folder_job.get('default') or ''
 
 
-def _pick_folder_dialog(initial: str) -> str:
+def _pick_folder_dialog(initial: str, title: str = 'Select the TrailPrint3D export folder',
+                        job: dict = _export_folder_job, kind: str = 'folder') -> str:
     """Show the OS's own folder picker (blocking) and return the chosen
     folder, or '' if cancelled/unavailable. Never touches bpy -- runs on a
     worker thread. The start folder goes in via an environment variable so
     no path ever needs quoting into a script. The dialog's process id is
-    kept in _export_folder_job['pid'] while it's open (see _raise_dialog)."""
-    title = 'Select the TrailPrint3D export folder'
+    kept in job['pid'] while it's open (see _raise_dialog). *kind* 'dem_file'
+    shows a GeoTIFF file picker instead and returns the chosen file."""
+    pick_file = kind == 'dem_file'
     env = dict(os.environ, TP3D_INITIAL_DIR=initial if initial and os.path.isdir(initial) else '')
     flags = 0
     if sys.platform == 'win32':
@@ -104,6 +114,18 @@ def _pick_folder_dialog(initial: str) -> str:
         # it by a *shown* TopMost window fixes that: owned windows always sit
         # above their owner. The owner is fully transparent and off the
         # taskbar, centered on screen so the dialog opens there too.
+        # Forms' OpenFileDialog is already the modern Common Item Dialog;
+        # only its FolderBrowserDialog is the legacy tree (hence the .cs).
+        if pick_file:
+            show = (
+                "$d = New-Object System.Windows.Forms.OpenFileDialog; "
+                f"$d.Title = '{title}'; "
+                "$d.Filter = 'GeoTIFF (*.tif;*.tiff)|*.tif;*.tiff'; "
+                "if ($env:TP3D_INITIAL_DIR) { $d.InitialDirectory = $env:TP3D_INITIAL_DIR }; "
+                "if ($d.ShowDialog($owner) -eq 'OK') { $path = $d.FileName } else { $path = '' }; "
+            )
+        else:
+            show = f"$path = [TP3DFolderPicker]::Pick($owner.Handle, $env:TP3D_INITIAL_DIR, '{title}'); "
         ps = (
             "$ErrorActionPreference = 'Stop'; "
             "Add-Type -AssemblyName System.Windows.Forms; "
@@ -114,7 +136,7 @@ def _pick_folder_dialog(initial: str) -> str:
             "$owner.Width = 1; $owner.Height = 1; "
             "try { "
             "$owner.Show(); $owner.Activate(); "
-            f"$path = [TP3DFolderPicker]::Pick($owner.Handle, $env:TP3D_INITIAL_DIR, '{title}'); "
+            + show +
             "if ($path) { Write-Output $path } "
             "} finally { $owner.Dispose() }"
         )
@@ -122,17 +144,23 @@ def _pick_folder_dialog(initial: str) -> str:
                '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; ' + ps]
         flags = sp.CREATE_NO_WINDOW
     elif sys.platform == 'darwin':
-        script = f'POSIX path of (choose folder with prompt "{title}"'
+        if pick_file:
+            script = f'POSIX path of (choose file with prompt "{title}" of type {{"tif", "tiff", "public.tiff"}}'
+        else:
+            script = f'POSIX path of (choose folder with prompt "{title}"'
         if env['TP3D_INITIAL_DIR']:
             script += ' default location (POSIX file (system attribute "TP3D_INITIAL_DIR"))'
         cmd = ['osascript', '-e', script + ')']
     elif shutil.which('zenity'):
-        cmd = ['zenity', '--file-selection', '--directory', f'--title={title}']
+        cmd = ['zenity', '--file-selection', f'--title={title}']
+        cmd.append('--file-filter=GeoTIFF | *.tif *.tiff' if pick_file else '--directory')
         if env['TP3D_INITIAL_DIR']:
             cmd.append('--filename=' + os.path.join(env['TP3D_INITIAL_DIR'], ''))
     elif shutil.which('kdialog'):
-        cmd = ['kdialog', '--getexistingdirectory', env['TP3D_INITIAL_DIR'] or os.path.expanduser('~'),
-               '--title', title]
+        start = env['TP3D_INITIAL_DIR'] or os.path.expanduser('~')
+        cmd = (['kdialog', '--getopenfilename', start, 'GeoTIFF (*.tif *.tiff)'] if pick_file
+               else ['kdialog', '--getexistingdirectory', start])
+        cmd += ['--title', title]
     else:
         print("[TP3D picker] no folder dialog available (install zenity or kdialog)")
         return ''
@@ -141,25 +169,26 @@ def _pick_folder_dialog(initial: str) -> str:
     except OSError as e:
         print(f"[TP3D picker] folder dialog failed: {e}")
         return ''
-    _export_folder_job.update(pid=proc.pid)
+    job.update(pid=proc.pid)
     try:
         out, err = proc.communicate()
     finally:
-        _export_folder_job.update(pid=None)
+        job.update(pid=None)
     if proc.returncode:
         print(f"[TP3D picker] folder dialog exited with code {proc.returncode}: "
               f"{err.decode('utf-8', errors='replace').strip()}")
         return ''
     path = out.decode('utf-8', errors='replace').strip()
-    return path if path and os.path.isdir(path) else ''
+    exists = os.path.isfile if pick_file else os.path.isdir
+    return path if path and exists(path) else ''
 
 
-def _raise_dialog() -> None:
+def _raise_dialog(job: dict = _export_folder_job) -> None:
     """Bring the already-open folder dialog back to the front (Windows) --
     e.g. after the user clicked into the browser and it went behind. Called
     when the page's button is clicked again while a dialog is still open,
     instead of ignoring that click."""
-    pid = _export_folder_job.get('pid')
+    pid = job.get('pid')
     if not pid or sys.platform != 'win32':
         return
     import ctypes
@@ -192,6 +221,24 @@ def _run_export_folder_pick() -> None:
     chosen = os.path.join(chosen, '')
     _pending_settings.put(('exportFolder', chosen))
     _export_folder_job.update(status='done', default=chosen)
+
+
+def _dem_path_valid(path: str) -> bool:
+    return bool(path) and (os.path.isdir(path) or os.path.isfile(path))
+
+
+def _run_dem_path_pick(kind: str) -> None:
+    current = _dem_path_job.get('path') or ''
+    initial = current if os.path.isdir(current) else os.path.dirname(current)
+    if kind == 'folder':
+        chosen = _pick_folder_dialog(initial, 'Select a folder of GeoTIFF DEM tiles', _dem_path_job)
+    else:
+        chosen = _pick_folder_dialog(initial, 'Select a GeoTIFF DEM file', _dem_path_job, 'dem_file')
+    if not chosen:
+        _dem_path_job.update(status='cancelled')
+        return
+    _pending_settings.put(('demFilePath', chosen))
+    _dem_path_job.update(status='done', path=chosen)
 
 
 def _open_folder(path: str) -> bool:
@@ -954,6 +1001,19 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == '/dem_path_status':
+            path = _dem_path_job.get('path') or ''
+            body = json.dumps({
+                'status': _dem_path_job.get('status'),
+                'path': path,
+                'valid': _dem_path_valid(path),
+            }).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == '/model_preview_status':
             body = json.dumps(_model_preview_job).encode('utf-8')
             self.send_response(200)
@@ -1169,6 +1229,25 @@ class _Handler(BaseHTTPRequestHandler):
                 _export_folder_job.update(status='picking')
                 threading.Thread(target=_run_export_folder_pick, daemon=True).start()
             body = json.dumps({'ok': ok}).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == '/pick_dem_path':
+            length = int(self.headers.get('Content-Length', 0))
+            try:
+                kind = json.loads(self.rfile.read(length) or b'{}').get('kind')
+            except (json.JSONDecodeError, AttributeError):
+                kind = None
+            if _dem_path_job.get('status') == 'picking':
+                _raise_dialog(_dem_path_job)
+            else:
+                _dem_path_job.update(status='picking')
+                threading.Thread(target=_run_dem_path_pick,
+                                 args=('folder' if kind == 'folder' else 'file',), daemon=True).start()
+            body = json.dumps({'ok': True}).encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(body)))
@@ -1617,10 +1696,12 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
         scene_folder = bpy.path.abspath(bpy.context.scene.tp3d.export_path) if bpy.context.scene.tp3d.export_path else ''
         default_folder = get_prefs().default_export_folder
         default_folder = bpy.path.abspath(default_folder) if default_folder else ''
+        dem_path = bpy.path.abspath(bpy.context.scene.tp3d.demFilePath) if bpy.context.scene.tp3d.demFilePath else ''
     except (AttributeError, KeyError, ImportError) as e:
         print(f"[TP3D picker] could not read the export folder: {e}")
-        scene_folder = default_folder = ''
+        scene_folder = default_folder = dem_path = ''
     _export_folder_job.update(status='idle', scene=scene_folder, default=default_folder, pid=None)
+    _dem_path_job.update(status='idle', path=dem_path, pid=None)
 
     html_path = pathlib.Path(html_path) if html_path else _HTML_PATH
     # Keep the original state filename for multitile_generator.html itself (exact
