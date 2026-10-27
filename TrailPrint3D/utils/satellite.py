@@ -180,10 +180,6 @@ class TiledCrop(NamedTuple):
     total_height: int
 
 
-class SatelliteFetchError(RuntimeError):
-    """A service request failed, rather than returning genuinely absent coverage."""
-
-
 def _bbox_overlap_area(a, b):
     """Overlap area (in degrees^2) between two [minx, miny, maxx, maxy] boxes."""
     ox = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
@@ -202,8 +198,7 @@ def _stac_search(
     leaving it almost entirely nodata) and picks whichever candidate's own
     bbox overlaps our requested bbox the most.
 
-    Returns the STAC item dict, or None if no coverage exists.
-    Raises SatelliteFetchError if the search service fails.
+    Returns the STAC item dict, or None if nothing suitable was found.
     """
     target = [min_lon, min_lat, max_lon, max_lat]
     payload = {
@@ -231,22 +226,15 @@ def _stac_search(
                         target, feat.get("bbox", target)
                     ),
                 )
-            detail = response.text[:500].replace("\n", " ")
-            error = f"Satellite STAC search HTTP {response.status_code}: {detail}"
-            print(error)
-            if (
-                response.status_code < 500 and response.status_code != 429
-            ) or response.status_code == 501:
-                raise SatelliteFetchError(error)
+            print(f"Satellite STAC search status {response.status_code}, retrying...")
         except requests.exceptions.Timeout:
-            error = f"Satellite STAC search timed out (attempt {attempt + 1}/{max_retries})"
-            print(error)
+            print(
+                f"Satellite STAC search timed out (attempt {attempt + 1}/{max_retries})"
+            )
         except requests.RequestException as e:
-            error = f"Satellite STAC search failed: {e}"
-            print(error)
-        if attempt + 1 < max_retries:
-            time.sleep(3 + attempt)
-    raise SatelliteFetchError(error)
+            print(f"Satellite STAC search failed: {e}")
+        time.sleep(3 + attempt)
+    return None
 
 
 def _render_crop(
@@ -266,8 +254,7 @@ def _render_crop(
 ):
     """Fetch a bbox-cropped, reprojected PNG (at the given pixel size) for a STAC item asset.
 
-    Writes the PNG bytes to out_path. Returns True on success, raises
-    SatelliteFetchError on request failure. The Data API
+    Writes the PNG bytes to out_path. Returns True on success. The Data API
     crops/reprojects (and, when colormap_name/colormap is given, colorizes)
     server-side, so no raster library is needed locally.
     """
@@ -287,7 +274,9 @@ def _render_crop(
             ],
         },
     }
-    # The public service supports its /crop alias, not TiTiler's /feature route.
+    # /item/crop, not /item/feature: since Oct 2026 the Data API answers
+    # /item/feature with 501 "operation is not supported" for esa-worldcover
+    # (sentinel-2-l2a still accepts both). /item/crop takes the same body.
     url = f"{_DATA_API_BASE}/item/crop/{width}x{height}.png"
     params = {
         "collection": item.get("collection", collection),
@@ -307,32 +296,17 @@ def _render_crop(
                 headers={"User-Agent": _USER_AGENT},
                 timeout=60,
             )
-            if response.status_code == 200 and response.content.startswith(
-                b"\x89PNG\r\n\x1a\n"
-            ):
+            if response.status_code == 200 and response.content:
                 with open(out_path, "wb") as f:
                     f.write(response.content)
                 return True
-            detail = response.text[:500].replace("\n", " ")
-            error = (
-                f"Satellite crop for {item['id']} HTTP {response.status_code}: {detail}"
-            )
-            if response.status_code == 200:
-                error = f"Satellite crop for {item['id']} returned invalid PNG data: {detail}"
-            print(error)
-            if (
-                response.status_code < 500 and response.status_code != 429
-            ) or response.status_code == 501:
-                raise SatelliteFetchError(error)
+            print(f"Satellite crop status {response.status_code}, retrying...")
         except requests.exceptions.Timeout:
-            error = f"Satellite crop timed out (attempt {attempt + 1}/{max_retries})"
-            print(error)
+            print(f"Satellite crop timed out (attempt {attempt + 1}/{max_retries})")
         except requests.RequestException as e:
-            error = f"Satellite crop failed: {e}"
-            print(error)
-        if attempt + 1 < max_retries:
-            time.sleep(3 + attempt)
-    raise SatelliteFetchError(error)
+            print(f"Satellite crop failed: {e}")
+        time.sleep(3 + attempt)
+    return False
 
 
 def _cache_key(prefix, min_lat, max_lat, min_lon, max_lon, variant=None):
@@ -393,7 +367,7 @@ def _get_cached_crop(
         print(f"No {collection} coverage found for this chunk")
         return None
 
-    _render_crop(
+    if not _render_crop(
         collection,
         item,
         asset,
@@ -406,7 +380,8 @@ def _get_cached_crop(
         cache_path,
         colormap_name=colormap_name,
         colormap=colormap,
-    )
+    ):
+        return None
 
     return cache_path
 
@@ -475,8 +450,8 @@ def _fetch_tiled(
     own calling thread -- like this whole function, not main-thread safe.
 
     Safe to call from a worker thread -- does no bpy.* work. Returns a
-    TiledCrop, or None if no chunk has coverage. Request failures raise
-    SatelliteFetchError so they cannot be stitched as fallback water.
+    TiledCrop, or None if every chunk failed (no coverage / all requests
+    failed) -- callers must treat that as non-fatal.
     """
     lat_span = max_lat - min_lat
     lon_span = max_lon - min_lon
@@ -593,8 +568,8 @@ def get_cached_landcover_image(
 
     Disk-cached per chunk (same convention as the Overpass cache). Safe to
     call from a worker thread -- does no bpy.* work. Returns None if no
-    coverage exists anywhere in bbox. Raises SatelliteFetchError on service
-    failure. The classification is colorized server-side with our
+    coverage could be found/fetched anywhere in bbox; callers must treat
+    that as non-fatal. The classification is colorized server-side with our
     own _LANDCOVER_PALETTE -- no client-side color processing needed.
 
     progress_cb, if given, is forwarded to _fetch_tiled() -- see its
