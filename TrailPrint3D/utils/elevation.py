@@ -39,14 +39,14 @@ def load_counter():
         try:
             with open(const.counter_file, "r") as f:
                 data = json.load(f)
-                return data.get("count_openTopodata", 0), data.get("date_openTopoData", ""), data.get("count_openElevation",0), data.get("date_openElevation","")
+                return data.get("count_openTopodata", 0), data.get("date_openTopoData", "")
         except (OSError, json.JSONDecodeError, ValueError, KeyError):
-            return 0, "", 0, ""
-    return 0, "", 0, ""
+            return 0, ""
+    return 0, ""
 
-def save_counter(count_openTopodata, date_openTopoData, count_openElevation, date_openElevation):
+def save_counter(count_openTopodata, date_openTopoData):
     with open(const.counter_file, "w") as f:
-        json.dump({"count_openTopodata": count_openTopodata, "date_openTopoData": date_openTopoData, "count_openElevation": count_openElevation, "date_openElevation": date_openElevation}, f)
+        json.dump({"count_openTopodata": count_openTopodata, "date_openTopoData": date_openTopoData}, f)
 
 def load_generation_counter():
     if os.path.exists(const.generation_counter_file):
@@ -67,24 +67,18 @@ def update_request_counter():
     api = bpy.context.scene.tp3d.api
 
     today_date = datetime.now(tz=timezone.utc).date().isoformat()
-    today_month = datetime.now(tz=timezone.utc).date().month
-    count_openTopodata, date_openTopoData, count_openElevation, date_openElevation = load_counter()
+    count_openTopodata, date_openTopoData = load_counter()
 
     # Reset counter if the date has changed
     if date_openTopoData != today_date:
         count_openTopodata = 0
 
-    if date_openElevation != today_month:
-        count_openElevation = 0
-
     if api == "OPENTOPODATA":
         count_openTopodata += 1
-    elif api == "OPEN-ELEVATION":
-        count_openElevation += 1
 
-    save_counter(count_openTopodata, today_date, count_openElevation,today_month)
+    save_counter(count_openTopodata, today_date)
 
-    return count_openTopodata, count_openElevation
+    return count_openTopodata
 
 def send_api_request(addition = ""):
 
@@ -95,8 +89,6 @@ def send_api_request(addition = ""):
     now = datetime.now(tz=timezone.utc)
     if api == "OPENTOPODATA":
         print(f"{now.hour:02d}:{now.minute:02d} | Fetching: {addition} | API Usage: {request_count} | {dataset}")
-    elif api == "OPEN-ELEVATION":
-        print(f"{now.hour:02d}:{now.minute:02d} | Fetching: {addition} | API Usage: {request_count}")
     elif api == "TERRAIN-TILES":
         print(f"{now.hour:02d}:{now.minute:02d} | Fetching API")
     elif api == "MAPTERHORN":
@@ -117,7 +109,7 @@ def load_elevation_cache():
         const._elevation_cache = {}
 
 def save_elevation_cache():
-    """Save the elevation cache from Opentopodata or OpenElevation to disk"""
+    """Save the elevation cache from Opentopodata to disk"""
 
     cacheSize = bpy.context.scene.tp3d.ccacheSize
 
@@ -169,8 +161,8 @@ class _SegmentProgress:
     """Report per-segment fetch progress as progress_cb(pct, (done, total)).
 
     A segment is one of the separate requests a fetch gets split into (a map
-    tile for Terrain Tiles/Mapterhorn, a point batch for OpenTopoData/
-    Open-Elevation). Calls are throttled so a fast run over already-cached
+    tile for Terrain Tiles/Mapterhorn, a point batch for OpenTopoData).
+    Calls are throttled so a fast run over already-cached
     tiles doesn't rewrite the progress file hundreds of times; the final
     segment always reports.
     """
@@ -273,48 +265,6 @@ def get_elevation_openTopoData(coords, lenv = 0, pointsDone = 0, progress_cb=Non
         elapsed_time = now - last_request_time
         if i + batch_size < len(coords_to_fetch) and elapsed_time < 1.3:
             time.sleep(1.3 - elapsed_time)  # Pause to prevent request throttling
-
-    return elevations
-
-def get_elevation_openElevation(coords, lenv = 0, pointsDone = 0, progress_cb=None):
-    """Fetches real elevation for each vertex using Open-Elevation with request batching."""
-
-    elevations = []
-    batch_size = 1000
-    total = len(coords)
-    report = _SegmentProgress(progress_cb, math.ceil(total / batch_size))
-    report(0)
-    for i in range(0, total, batch_size):
-        batch = coords[i:i + batch_size]
-        # Open-Elevation expects a POST request with JSON body
-        payload = {"locations": [{"latitude": c[0], "longitude": c[1]} for c in batch]}
-        url = "https://api.open-elevation.com/api/v1/lookup"
-        last_request_time = time.monotonic()
-
-        headers = {'Content-Type': 'application/json'}
-        nr = i + len(batch) + pointsDone
-        addition = f" {nr}/{int(lenv)}"
-        send_api_request(addition)
-
-        response = requests.post(url, json=payload, headers=headers)
-
-        response.raise_for_status()
-        report(i // batch_size + 1)
-
-        data = response.json()
-
-        # Handle the elevation data and replace 'null' with 0
-        for result in data['results']:
-            elevation = result.get('elevation', None)
-            if elevation is None:
-                elevation = 0
-            elevations.append(elevation)
-
-        # Get current time for request rate limiting
-        now = time.monotonic()
-        elapsed_time = now - last_request_time
-        if elapsed_time < 2:
-            time.sleep(2 - elapsed_time)  # Pause to prevent request throttling
 
     return elevations
 
@@ -1016,7 +966,7 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
     from .geo import convert_to_geo  # deferred to avoid circular import at load time
 
     # Set chunk size based on API
-    if api == "OPENTOPODATA" or api == "OPEN-ELEVATION":
+    if api == "OPENTOPODATA":
         chunk_size = 100000
     elif api == "TERRAIN-TILES" or api == "MAPTERHORN" or api == "OPENTOPOGRAPHY" or api == "LOCAL_DEM":
         chunk_size = 50000000   # single request for all verts
@@ -1095,8 +1045,6 @@ def get_tile_elevation(gen_or_obj, progress_cb=None):
         coords = [(lat, (lon + 180.0) % 360.0 - 180.0) for lat, lon in coords]
         if api == "OPENTOPODATA":
             chunk_elevations = get_elevation_openTopoData(coords, len(world_verts), i, progress_cb=progress_cb)
-        elif api == "OPEN-ELEVATION":
-            chunk_elevations = get_elevation_openElevation(coords, len(world_verts), i, progress_cb=progress_cb)
         elif api == "TERRAIN-TILES":
             chunk_elevations = get_elevation_TerrainTiles((minLat, maxLat, minLon, maxLon), coords, len(world_verts), i, progress_cb=progress_cb)
         elif api == "MAPTERHORN":

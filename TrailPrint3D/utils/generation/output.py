@@ -265,17 +265,12 @@ def _rg_export(gen: GenerationContext):
         if shellobj:
             export_to_STL(shellobj, exportformat)
 
-    count_openTopoData, _dt1, count_openElevation, _dt2 = load_counter()
+    count_openTopoData, _dt1 = load_counter()
     tp3d = bpy.context.scene.tp3d
     tp3d["o_apiCounter_OpenTopoData"] = (
         f"API Limit: {count_openTopoData:.0f}/1000 daily"
         if count_openTopoData < 1000
         else f"API Limit: {count_openTopoData:.0f}/1000 (daily limit reached. might cause problems)"
-    )
-    tp3d["o_apiCounter_OpenElevation"] = (
-        f"API Limit: {count_openElevation:.0f}/1000 Monthly"
-        if count_openElevation < 1000
-        else f"API Limit: {count_openElevation:.0f}/1000 (Monthly limit reached. might cause problems)"
     )
 
     if gen.runtime.buggyData != 0:

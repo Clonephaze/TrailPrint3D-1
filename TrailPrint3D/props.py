@@ -514,6 +514,9 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
         default=False,
     )
 
+    # Explicit item numbers: .blend files store the enum by number, and 2 was
+    # the removed Open-Elevation API — keep the others' numbers stable so saved
+    # files don't shift to a different API.
     api: bpy.props.EnumProperty(
         name=_("API"),
         items=[
@@ -523,18 +526,17 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
                 _(
                     "Mapterhorn terrain tiles — 512px WebP, Terrarium encoding, free & open-source"
                 ),
+                "",
+                0,
             ),
-            ("OPENTOPODATA", "Opentopodata", _("Slower but more accurate elevation")),
-            (
-                "OPEN-ELEVATION",
-                "Open-Elevation",
-                _("Faster but some regions are low quality"),
-            ),
-            ("TERRAIN-TILES", "Terrain-Tiles", _("Currently Fastest available set")),
+            ("OPENTOPODATA", "Opentopodata", _("Slower but more accurate elevation"), "", 1),
+            ("TERRAIN-TILES", "Terrain-Tiles", _("Currently Fastest available set"), "", 3),
             (
                 "OPENTOPOGRAPHY",
                 "OpenTopography",
                 _("OpenTopography Global DEM API — requires API key for most datasets"),
+                "",
+                4,
             ),
             (
                 "LOCAL_DEM",
@@ -542,6 +544,8 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
                 _(
                     "Sample elevation from a GeoTIFF DEM file you downloaded — no internet required"
                 ),
+                "",
+                5,
             ),
         ],
         default="MAPTERHORN",
@@ -672,9 +676,6 @@ class TP3D_PG_properties(bpy.types.PropertyGroup):
     o_time: StringProperty(name=_("Generation Time"), default="")  # type: ignore
     o_apiCounter_OpenTopoData: StringProperty(
         name=_("OpenTopodata Counter"), default="API Limit: ---/1000 daily"
-    )  # type: ignore
-    o_apiCounter_OpenElevation: StringProperty(
-        name=_("Open Elevation Counter"), default="API Limit: ---/1000 monthly"
     )  # type: ignore
     o_mapsGenerated: StringProperty(name=_("Maps Generated"), default="")  # type: ignore
     o_centerx: FloatProperty(

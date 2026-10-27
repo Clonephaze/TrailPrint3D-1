@@ -274,7 +274,10 @@ def _render_crop(
             ],
         },
     }
-    url = f"{_DATA_API_BASE}/item/feature/{width}x{height}.png"
+    # /item/crop, not /item/feature: since Oct 2026 the Data API answers
+    # /item/feature with 501 "operation is not supported" for esa-worldcover
+    # (sentinel-2-l2a still accepts both). /item/crop takes the same body.
+    url = f"{_DATA_API_BASE}/item/crop/{width}x{height}.png"
     params = {
         "collection": item.get("collection", collection),
         "item": item["id"],

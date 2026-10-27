@@ -288,7 +288,6 @@ var SETTINGS_MODAL_API_FIELDS = [
       options: [
           ['MAPTERHORN', 'Mapterhorn'],
           ['OPENTOPODATA', 'Opentopodata'],
-          ['OPEN-ELEVATION', 'Open-Elevation'],
           ['TERRAIN-TILES', 'Terrain-Tiles'],
           ['OPENTOPOGRAPHY', 'OpenTopography'],
           ['LOCAL_DEM', 'Local DEM File']
@@ -311,8 +310,6 @@ var API_SUMMARIES = {
                     url: 'https://github.com/mapterhorn/mapterhorn' },
     'OPENTOPODATA': { text: 'High accuracy, but by far the slowest API.',
                       url: 'https://www.opentopodata.org/' },
-    'OPEN-ELEVATION': { text: 'Slow, with lower coverage and a daily API limit.',
-                        url: 'https://open-elevation.com/' },
     'TERRAIN-TILES': { text: 'As fast as Mapterhorn, but quite often has buggy data.',
                        url: 'https://registry.opendata.aws/terrain-tiles/' },
     'OPENTOPOGRAPHY': { text: 'Different datasets, fast, detailed. Requires a registered API key (free).',
