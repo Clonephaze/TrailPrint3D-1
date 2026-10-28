@@ -1379,6 +1379,70 @@ function tp3dBuildColorRoleSwatch(role) {
     return swatch;
 }
 
+// (Re)fills *select* with the built-in styles, then the user's saved ones
+// below a separator -- shared by the Settings modal's selector and the
+// compact one in the element-status row.
+function tp3dFillColorStyleOptions(select) {
+    select.innerHTML = '';
+    TP3D_COLOR_STYLES.builtIn.forEach(function(s) {
+        var opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.label;
+        opt.title = s.description || '';
+        select.appendChild(opt);
+    });
+    if (TP3D_COLOR_STYLES.user.length) {
+        var sep = document.createElement('option');
+        sep.disabled = true;
+        sep.textContent = '──────────';
+        select.appendChild(sep);
+        TP3D_COLOR_STYLES.user.forEach(function(s) {
+            var opt = document.createElement('option');
+            opt.value = 'USER:' + s.name;
+            opt.textContent = s.name;
+            select.appendChild(opt);
+        });
+    }
+    select.value = TP3D_COLOR_STYLES.currentStyle;
+}
+
+// Painter's palette (paint wells cut out via evenodd) with a brush beside it.
+var TP3D_PALETTE_ICON_SVG =
+    '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="currentColor" fill-rule="evenodd">' +
+    '<path d="M9.5 3C5.2 3 2 6.2 2 10.2c0 4 3 7.3 6.8 7.3 1.4 0 2-1 1.4-2.1-.5-1 .1-2 1.4-2h1.2' +
+    'c1.6 0 2.7-1.2 2.7-2.9V8.3C15.5 5.2 13 3 9.5 3Z' +
+    'M7.2 7.6a1.3 1.3 0 1 1-2.6 0a1.3 1.3 0 1 1 2.6 0Z' +
+    'M11 5.9a1.2 1.2 0 1 1-2.4 0a1.2 1.2 0 1 1 2.4 0Z' +
+    'M6.4 11.6a1.4 1.4 0 1 1-2.8 0a1.4 1.4 0 1 1 2.8 0Z' +
+    'M13.3 9.7a1 1 0 1 1-2 0a1 1 0 1 1 2 0Z"/>' +
+    '<path d="M16.5 4.5h4.5l-.7 4.8h-3.1Z' +
+    'M17.9 10.1h1.7v9.6a.85.85 0 0 1-1.7 0Z"/>' +
+    '</svg>';
+
+// Quick style switch for the element-status row, between the Settings gear
+// and the OSM/ESA pill -- same apply path as the modal's selector. The
+// palette icon sits inside the same bordered control, before the select.
+function tp3dBuildCompactColorStyleSelect() {
+    var wrap = document.createElement('label');
+    wrap.className = 'color-style-compact-wrap';
+    wrap.title = 'Color style';
+    wrap.innerHTML = TP3D_PALETTE_ICON_SVG;
+    var select = document.createElement('select');
+    select.className = 'color-style-compact';
+    select.setAttribute('aria-label', 'Color style');
+    tp3dFillColorStyleOptions(select);
+    select.addEventListener('change', function() { tp3dApplyColorStyle(this.value); });
+    wrap.appendChild(select);
+    return wrap;
+}
+
+// Keeps every style selector (modal + compact) showing the current style.
+function tp3dSyncColorStyleSelects() {
+    document.querySelectorAll('#colorStyleSelect, .color-style-compact').forEach(function(s) {
+        s.value = TP3D_COLOR_STYLES.currentStyle;
+    });
+}
+
 function tp3dBuildColorStylesSection() {
     var wrap = document.createElement('div');
     wrap.className = 'color-styles-section';
@@ -1415,26 +1479,7 @@ function tp3dBuildColorStylesSection() {
 
     var select = document.createElement('select');
     select.id = 'colorStyleSelect';
-    TP3D_COLOR_STYLES.builtIn.forEach(function(s) {
-        var opt = document.createElement('option');
-        opt.value = s.id;
-        opt.textContent = s.label;
-        opt.title = s.description || '';
-        select.appendChild(opt);
-    });
-    if (TP3D_COLOR_STYLES.user.length) {
-        var sep = document.createElement('option');
-        sep.disabled = true;
-        sep.textContent = '──────────';
-        select.appendChild(sep);
-        TP3D_COLOR_STYLES.user.forEach(function(s) {
-            var opt = document.createElement('option');
-            opt.value = 'USER:' + s.name;
-            opt.textContent = s.name;
-            select.appendChild(opt);
-        });
-    }
-    select.value = TP3D_COLOR_STYLES.currentStyle;
+    tp3dFillColorStyleOptions(select);
     select.addEventListener('change', function() { tp3dApplyColorStyle(this.value); });
     controls.appendChild(select);
 
@@ -1557,6 +1602,7 @@ function tp3dApplyColorStyle(styleId) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ style: styleId })
     }).catch(function() {});
+    tp3dSyncColorStyleSelects();
     tp3dUpdateColorStyleDirty();
 }
 
@@ -1638,8 +1684,9 @@ function tp3dRefreshColorStyleFromServer(data) {
         var fresh = tp3dBuildColorStylesSection();
         section.parentNode.replaceChild(fresh, section);
     }
-    var select = document.getElementById('colorStyleSelect');
-    if (select) select.value = TP3D_COLOR_STYLES.currentStyle;
+    // Saved/deleted user styles change the option list, not just the value.
+    document.querySelectorAll('.color-style-compact').forEach(tp3dFillColorStyleOptions);
+    tp3dSyncColorStyleSelects();
     tp3dUpdateColorStyleDirty();
 }
 
@@ -2488,4 +2535,9 @@ function tp3dRelocateFields(sourceId, grid) {
     gearBtn.innerHTML = '⚙️ <span>Settings</span>';
     gearBtn.addEventListener('click', openModal);
     elementStatus.insertBefore(gearBtn, elementStatus.firstChild);
+    // Not one of the classes tp3dRenderElementStatus clears, so it stays
+    // put between the gear and the OSM/ESA pill across re-renders.
+    if (TP3D_COLOR_STYLES.builtIn.length) {
+        elementStatus.insertBefore(tp3dBuildCompactColorStyleSelect(), gearBtn.nextSibling);
+    }
 })();

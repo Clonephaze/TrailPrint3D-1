@@ -4375,6 +4375,42 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         props.shapeExtrasActive = plate_mode != "NONE" or text_layout != "NONE"
 
     @staticmethod
+    def _cut_riders_to_outline(riders, cutter_obj, outline_ws):
+        """INTERSECT each element/trail object with the rotated-shape cutter.
+        outline_ws is the cutter's footprint in world space -- objects whose
+        XY bounding box lies fully inside it are skipped, ones fully outside
+        it are removed. Curves (trail tubes) are baked to meshes first."""
+        from mathutils import Vector
+        from shapely.geometry import box
+
+        from .utils.mesh_ops import boolean_operation
+
+        for obj in riders:
+            if obj.type not in {"MESH", "CURVE"}:
+                continue
+            corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+            footprint = box(
+                min(c.x for c in corners),
+                min(c.y for c in corners),
+                max(c.x for c in corners),
+                max(c.y for c in corners),
+            )
+            if outline_ws.contains(footprint):
+                continue
+            if outline_ws.disjoint(footprint):
+                utils.remove_objects(obj)
+                continue
+            if obj.type == "CURVE":
+                bpy.ops.object.select_all(action="DESELECT")
+                obj.select_set(True)
+                bpy.context.view_layer.objects.active = obj
+                bpy.ops.object.convert(target="MESH")
+            # EXACT: OSM element meshes aren't guaranteed watertight.
+            boolean_operation(obj, cutter_obj, "INTERSECT", solver="EXACT")
+            if not obj.data.vertices:
+                utils.remove_objects(obj)
+
+    @staticmethod
     def _apply_trail_stats(props, gpx_paths, gpx_names):
         """Fill in what the Shape Extras text codes read ({name}, {length},
         {elevation}, {duration}, {date}, {speed} -- see
@@ -4814,6 +4850,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
         # covers the full rotated footprint; the cutter preserves the shape's
         # drawn size instead of shrinking it to fit the original box.
         if needs_shape_cut:
+            from shapely.affinity import translate as _shp_translate
+
             from .utils import geometry2d as _g2d
             from .utils.mesh_ops import (
                 _clean_solid_mesh,
@@ -4845,7 +4883,9 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             blank["map_polygon_wkt"] = rotation_poly.wkt
 
             verts, faces = [], []
-            _extrude_flat_polygon(_g2d, rotated_poly, -1e4, 1e4, verts, faces)
+            # An SVG can parse to a MultiPolygon (several separate shapes).
+            for poly in _g2d.iter_polygons(rotated_poly):
+                _extrude_flat_polygon(_g2d, poly, -1e4, 1e4, verts, faces)
             if not verts:
                 _progress.WarningsOverlay.add_warning(
                     _rpt("Could not create the rotated shape cutter."), "error"
@@ -4860,6 +4900,18 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             cutter_obj.location = (center_x, center_y, 0)
             try:
                 boolean_operation(blank, cutter_obj, "INTERSECT")
+                # Roads, buildings, water etc. are separate objects that
+                # runTileGeneration only clipped to the unrotated bounding
+                # rectangle -- trim them to the rotated outline too.
+                self._cut_riders_to_outline(
+                    [
+                        o
+                        for o in bpy.data.objects
+                        if o not in objs_before and o not in (blank, cutter_obj)
+                    ],
+                    cutter_obj,
+                    _shp_translate(rotated_poly, xoff=center_x, yoff=center_y),
+                )
             finally:
                 bpy.data.objects.remove(cutter_obj, do_unlink=True)
             blank["Shape"] = {
