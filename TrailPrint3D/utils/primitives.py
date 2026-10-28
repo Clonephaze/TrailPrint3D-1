@@ -431,7 +431,8 @@ def polygon_from_svg(filepath: str, target_size: float | None = None):
     """Imports an SVG, evaluates smooth Bezier geometry via Blender's 2D engine,
     polygonizes raw stroke networks, and returns a clean normalized geometry.
     """
-    from shapely import LineString, Polygon, polygonize
+    from shapely import LineString, Polygon
+    from shapely.ops import polygonize
 
     prior_objs = set(bpy.context.scene.objects)
 
