@@ -18,10 +18,9 @@ from ..terrain import _ColoringTextureResult
 _puzzle_roads_data: tuple | None = None
 
 
-def _raise_overlays_with_plate(gen, plate_thickness):
-    """Lift every object that sits on top of the map by the same amount
-    the plate itself is lifted, so trails, roads, and elements stay
-    aligned with the map surface."""
+def _raise_overlays_with_plate(gen, lift):
+    """Lift the map and every object that sits on top of it by *lift*, so
+    trails, roads, and elements stay aligned with the map surface."""
     objs = []
     if gen.runtime.mapObject is not None:
         objs.append(gen.runtime.mapObject)
@@ -34,7 +33,7 @@ def _raise_overlays_with_plate(gen, plate_thickness):
             if hasattr(el, "location"):
                 objs.append(el)
     for obj in objs:
-        obj.location.z += plate_thickness - gen.settings.plateInsertValue
+        obj.location.z += lift
 
 
 def _rg_create_text_and_overlays(gen: GenerationContext):
@@ -115,13 +114,23 @@ def _rg_create_text_and_overlays(gen: GenerationContext):
                 old_origin.x - shellobj.location.x,
                 old_origin.y - shellobj.location.y,
             )
-            shellobj.location.z += gen.settings.plateThickness
+            # build_map_shell puts the pocket floor `tolerance` below the map's
+            # lowest point; the extra tolerance lands the shell bottom on the
+            # ground and the floor exactly under the map (lifted by
+            # plateThickness below).
+            shellobj.location.z += gen.settings.plateThickness + gen.settings.tolerance
             # build_map_shell passes plateThickness as its bottom_wall.
             shellobj["floorThickness"] = gen.settings.plateThickness
             shellobj["shapeRotation"] = gen.settings.shapeRotation
 
     # --- 2. Raise map/trail/elements with the plate ---------------------
-    if plateobj is not None or shellobj is not None:
+    # The plate insert only sinks the map into a Solid Plate (plateInsert cuts
+    # that pocket); on a Shell the map rests on the pocket floor instead.
+    if plateobj is not None:
+        _raise_overlays_with_plate(
+            gen, gen.settings.plateThickness - gen.settings.plateInsertValue
+        )
+    elif shellobj is not None:
         _raise_overlays_with_plate(gen, gen.settings.plateThickness)
 
     # --- 3. Text layout --------------------------------------------------

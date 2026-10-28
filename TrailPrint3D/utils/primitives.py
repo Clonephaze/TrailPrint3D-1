@@ -447,6 +447,17 @@ def polygon_from_svg(filepath: str, target_size: float | None = None):
     if not imported_objs:
         return None
 
+    # Blender's SVG importer only assigns a material to elements with a fill,
+    # so fill="none" helpers (e.g. svgrepo's full-viewBox "icon-bound" rect)
+    # come in material-less and would union the shape into its bounding box.
+    # Drop them -- unless nothing is filled, i.e. pure stroke artwork.
+    filled = [o for o in imported_objs if o.data.materials]
+    if filled:
+        for o in imported_objs:
+            if o not in filled:
+                bpy.data.objects.remove(o, do_unlink=True)
+        imported_objs = filled
+
     depsgraph = bpy.context.evaluated_depsgraph_get()
     extracted_polys = []
     edge_lines = []

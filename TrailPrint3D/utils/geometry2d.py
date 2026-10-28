@@ -659,9 +659,19 @@ def map_footprint_polygon(obj):
             # elements (roads/buildings) must still be clipped to. Small artifact
             # loops (magnet-hole cutouts, etc.) are filtered relative to the
             # largest piece found.
+            # polygonize() also returns the face INSIDE each hole ring (e.g. an
+            # SVG shape with a cutout), so a plain union would fill holes back
+            # in. XOR the faces' exterior rings instead -- even-odd parity keeps
+            # holes open while disjoint islands still all count as map area.
             max_area = max(p.area for p in polys)
             keep = [p for p in polys if p.area >= max_area * 0.01]
-            footprint = validate(union_all(keep))
+            footprint = None
+            for p in keep:
+                shell = Polygon(p.exterior)
+                footprint = (
+                    shell if footprint is None else footprint.symmetric_difference(shell)
+                )
+            footprint = validate(footprint)
             if footprint is not None and not footprint.is_empty:
                 return footprint
 
