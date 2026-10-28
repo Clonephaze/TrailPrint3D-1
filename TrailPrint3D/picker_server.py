@@ -514,6 +514,7 @@ _MAP_TUTORIALS_JS_PATH = _ASSETS_DIR / 'map_tutorials.js'
 _MULTITILE_TUTORIALS_JS_PATH = _ASSETS_DIR / 'multitile_tutorials.js'
 _EXPORT_FOLDER_JS_PATH = _ASSETS_DIR / 'export_folder.js'
 _THREEMF_PROMO_JS_PATH = _ASSETS_DIR / 'threemf_promo.js'
+_TRANSLATE_JS_PATH = _ASSETS_DIR / 'translate.js'
 
 _element_icons_js_cache: str | None = None
 
@@ -1313,6 +1314,7 @@ class _Handler(BaseHTTPRequestHandler):
             .replace('__MULTITILE_TUTORIALS_JS__', _MULTITILE_TUTORIALS_JS_PATH.read_text(encoding='utf-8'))
             .replace('__EXPORT_FOLDER_JS__', _EXPORT_FOLDER_JS_PATH.read_text(encoding='utf-8'))
             .replace('__THREEMF_PROMO_JS__', _THREEMF_PROMO_JS_PATH.read_text(encoding='utf-8'))
+            .replace('__TRANSLATE_JS__', _TRANSLATE_JS_PATH.read_text(encoding='utf-8'))
             .encode('utf-8')
         )
         self.send_response(200)

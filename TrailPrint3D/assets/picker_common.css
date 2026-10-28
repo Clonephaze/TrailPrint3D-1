@@ -56,6 +56,18 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
     background: none; border: 1px solid var(--border); border-radius: 4px; padding: 5px 12px; color: var(--text-secondary);
     font-size: 13px; font-family: inherit; cursor: pointer; }
 .settings-gear-btn:hover { background: rgba(255,255,255,0.08); border-color: var(--accent); color: var(--text-primary); }
+/* Page translation control (assets/translate.js): a small <select> in the
+   top-right of the sidebar title area. Absolutely positioned so the two
+   heading layouts (.sidebar-title-row / .sidebar-heading) don't change. */
+.tp3d-translate-host { position: relative; }
+.tp3d-translate { position: absolute; top: 0; right: 0; display: flex; align-items: center; }
+.tp3d-translate-select { appearance: none; -webkit-appearance: none; background: none; border: 1px solid var(--border);
+    border-radius: var(--radius-control); padding: 2px 0px; min-height: 1.5rem; color: var(--text-secondary);
+    font-size: 0.6875rem; font-weight: normal; font-family: inherit; cursor: pointer; text-align: center; }
+.tp3d-translate-select:hover:not(:disabled) { background: rgba(255,255,255,0.08); border-color: var(--accent); color: var(--text-primary); }
+.tp3d-translate-select:disabled { cursor: progress; }
+.tp3d-translate-select option { background: var(--surface-panel); color: var(--text-primary); }
+.tp3d-translate-floating { position: fixed; top: 8px; right: 8px; z-index: 1000; }
 /* Export folder (assets/export_folder.js): "Select Export Folder" takes the
    Send button's place (and its margin-top:auto, keeping it at the bottom of
    the sidebar) until a folder is set; then a small "Edit · Open" row sits
