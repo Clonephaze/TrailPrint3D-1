@@ -279,3 +279,64 @@ def _rg_export(gen: GenerationContext):
         )
 
     zoom_camera_to_objects([gen.runtime.mapObject])
+
+
+_ELEMENT_OBJECT_TYPES = frozenset(
+    {"CITY", "WATER", "FOREST", "GLACIER", "FARMLAND", "SCREE", "GREENSPACE", "ROADS", "BUILDINGS"}
+)
+
+
+def _rg_export_tiles(gen: GenerationContext, objects):
+    """Export a Multi Tile Generator batch -- *objects* is every object
+    carrying one of the batch's MultitileIndex values (tiles, trail pieces,
+    element meshes). Picks from them by the same rules _rg_export uses for a
+    single map; the 3MF export then groups each tile with its own pieces
+    (export.export_selected_to_3mf groups by MultitileIndex + ExportGroup)."""
+    from ...export import (  # deferred to avoid circular import at load time
+        export_selected_to_3mf,
+        export_to_STL,
+        is_3mf_extension_installed,
+    )
+
+    if gen.settings.autoExport:
+        print("Auto export disabled, skipping export")
+        return
+
+    use_3mf = is_3mf_extension_installed()
+    mode = gen.settings.elementMode
+    if use_3mf:
+        element_modes = ("SINGLECOLORMODE_REMESH",)
+    else:
+        element_modes = ("SINGLECOLORMODE", "SINGLECOLORMODE_REMESH")
+    trail_in_texture = gen.texture.useTexture and gen.texture.texTrail
+
+    selected = []
+    for obj in objects:
+        try:
+            obj_type = obj.get("Object type")
+        except ReferenceError:
+            continue
+        if obj_type == "TRAIL":
+            keep = not trail_in_texture
+        elif obj_type in _ELEMENT_OBJECT_TYPES:
+            keep = mode in element_modes or (
+                use_3mf and mode == "PAINT" and obj_type in {"ROADS", "BUILDINGS"}
+            )
+        else:
+            keep = obj_type in {"MAP", "TEXT", "PLATE", "SHELL"}
+        if keep:
+            selected.append(obj)
+    if not selected:
+        return
+
+    if use_3mf:
+        print("Exporting multi-tile map to 3mf")
+        bpy.ops.object.select_all(action="DESELECT")
+        for obj in selected:
+            obj.select_set(True)
+        export_selected_to_3mf(is_auto=True)
+    else:
+        print("exporting multi-tile map as STL/OBJ")
+        exportformat = "OBJ" if mode == "PAINT" else "STL"
+        for obj in selected:
+            export_to_STL(obj, exportformat)

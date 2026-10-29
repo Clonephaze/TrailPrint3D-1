@@ -28,7 +28,7 @@ from .generation.input import (
     _rg_validate_inputs,
 )
 from .generation.orchestrator import _GEN_FLAGS, runGeneration
-from .generation.output import _rg_assign_materials, _rg_export
+from .generation.output import _rg_assign_materials, _rg_export, _rg_export_tiles
 from .generation.terrain_gen import _rg_create_map_object
 from .generation.tile_orchestrator import _rtg_add_shape_extras, generateJustTrail, runTileGeneration
 from .geo import *

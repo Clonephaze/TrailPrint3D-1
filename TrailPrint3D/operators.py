@@ -3590,6 +3590,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             element_source=context.scene.tp3d.elementSource,
         )
         mp.finish_color_style_updates(color_updates, context.scene.tp3d)
+        mp.process_slicer_profile_requests(context.scene.tp3d)
 
         rp = pathlib.Path(self._result_path)
         if not (rp.exists() and rp.stat().st_size > 0):
@@ -3830,6 +3831,10 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
         x2, y2, _unused = utils.convert_to_blender_coordinates(north, east, 0, 0)
         tile_w, tile_h = abs(x2 - x1), abs(y2 - y1)
         center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+        # Keep the scene center in step with the new sScaleHor (writeMetadata
+        # converts it back to lat/lon with it).
+        bpy.context.scene.tp3d["o_centerx"] = center_x
+        bpy.context.scene.tp3d["o_centery"] = center_y
         # The puzzle's own true world bounds -- BEFORE `blank` below is
         # possibly enlarged to also cover the holder's own outer margin --
         # passed as cut_into_puzzle_pieces' own piece_bounds so pieces' [0, 1]
@@ -4246,6 +4251,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             element_source=context.scene.tp3d.elementSource,
         )
         mp.finish_color_style_updates(color_updates, context.scene.tp3d)
+        mp.process_slicer_profile_requests(context.scene.tp3d)
 
         rp = pathlib.Path(self._result_path)
         if not (rp.exists() and rp.stat().st_size > 0):
@@ -4592,6 +4598,10 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             x2, y2, _unused = utils.convert_to_blender_coordinates(north, east, 0, 0)
             tile_w, tile_h = abs(x2 - x1), abs(y2 - y1)
             center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+            # Keep the scene center in step with the new sScaleHor (writeMetadata
+            # converts it back to lat/lon with it).
+            bpy.context.scene.tp3d["o_centerx"] = center_x
+            bpy.context.scene.tp3d["o_centery"] = center_y
             diameter = max(tile_w, tile_h)
 
             needs_shape_cut = props.shapeRotation % 360 != 0 and shape_name != "circle"

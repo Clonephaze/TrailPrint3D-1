@@ -3435,6 +3435,14 @@ def merge_active_with_map(map_obj, active_obj):
                 dup.data.materials.clear()
                 dup.data.materials.append(mat)
 
+                from .metadata import (
+                    writeMetadata,  # deferred to avoid circular import at load time
+                )
+
+                # Same as merge_with_map's piece in the branch above --
+                # without it the export skips this trail entirely.
+                writeMetadata(dup, "TRAIL")
+
     else:
         show_message_box("Selected object has a invalid type")
 

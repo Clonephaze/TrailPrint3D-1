@@ -289,25 +289,31 @@ def export_selected_to_3mf(
         offset = Vector((-center.x, -center.y, -center.z))
         for obj in duplicates:
             obj.location += offset
+        place_separate_groups_beside_map(duplicates)
 
+        # Multi Tile Generator objects also carry a MultitileIndex -- each
+        # tile (with its own trail/element pieces) is its own group, instead
+        # of every tile landing in one shared "Map" group.
         groups = {}
         ungrouped = []
         for obj in duplicates:
             group_id = obj.get("ExportGroup", 0)
             if group_id > 0:
-                groups.setdefault(group_id, []).append(obj)
+                key = (obj.get("MultitileIndex", -1), group_id)
+                groups.setdefault(key, []).append(obj)
             else:
                 ungrouped.append(obj)
 
-        GROUP_NAMES = ["Map", "Plate"]
+        GROUP_NAMES = {1: "Map", 2: "Plate"}
         export_roots = []
-        for idx, (g_id, members) in enumerate(sorted(groups.items())):
+        for (tile_idx, g_id), members in sorted(groups.items()):
             if len(members) == 1:
                 export_roots.append(members[0])
                 continue
-            empty = bpy.data.objects.new(
-                GROUP_NAMES[idx] if idx < len(GROUP_NAMES) else f"Group_{g_id}", None
-            )
+            name = GROUP_NAMES.get(g_id, f"Group_{g_id}")
+            if tile_idx >= 0:
+                name = f"{name}_{tile_idx}"
+            empty = bpy.data.objects.new(name, None)
             bpy.context.collection.objects.link(empty)
             temp_empties.append(empty)
             export_roots.append(empty)
@@ -525,6 +531,38 @@ def get_selection_center(objects):
     )
 
     return center
+
+
+def _x_extent(objects):
+    xs = [
+        (obj.matrix_world @ Vector(corner)).x
+        for obj in objects
+        for corner in obj.bound_box
+    ]
+    return min(xs), max(xs)
+
+
+def place_separate_groups_beside_map(objects, gap=10.0):
+    """Move the objects printed apart from the map -- ExportGroup 0 (e.g. a
+    Single Extruder trail or element) and 2 (plate) -- beside it along +X,
+    each group as one block, *gap* mm apart. They'd otherwise sit at their
+    real position inside/under the map, where the slicer hides them."""
+    bpy.context.view_layer.update()
+    map_objs = [o for o in objects if o.get("ExportGroup") == 1]
+    if not map_objs:
+        return
+    _min_x, cursor = _x_extent(map_objs)
+    for group_id in (0, 2):
+        members = [o for o in objects if o.get("ExportGroup") == group_id]
+        if not members:
+            continue
+        g_min, g_max = _x_extent(members)
+        dx = cursor + gap - g_min
+        # Children follow their parent; moving them too would double-shift.
+        for obj in members:
+            if obj.parent is None:
+                obj.location.x += dx
+        cursor = g_max + dx
 
 
 def is_3mf_extension_installed():

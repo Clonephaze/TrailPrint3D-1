@@ -1441,6 +1441,17 @@ function tp3dSyncColorStyleSelects() {
     document.querySelectorAll('#colorStyleSelect, .color-style-compact').forEach(function(s) {
         s.value = TP3D_COLOR_STYLES.currentStyle;
     });
+    tp3dRefreshColorStyleActions();
+}
+
+// Update/Delete only apply to the user's own saved styles. *container*
+// defaults to the document (a section still being built passes itself).
+function tp3dRefreshColorStyleActions(container) {
+    var root = container || document;
+    var isUser = TP3D_COLOR_STYLES.currentStyle.indexOf('USER:') === 0;
+    root.querySelectorAll('.color-update-btn, .color-delete-btn').forEach(function(btn) {
+        btn.style.display = isUser ? '' : 'none';
+    });
 }
 
 function tp3dBuildColorStylesSection() {
@@ -1526,24 +1537,25 @@ function tp3dBuildColorStylesSection() {
     saveBtn.addEventListener('click', function() { tp3dShowColorStyleNameRow('new'); });
     actions.appendChild(saveBtn);
 
-    if (TP3D_COLOR_STYLES.currentStyle.indexOf('USER:') === 0) {
-        var updateBtn = document.createElement('button');
-        updateBtn.type = 'button';
-        updateBtn.className = 'element-mode-btn color-update-btn';
-        updateBtn.textContent = 'Update';
-        updateBtn.title = 'Replace the selected user style with the current colors';
-        updateBtn.addEventListener('click', function() { tp3dShowColorStyleNameRow('update'); });
-        actions.appendChild(updateBtn);
+    // Always built; tp3dRefreshColorStyleActions shows them only while a
+    // user style is selected (built-in styles can't be changed or deleted).
+    var updateBtn = document.createElement('button');
+    updateBtn.type = 'button';
+    updateBtn.className = 'element-mode-btn color-update-btn';
+    updateBtn.textContent = 'Update';
+    updateBtn.title = 'Replace the selected user style with the current colors';
+    updateBtn.addEventListener('click', function() { tp3dShowColorStyleNameRow('update'); });
+    actions.appendChild(updateBtn);
 
-        var deleteBtn = document.createElement('button');
-        deleteBtn.type = 'button';
-        deleteBtn.className = 'element-mode-btn danger';
-        deleteBtn.textContent = 'Delete';
-        deleteBtn.title = 'Delete this user style';
-        deleteBtn.addEventListener('click', function() { tp3dDeleteColorStyle(); });
-        actions.appendChild(deleteBtn);
-    }
+    var deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'element-mode-btn danger color-delete-btn';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.title = 'Delete this user style';
+    deleteBtn.addEventListener('click', function() { tp3dDeleteColorStyle(); });
+    actions.appendChild(deleteBtn);
     wrap.appendChild(actions);
+    tp3dRefreshColorStyleActions(wrap);
 
     // ── Hidden name row ──────────────────────────────────────────────
     var nameRow = document.createElement('div');
@@ -1719,8 +1731,166 @@ function tp3dBuildOtherTab() {
     advancedSection.grid.appendChild(tp3dBuildFieldRow(COASTLINE_SIMPLIFY_FIELD));
     wrap.appendChild(advancedSection.card);
 
+    wrap.appendChild(tp3dBuildSlicerProfileSection());
+
     tp3dRefreshMapTabVisibility();
     return wrap;
+}
+
+// "3MF Print Profile" card -- the sidebar's 3MF Export Profile dropdown
+// (props.slicer_profile_name) plus the 3MF add-on's own "Load Profile from
+// 3MF" (Preferences → Add-ons → 3MF Format → Advanced). Only shown while the
+// 3MF add-on is installed (SETTINGS_STATE.has3mf, which flips live after
+// threemf_promo.js's install). Profiles come from picker_server's
+// /slicer_profiles snapshot, kept out of SETTINGS_STATE like the export
+// folder so a history restore doesn't switch printers. Every request is
+// answered once Blender has handled it, with the fresh list as `state`.
+function tp3dBuildSlicerProfileSection() {
+    var section = tp3dBuildSection('3MF Print Profile', 'settings-grid-2');
+    var card = section.card;
+
+    // Full card width, the import button on the dropdown's own line.
+    var row = document.createElement('div');
+    row.className = 'adv-field-row';
+    row.style.gridColumn = '1 / -1';
+    var label = document.createElement('label');
+    label.textContent = 'Print Profile';
+    label.htmlFor = 'slicerProfileSelect';
+    row.appendChild(label);
+    var controls = document.createElement('div');
+    controls.className = 'adv-field-controls';
+    var select = document.createElement('select');
+    select.id = 'slicerProfileSelect';
+    controls.appendChild(select);
+    var importBtn = document.createElement('button');
+    importBtn.type = 'button';
+    importBtn.className = 'element-mode-btn';
+    importBtn.style.cssText = 'height:36px;flex:0 0 auto;padding:0 16px;';
+    importBtn.textContent = 'Import from 3MF…';
+    importBtn.title = 'Add a print profile from a project .3mf saved in your slicer — its printer, filament and process settings get embedded in every 3MF export';
+    var fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.3mf';
+    fileInput.hidden = true;
+    controls.appendChild(importBtn);
+    controls.appendChild(fileInput);
+    row.appendChild(controls);
+    section.grid.appendChild(row);
+
+    // Name row shown after a file was picked, like the color styles' one.
+    var nameRow = document.createElement('div');
+    nameRow.className = 'color-style-name-row';
+    nameRow.style.cssText = 'display:none;grid-column:1 / -1;';
+    var nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.maxLength = 64;
+    nameInput.placeholder = 'Profile name';
+    var saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'element-mode-btn active';
+    saveBtn.textContent = 'Save';
+    var cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'element-mode-btn';
+    cancelBtn.textContent = 'Cancel';
+    nameRow.appendChild(nameInput);
+    nameRow.appendChild(saveBtn);
+    nameRow.appendChild(cancelBtn);
+    section.grid.appendChild(nameRow);
+
+    var hint = document.createElement('div');
+    hint.className = 'field-hint';
+    hint.style.gridColumn = '1 / -1';
+    hint.textContent = 'Save a project .3mf in Bambu Studio, OrcaSlicer or PrusaSlicer with the printer and filament you use, then import it here.';
+    section.grid.appendChild(hint);
+
+    var status = document.createElement('div');
+    status.className = 'field-hint';
+    status.style.gridColumn = '1 / -1';
+    status.hidden = true;
+    section.grid.appendChild(status);
+
+    function render(state) {
+        select.innerHTML = '';
+        (state.profiles || []).forEach(function(p) {
+            var opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.label;
+            opt.title = p.description || '';
+            select.appendChild(opt);
+        });
+        select.value = state.current;
+    }
+
+    function showStatus(reply) {
+        status.hidden = !reply.message;
+        status.textContent = reply.message || '';
+        status.classList.toggle('warning-text', !reply.ok);
+    }
+
+    function post(path, body, headers) {
+        return fetch('http://127.0.0.1:' + PORT + path, {
+            method: 'POST', headers: headers || { 'Content-Type': 'application/json' }, body: body
+        }).then(function(r) { return r.json(); }).then(function(reply) {
+            if (reply.state) render(reply.state);
+            return reply;
+        });
+    }
+
+    var picked = null;
+    function hideNameRow() {
+        picked = null;
+        fileInput.value = '';
+        nameRow.style.display = 'none';
+    }
+
+    select.addEventListener('change', function() {
+        post('/select_slicer_profile', JSON.stringify({ name: select.value }))
+            .then(showStatus).catch(function() {});
+    });
+    importBtn.addEventListener('click', function() { fileInput.click(); });
+    fileInput.addEventListener('change', function() {
+        picked = fileInput.files && fileInput.files[0];
+        if (!picked) return;
+        nameInput.value = picked.name.replace(/\.3mf$/i, '');
+        nameRow.style.display = 'flex';
+        nameInput.focus();
+        nameInput.select();
+    });
+    cancelBtn.addEventListener('click', hideNameRow);
+    saveBtn.addEventListener('click', function() {
+        if (!picked) return;
+        var file = picked;
+        saveBtn.disabled = true;
+        status.hidden = false;
+        status.classList.remove('warning-text');
+        status.textContent = 'Importing ' + file.name + '…';
+        file.arrayBuffer().then(function(buf) {
+            return post('/upload_slicer_profile', buf, {
+                'Content-Type': 'application/octet-stream',
+                'X-Profile-Name': encodeURIComponent(nameInput.value.trim()),
+                'X-File-Name': encodeURIComponent(file.name)
+            });
+        }).then(function(reply) {
+            showStatus(reply);
+            if (reply.ok) hideNameRow();
+        }).catch(function() {
+            showStatus({ ok: false, message: 'Import failed, see the Blender console.' });
+        }).then(function() { saveBtn.disabled = false; });
+    });
+
+    // Hidden without the 3MF add-on; refreshed from Blender whenever it
+    // (re)appears, so the list also picks up profiles added elsewhere.
+    var wasShown = false;
+    MAP_TAB_ROWS.push({ field: { apply: function() {
+        var show = tp3dHas3mf();
+        card.style.display = show ? '' : 'none';
+        if (show && !wasShown) {
+            post('/select_slicer_profile', JSON.stringify({ name: '' })).catch(function() {});
+        }
+        wasShown = show;
+    } }, row: card });
+    return card;
 }
 
 // One titled card of the Settings popup -- every tab is a stack of these.

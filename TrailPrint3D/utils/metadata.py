@@ -354,3 +354,28 @@ def writeMetadata(obj, type="MAP"):
 
     snapshot = GenerationSnapshot.from_mapping(obj)
     obj[const.GENERATION_SNAPSHOT_PROPERTY] = snapshot.to_json()
+
+
+def next_multitile_index(objects) -> int:
+    """First MultitileIndex not used by any of *objects* -- so a later batch
+    (e.g. a Multi Tile Generator Extend) never shares an index with tiles
+    already in the scene."""
+    used = [obj["MultitileIndex"] for obj in objects if "MultitileIndex" in obj]
+    return max(used) + 1 if used else 0
+
+
+def set_multitile_index(objects, index: int) -> None:
+    """Stamp *index* on every object of one multitile tile (the tile itself,
+    its element meshes and trail pieces). Export groups objects by
+    (MultitileIndex, ExportGroup), so each tile exports as its own group.
+    Re-snapshots objects writeMetadata already ran on, so the Generation
+    Settings popup shows the index too."""
+    for obj in objects:
+        try:
+            obj["MultitileIndex"] = index
+            if const.GENERATION_SNAPSHOT_PROPERTY in obj:
+                obj[const.GENERATION_SNAPSHOT_PROPERTY] = (
+                    GenerationSnapshot.from_mapping(obj).to_json()
+                )
+        except ReferenceError:
+            pass

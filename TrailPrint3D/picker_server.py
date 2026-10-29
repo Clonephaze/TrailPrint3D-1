@@ -56,6 +56,15 @@ _pending_advanced_settings: 'queue.Queue[tuple]' = queue.Queue()
 _pending_color_styles: 'queue.Queue[dict]' = queue.Queue()
 # ─────────────────────────────────────────────────────────────────────
 
+# Settings popup's Other tab "3MF Print Profile" card (settings_modal.js):
+# POST /select_slicer_profile {name} and POST /upload_slicer_profile (the raw
+# .3mf as body, names in the X-Profile-Name / X-File-Name headers) are
+# queued here and handled on the main thread by
+# process_slicer_profile_requests, which also rebuilds the GET
+# /slicer_profiles snapshot. Kept out of SETTINGS_STATE like the export
+# folder -- restoring a history entry shouldn't switch the printer profile.
+_pending_slicer_profiles: 'queue.Queue[dict]' = queue.Queue()
+
 # The map generator pages' "Prefetch" button (POST /prefetch, see
 # assets/prefetch_layer.js). Planning it needs scene settings (main thread
 # only, hence the queue drained via drain_pending_prefetch from the calling
@@ -442,6 +451,103 @@ def build_color_styles_state(tp3d) -> dict:
         return {'builtIn': [], 'user': [], 'currentStyle': '',
                 'currentColors': {}, 'isModified': False}
 # ─────────────────────────────────────────────────────────────────────
+
+
+def build_slicer_profiles_state(tp3d) -> dict:
+    """GET /slicer_profiles snapshot: the same items as the sidebar's 3MF
+    Export Profile dropdown (props.slicer_profile_name) plus the selected
+    one. Main thread only -- the 3MF add-on is looked up through bpy."""
+    from .props import _slicer_profile_items_uncached
+    from .threemf_discovery import get_threemf_api
+
+    try:
+        items = _slicer_profile_items_uncached()
+    except (ImportError, AttributeError, OSError) as e:
+        print(f"[TP3D picker] could not list slicer profiles: {e}")
+        items = []
+    return {
+        'available': get_threemf_api() is not None,
+        'profiles': [{'id': i, 'label': label, 'description': desc} for i, label, desc in items],
+        'current': getattr(tp3d, 'slicer_profile_name', 'NONE'),
+    }
+
+
+def _import_slicer_profile(path: str, name: str, source_file: str):
+    """Save the slicer settings inside the .3mf at *path* as print profile
+    *name* -- what the 3MF add-on's own "Load Profile from 3MF" button
+    (Preferences → Add-ons → 3MF Format → Advanced) does. Returns (ok, message)."""
+    import importlib
+    import zipfile
+
+    from .threemf_discovery import get_threemf_api
+
+    api = get_threemf_api()
+    if api is None:
+        return False, "The 3MF add-on is not installed."
+    sp = importlib.import_module(".slicer_profiles", package=api.__package__)
+    try:
+        vendor, machine, configs, _labels = sp.extract_from_3mf(path)
+    except zipfile.BadZipFile:
+        return False, "Not a valid 3MF file."
+    except (OSError, ValueError, KeyError) as e:
+        return False, f"Could not read the file: {e}"
+    if not configs:
+        return False, ("This 3MF has no slicer settings. Save it as a project "
+                       "from your slicer (Bambu Studio, OrcaSlicer, PrusaSlicer).")
+    sp.save_profile(name, vendor or "Unknown", source_file, configs, machine=machine)
+    return True, f'Saved print profile "{name}".'
+
+
+def process_slicer_profile_requests(tp3d) -> None:
+    """Handle the queued /select_slicer_profile and /upload_slicer_profile
+    requests, rebuild the /slicer_profiles snapshot and release the waiting
+    POST handlers with each request's result. Call from every generator
+    operator's modal() tick (main thread). An uploaded profile becomes the
+    selected one; a select with an empty name only refreshes the snapshot.
+
+    *tp3d* is ``context.scene.tp3d``.
+    """
+    requests = []
+    while True:
+        try:
+            requests.append(_pending_slicer_profiles.get_nowait())
+        except queue.Empty:
+            break
+    if not requests:
+        return
+
+    from .props import _slicer_profile_items_uncached
+
+    for req in requests:
+        if req['action'] == 'select':
+            if not req['name']:
+                # Just a refresh -- e.g. the 3MF add-on was installed or a
+                # profile added in its preferences since the page opened.
+                req['result'] = {'ok': True, 'message': ''}
+            elif req['name'] in {item[0] for item in _slicer_profile_items_uncached()}:
+                tp3d.slicer_profile_name = req['name']
+                req['result'] = {'ok': True, 'message': ''}
+            else:
+                req['result'] = {'ok': False, 'message': 'Unknown print profile.'}
+        elif req['action'] == 'upload':
+            ok, message = _import_slicer_profile(req['path'], req['name'], req['source_file'])
+            if ok:
+                tp3d.slicer_profile_name = req['name']
+            req['result'] = {'ok': ok, 'message': message}
+            try:
+                os.remove(req['path'])
+            except OSError:
+                pass
+
+    _Handler.slicer_profiles_json = json.dumps(build_slicer_profiles_state(tp3d)).encode('utf-8')
+    # The sidebar's own dropdown doesn't redraw on its own from a modal timer.
+    import bpy  # type: ignore
+
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            area.tag_redraw()
+    for req in requests:
+        req['done'].set()
 
 
 def drain_pending_3mf_install() -> bool:
@@ -1030,6 +1136,7 @@ class _Handler(BaseHTTPRequestHandler):
     settings_state_json: bytes = b'{}'
     advanced_settings_json: bytes = b'{}'
     color_styles_json: bytes = b'{}'  # ── COLOR STYLES
+    slicer_profiles_json: bytes = b'{"available": false, "profiles": [], "current": "NONE"}'
     element_source: str = 'OSM'
     dem_bounds_json: bytes = b'null'
     obj_size: float = 100.0
@@ -1070,6 +1177,15 @@ class _Handler(BaseHTTPRequestHandler):
             # build_color_styles_state / refresh_state_snapshots. Never
             # reads bpy directly here; this is the HTTP server's own thread.
             body = self.color_styles_json
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == '/slicer_profiles':
+            # Main-thread-built snapshot, see process_slicer_profile_requests.
+            body = self.slicer_profiles_json
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(body)))
@@ -1513,6 +1629,48 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(b'ok')
             return
         # ─────────────────────────────────────────────────────────────
+        if self.path in ('/select_slicer_profile', '/upload_slicer_profile'):
+            # Answered once the main thread has handled the request
+            # (process_slicer_profile_requests): {ok, message, state}.
+            from urllib.parse import unquote
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            request = {'done': threading.Event()}
+            if self.path == '/select_slicer_profile':
+                try:
+                    data = json.loads(body) if body else {}
+                except json.JSONDecodeError:
+                    data = {}
+                request.update(action='select', name=str(data.get('name') or ''))
+                timeout = 5
+            else:
+                source_file = os.path.basename(unquote(self.headers.get('X-File-Name', '')))
+                name = unquote(self.headers.get('X-Profile-Name', '')).strip()
+                name = name or os.path.splitext(source_file)[0] or 'Print Profile'
+                # mkstemp imported by name: do_POST imports tempfile locally
+                # further down, which makes `tempfile` local to all of it.
+                from tempfile import mkstemp
+
+                fd, path = mkstemp(suffix='.3mf', prefix='tp3d_profile_')
+                with os.fdopen(fd, 'wb') as f:
+                    f.write(body)
+                request.update(action='upload', path=path, name=name[:64],
+                               source_file=source_file or 'profile.3mf')
+                timeout = 30
+            _pending_slicer_profiles.put(request)
+            if request['done'].wait(timeout=timeout):
+                reply = dict(request['result'])
+            else:
+                reply = {'ok': False, 'message': 'Blender did not respond, please try again.'}
+            reply['state'] = json.loads(self.slicer_profiles_json)
+            out = json.dumps(reply).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+            return
         if self.path == '/save_state':
             length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(length)
@@ -1847,7 +2005,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     build_color_styles_state -- see that function's docstring.
     """
     global _active_server, _pending_toggles, _pending_settings, _pending_advanced_settings, _pending_prefetch
-    global _pending_model_previews, _pending_3mf_install, _pending_color_styles
+    global _pending_model_previews, _pending_3mf_install, _pending_color_styles, _pending_slicer_profiles
     if _active_server is not None:
         try:
             _active_server.shutdown()
@@ -1858,6 +2016,7 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
     _pending_settings = queue.Queue()
     _pending_advanced_settings = queue.Queue()
     _pending_color_styles = queue.Queue()  # ── COLOR STYLES
+    _pending_slicer_profiles = queue.Queue()
     _pending_prefetch = queue.Queue()
     _pending_model_previews = queue.Queue()
     _pending_3mf_install = queue.Queue()
@@ -1918,6 +2077,12 @@ def start_picker(result_path: str, existing_maps: list | None = None, existing_t
             'currentColors': {}, 'isModified': False,
         }).encode('utf-8')
     # ─────────────────────────────────────────────────────────────────
+    try:
+        import bpy  # type: ignore
+        _Handler.slicer_profiles_json = json.dumps(
+            build_slicer_profiles_state(bpy.context.scene.tp3d)).encode('utf-8')
+    except (AttributeError, ImportError) as e:
+        print(f"[TP3D picker] could not build slicer profiles state: {e}")
     _Handler.element_source = element_source or 'OSM'
     _Handler.dem_bounds_json = json.dumps(dem_bounds).encode('utf-8')
     _Handler.obj_size = obj_size or 100.0

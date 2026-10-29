@@ -689,6 +689,7 @@ def runTileGeneration(
     progress_start=0.0,
     progress_end=1.0,
     snap_trails=False,
+    multitile_start_index=None,
 ):
     """Run the generation pipeline's back half on already-placed tile objects.
 
@@ -726,6 +727,10 @@ def runTileGeneration(
     built those trails before the tile had terrain -- the map generator in
     Single Extruder Mode, so the trail goes through the same pipeline as
     runGeneration's and cuts the roads instead of the other way around.
+
+    multitile_start_index: when set (the Multi Tile Generator), each tile
+    gets its own MultitileIndex counting up from here, stamped on the tile
+    and on every object generated for it (metadata.set_multitile_index).
 
     Does NOT export -- unlike runGeneration's own Phase 18, a single call
     here doesn't necessarily mean the caller's final deliverable is ready
@@ -827,6 +832,13 @@ def runTileGeneration(
             )
 
             tile_label = f"Tile {tile_idx + 1}/{n_tiles}"
+            multitile_index = None
+            if multitile_start_index is not None:
+                # Before generation, so writeMetadata's snapshot of the
+                # tile already includes it.
+                multitile_index = multitile_start_index + tile_idx
+                zobj["MultitileIndex"] = multitile_index
+                objs_before_tile = set(bpy.data.objects)
             try:
                 lowestZ, highestZ, additionalExtrusion = _rtg_process_tile(
                     gen,
@@ -872,6 +884,14 @@ def runTileGeneration(
                     gen.fetch.fetchThread = None
                     gen.fetch.fetchResult = None
 
+            if multitile_index is not None:
+                from ..metadata import set_multitile_index
+
+                set_multitile_index(
+                    [o for o in bpy.data.objects if o not in objs_before_tile],
+                    multitile_index,
+                )
+
             _rtg_update_tile_preview_status(
                 overlay, _mp_valid, _mp_tiles_info, _mp_tile_size, zobj,
                 status="done",
@@ -889,7 +909,9 @@ def runTileGeneration(
         _elapsed = int(time.time() - overlay._start_time) if overlay._start_time else 0
         _m, _s = divmod(_elapsed, 60)
         overlay.add_completed_step(f"Done  —  {_m:02d}:{_s:02d} total")
-        if n_tiles > 1:
+        # The Multi Tile Generator (multitile_start_index) exports its
+        # batch itself once the tiles are finished (_rg_export_tiles).
+        if n_tiles > 1 and multitile_start_index is None:
             _progress.WarningsOverlay.add_warning(
                 _rpt("Multi-tile maps are not exported automatically — please use the Export buttons to export your tiles manually."),
                 "warn",

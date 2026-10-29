@@ -916,6 +916,13 @@ button, a, input, select, summary {
     outline: 2px solid var(--focus);
     outline-offset: 3px;
 }
+/* Typed fields and dropdowns count as :focus-visible on every mouse click
+   too, not just keyboard focus -- they show focus with their own accent
+   border instead of the offset ring. */
+:is(input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea):focus-visible {
+    outline: none;
+    border-color: var(--accent);
+}
 button:disabled { cursor: not-allowed; }
 button:not(:disabled):active { filter: brightness(0.9); }
 input, select { accent-color: var(--accent); }

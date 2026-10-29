@@ -132,6 +132,8 @@ _SNAPSHOT_SECTIONS = (
             "jMapLon2",
             "indipendendTiles",
             "tileSpacing",
+            "MultitileIndex",
+            "tileSize",
         ),
     ),
     (
