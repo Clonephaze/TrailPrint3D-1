@@ -3576,7 +3576,8 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             utils.apply_setting_update(context.scene.tp3d, key, value)
         for key, value in mp.drain_pending_advanced_settings():
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
-        for update in mp.drain_pending_color_styles():
+        color_updates = mp.drain_pending_color_styles()
+        for update in color_updates:
             utils.apply_color_update(context.scene.tp3d, update)
         for request in mp.drain_pending_prefetch():
             self._start_prefetch(context, request)
@@ -3588,6 +3589,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             advanced_settings=utils.build_advanced_settings_state(context.scene.tp3d),
             element_source=context.scene.tp3d.elementSource,
         )
+        mp.finish_color_style_updates(color_updates, context.scene.tp3d)
 
         rp = pathlib.Path(self._result_path)
         if not (rp.exists() and rp.stat().st_size > 0):
@@ -4227,7 +4229,8 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             utils.apply_setting_update(context.scene.tp3d, key, value)
         for key, value in mp.drain_pending_advanced_settings():
             utils.apply_advanced_setting_update(context.scene.tp3d, key, value)
-        for update in mp.drain_pending_color_styles():
+        color_updates = mp.drain_pending_color_styles()
+        for update in color_updates:
             utils.apply_color_update(context.scene.tp3d, update)
         for request in mp.drain_pending_prefetch():
             self._start_prefetch(context, request)
@@ -4242,6 +4245,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             advanced_settings=utils.build_advanced_settings_state(context.scene.tp3d),
             element_source=context.scene.tp3d.elementSource,
         )
+        mp.finish_color_style_updates(color_updates, context.scene.tp3d)
 
         rp = pathlib.Path(self._result_path)
         if not (rp.exists() and rp.stat().st_size > 0):

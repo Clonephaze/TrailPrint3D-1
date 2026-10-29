@@ -374,7 +374,9 @@ def drain_pending_color_styles() -> list:
         {'action': 'apply',  'style': 'FOREST' or 'USER:My Palette'}
         {'action': 'save',   'name': 'My Palette'}
         {'action': 'delete', 'style': 'USER:My Palette'}
-    Applied on the main thread by utils.apply_color_update.
+    Applied on the main thread by utils.apply_color_update, then passed to
+    finish_color_style_updates. 'save'/'delete' entries also carry a 'done'
+    threading.Event their POST handler is waiting on.
     """
     updates = []
     while True:
@@ -383,6 +385,24 @@ def drain_pending_color_styles() -> list:
         except queue.Empty:
             break
     return updates
+
+
+def finish_color_style_updates(updates: list, tp3d) -> None:
+    """Rebuild the COLOR_STYLES snapshot after the calling operator's modal()
+    tick applied *updates* (drain_pending_color_styles' return value), then
+    release the POST handlers waiting on them -- so the page's follow-up
+    /get_color_styles already lists a just-saved (or no longer lists a
+    just-deleted) user style. Main thread only, like refresh_state_snapshots.
+
+    *tp3d* is ``context.scene.tp3d``.
+    """
+    if not updates:
+        return
+    refresh_state_snapshots(color_styles=build_color_styles_state(tp3d))
+    for update in updates:
+        done = update.get('done')
+        if done is not None:
+            done.set()
 
 
 def build_color_styles_state(tp3d) -> dict:
@@ -1463,6 +1483,10 @@ class _Handler(BaseHTTPRequestHandler):
                 data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 data = {}
+            # Save/delete change the style list the page re-fetches right
+            # after -- hold the response until the main thread has applied
+            # the change and rebuilt the snapshot (finish_color_style_updates).
+            done = threading.Event()
             if self.path == '/update_color_setting':
                 key = data.get('key')
                 value = data.get('value')
@@ -1475,11 +1499,13 @@ class _Handler(BaseHTTPRequestHandler):
             elif self.path == '/save_color_style':
                 name = data.get('name')
                 if name:
-                    _pending_color_styles.put({'action': 'save', 'name': name})
+                    _pending_color_styles.put({'action': 'save', 'name': name, 'done': done})
+                    done.wait(timeout=3)
             elif self.path == '/delete_color_style':
                 style_id = data.get('style')
                 if style_id:
-                    _pending_color_styles.put({'action': 'delete', 'style': style_id})
+                    _pending_color_styles.put({'action': 'delete', 'style': style_id, 'done': done})
+                    done.wait(timeout=3)
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
             self.send_header('Content-Length', '2')
