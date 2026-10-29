@@ -37,9 +37,12 @@ def _setup_material(name, color):
 
 
 def setupColors(colors=None):
-    from .color_styles import scene_colors
+    from .color_styles import detach_role_material_users, scene_colors
 
-    for material_name, color in (colors or scene_colors()).items():
+    colors = colors or scene_colors()
+    # Maps generated with an earlier palette keep its colors.
+    detach_role_material_users(colors)
+    for material_name, color in colors.items():
         _setup_material(material_name, color)
     _setup_material("BLACK", (0, 0, 0))
     _setup_material("WHITE", (255, 255, 255))
@@ -431,18 +434,34 @@ def polygon_from_svg(filepath: str, target_size: float | None = None):
     """Imports an SVG, evaluates smooth Bezier geometry via Blender's 2D engine,
     polygonizes raw stroke networks, and returns a clean normalized geometry.
     """
-    from shapely import LineString, Polygon
-    from shapely.ops import polygonize
-
     prior_objs = set(bpy.context.scene.objects)
+    prior_collections = set(bpy.data.collections)
 
     # 1. Native SVG import
     bpy.ops.import_curve.svg(filepath=filepath)
-    imported_objs = [
-        o
-        for o in bpy.context.scene.objects
-        if o not in prior_objs and o.type == "CURVE"
-    ]
+    try:
+        return _polygon_from_imported_svg(
+            [
+                o
+                for o in bpy.context.scene.objects
+                if o not in prior_objs and o.type == "CURVE"
+            ],
+            target_size,
+        )
+    finally:
+        # The importer puts its curves in a new collection named after the
+        # file -- left behind empty once they're removed, so remove it too.
+        for collection in set(bpy.data.collections) - prior_collections:
+            for obj in list(collection.all_objects):
+                bpy.data.objects.remove(obj, do_unlink=True)
+            bpy.data.collections.remove(collection, do_unlink=True)
+
+
+def _polygon_from_imported_svg(imported_objs, target_size):
+    """polygon_from_svg's geometry pass over the SVG importer's curve
+    objects, which it removes as it goes."""
+    from shapely import LineString, Polygon
+    from shapely.ops import polygonize
 
     if not imported_objs:
         return None

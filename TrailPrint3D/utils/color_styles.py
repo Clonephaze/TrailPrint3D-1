@@ -377,6 +377,38 @@ def recolor_object_materials(objects, colors):
     return changed
 
 
+def detach_role_material_users(colors):
+    """Keep already generated maps' colors before the shared role materials
+    take on *colors* (primitives.setupColors, at the start of a generation).
+
+    Every object still using a shared role material whose color is about to
+    change moves onto a tagged copy that keeps the old color -- one copy per
+    material, shared by all its current users -- so switching palettes only
+    affects maps generated from then on. Returns the number of copies made.
+    """
+    copied = 0
+    for role, rgb in colors.items():
+        material = bpy.data.materials.get(role)
+        if material is None or material.get(MATERIAL_ROLE_PROP):
+            continue
+        if srgb_to_hex(material_to_srgb(material, rgb)) == srgb_to_hex(rgb):
+            continue
+        slots = [
+            slot
+            for obj in bpy.data.objects
+            for slot in obj.material_slots
+            if slot.material == material
+        ]
+        if not slots:
+            continue
+        frozen = material.copy()
+        frozen[MATERIAL_ROLE_PROP] = role
+        for slot in slots:
+            slot.material = frozen
+        copied += 1
+    return copied
+
+
 def role_hex_map(colors):
     return {role: srgb_to_hex(rgb) for role, rgb in colors.items()}
 

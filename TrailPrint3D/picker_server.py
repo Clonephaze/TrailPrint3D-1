@@ -1766,6 +1766,7 @@ class _Handler(BaseHTTPRequestHandler):
                 element_states = data.get('elementStates')
                 settings_state = data.get('settingsState')
                 advanced_settings = data.get('advancedSettings')
+                color_style = data.get('colorStyle')
             except (json.JSONDecodeError, AttributeError):
                 settings = None
                 summary = ''
@@ -1775,6 +1776,7 @@ class _Handler(BaseHTTPRequestHandler):
                 element_states = None
                 settings_state = None
                 advanced_settings = None
+                color_style = None
             if isinstance(settings, dict):
                 entry = {
                     'id': uuid.uuid4().hex,
@@ -1816,6 +1818,20 @@ class _Handler(BaseHTTPRequestHandler):
                     entry['settingsState'] = settings_state
                 if isinstance(advanced_settings, dict):
                     entry['advancedSettings'] = advanced_settings
+                # Color palette at Send time: {style, colors: {ROLE: '#RRGGBB'}}
+                # -- replayed through /apply_color_style and
+                # /update_color_setting (tp3dApplyHistoryColors), which
+                # validate it again.
+                if (isinstance(color_style, dict) and isinstance(color_style.get('style'), str)
+                        and isinstance(color_style.get('colors'), dict)):
+                    entry['colorStyle'] = {
+                        'style': color_style['style'][:100],
+                        'colors': {
+                            str(role)[:20]: hex_value
+                            for role, hex_value in color_style['colors'].items()
+                            if isinstance(hex_value, str) and re.fullmatch(r'#[0-9A-Fa-f]{6}', hex_value)
+                        },
+                    }
                 entries = _read_history(self.history_path)
                 entries.insert(0, entry)
                 # Entries pushed off the end by the cap may already have a

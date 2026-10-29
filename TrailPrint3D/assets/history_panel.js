@@ -227,9 +227,34 @@ function tp3dRenderShapeThumbnail(opts) {
 // resync this page's own globals and repaint the (possibly not-currently-
 // open) Settings modal. A no-op for entries saved before this existed (they
 // have none of these three fields).
+// Puts back the color palette an entry was generated with: its style, then
+// every swatch that differed from it (or all of them, if that saved style
+// has been deleted since). Sent one after another -- a swatch edit arriving
+// before the style switch would be reset by it.
+function tp3dApplyHistoryColors(saved) {
+    function post(path, body) {
+        return fetch('http://127.0.0.1:' + PORT + path, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }).catch(function() {});
+    }
+    var style = typeof tp3dFindColorStyle === 'function' ? tp3dFindColorStyle(saved.style) : null;
+    var chain = style ? post('/apply_color_style', { style: saved.style }) : Promise.resolve();
+    var colors = saved.colors || {};
+    Object.keys(colors).forEach(function(role) {
+        var hex = String(colors[role]).toUpperCase();
+        if (style && String(style.colors[role] || '').toUpperCase() === hex) return;
+        chain = chain.then(function() {
+            return post('/update_color_setting', { key: 'element_color_' + role.toLowerCase(), value: hex });
+        });
+    });
+    return chain;
+}
+
 function tp3dApplyHistorySettings(entry) {
-    if (!entry || (!entry.settingsState && !entry.advancedSettings && !entry.elementStates)) return;
+    if (!entry || (!entry.settingsState && !entry.advancedSettings && !entry.elementStates && !entry.colorStyle)) return;
     var puts = [];
+    if (entry.colorStyle) puts.push(tp3dApplyHistoryColors(entry.colorStyle));
     if (entry.settingsState) {
         Object.keys(entry.settingsState).forEach(function(key) {
             // A preference, not part of what was generated -- restoring an
@@ -272,6 +297,15 @@ function tp3dApplyHistorySettings(entry) {
                 if (window.tp3dRebuildElementsTab) window.tp3dRebuildElementsTab();
                 if (window.tp3dRebuildMapTab) window.tp3dRebuildMapTab();
                 return s;
+            })
+            .then(function(s) {
+                // The palette selectors + swatches (settings_modal.js) show
+                // the restored colors too.
+                if (!entry.colorStyle || typeof tp3dRefreshColorStyleFromServer !== 'function') return s;
+                return fetch('http://127.0.0.1:' + PORT + '/get_color_styles', { cache: 'no-store' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) { tp3dRefreshColorStyleFromServer(data); return s; })
+                    .catch(function() { return s; });
             });
     }
 
@@ -666,7 +700,12 @@ function tp3dApplyHistorySettings(entry) {
                         elementSource: elementSource, enabledElements: enabledElements,
                         elementStates: elementStates,
                         settingsState: s ? s.settingsState : null,
-                        advancedSettings: s ? s.advancedSettings : null
+                        advancedSettings: s ? s.advancedSettings : null,
+                        // Color palette (settings_modal.js's TP3D_COLOR_STYLES,
+                        // kept current by every palette/swatch change on the page).
+                        colorStyle: typeof TP3D_COLOR_STYLES !== 'undefined' && TP3D_COLOR_STYLES.currentStyle
+                            ? { style: TP3D_COLOR_STYLES.currentStyle, colors: TP3D_COLOR_STYLES.currentColors }
+                            : null
                     })
                 });
             })
