@@ -512,8 +512,9 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
 .element-card .card-checklist label.locked { color: #777; cursor: not-allowed; }
 .element-card input[type=checkbox] { width: 13px; height: 13px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
 .element-card input[type=checkbox]:disabled { cursor: not-allowed; }
-#elementStatus { flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 10px 16px;
-    background: var(--surface-panel); border-bottom: 1px solid var(--border); overflow-x: auto; }
+/* Wraps onto a second row on narrow windows instead of scrolling sideways. */
+#elementStatus { flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 10px 16px;
+    background: var(--surface-panel); border-bottom: 1px solid var(--border); }
 .element-chip-wrap { flex-shrink: 0; }
 /* Compact OSM/ESA pill toggle in the element-status row itself
    (element_status.js's tp3dBuildCompactSourceSwitch) -- a quicker way to
@@ -537,7 +538,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.875rem; line
     padding: 4px 4px; font-size: 0.75rem; cursor: pointer; }
 .color-style-compact option { background: var(--surface-field); }
 /* Hover flyout with a Water/Roads chip's sub-categories (element_status.js). Fixed so the
-   strip's overflow-x can't clip it; no gap to the chip so the hover isn't lost on the way down. */
+   strip can't clip it; no gap to the chip so the hover isn't lost on the way down. */
 .element-flyout { position: fixed; z-index: 2000; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
     background: var(--surface-field); border: 1px solid var(--border); border-radius: 0 0 6px 6px; box-shadow: 0 6px 16px rgba(0,0,0,0.5); }
 .element-flyout:focus { outline: none; }

@@ -117,11 +117,7 @@
         <button class="btn-clear" id="clearPrefetch" style="display:none;">Clear Prefetch</button>
         <hr class="sidebar-divider">
         <div id="status" role="status" aria-live="polite">Draw a rectangle to begin.</div>
-        <div class="info-note" tabindex="0">
-            <span class="info-icon">i</span>
-            <span>Paint-mode elements only</span>
-            <div class="info-tooltip">Puzzle pieces can only be cut correctly when Elements use "Paint on Map" mode. Blender switches this automatically if needed.</div>
-        </div>
+        <div id="totalSizeInfo"></div>
         <div id="exportFolderSlot"></div>
         <button id="send" class="btn-send" disabled>Send to Blender</button>
     </div>
@@ -1060,6 +1056,7 @@
         }
 
         function updateStatus() {
+            tp3dUpdatePuzzleSizeReadout();
             var nGpx = gpxPaths.length;
             var gpxSuffix = nGpx ? ' + ' + nGpx + ' trail(s)' : '';
             if (pieces.length) {

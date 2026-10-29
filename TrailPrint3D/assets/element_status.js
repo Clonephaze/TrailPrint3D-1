@@ -287,7 +287,7 @@ function tp3dRenderElementStatus() {
 // Hover flyout under the Water / Roads chips with one checkbox per
 // sub-category (COMPOSITE_ELEMENTS in settings_modal.js -- same fields and
 // same /update_advanced_setting route as the Settings modal's Elements tab).
-// position:fixed so the strip's overflow-x scrolling can't clip it. The
+// position:fixed so the strip can't clip it. The
 // checkboxes carry data-advanced-checkbox, so tp3dRepaintCompositeCheckboxes
 // keeps them in sync with chip toggles and the modal.
 function tp3dAttachSubFlyout(wrap, chip, key) {

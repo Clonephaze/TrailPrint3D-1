@@ -1142,7 +1142,8 @@ function svgInscribedBounds(b, aspect) {
 }
 
 // Fills the sidebar's #totalSizeInfo readout (map_generator.html,
-// premium/map_generator_pe.html, premium/multitile_generator.html) --
+// premium/map_generator_pe.html, premium/multitile_generator.html and the
+// puzzle pages, see tp3dUpdatePuzzleSizeReadout) --
 // empties it (hidden via :empty) when there's nothing to size yet.
 // rotationDeg null = rotation doesn't apply to the current shape.
 // scaleDenominator = ground meters per printed meter (the N in 1:N).
@@ -1206,6 +1207,24 @@ function tp3dUpdateMapSizeReadout() {
     var centerLat = tp3dProjectedBoundsCenter(frame, 0).lat;
     tp3dSetSizeReadout((maxX - minX) * scale, (maxY - minY) * scale, rotation,
         tp3dScaleDenominator(scale * 256 / (2 * Math.PI), centerLat));
+}
+
+// Printed footprint of the puzzle pages (puzzleGenerator.html,
+// premium/puzzleGenerator_pe.html, premium/slidingPuzzleGenerator.html):
+// the puzzle is exactly Length x Width however it's rotated over the map
+// (the round shapes keep both fields equal to their Diameter), and the
+// page's tp3dPuzzleBaseBounds() is that footprint on the map -- Length
+// along x -- so its projected width gives the print scale.
+function tp3dUpdatePuzzleSizeReadout() {
+    var lengthMm = parseFloat(document.getElementById('lengthInput').value) || 0;
+    var widthMm = parseFloat(document.getElementById('widthInput').value) || 0;
+    var base = tp3dPuzzleBaseBounds();
+    if (!base) { tp3dSetSizeReadout(0, 0, null); return; }
+    var projected = tp3dPuzzleProjectedBounds(base);
+    var spanX = projected.maxX - projected.minX;
+    var scale = spanX > 0 ? lengthMm / spanX : 0; // mm per zoom-0 px
+    tp3dSetSizeReadout(lengthMm, widthMm, TP3D_SHAPE_ROTATION_DEG,
+        tp3dScaleDenominator(scale * 256 / (2 * Math.PI), tp3dProjectedBoundsCenter(base, 0).lat));
 }
 
 // Auto-places a fresh box centered on the current viewport, sized to
