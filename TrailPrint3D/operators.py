@@ -3660,6 +3660,7 @@ class TP3D_OT_puzzle_configurator(bpy.types.Operator):
             else "generators/puzzleGenerator.html"
         )
         html_path = pathlib.Path(__file__).parent / html_filename
+        utils.restore_generator_settings(context.scene.tp3d)
         self._server = mp.start_picker(
             self._result_path,
             existing_maps=_collect_existing_maps(),
@@ -4309,6 +4310,7 @@ class TP3D_OT_map_generator(bpy.types.Operator):
             else "generators/map_generator.html"
         )
         html_path = pathlib.Path(__file__).parent / html_filename
+        utils.restore_generator_settings(context.scene.tp3d)
         self._server = mp.start_picker(
             self._result_path,
             existing_maps=_collect_existing_maps(),
@@ -5099,6 +5101,7 @@ class TP3D_OT_medal_holder_generator(bpy.types.Operator):
         html_path = (
             pathlib.Path(__file__).parent / "generators" / "medalHolderGenerator.html"
         )
+        utils.restore_generator_settings(context.scene.tp3d)
         tp3d = context.scene.tp3d
         self._server = mp.start_picker(
             self._result_path,
@@ -5257,6 +5260,7 @@ class TP3D_OT_backplate_generator(bpy.types.Operator):
         html_path = (
             pathlib.Path(__file__).parent / "generators" / "backplateGenerator.html"
         )
+        utils.restore_generator_settings(context.scene.tp3d)
         tp3d = context.scene.tp3d
         # The page starts from the scene's own Shape Extras settings (a
         # restored page state overrides them).

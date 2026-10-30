@@ -6,6 +6,8 @@ kept separate from the generation pipeline modules since they don't run as
 part of runGeneration()'s phase sequence.
 """
 
+import functools
+import json
 import os
 
 import bpy  # type: ignore
@@ -256,6 +258,19 @@ def build_element_toggle_states(tp3d=None):
     return states
 
 
+def _saves_generator_settings(apply_update):
+    """Persist the settings after each edit a generator page makes -- see
+    save_generator_settings."""
+
+    @functools.wraps(apply_update)
+    def wrapper(tp3d, *args):
+        apply_update(tp3d, *args)
+        save_generator_settings(tp3d)
+
+    return wrapper
+
+
+@_saves_generator_settings
 def apply_element_toggle(tp3d, key):
     """Flip one element category's enabled state -- applied on Blender's
     main thread from a picker page's element-status chip click (queued by
@@ -419,6 +434,18 @@ def _apply_export_folder(value):
     return True
 
 
+def _redraw_all_areas():
+    """Property changes made from a modal timer don't redraw the sidebar on
+    their own -- without this it keeps showing the old value (e.g. ESA
+    WorldCover after the page switched to OSM) until the mouse hovers it."""
+    wm = getattr(bpy.context, "window_manager", None)
+    if wm is not None:
+        for window in wm.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
+
+
+@_saves_generator_settings
 def apply_setting_update(tp3d, key, value):
     """Apply one Settings popup Map-tab field update -- applied on Blender's
     main thread from a picker page's field edit, queued by
@@ -452,16 +479,10 @@ def apply_setting_update(tp3d, key, value):
             setattr(tp3d, attr, caster(value))
         except (TypeError, ValueError):
             return
-    # Property changes made from a modal timer don't redraw the sidebar on
-    # their own -- without this it keeps showing the old value (e.g. ESA
-    # WorldCover after the page switched to OSM) until the mouse hovers it.
-    wm = getattr(bpy.context, "window_manager", None)
-    if wm is not None:
-        for window in wm.windows:
-            for area in window.screen.areas:
-                area.tag_redraw()
+    _redraw_all_areas()
 
 
+@_saves_generator_settings
 def apply_color_update(tp3d, update: dict) -> None:
     """Apply one queued color-style operation on the main thread.
 
@@ -763,6 +784,7 @@ def build_advanced_settings_state(tp3d=None):
     return state
 
 
+@_saves_generator_settings
 def apply_advanced_setting_update(tp3d, key, value):
     """Apply one Advanced Settings popup field update -- same main-thread-only
     rationale as apply_setting_update (see its docstring), queued by
@@ -774,3 +796,116 @@ def apply_advanced_setting_update(tp3d, key, value):
     if not field:
         return
     _write_advanced_field(tp3d, field, value)
+
+
+# A generator page's settings otherwise live only in the Scene property group,
+# so a new Blender session starts over from the defaults while the page's own
+# /save_state blob (the drawn map etc.) survives. Marks a scene that has had
+# restore_generator_settings run, so its later generator opens can't undo
+# changes made from the sidebar since.
+_GENERATOR_SETTINGS_RESTORED = "_generator_settings_restored"
+_GENERATOR_ELEMENT_ATTRS = (
+    *_ELEMENT_SINGLE_FLAGS.values(),
+    *_LANDCOVER_SINGLE_FLAGS.values(),
+    *_COMPOSITE_MASTER_FLAGS.values(),
+)
+
+
+def build_generator_settings_snapshot(tp3d):
+    """Every setting a generator page can edit, as JSON-ready values. Dict
+    order is restore order, and it matters: elementSource must come before
+    elementMode (its update callback can force elementMode), and colorStyle
+    before colors (its update callback overwrites the swatches)."""
+    from . import color_styles
+
+    remembered = {}
+    for key in _COMPOSITE_MASTER_FLAGS:
+        values = tp3d.get(f"_toggle_remember_{key}")
+        if values:
+            remembered[key] = [bool(v) for v in values]
+    return {
+        "settings": {
+            key: getattr(tp3d, attr) for key, (attr, _) in _SETTINGS_ROW_FIELDS.items()
+        },
+        "advanced": {
+            f["key"]: _read_advanced_field(tp3d, f) for f in _ADVANCED_SETTINGS_FIELDS
+        },
+        "elements": {attr: getattr(tp3d, attr) for attr in _GENERATOR_ELEMENT_ATTRS},
+        "remembered": remembered,
+        "colorStyle": tp3d.color_style,
+        "colors": color_styles.role_hex_map(color_styles.scene_colors(tp3d)),
+        "slicerProfile": tp3d.slicer_profile_name,
+    }
+
+
+def apply_generator_settings_snapshot(tp3d, data):
+    """Write a build_generator_settings_snapshot dict back to the scene. A
+    value this build can't take (a since-deleted color style or print
+    profile, an enum item that was removed) is skipped, not fatal."""
+    from . import color_styles
+
+    def assign(attr, value, caster=lambda v: v):
+        try:
+            setattr(tp3d, attr, caster(value))
+        except (TypeError, ValueError):
+            pass
+
+    for key, value in data.get("settings", {}).items():
+        field = _SETTINGS_ROW_FIELDS.get(key)
+        if field:
+            assign(field[0], value, field[1])
+    for key, value in data.get("advanced", {}).items():
+        field = _ADVANCED_SETTINGS_BY_KEY.get(key)
+        if field:
+            _write_advanced_field(tp3d, field, value)
+    for attr, value in data.get("elements", {}).items():
+        if attr in _GENERATOR_ELEMENT_ATTRS:
+            assign(attr, value)
+    for key, values in data.get("remembered", {}).items():
+        if key in _COMPOSITE_MASTER_FLAGS:
+            tp3d[f"_toggle_remember_{key}"] = [bool(v) for v in values]
+    if data.get("colorStyle"):
+        assign("color_style", data["colorStyle"])
+    if data.get("colors"):
+        try:
+            color_styles.set_scene_colors(tp3d, color_styles.normalize_colors(data["colors"]))
+        except (TypeError, ValueError) as e:
+            print(f"[TP3D] Could not restore generator colors: {e}")
+    if data.get("slicerProfile"):
+        assign("slicer_profile_name", data["slicerProfile"])
+
+
+def save_generator_settings(tp3d):
+    """Write the scene's generator settings to const.generator_settings_path,
+    for restore_generator_settings in the next session. Written to a temp file
+    first, so a crash mid-write can't leave a truncated JSON behind."""
+    path = const.generator_settings_path
+    tmp_path = path + ".tmp"
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(build_generator_settings_snapshot(tp3d), f, indent=1)
+        os.replace(tmp_path, path)
+    except OSError as e:
+        print(f"[TP3D] Failed to write {path}: {e}")
+
+
+def restore_generator_settings(tp3d):
+    """Load the last-used generator settings into a new scene -- call from
+    each generator operator's invoke(), before its page-load snapshots are
+    built. Only runs once per scene, and never for a saved .blend, whose own
+    settings win."""
+    if bpy.data.filepath or tp3d.get(_GENERATOR_SETTINGS_RESTORED):
+        return
+    tp3d[_GENERATOR_SETTINGS_RESTORED] = True
+    try:
+        with open(const.generator_settings_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError) as e:
+        print(f"[TP3D] Could not read {const.generator_settings_path}: {e}")
+        return
+    if isinstance(data, dict):
+        apply_generator_settings_snapshot(tp3d, data)
+        _redraw_all_areas()

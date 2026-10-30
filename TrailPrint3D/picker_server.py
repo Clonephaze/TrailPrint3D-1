@@ -540,6 +540,9 @@ def process_slicer_profile_requests(tp3d) -> None:
                 pass
 
     _Handler.slicer_profiles_json = json.dumps(build_slicer_profiles_state(tp3d)).encode('utf-8')
+    from .utils.ui_state import save_generator_settings
+
+    save_generator_settings(tp3d)
     # The sidebar's own dropdown doesn't redraw on its own from a modal timer.
     import bpy  # type: ignore
 
